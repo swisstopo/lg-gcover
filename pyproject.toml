@@ -1,0 +1,213 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "setuptools-scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lg-gcover"
+dynamic = ["version"]
+description = "A library and CLI tool to work with geological vector data"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Your Name", email = "your.email@example.com"},
+]
+maintainers = [
+    {name = "Your Name", email = "your.email@example.com"},
+]
+keywords = ["geology", "gis", "geodata", "arcpy", "geopandas", "esri"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: GIS",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Environment :: Console",
+]
+
+dependencies = [
+    "geopandas>=0.14.0",
+    "shapely>=2.0.0",
+    "pandas>=2.0.0",
+    "click>=8.0.0",
+    "rich>=13.0.0",  # Pour de belles sorties CLI
+    "pydantic>=2.0.0",  # Pour la validation des données
+    "pyyaml>=6.0",  # Pour les fichiers de configuration
+    "structlog>=23.0.0",  # Pour un logging structuré
+    "python-dotenv>=1.0.0",  # Pour charger les variables d'environnement
+]
+
+[project.optional-dependencies]
+# arcpy ne peut pas être installé via pip, mais on documente la dépendance
+esri = []  # Les utilisateurs doivent installer ArcGIS Pro manuellement
+
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-mock>=3.0",
+    "black>=23.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+    "pre-commit>=3.0",
+    "types-pyyaml",
+    "types-click",
+]
+
+docs = [
+    "sphinx>=6.0",
+    "sphinx-rtd-theme>=1.0",
+    "sphinx-click>=4.0",
+    "myst-parser>=1.0",
+]
+
+cloud = [
+    "boto3>=1.26",  # Pour AWS S3
+    "aioboto3>=11.0",  # Pour AWS S3 async
+]
+
+viz = [
+    "matplotlib>=3.7",
+    "seaborn>=0.12",
+    "plotly>=5.0",
+]
+
+all = [
+    "lg-gcover[dev,docs,cloud,viz]",
+]
+
+[project.urls]
+Homepage = "https://github.com/procrastinatio/lg-gcover"
+Documentation = "https://lg-gcover.readthedocs.io"
+Repository = "https://github.com/procrastinatio/lg-gcover"
+Issues = "https://github.com/procrastinatio/lg-gcover/issues"
+Changelog = "https://github.com/procrastinatio/lg-gcover/blob/main/CHANGELOG.md"
+
+[project.scripts]
+gcover = "gcover.cli.main:cli"
+
+[tool.setuptools]
+# Cette section est cruciale pour inclure vos __init__.py
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["gcover*"]
+exclude = ["tests*", "docs*"]
+
+[tool.setuptools.package-data]
+# Inclure explicitement les fichiers __init__.py et autres fichiers de données
+gcover = ["**/*.py", "**/*.yaml", "**/*.yml", "**/*.json"]
+
+[tool.setuptools_scm]
+# Gestion automatique de la version basée sur les tags git
+write_to = "src/gcover/_version.py"
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"
+fallback_version = "0.0.1"  # Version de fallback si pas de tags git
+
+[tool.black]
+line-length = 88
+target-version = ['py39', 'py310', 'py311', 'py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # Directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]  # imported but unused
+"tests/*" = ["S101"]  # Use of assert
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+pretty = true
+show_error_codes = true
+show_error_context = true
+
+[[tool.mypy.overrides]]
+module = [
+    "arcpy.*",
+    "geopandas.*",
+    "shapely.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+testpaths = ["tests"]
+filterwarnings = [
+    "error",
+    "ignore::UserWarning",
+    "ignore::DeprecationWarning",
+]
+addopts = [
+    "--strict-markers",
+    "--cov=gcover",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+]
+
+[tool.coverage.run]
+source = ["gcover"]
+omit = [
+    "*/tests/*",
+    "*/_version.py",
+    "*/cli/*",  # Si vous voulez exclure le CLI des tests de couverture
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
