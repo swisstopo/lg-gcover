@@ -1,0 +1,26 @@
+# MANIFEST.in - Assure l'inclusion de tous les fichiers nécessaires
+
+# Inclure tous les fichiers Python, y compris __init__.py
+recursive-include gcover *.py
+
+# Inclure les fichiers de configuration et de données
+recursive-include gcover *.yaml *.yml *.json
+
+# Inclure les templates si vous en avez
+recursive-include gcover/templates *
+
+# Inclure la documentation
+include README.md
+include LICENSE
+include CHANGELOG.md
+
+# Inclure les fichiers de configuration du projet
+include pyproject.toml
+include .gitignore
+
+# Exclure les fichiers de test et temporaires
+recursive-exclude tests *
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude * .DS_Store
+global-exclude *.so *.dylib
