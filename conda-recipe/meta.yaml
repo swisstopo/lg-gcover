@@ -1,0 +1,49 @@
+package:
+  name: lg-gcover
+  version: {{ environ.get('SETUPTOOLS_SCM_PRETEND_VERSION', '0.0.1') }}
+
+source:
+  path: ..
+
+build:
+  noarch: python
+  script: {{ PYTHON }} -m pip install . --no-deps --ignore-installed -vv
+  entry_points:
+    - gcover = gcover.cli.main:cli
+
+requirements:
+  host:
+    - python >=3.9
+    - pip
+    - setuptools >=61.0
+    - wheel
+    - setuptools-scm >=6.2
+  run:
+    - python >=3.9
+    - geopandas >=0.14.0
+    - shapely >=2.0.0
+    - pandas >=2.0.0
+    - click >=8.0.0
+    - rich >=13.0.0
+    - pydantic >=2.0.0
+    - pyyaml >=6.0
+    - structlog >=23.0.0
+    - python-dotenv >=1.0.0
+
+test:
+  imports:
+    - gcover
+  commands:
+    - gcover --help
+
+about:
+  home: https://github.com/swisstopo/lg-gcover
+  license: BSD
+  license_file: LICENSE
+  summary: "A library and CLI tool to work with geological vector data"
+  description: |
+    lg-gcover is a Python library and CLI tool designed to work with 
+    geological vector data, particularly the GeoCover dataset from 
+    the Swiss national Geological Survey.
+  doc_url: https://lg-gcover.readthedocs.io
+  dev_url: https://github.com/swisstopo/lg-gcover

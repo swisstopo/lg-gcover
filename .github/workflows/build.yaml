@@ -1,0 +1,91 @@
+name: Build Python Package
+
+on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    branches: [ master, develop ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+      
+    - name: Install miniconda
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+          python-version: "3.11"
+          auto-update-conda: true
+          channels: conda-forge,defaults
+          channel-priority: true
+          activate-environment: gcover-build
+    
+    - name: Check conda installation
+      shell: bash -el {0}
+      run: |
+          conda info
+          conda list
+          python --version
+          which python
+          echo "Python path: $(which python)"
+          echo "Conda env: $CONDA_DEFAULT_ENV"
+
+    - name: Install build tools
+      shell: bash -el {0}
+      run: |
+        conda install -y conda-build pip setuptools setuptools-scm build
+
+    - name: Get version from SCM
+      shell: bash -el {0}
+      id: get_version
+      run: |
+        echo "version=$(python -m setuptools_scm)" >> "$GITHUB_OUTPUT"
+
+    - name: Display version
+      shell: bash -el {0}
+      run: |
+        echo "Detected version: ${{ steps.get_version.outputs.version }}"
+
+    - name: Find conda build artifacts
+      shell: bash -el {0}
+      id: find_artifacts
+      run: |
+        # Get the conda build output path directly
+        CONDA_OUTPUT=$(conda build conda-recipe --output)
+        CONDA_BLD_DIR=$(dirname "$CONDA_OUTPUT")
+        echo "conda_build_path=$CONDA_BLD_DIR" >> "$GITHUB_OUTPUT"
+        echo "conda_output_file=$CONDA_OUTPUT" >> "$GITHUB_OUTPUT"
+        echo "Conda build directory: $CONDA_BLD_DIR"
+        echo "Conda output file: $CONDA_OUTPUT"
+
+    - name: Conda build with dynamic version
+      shell: bash -el {0}
+      env:
+        SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.get_version.outputs.version }}
+      run: |
+        conda build conda-recipe
+
+    - name: Upload Conda build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+          name: conda-artifacts
+          path: ${{ steps.find_artifacts.outputs.conda_build_path }}
+          if-no-files-found: warn
+
+    - name: Build Python wheel
+      shell: bash -el {0}
+      run: |
+              python -m build
+
+    - name: Upload built artifacts
+      uses: actions/upload-artifact@v4
+      with:
+              name: dist-artifacts
+              path: dist/
+              if-no-files-found: error
+
