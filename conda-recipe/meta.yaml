@@ -29,6 +29,7 @@ requirements:
     - pyyaml >=6.0
     - structlog >=23.0.0
     - python-dotenv >=1.0.0
+    - loguru >=0.6.0
 
 test:
   imports:
