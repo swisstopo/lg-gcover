@@ -2,6 +2,7 @@
 """
 Main CLI entry point for gcover.
 """
+
 import sys
 from pathlib import Path
 
@@ -88,6 +89,13 @@ try:
     from .schema_cmd import schema
 
     cli.add_command(schema)
+except ImportError:
+    pass
+
+try:
+    from .gdb_cmd import gdb
+
+    cli.add_command(gdb)
 except ImportError:
     pass
 

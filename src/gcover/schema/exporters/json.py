@@ -182,3 +182,89 @@ def export_esri_schema_to_json(schema: ESRISchema, version: int = 2) -> dict[str
             result["subtypes"] = subtypes_dict
 
     return result
+
+
+from typing import Dict, List, Any, Optional, Union
+from ..differ import SchemaDiff
+from datetime import datetime
+
+from loguru import logger
+
+
+def export_schema_diff_to_json(diff: SchemaDiff) -> Dict[str, Any]:
+    """
+    Export SchemaDiff instance to a JSON-serializable dictionary.
+
+    Args:
+        diff: SchemaDiff instance to export
+
+    Returns:
+        Dictionary ready to be serialized to JSON
+    """
+
+    def serialize_change(change):
+        """Helper to serialize a change object"""
+        result = {
+            "change_type": change.change_type.value,
+            "name": getattr(change, "domain_name", None)
+            or getattr(change, "table_name", None)
+            or getattr(change, "relationship_name", None)
+            or getattr(change, "subtype_name", None)
+            or getattr(change, "field_name", None),
+        }
+
+        # Add property changes if any
+        if hasattr(change, "property_changes") and change.property_changes:
+            result["property_changes"] = {
+                prop: {"old": old, "new": new}
+                for prop, (old, new) in change.property_changes.items()
+            }
+
+        # Add specific change type data
+        if hasattr(change, "coded_value_changes") and change.coded_value_changes:
+            result["coded_value_changes"] = {
+                code: change_type.value
+                for code, change_type in change.coded_value_changes.items()
+            }
+
+        if hasattr(change, "value_changes") and change.value_changes:
+            result["value_changes"] = {
+                code: change_type.value
+                for code, change_type in change.value_changes.items()
+            }
+
+        if hasattr(change, "field_changes") and change.field_changes:
+            result["field_changes"] = [
+                serialize_change(fc) for fc in change.field_changes
+            ]
+
+        return result
+
+    # Build the export structure
+    export_data = {
+        "summary": diff.get_summary(),
+        "changes": {
+            "domains": [serialize_change(c) for c in diff.domain_changes],
+            "tables": [serialize_change(c) for c in diff.table_changes],
+            "feature_classes": [
+                serialize_change(c) for c in diff.feature_class_changes
+            ],
+            "relationships": [serialize_change(c) for c in diff.relationship_changes],
+            "subtypes": [serialize_change(c) for c in diff.subtype_changes],
+        },
+        "has_changes": diff.has_changes(),
+        "metadata": {
+            "old_schema_name": diff.old_schema.metadata.get("name")
+            if diff.old_schema.metadata
+            else None,
+            "new_schema_name": diff.new_schema.metadata.get("name")
+            if diff.new_schema.metadata
+            else None,
+            "comparison_date": datetime.now().isoformat(),
+        },
+    }
+
+    # Remove empty change lists
+    export_data["changes"] = {k: v for k, v in export_data["changes"].items() if v}
+
+    return export_data
