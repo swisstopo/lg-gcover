@@ -1,0 +1,115 @@
+# config/gdb_config.yaml
+# Configuration for GDB Asset Management System
+
+# Base paths for different asset types
+base_paths:
+  backup: "/media/marco/SANDISK/GCOVER"
+  verification: "/media/marco/SANDISK/Verifications"
+  increment: "/media/marco/SANDISK/Increment"
+
+# AWS S3 configuration
+s3:
+  bucket: "your-gdb-bucket"
+  # Optional: specify AWS profile
+  # profile: "your-aws-profile"
+
+  # S3 key prefix structure
+  key_prefix: "gdb-assets"
+
+  # Storage class for S3 objects
+  storage_class: "STANDARD_IA"  # or GLACIER, DEEP_ARCHIVE, etc.
+
+# Database configuration
+database:
+  path: "data/gdb_metadata.duckdb"
+
+  # Optional: backup database settings
+  backup:
+    enabled: true
+    frequency: "daily"  # daily, weekly, monthly
+    retention_days: 30
+
+# Temporary directory for zip files
+temp_dir: "/tmp/gdb_zips"
+
+# Processing options
+processing:
+  # Compression level for zip files (0-9)
+  compression_level: 6
+
+  # Parallel processing
+  max_workers: 4
+
+  # Retry settings
+  max_retries: 3
+  retry_delay: 5  # seconds
+
+# Logging configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file: "logs/gdb_manager.log"
+  max_size: "10MB"
+  backup_count: 5
+
+# Monitoring and alerts (optional)
+monitoring:
+  enabled: false
+
+  # Webhook for notifications
+  webhook_url: "https://your-webhook-url.com"
+
+  # Email notifications
+  email:
+    enabled: false
+    smtp_server: "smtp.gmail.com"
+    smtp_port: 587
+    username: "your-email@gmail.com"
+    # Password should be set via environment variable
+
+  # Metrics to track
+  metrics:
+    - "processing_time"
+    - "file_sizes"
+    - "error_rate"
+
+# GDB integrity check settings
+integrity_check:
+  enabled: true
+
+  # Commands to run for integrity check
+  commands:
+    - "ogrinfo -al -so {gdb_path}"  # Basic info check
+    - "ogrinfo -checkgeom {gdb_path}"  # Geometry validation
+
+  # Timeout for integrity checks (seconds)
+  timeout: 300
+
+# Cleanup settings
+cleanup:
+  # Clean up temporary files after processing
+  temp_files: true
+
+  # Clean up old database backups
+  old_backups: true
+
+  # Clean up logs older than X days
+  old_logs: 30
+
+---
+# config/development.yaml
+# Development-specific overrides
+
+s3:
+  bucket: "gdb-test-bucket"
+
+database:
+  path: "test_gdb_metadata.duckdb"
+
+logging:
+  level: "DEBUG"
+
+processing:
+  max_workers: 2
+
+monitoring:
+  enabled: true
