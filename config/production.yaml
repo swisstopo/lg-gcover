@@ -1,0 +1,25 @@
+# config/production.yaml
+# Production-specific overrides
+
+s3:
+  bucket: "gdb-production-bucket"
+  storage_class: "STANDARD_IA"
+
+database:
+  backup:
+    enabled: true
+    frequency: "daily"
+
+logging:
+  level: "INFO"
+  file: "/var/log/gdb_manager/gdb_manager.log"
+
+processing:
+  max_workers: 8
+
+monitoring:
+  enabled: true
+  webhook_url: "https://your-production-webhook.com"
+
+cleanup:
+  old_logs: 90
