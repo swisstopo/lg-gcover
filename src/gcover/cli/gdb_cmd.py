@@ -16,10 +16,10 @@ from rich.progress import Progress
 from rich import print as rprint
 
 # Import our GDB management classes (assuming they're in a module)
-from gcover.gdb.manager import (
-    GDBAssetManager, AssetType, ReleaseCandidate,
-    S3Uploader, MetadataDB
-)
+
+from gcover.gdb.manager import (GDBAssetManager,  S3Uploader, MetadataDB)
+from gcover.gdb.assets import (GDBAsset, BackupGDBAsset, VerificationGDBAsset, IncrementGDBAsset, AssetType, ReleaseCandidate)
+
 
 console = Console()
 

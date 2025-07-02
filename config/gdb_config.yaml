@@ -96,20 +96,3 @@ cleanup:
   old_logs: 30
 
 ---
-# config/development.yaml
-# Development-specific overrides
-
-s3:
-  bucket: "gdb-test-bucket"
-
-database:
-  path: "test_gdb_metadata.duckdb"
-
-logging:
-  level: "DEBUG"
-
-processing:
-  max_workers: 2
-
-monitoring:
-  enabled: true
