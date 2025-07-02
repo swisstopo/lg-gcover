@@ -56,6 +56,13 @@ except ImportError:
     generate_plantuml_from_schema
 )"""
 
+
+from .exporters.json import (
+    export_esri_schema_to_json,
+    export_schema_diff_to_json,
+)
+
+
 __all__ = [
     # Classes principales
     "ESRISchema",
@@ -75,7 +82,7 @@ __all__ = [
     "can_extract_schema",
     "transform_esri_json",
     "export_esri_schema_to_json",
-    # "export_schema_diff_to_json",
+    "export_schema_diff_to_json",
     "generate_plantuml_from_schema",
     "generate_report",
 ]

@@ -116,13 +116,14 @@ def diff(old_schema, new_schema, output, format):
     summary = diff.get_summary()
     click.echo("\nSummary of changes:")
     for key, value in summary.items():
-        if value > 0:
+        print("DEBUG:", value, type(value))
+        if any(v > 0 for v in value.values()):
             click.echo(f"  {key}: {value}")
 
     # Sauvegarder si demandé
     if output:
         if format == "json":
-            from ..schema.exporters import export_schema_diff_to_json
+            from ..schema.exporters.json import export_schema_diff_to_json
 
             result = export_schema_diff_to_json(diff)
             Path(output).write_text(json.dumps(result, indent=2))
