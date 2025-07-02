@@ -68,7 +68,7 @@ __all__ = [
     "SubtypeValue",
     "RangeDomain",
     "CodedDomain",
-    "CodedValue",
+    "CodedValue",firef
     "SchemaDiff",
     # Fonctions
     "extract_schema",
