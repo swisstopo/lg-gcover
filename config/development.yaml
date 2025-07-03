@@ -4,6 +4,11 @@
 s3:
   bucket: "gdb-test-bucket"
 
+base_paths:
+  backup: "/home/marco/DATA/GCOVER"
+  verification: "/home/marco/DATA/Verifications"
+  increment: "/home/marco/DATA/Increment"
+
 database:
   path: "test_gdb_metadata.duckdb"
 
