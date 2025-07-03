@@ -73,6 +73,13 @@ def info() -> None:
     except ImportError:
         modules.append("✗ manage (not available)")
 
+    try:
+        from gcover import geometry
+
+        modules.append("✓ geometry (GDB cleanup)")
+    except ImportError:
+        modules.append("✗ geometry (not available)")
+
     for module in modules:
         click.echo(f"  {module}")
 
@@ -110,6 +117,13 @@ try:
     from .manage_cmd import manage
 
     cli.add_command(manage)
+except ImportError:
+    pass
+
+try:
+    from .geometry_cmd import geometry
+
+    cli.add_command(geometry)
 except ImportError:
     pass
 

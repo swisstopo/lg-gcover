@@ -260,7 +260,7 @@ def validate(ctx, input_path, layers, report):
             progress.update(task, description=f"Found {len(all_layers)} layers")
         
         # Validate each layer
-        from gcover.geometry.cleanup import GeometryValidator
+        from gcover.geometry.utils import GeometryValidator
         validator = GeometryValidator()
         
         validation_report = {}
