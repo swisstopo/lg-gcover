@@ -8,7 +8,7 @@ with comprehensive version management and conflict resolution.
 
 from .bridge import GeoCoverBridge
 from .connection import SDEConnectionManager, ReadOnlyError
-from .gpkg_utils import write_gdf_to_gpkg, append_gdf_to_gpkg, GPKGWriter
+# from ..utils.gpkg import write_gdf_to_gpkg, append_gdf_to_gpkg, GPKGWriter
 from .exceptions import SDEConnectionError, SDEVersionError
 from .config import (
     DEFAULT_OPERATOR,
@@ -23,11 +23,11 @@ __all__ = [
     # Main classes
     "GeoCoverBridge",
     "SDEConnectionManager",
-    "GPKGWriter",
+    #"GPKGWriter",
 
     # Utility functions
-    "write_gdf_to_gpkg",
-    "append_gdf_to_gpkg",
+    #"write_gdf_to_gpkg",
+    # "append_gdf_to_gpkg",
 
     # Exceptions
     "ReadOnlyError",

@@ -30,7 +30,8 @@ from .config import (
     DEFAULT_OPERATOR, DEFAULT_VERSION, FEAT_CLASSES_SHORTNAMES,
     SWISS_EPSG, DEFAULT_CHUNK_SIZE, MANDATORY_FIELDS
 )
-from .utils.gpkg import write_gdf_to_gpkg, append_gdf_to_gpkg, estimate_gpkg_size
+from ..utils.gpkg import write_gdf_to_gpkg, append_gdf_to_gpkg, estimate_gpkg_size
+from ..utils.imports import require_arcpy
 
 try:
     import arcpy
@@ -49,6 +50,9 @@ except ImportError:
 console = Console()
 
 
+
+
+@require_arcpy
 class GeoCoverBridge:
     """
     Unified interface for GeoCover geodatabase operations.
