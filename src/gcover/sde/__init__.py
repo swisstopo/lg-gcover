@@ -1,7 +1,7 @@
 
 
 from .connection_manager  import SDEConnectionManager
-from .bridge import  import LayerBridge
+from .bridge import  LayerBridge
 from .exceptions import SDEConnectionError, SDEVersionError
 
 
