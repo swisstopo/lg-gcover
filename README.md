@@ -16,6 +16,20 @@ Perfect for geologists, GIS analysts, and researchers working with Swiss geologi
 
 ## Usage
 
+### Quality Assurance (QA)
+
+    # List QA commands
+    gcover qa --help
+
+    # Run tectonic correction
+    gcover qa tectonic-lines data.gdb --bbox-preset alps-10km
+
+    # Interactive mode with verbose output
+    gcover qa tectonic-lines data.gdb --interactive --verbose
+
+    # Dry run to see what would happen
+    gcover qa tectonic-lines data.gdb --dry-run
+
 
 ### SDE connection
 
