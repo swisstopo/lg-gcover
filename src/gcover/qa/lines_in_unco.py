@@ -1,14 +1,7 @@
 import geopandas as gpd
 import pandas as pd
 from shapely.geometry import LineString, MultiLineString
-from shapely.ops import split
-import uuid
-import numpy as np
-from pathlib import Path
-import geopandas as gpd
-import pandas as pd
-from shapely.geometry import LineString, MultiLineString
-from shapely.ops import split
+from shapely.ops import split, unary_union
 import uuid
 import numpy as np
 from pathlib import Path
@@ -186,9 +179,66 @@ def generate_new_uuid():
     return str(uuid.uuid4())
 
 
-def process_intersecting_lines(tectonic_lines, unco_polygons):
+def find_intersecting_unco_polygons(line_geom, unco_polygons):
+    """
+    Find all UNCO polygons that intersect with a line geometry
+    """
+    intersecting_polys = []
+    for idx, poly_row in unco_polygons.iterrows():
+        poly_geom = poly_row.geometry
+        if line_geom.intersects(poly_geom) and not line_geom.within(poly_geom):
+            intersecting_polys.append(poly_geom)
+    return intersecting_polys
+
+
+def create_union_geometry(polygons, line_geom, max_polygons=20):
+    """
+    Create union of polygons, with fallback for large numbers
+
+    Parameters:
+    - polygons: List of polygon geometries
+    - line_geom: Line geometry for buffered approach fallback
+    - max_polygons: Maximum number of polygons to union directly
+    """
+    if len(polygons) == 0:
+        return None
+
+    if len(polygons) == 1:
+        return polygons[0]
+
+    try:
+        if len(polygons) <= max_polygons:
+            # Direct union for reasonable number of polygons
+            logger.debug(f"Computing union of {len(polygons)} polygons")
+            return unary_union(polygons)
+        else:
+            # For many polygons, use buffer approach around line
+            logger.debug(f"Too many polygons ({len(polygons)}), using buffer approach")
+            # Create small buffer around line to capture relevant polygons
+            line_buffer = line_geom.buffer(100)  # 100m buffer, adjust as needed
+            relevant_polys = [p for p in polygons if line_buffer.intersects(p)]
+            logger.debug(f"Reduced to {len(relevant_polys)} relevant polygons")
+
+            if len(relevant_polys) <= max_polygons:
+                return unary_union(relevant_polys)
+            else:
+                # If still too many, return largest polygon as approximation
+                logger.warning(
+                    f"Still too many polygons, using largest as approximation"
+                )
+                return max(relevant_polys, key=lambda p: p.area)
+
+    except Exception as e:
+        logger.warning(f"Union computation failed: {e}, using largest polygon")
+        return max(polygons, key=lambda p: p.area)
+
+
+def process_intersecting_lines(tectonic_lines, unco_polygons, use_union=True):
     """
     Main processing function to handle line-polygon intersections
+
+    Parameters:
+    - use_union: If True, union intersecting UNCO polygons before splitting
     """
     # Ensure same CRS
     if tectonic_lines.crs != unco_polygons.crs:
@@ -197,34 +247,52 @@ def process_intersecting_lines(tectonic_lines, unco_polygons):
 
     # Find intersecting lines
     logger.info("Finding intersections...")
-    intersecting_indices = []
+    intersecting_data = []
 
     for idx, line_row in tectonic_lines.iterrows():
         line_geom = line_row.geometry
 
-        # Check if line intersects any unco polygon
-        for _, poly_row in unco_polygons.iterrows():
-            poly_geom = poly_row.geometry
+        # Find all intersecting UNCO polygons for this line
+        intersecting_polys = find_intersecting_unco_polygons(line_geom, unco_polygons)
 
-            if line_geom.intersects(poly_geom) and not line_geom.within(poly_geom):
-                intersecting_indices.append((idx, poly_row))
-                break  # Found intersection, move to next line
+        if intersecting_polys:
+            intersecting_data.append((idx, line_row, intersecting_polys))
 
-    logger.info(f"Found {len(intersecting_indices)} lines that intersect unco polygons")
+    logger.info(f"Found {len(intersecting_data)} lines that intersect unco polygons")
+
+    # Log statistics about intersecting polygons
+    poly_counts = [len(polys) for _, _, polys in intersecting_data]
+    if poly_counts:
+        logger.info(
+            f"Polygon intersections per line: min={min(poly_counts)}, max={max(poly_counts)}, avg={np.mean(poly_counts):.1f}"
+        )
 
     # Process each intersecting line
     new_features = []
     updated_features = []
     unchanged_indices = []  # Track lines that couldn't be split
+    processed_indices = []
 
-    for line_idx, poly_row in intersecting_indices:
-        line_row = tectonic_lines.loc[line_idx]
+    for line_idx, line_row, intersecting_polys in intersecting_data:
         line_geom = line_row.geometry
-        poly_geom = poly_row.geometry
+
+        # Create combined geometry for splitting
+        if use_union and len(intersecting_polys) > 1:
+            logger.debug(
+                f"Line {line_idx}: Processing {len(intersecting_polys)} intersecting UNCO polygons"
+            )
+            combined_geom = create_union_geometry(intersecting_polys, line_geom)
+        else:
+            # Use first intersecting polygon (original behavior for single polygons)
+            combined_geom = intersecting_polys[0]
+
+        if combined_geom is None:
+            logger.warning(f"Line {line_idx}: No valid combined geometry")
+            continue
 
         # Split the line
         inside_parts, outside_parts = split_line_by_polygon_boundary(
-            line_geom, poly_geom
+            line_geom, combined_geom
         )
 
         # Handle case where splitting failed due to overlap
@@ -238,61 +306,71 @@ def process_intersecting_lines(tectonic_lines, unco_polygons):
             logger.debug(f"Line {line_idx} - no split occurred")
             continue
 
-        # Combine parts into MultiLineString if multiple parts
-        if len(inside_parts) > 1:
-            inside_geom = MultiLineString(inside_parts)
-        elif len(inside_parts) == 1:
-            inside_geom = inside_parts[0]
-        else:
-            inside_geom = None
-
-        if len(outside_parts) > 1:
-            outside_geom = MultiLineString(outside_parts)
-        elif len(outside_parts) == 1:
-            outside_geom = outside_parts[0]
-        else:
-            outside_geom = None
-
-        # Calculate lengths to determine smaller part
-        inside_length = inside_geom.length if inside_geom else 0
-        outside_length = outside_geom.length if outside_geom else 0
-
         # Create new features
         original_attrs = line_row.drop("geometry").to_dict()
 
-        # Create feature for inside part with TTEC_STATUS = 14906003 (not certain)
-        if inside_geom:
-            inside_feature = original_attrs.copy()
-            inside_feature["geometry"] = inside_geom
-            inside_feature["TTEC_STATUS"] = 14906003  # Set as 'not certain' inside UNCO
-            inside_feature["_change"] = "update"  # Mark as updated
-            updated_features.append(inside_feature)
+        # Process inside parts (each becomes a separate LineString feature)
+        # This ensures we only have LineString geometries, not MultiLineString
+        inside_features = []
+        if inside_parts:
+            for i, inside_part in enumerate(inside_parts):
+                if isinstance(inside_part, LineString):
+                    inside_feature = original_attrs.copy()
+                    inside_feature["geometry"] = inside_part
+                    inside_feature["TTEC_STATUS"] = (
+                        14906003  # Set as 'not certain' inside UNCO
+                    )
+                    inside_feature["_change"] = "update"  # Mark as updated
+                    inside_features.append(inside_part)
+                    updated_features.append(inside_feature)
 
-        # Create feature for outside part (keep original status)
-        if outside_geom:
-            outside_feature = original_attrs.copy()
-            outside_feature["geometry"] = outside_geom
-            # Keep original TTEC_STATUS (no change for outside parts)
-            outside_feature["_change"] = "new"  # Mark as new feature
-            new_features.append(outside_feature)
+        # Process outside parts (each becomes a separate LineString feature)
+        outside_features = []
+        if outside_parts:
+            for i, outside_part in enumerate(outside_parts):
+                if isinstance(outside_part, LineString):
+                    outside_feature = original_attrs.copy()
+                    outside_feature["geometry"] = outside_part
+                    # Keep original TTEC_STATUS (no change for outside parts)
+                    outside_feature["_change"] = "new"  # Mark as new feature
+                    outside_features.append(outside_part)
+                    new_features.append(outside_feature)
 
-        # Give new UUID to the smaller part
-        if inside_geom and outside_geom:
-            if inside_length <= outside_length:
-                # Inside part is smaller, give it new UUID
-                updated_features[-1]["UUID"] = generate_new_uuid()
-            else:
-                # Outside part is smaller, give it new UUID
-                new_features[-1]["UUID"] = generate_new_uuid()
+        # Handle UUID assignment - give new UUIDs to all but the longest part
+        # The longest part keeps the original UUID to maintain primary reference
+        all_parts = list(
+            zip(inside_features, ["inside"] * len(inside_features))
+        ) + list(zip(outside_features, ["outside"] * len(outside_features)))
 
-    # Update intersecting_indices to remove unchanged lines
-    processed_indices = [
-        (idx, poly)
-        for idx, poly in intersecting_indices
-        if idx not in unchanged_indices
-    ]
+        if len(all_parts) > 1:
+            # Find the longest part (keeps original UUID)
+            longest_part, longest_type = max(all_parts, key=lambda x: x[0].length)
+
+            # Assign new UUIDs to all other parts
+            for part, part_type in all_parts:
+                if part != longest_part:  # Not the longest part
+                    # Find the corresponding feature and update its UUID
+                    if part_type == "inside":
+                        # Find in updated_features
+                        for feat in reversed(updated_features):
+                            if feat["geometry"] == part:
+                                feat["UUID"] = generate_new_uuid()
+                                break
+                    else:  # outside
+                        # Find in new_features
+                        for feat in reversed(new_features):
+                            if feat["geometry"] == part:
+                                feat["UUID"] = generate_new_uuid()
+                                break
+
+        # Track this as processed (using dummy polygon for compatibility)
+        processed_indices.append((line_idx, {"dummy": "processed"}))
 
     logger.info(f"Successfully processed {len(processed_indices)} intersecting lines")
+    logger.info(f"Created {len(new_features)} new LineString features (outside UNCO)")
+    logger.info(
+        f"Created {len(updated_features)} updated LineString features (inside UNCO)"
+    )
     logger.info(f"Kept {len(unchanged_indices)} lines unchanged due to geometry issues")
 
     return new_features, updated_features, processed_indices
@@ -372,11 +450,86 @@ def main():
     )
 
     # Input parameters - modify these as needed
+    gdb_path = "path/to/your/geodatabase.gdb"  # Update this path
+    output_path = Path(
+        "path/to/output/corrected_tectonic_lines.gpkg"
+    )  # Update this path
+
+    # BBOX options for testing (uncomment one of these):
+
+    # Option 1: Use predefined Alps test area (10km x 10km = 100 sq km)
+    test_bbox = create_test_bbox_alps(size_km=10)
+
+    # Option 2: Use smaller test area (3km x 3km = 9 sq km)
+    # test_bbox = create_test_bbox_alps(size_km=3)
+
+    # Option 3: Use custom coordinates (example for different Alps location)
+    # test_bbox = create_custom_bbox(center_x=2_650_000, center_y=1_150_000, size_km=5)
+
+    # Option 4: No BBOX (process entire dataset) - comment out test_bbox line
+    # test_bbox = None
+
+    logger.info("Starting tectonic lines correction process...")
+
+    # Load data with BBOX
+    tectonic_lines, unco_polygons = load_geodatabase_layers(gdb_path, bbox=test_bbox)
+
+    if tectonic_lines is None or unco_polygons is None:
+        logger.error("Failed to load data. Exiting.")
+        return
+
+    # Filter tectonic lines
+    filtered_lines = filter_tectonic_lines(tectonic_lines)
+
+    if len(filtered_lines) == 0:
+        logger.warning("No tectonic lines found with specified KIND range. Exiting.")
+        return
+
+    # Process intersections
+    new_features, updated_features, intersecting_indices = process_intersecting_lines(
+        filtered_lines,
+        unco_polygons,
+        use_union=True,  # Default to union in standalone script
+    )
+
+    if not new_features and not updated_features:
+        logger.info("No intersections found or processed. No changes needed.")
+        return
+
+    # Save results
+    save_deleted_features = (
+        True  # Set to False if you don't want to track deleted features
+    )
+    save_results(
+        filtered_lines,
+        new_features,
+        updated_features,
+        intersecting_indices,
+        output_path,
+        save_deleted=save_deleted_features,
+    )
+
+    logger.success("Tectonic lines correction completed successfully!")
+
+
+def main():
+    """
+    Main execution function
+    """
+    # Configure loguru
+    logger.remove()  # Remove default handler
+    logger.add(
+        sink=lambda msg: print(msg, end=""),  # Print to console
+        format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | {message}",
+        level="INFO",
+    )
+
+    # Input parameters - modify these as needed
     gdb_path = (
-        "/home/marco/DATA/Backups/20250703_0300_2030-12-31.gdb"  # Update this path
+        "/home/marco/DATA/Backups/20250708_0300_2030-12-31.gdb"  # Update this path
     )
     output_path = Path(
-        "output/20250703_rc2_corrected_tectonic_lines.gpkg"
+        "output/20250708_rc2_corrected_tectonic_lines.gpkg"
     )  # Update this path
 
     # BBOX options for testing (uncomment one of these):
