@@ -2,6 +2,7 @@
 """
 Main CLI entry point for gcover.
 """
+
 import sys
 from pathlib import Path
 
@@ -72,6 +73,13 @@ def info() -> None:
     except ImportError:
         modules.append("✗ manage (not available)")
 
+    try:
+        from gcover import sde
+
+        modules.append("✓ sde (SDE management)")
+    except ImportError:
+        modules.append("✗ sde (not available)")
+
     for module in modules:
         click.echo(f"  {module}")
 
@@ -92,6 +100,13 @@ except ImportError:
     pass
 
 try:
+    from .gdb_cmd import gdb
+
+    cli.add_command(gdb)
+except ImportError:
+    pass
+
+try:
     from .qa_cmd import qa
 
     cli.add_command(qa)
@@ -104,6 +119,15 @@ try:
     cli.add_command(manage)
 except ImportError:
     pass
+
+try:
+    from .sde_cmd import sde_commands
+
+    cli.add_command(sde_commands)
+except ImportError:
+    pass
+
+
 
 
 def main() -> None:

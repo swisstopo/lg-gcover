@@ -3,17 +3,17 @@ requires = ["setuptools>=61.0", "wheel", "setuptools-scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lg-gcover"
+name = "gcover"
 dynamic = ["version"]
 description = "A library and CLI tool to work with geological vector data"
 readme = "README.md"
 requires-python = ">=3.9"
-license = {text = "MIT"}
+license = {text = "BSD-3-Clause"}
 authors = [
-    {name = "Your Name", email = "your.email@example.com"},
+    {name = "Marc Monnerat", email = "geocover@swisstopo.ch"},
 ]
 maintainers = [
-    {name = "Your Name", email = "your.email@example.com"},
+    {name = "Marc Monnerat", email = "geocover@swisstopo.ch"},
 ]
 keywords = ["geology", "gis", "geodata", "arcpy", "geopandas", "esri"]
 classifiers = [
@@ -21,9 +21,7 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
     "Topic :: Scientific/Engineering :: GIS",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -36,11 +34,13 @@ dependencies = [
     "shapely>=2.0.0",
     "pandas>=2.0.0",
     "click>=8.0.0",
-    "rich>=13.0.0",  # Pour de belles sorties CLI
-    "pydantic>=2.0.0",  # Pour la validation des données
-    "pyyaml>=6.0",  # Pour les fichiers de configuration
-    "structlog>=23.0.0",  # Pour un logging structuré
-    "python-dotenv>=1.0.0",  # Pour charger les variables d'environnement
+    "rich>=13.0.0",
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0",
+    "structlog>=23.0.0",
+    "python-dotenv>=1.0.0",
+    "tabulate>=0.9.0",
+    "loguru",
 ]
 
 [project.optional-dependencies]
@@ -78,15 +78,15 @@ viz = [
 ]
 
 all = [
-    "lg-gcover[dev,docs,cloud,viz]",
+    "gcover[dev,docs,cloud,viz]",
 ]
 
 [project.urls]
-Homepage = "https://github.com/procrastinatio/lg-gcover"
+Homepage = "https://github.com/swisstopo/lg-gcover"
 Documentation = "https://lg-gcover.readthedocs.io"
-Repository = "https://github.com/procrastinatio/lg-gcover"
-Issues = "https://github.com/procrastinatio/lg-gcover/issues"
-Changelog = "https://github.com/procrastinatio/lg-gcover/blob/main/CHANGELOG.md"
+Repository = "https://github.com/swisstopo/lg-gcover"
+Issues = "https://github.com/swisstopo/lg-gcover/issues"
+Changelog = "https://github.com/swisstopo/lg-gcover/blob/main/CHANGELOG.md"
 
 [project.scripts]
 gcover = "gcover.cli.main:cli"
@@ -113,7 +113,7 @@ fallback_version = "0.0.1"  # Version de fallback si pas de tags git
 
 [tool.black]
 line-length = 88
-target-version = ['py39', 'py310', 'py311', 'py312']
+target-version = [ 'py311', 'py312', 'py313']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -133,7 +133,7 @@ extend-exclude = '''
 
 [tool.ruff]
 line-length = 88
-target-version = "py39"
+target-version = "py311"
 select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
