@@ -1,6 +1,7 @@
 name: Build Python Package
 
 on:
+  workflow_call:
   push:
     branches: [ master, develop ]
   pull_request:
