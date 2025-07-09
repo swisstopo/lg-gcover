@@ -74,11 +74,19 @@ def info() -> None:
         modules.append("✗ manage (not available)")
 
     try:
+        from gcover import gdb
+
+        modules.append("✓ gdb (GDB management)")
+    except ImportError:
+        modules.append("✗ gdb (not available)")
+        
+    try:
         from gcover import sde
 
         modules.append("✓ sde (SDE management)")
     except ImportError:
         modules.append("✗ sde (not available)")
+
 
     for module in modules:
         click.echo(f"  {module}")
