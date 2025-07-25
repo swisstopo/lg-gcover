@@ -27,6 +27,7 @@ from loguru import logger
 
 class AssetType(Enum):
     """Types of GDB assets"""
+
     BACKUP_DAILY = "backup_daily"
     BACKUP_WEEKLY = "backup_weekly"
     BACKUP_MONTHLY = "backup_monthly"
@@ -37,11 +38,12 @@ class AssetType(Enum):
 
 class ReleaseCandidate(Enum):
     """Release candidates"""
+
     RC1 = "2016-12-31"
     RC2 = "2030-12-31"
 
     @classmethod
-    def from_string(cls, date_str: str) -> Optional['ReleaseCandidate']:
+    def from_string(cls, date_str: str) -> Optional["ReleaseCandidate"]:
         """Convert date string to RC enum"""
         for rc in cls:
             if rc.value == date_str:
@@ -57,6 +59,7 @@ class ReleaseCandidate(Enum):
 @dataclass
 class GDBAssetInfo:
     """Information about a GDB asset"""
+
     path: Path
     asset_type: AssetType
     release_candidate: ReleaseCandidate
@@ -90,11 +93,11 @@ class GDBAsset:
         zip_name = f"{self.info.timestamp.strftime('%Y%m%d_%H%M%S')}_{self.info.release_candidate.short_name}_{self.info.asset_type.value}.zip"
         zip_path = output_dir / zip_name
 
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
             if zip_target.is_file():
                 zipf.write(zip_target, zip_target.name)
             else:
-                for file_path in zip_target.rglob('*'):
+                for file_path in zip_target.rglob("*"):
                     if file_path.is_file():
                         arcname = file_path.relative_to(zip_target.parent)
                         zipf.write(file_path, arcname)
@@ -126,7 +129,7 @@ class BackupGDBAsset(GDBAsset):
         parent_name = self.path.parent.name
 
         # Pattern: 20221130_2200_2030-12-31.gdb
-        pattern = r'(\d{8})_(\d{4})_(\d{4}-\d{2}-\d{2})\.gdb'
+        pattern = r"(\d{8})_(\d{4})_(\d{4}-\d{2}-\d{2})\.gdb"
         match = re.match(pattern, gdb_name)
 
         if not match:
@@ -146,7 +149,7 @@ class BackupGDBAsset(GDBAsset):
         asset_type_map = {
             "daily": AssetType.BACKUP_DAILY,
             "weekly": AssetType.BACKUP_WEEKLY,
-            "monthly": AssetType.BACKUP_MONTHLY
+            "monthly": AssetType.BACKUP_MONTHLY,
         }
         asset_type = asset_type_map.get(parent_name)
         if not asset_type:
@@ -156,7 +159,7 @@ class BackupGDBAsset(GDBAsset):
             path=self.path,
             asset_type=asset_type,
             release_candidate=rc,
-            timestamp=timestamp
+            timestamp=timestamp,
         )
 
 
@@ -165,6 +168,9 @@ class VerificationGDBAsset(GDBAsset):
 
     def _parse_path(self) -> GDBAssetInfo:
         """Parse verification path structure"""
+        if self.path.name.lower() == "progress.gdb":
+            raise ValueError(f"Skipping temporary file: {self.path.name}")
+
         # Path structure: .../TechnicalQualityAssurance/RC_2016-12-31/20231203_22-00-09_2016-12-31/issue.gdb
         parts = self.path.parts
 
@@ -178,8 +184,8 @@ class VerificationGDBAsset(GDBAsset):
                 test_type = part
             elif part.startswith("RC_"):
                 rc_str = part[3:]  # Remove "RC_" prefix
-            #elif re.match(r'\d{8}_\d{2}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}', part):
-            elif re.match(r'\d{8}_\d{2}-\d{2}-\d{2}.*', part):
+            # elif re.match(r'\d{8}_\d{2}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}', part):
+            elif re.match(r"\d{8}_\d{2}-\d{2}-\d{2}.*", part):
                 timestamp_dir = part
 
         if not all([test_type, rc_str, timestamp_dir]):
@@ -188,15 +194,17 @@ class VerificationGDBAsset(GDBAsset):
 
         # Parse timestamp from directory name
         # Pattern: 20231203_22-00-09_2016-12-31
-        timestamp_pattern = r'(\d{8})_(\d{2})-(\d{2})-(\d{2})_\d{4}-\d{2}-\d{2}'
+        timestamp_pattern = r"(\d{8})_(\d{2})-(\d{2})-(\d{2})_\d{4}-\d{2}-\d{2}"
         # TODO
-        timestamp_pattern = r'(\d{8})_(\d{2})-(\d{2})-(\d{2}).*'
+        timestamp_pattern = r"(\d{8})_(\d{2})-(\d{2})-(\d{2}).*"
         match = re.match(timestamp_pattern, timestamp_dir)
         if not match:
             raise ValueError(f"Cannot parse timestamp from: {timestamp_dir}")
 
         date_str, hour, minute, second = match.groups()
-        timestamp = datetime.strptime(f"{date_str}_{hour}{minute}{second}", "%Y%m%d_%H%M%S")
+        timestamp = datetime.strptime(
+            f"{date_str}_{hour}{minute}{second}", "%Y%m%d_%H%M%S"
+        )
 
         # Parse release candidate
         rc = ReleaseCandidate.from_string(rc_str)
@@ -204,15 +212,18 @@ class VerificationGDBAsset(GDBAsset):
             raise ValueError(f"Unknown release candidate: {rc_str}")
 
         # Determine asset type
-        asset_type = (AssetType.VERIFICATION_TQA if test_type == "TechnicalQualityAssurance"
-                      else AssetType.VERIFICATION_TOPOLOGY)
+        asset_type = (
+            AssetType.VERIFICATION_TQA
+            if test_type == "TechnicalQualityAssurance"
+            else AssetType.VERIFICATION_TOPOLOGY
+        )
 
         return GDBAssetInfo(
             path=self.path,
             asset_type=asset_type,
             release_candidate=rc,
             timestamp=timestamp,
-            metadata={"gdb_name": self.path.name}
+            metadata={"gdb_name": self.path.name},
         )
 
     def get_zip_target(self) -> Path:
@@ -228,7 +239,7 @@ class IncrementGDBAsset(GDBAsset):
         gdb_name = self.path.name
 
         # Pattern: 20250224_GCOVERP_2016-12-31.gdb
-        pattern = r'(\d{8})_GCOVERP_(\d{4}-\d{2}-\d{2})\.gdb'
+        pattern = r"(\d{8})_GCOVERP_(\d{4}-\d{2}-\d{2})\.gdb"
 
         match = re.match(pattern, gdb_name)
 
@@ -249,5 +260,5 @@ class IncrementGDBAsset(GDBAsset):
             path=self.path,
             asset_type=AssetType.INCREMENT,
             release_candidate=rc,
-            timestamp=timestamp
+            timestamp=timestamp,
         )

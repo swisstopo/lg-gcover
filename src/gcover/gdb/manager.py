@@ -13,24 +13,35 @@ from typing import Any, Dict, List, Optional, Union
 import boto3
 import duckdb
 from botocore.exceptions import ClientError
+
 # Configure logging
 from loguru import logger
 
-from .assets import (AssetType, BackupGDBAsset, GDBAsset, GDBAssetInfo,
-                     IncrementGDBAsset, VerificationGDBAsset)
+from .assets import (
+    AssetType,
+    BackupGDBAsset,
+    GDBAsset,
+    GDBAssetInfo,
+    IncrementGDBAsset,
+    VerificationGDBAsset,
+)
 
-from .storage import (S3Uploader, MetadataDB)
+from .storage import S3Uploader, MetadataDB
+
+GBD_TO_EXCLUDE = ["progress.gdb", "temp.gdb"]
 
 
 class GDBAssetManager:
     """Main manager for GDB assets"""
 
-    def __init__(self,
-                 base_paths: Dict[str, Path],
-                 s3_bucket: str,
-                 db_path: Union[str, Path],
-                 temp_dir: Union[str, Path] = "/tmp/gdb_zips",
-                 aws_profile: Optional[str] = None):
+    def __init__(
+        self,
+        base_paths: Dict[str, Path],
+        s3_bucket: str,
+        db_path: Union[str, Path],
+        temp_dir: Union[str, Path] = "/tmp/gdb_zips",
+        aws_profile: Optional[str] = None,
+    ):
         """
         Initialize GDB Asset Manager
 
@@ -48,17 +59,17 @@ class GDBAssetManager:
         self.s3_uploader = S3Uploader(s3_bucket, aws_profile)
         self.metadata_db = MetadataDB(db_path)
 
-        logger.info(self.s3_uploader )
+        logger.info(self.s3_uploader)
 
     def create_asset(self, gdb_path: Path) -> GDBAsset:
         """Factory method to create appropriate asset type"""
         path_str = str(gdb_path)
 
-        if "/GCOVER/" in path_str and gdb_path.name.endswith('.gdb'):
+        if "/GCOVER/" in path_str and gdb_path.name.endswith(".gdb"):
             return BackupGDBAsset(gdb_path)
-        elif "/Verifications/" in path_str and gdb_path.name.endswith('.gdb'):
+        elif "/Verifications/" in path_str and gdb_path.name.endswith(".gdb"):
             return VerificationGDBAsset(gdb_path)
-        elif "/Increments/" in path_str and gdb_path.name.endswith('.gdb'):
+        elif "/Increments/" in path_str and gdb_path.name.endswith(".gdb"):
             return IncrementGDBAsset(gdb_path)
         else:
             raise ValueError(f"Cannot determine asset type for: {gdb_path}")
@@ -73,7 +84,11 @@ class GDBAssetManager:
                 continue
 
             for gdb_path in base_path.rglob("*.gdb"):
-                if gdb_path.is_dir():  # GDB is a directory
+                if gdb_path.is_dir():
+                    # NOUVEAU : Filtrer les fichiers temporaires
+                    if gdb_path.name.lower() in GBD_TO_EXCLUDE:
+                        continue
+
                     try:
                         asset = self.create_asset(gdb_path)
                         assets.append(asset)
@@ -128,18 +143,13 @@ class GDBAssetManager:
         logger.info("Starting filesystem scan...")
         assets = self.scan_filesystem()
 
-        stats = {
-            'found': len(assets),
-            'processed': 0,
-            'failed': 0,
-            'skipped': 0
-        }
+        stats = {"found": len(assets), "processed": 0, "failed": 0, "skipped": 0}
 
         for asset in assets:
             if self.process_asset(asset):
-                stats['processed'] += 1
+                stats["processed"] += 1
             else:
-                stats['failed'] += 1
+                stats["failed"] += 1
 
         logger.info(f"Sync complete: {stats}")
         return stats
@@ -149,9 +159,9 @@ class GDBAssetManager:
 if __name__ == "__main__":
     # Configuration
     base_paths = {
-        'backup': Path("/media/marco/SANDISK/GCOVER"),
-        'verification': Path("/media/marco/SANDISK/Verifications"),
-        'increment': Path("/media/marco/SANDISK/Increment")
+        "backup": Path("/media/marco/SANDISK/GCOVER"),
+        "verification": Path("/media/marco/SANDISK/Verifications"),
+        "increment": Path("/media/marco/SANDISK/Increment"),
     }
 
     manager = GDBAssetManager(
@@ -159,7 +169,7 @@ if __name__ == "__main__":
         s3_bucket="gcover-gdb-8552d86302f942779f83f7760a7b901b",
         db_path="gdb_metadata.duckdb",
         temp_dir="/tmp/gdb_zips",
-        aws_profile="gcover_bucket"
+        aws_profile="gcover_bucket",
     )
 
     # Sync all assets
