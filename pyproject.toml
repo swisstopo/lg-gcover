@@ -94,6 +94,8 @@ Changelog = "https://github.com/swisstopo/lg-gcover/blob/main/CHANGELOG.md"
 
 [project.scripts]
 gcover = "gcover.cli.main:cli"
+gcover-gdb = "gcover.cli.gdb_cli:cli"    # New GDB CLI
+gcover-dashboard = "gcover.gdb.dashboard:main"  # Dashboard
 
 [tool.setuptools]
 # Cette section est cruciale pour inclure vos __init__.py

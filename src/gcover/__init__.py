@@ -10,6 +10,8 @@ This package provides tools for working with geological vector data, including:
 
 __version__ = "0.1.0"
 
+from gcover._version import __version__
+
 # Import des modules principaux pour un accès facile
 from .core.config import Config
 

@@ -1,119 +1,47 @@
 #!/usr/bin/env python3
 
-import os
-import zipfile
 import hashlib
+import os
 import re
-from datetime import datetime
-from pathlib import Path
-from typing import List, Optional, Dict, Any, Union
-from enum import Enum
+import zipfile
 from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 
 import boto3
-from botocore.exceptions import ClientError
 import duckdb
-
-from .assets import GDBAssetInfo, GDBAsset, AssetType
+from botocore.exceptions import ClientError
 
 # Configure logging
 from loguru import logger
 
-class S3Uploader:
-    """Handle S3 operations"""
+from .assets import (
+    AssetType,
+    BackupGDBAsset,
+    GDBAsset,
+    GDBAssetInfo,
+    IncrementGDBAsset,
+    VerificationGDBAsset,
+)
 
-    def __init__(self, bucket_name: str, aws_profile: Optional[str] = None):
-        self.bucket_name = bucket_name
-        if aws_profile:
-            session = boto3.Session(profile_name=aws_profile)
-            self.s3_client = session.client('s3')
-        else:
-            self.s3_client = boto3.client('s3')
+from .storage import S3Uploader, MetadataDB
 
-    def upload_file(self, file_path: Path, s3_key: str) -> bool:
-        """Upload file to S3"""
-        try:
-            self.s3_client.upload_file(str(file_path), self.bucket_name, s3_key)
-            logger.info(f"Uploaded {file_path} to s3://{self.bucket_name}/{s3_key}")
-            return True
-        except ClientError as e:
-            logger.error(f"Failed to upload {file_path}: {e}")
-            return False
-
-    def file_exists(self, s3_key: str) -> bool:
-        """Check if file exists in S3"""
-        try:
-            self.s3_client.head_object(Bucket=self.bucket_name, Key=s3_key)
-            return True
-        except ClientError:
-            return False
-
-
-class MetadataDB:
-    """Handle DuckDB metadata operations"""
-
-    def __init__(self, db_path: Union[str, Path]):
-        self.db_path = Path(db_path)
-        self.init_db()
-
-    def init_db(self):
-        """Initialize database schema"""
-        with duckdb.connect(str(self.db_path)) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS gdb_assets (
-                    id INTEGER PRIMARY KEY,
-                    path VARCHAR NOT NULL,
-                    asset_type VARCHAR NOT NULL,
-                    release_candidate VARCHAR NOT NULL,
-                    timestamp TIMESTAMP NOT NULL,
-                    file_size BIGINT,
-                    hash_md5 VARCHAR,
-                    s3_key VARCHAR,
-                    uploaded BOOLEAN DEFAULT FALSE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    metadata JSON
-                )
-            """)
-
-    def insert_asset(self, asset_info: GDBAssetInfo):
-        """Insert asset information"""
-        with duckdb.connect(str(self.db_path)) as conn:
-            conn.execute("""
-                INSERT INTO gdb_assets 
-                (path, asset_type, release_candidate, timestamp, file_size, 
-                 hash_md5, s3_key, uploaded, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, [
-                str(asset_info.path),
-                asset_info.asset_type.value,
-                asset_info.release_candidate.value,
-                asset_info.timestamp,
-                asset_info.file_size,
-                asset_info.hash_md5,
-                asset_info.s3_key,
-                asset_info.uploaded,
-                asset_info.metadata
-            ])
-
-    def asset_exists(self, path: Path) -> bool:
-        """Check if asset already exists in database"""
-        with duckdb.connect(str(self.db_path)) as conn:
-            result = conn.execute(
-                "SELECT COUNT(*) FROM gdb_assets WHERE path = ?",
-                [str(path)]
-            ).fetchone()
-            return result[0] > 0
+GBD_TO_EXCLUDE = ["progress.gdb", "temp.gdb"]
 
 
 class GDBAssetManager:
     """Main manager for GDB assets"""
 
-    def __init__(self,
-                 base_paths: Dict[str, Path],
-                 s3_bucket: str,
-                 db_path: Union[str, Path],
-                 temp_dir: Union[str, Path] = "/tmp/gdb_zips",
-                 aws_profile: Optional[str] = None):
+    def __init__(
+        self,
+        base_paths: Dict[str, Path],
+        s3_bucket: str,
+        db_path: Union[str, Path],
+        temp_dir: Union[str, Path] = "/tmp/gdb_zips",
+        aws_profile: Optional[str] = None,
+    ):
         """
         Initialize GDB Asset Manager
 
@@ -131,15 +59,17 @@ class GDBAssetManager:
         self.s3_uploader = S3Uploader(s3_bucket, aws_profile)
         self.metadata_db = MetadataDB(db_path)
 
+        logger.info(self.s3_uploader)
+
     def create_asset(self, gdb_path: Path) -> GDBAsset:
         """Factory method to create appropriate asset type"""
         path_str = str(gdb_path)
 
-        if "/GCOVER/" in path_str and gdb_path.name.endswith('.gdb'):
+        if "/GCOVER/" in path_str and gdb_path.name.endswith(".gdb"):
             return BackupGDBAsset(gdb_path)
-        elif "/Verifications/" in path_str and gdb_path.name.endswith('.gdb'):
+        elif "/Verifications/" in path_str and gdb_path.name.endswith(".gdb"):
             return VerificationGDBAsset(gdb_path)
-        elif "/Increment/" in path_str and gdb_path.name.endswith('.gdb'):
+        elif "/Increments/" in path_str and gdb_path.name.endswith(".gdb"):
             return IncrementGDBAsset(gdb_path)
         else:
             raise ValueError(f"Cannot determine asset type for: {gdb_path}")
@@ -154,7 +84,11 @@ class GDBAssetManager:
                 continue
 
             for gdb_path in base_path.rglob("*.gdb"):
-                if gdb_path.is_dir():  # GDB is a directory
+                if gdb_path.is_dir():
+                    # NOUVEAU : Filtrer les fichiers temporaires
+                    if gdb_path.name.lower() in GBD_TO_EXCLUDE:
+                        continue
+
                     try:
                         asset = self.create_asset(gdb_path)
                         assets.append(asset)
@@ -209,18 +143,13 @@ class GDBAssetManager:
         logger.info("Starting filesystem scan...")
         assets = self.scan_filesystem()
 
-        stats = {
-            'found': len(assets),
-            'processed': 0,
-            'failed': 0,
-            'skipped': 0
-        }
+        stats = {"found": len(assets), "processed": 0, "failed": 0, "skipped": 0}
 
         for asset in assets:
             if self.process_asset(asset):
-                stats['processed'] += 1
+                stats["processed"] += 1
             else:
-                stats['failed'] += 1
+                stats["failed"] += 1
 
         logger.info(f"Sync complete: {stats}")
         return stats
@@ -230,9 +159,9 @@ class GDBAssetManager:
 if __name__ == "__main__":
     # Configuration
     base_paths = {
-        'backup': Path("/media/marco/SANDISK/GCOVER"),
-        'verification': Path("/media/marco/SANDISK/Verifications"),
-        'increment': Path("/media/marco/SANDISK/Increment")
+        "backup": Path("/media/marco/SANDISK/GCOVER"),
+        "verification": Path("/media/marco/SANDISK/Verifications"),
+        "increment": Path("/media/marco/SANDISK/Increment"),
     }
 
     manager = GDBAssetManager(
@@ -240,7 +169,7 @@ if __name__ == "__main__":
         s3_bucket="gcover-gdb-8552d86302f942779f83f7760a7b901b",
         db_path="gdb_metadata.duckdb",
         temp_dir="/tmp/gdb_zips",
-        aws_profile="gcover_bucket"
+        aws_profile="gcover_bucket",
     )
 
     # Sync all assets
