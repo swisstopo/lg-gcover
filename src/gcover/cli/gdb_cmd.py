@@ -88,7 +88,7 @@ def init(ctx):
     try:
         # Test database
         db = MetadataDB(config.db_path)
-        rprint("[green]✅ Database initialized[/green]")
+        rprint(f"[green]✅ Database initialized {config.db_path}[/green]")
 
         # Test S3 (simplified)
         from ..gdb.storage import S3Uploader
@@ -156,9 +156,9 @@ def scan(ctx):
             rprint(f"[red]{traceback.format_exc()}[/red]")
         sys.exit(1)
 
-
-@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@gdb.command()
 @click.pass_context
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
 def sync(ctx, dry_run):
     """Sync GDB assets to S3 and database"""
     config = ctx.obj["config"]

@@ -19,6 +19,8 @@ from loguru import logger
 from .assets import (AssetType, BackupGDBAsset, GDBAsset, GDBAssetInfo,
                      IncrementGDBAsset, VerificationGDBAsset)
 
+from .storage import (S3Uploader, MetadataDB)
+
 
 class GDBAssetManager:
     """Main manager for GDB assets"""
