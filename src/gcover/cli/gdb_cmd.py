@@ -17,7 +17,8 @@ from rich import print as rprint
 
 # Import our GDB management classes (assuming they're in a module)
 
-from gcover.gdb.manager import GDBAssetManager, S3Uploader, MetadataDB
+from gcover.gdb.manager import GDBAssetManager
+from gcover.gdb.storage import S3Uploader, MetadataDB
 from gcover.gdb.config import  load_config
 from gcover.gdb.assets import (
     GDBAsset,
