@@ -48,6 +48,8 @@ class GDBAssetManager:
         self.s3_uploader = S3Uploader(s3_bucket, aws_profile)
         self.metadata_db = MetadataDB(db_path)
 
+        logger.info(self.s3_uploader )
+
     def create_asset(self, gdb_path: Path) -> GDBAsset:
         """Factory method to create appropriate asset type"""
         path_str = str(gdb_path)

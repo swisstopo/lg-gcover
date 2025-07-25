@@ -25,6 +25,8 @@ class S3Uploader:
 
     def __init__(self, bucket_name: str, aws_profile: Optional[str] = None):
         self.bucket_name = bucket_name
+        self.profile_name = aws_profile
+
         if aws_profile:
             session = boto3.Session(profile_name=aws_profile)
             self.s3_client = session.client('s3')
@@ -48,6 +50,8 @@ class S3Uploader:
             return True
         except ClientError:
             return False
+    def __repr__(self):
+        return f"<gcover.gdb.storage.S3Uploader: bucket: {self.bucket_name}, profile: {self.profile_name}>"
 
 class MetadataDB:
     """Handle DuckDB metadata operations"""
@@ -60,8 +64,9 @@ class MetadataDB:
         """Initialize database schema"""
         with duckdb.connect(str(self.db_path)) as conn:
             conn.execute("""
-                CREATE TABLE IF NOT EXISTS gdb_assets (
-                    id INTEGER PRIMARY KEY,
+            CREATE SEQUENCE IF NOT EXISTS  id_sequence START 1;
+            CREATE TABLE IF NOT EXISTS gdb_assets (
+                    id INTEGER DEFAULT nextval('id_sequence') PRIMARY KEY,
                     path VARCHAR NOT NULL,
                     asset_type VARCHAR NOT NULL,
                     release_candidate VARCHAR NOT NULL,
@@ -72,7 +77,7 @@ class MetadataDB:
                     uploaded BOOLEAN DEFAULT FALSE,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     metadata JSON
-                )
+                );
             """)
 
     def insert_asset(self, asset_info: GDBAssetInfo):
@@ -82,7 +87,7 @@ class MetadataDB:
                 INSERT INTO gdb_assets 
                 (path, asset_type, release_candidate, timestamp, file_size, 
                  hash_md5, s3_key, uploaded, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
             """, [
                 str(asset_info.path),
                 asset_info.asset_type.value,
