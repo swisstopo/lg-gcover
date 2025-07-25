@@ -14,7 +14,7 @@ import boto3
 from botocore.exceptions import ClientError
 import duckdb
 
-from .assets import GDBAssetInfo, GDBAsset, AssetType
+from .assets import (GDBAssetInfo, GDBAsset, AssetType, BackupGDBAsset, VerificationGDBAsset, IncrementGDBAsset)
 
 # Configure logging
 from loguru import logger
