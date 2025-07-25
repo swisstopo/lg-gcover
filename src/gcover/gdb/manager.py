@@ -139,7 +139,7 @@ class GDBAssetManager:
             return BackupGDBAsset(gdb_path)
         elif "/Verifications/" in path_str and gdb_path.name.endswith('.gdb'):
             return VerificationGDBAsset(gdb_path)
-        elif "/Increment/" in path_str and gdb_path.name.endswith('.gdb'):
+        elif "/Increments/" in path_str and gdb_path.name.endswith('.gdb'):
             return IncrementGDBAsset(gdb_path)
         else:
             raise ValueError(f"Cannot determine asset type for: {gdb_path}")

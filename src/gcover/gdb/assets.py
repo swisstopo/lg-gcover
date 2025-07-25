@@ -22,6 +22,8 @@ import duckdb
 # Configure logging
 from loguru import logger
 
+from loguru import logger
+
 
 class AssetType(Enum):
     """Types of GDB assets"""
@@ -227,6 +229,7 @@ class IncrementGDBAsset(GDBAsset):
 
         # Pattern: 20250224_GCOVERP_2016-12-31.gdb
         pattern = r'(\d{8})_GCOVERP_(\d{4}-\d{2}-\d{2})\.gdb'
+
         match = re.match(pattern, gdb_name)
 
         if not match:
