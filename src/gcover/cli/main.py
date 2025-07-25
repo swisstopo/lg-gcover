@@ -79,6 +79,14 @@ def info() -> None:
         modules.append("✓ gdb (GDB management)")
     except ImportError:
         modules.append("✗ gdb (not available)")
+        
+    try:
+        from gcover import sde
+
+        modules.append("✓ sde (SDE management)")
+    except ImportError:
+        modules.append("✗ sde (not available)")
+
 
     for module in modules:
         click.echo(f"  {module}")
@@ -119,6 +127,15 @@ try:
     cli.add_command(manage)
 except ImportError:
     pass
+
+try:
+    from .sde_cmd import sde_commands
+
+    cli.add_command(sde_commands)
+except ImportError:
+    pass
+
+
 
 
 def main() -> None:

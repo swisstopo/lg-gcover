@@ -12,3 +12,24 @@ lg-gcover simplifies the processing and analysis of geological vector datasets f
 - **Flexible Data Handling**: Support for various geological vector formats and projections
 
 Perfect for geologists, GIS analysts, and researchers working with Swiss geological datasets who need efficient, reproducible data processing workflows.
+
+
+## Usage
+
+
+### SDE connection
+
+    # Voir vos versions utilisateur
+    gcover sde user-versions
+
+    # Lister toutes les versions de GCOVERP
+    gcover sde versions -i GCOVERP
+
+    # Test de connexion interactif
+    gcover sde connect -i GCOVERP --interactive
+
+    # Export JSON des versions
+    gcover sde versions -f json > versions.json
+
+    # Nettoyer les connexions
+    gcover sde connections --cleanup
