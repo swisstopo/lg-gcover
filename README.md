@@ -233,6 +233,250 @@ WHERE missing_date NOT IN (SELECT backup_date FROM daily_backups);
 
 
 
+
+
+### Quality Assurance (QA) Commands
+
+Process ESRI FileGDB verification results, convert to web formats, and generate statistics for monitoring data quality issues.
+
+#### Overview
+
+The QA commands handle FileGDB files containing topology and technical quality verification results (~30k features per file). They:
+
+- **Convert** spatial layers to web formats (GeoParquet/GeoJSON) 
+- **Upload** converted files to S3 with organized structure
+- **Generate** statistics and summaries for dashboard display
+- **Handle** complex geometries from topology validation
+
+#### Quick Start
+
+```bash
+# Process a single verification FileGDB
+gcover qa process /path/to/issue.gdb
+
+# Batch process weekly verification results  
+gcover qa batch /media/marco/SANDISK/Verifications
+
+# View recent statistics
+gcover qa stats --days-back 7
+
+# Generate HTML dashboard
+gcover qa dashboard
+```
+
+#### Commands
+
+##### `gcover qa process`
+
+Process a single verification FileGDB to web formats.
+
+**Basic Usage:**
+```bash
+gcover qa process /path/to/issue.gdb
+```
+
+**Advanced Options:**
+```bash
+# With geometry simplification for complex polygons
+gcover qa process /path/to/issue.gdb --simplify-tolerance 1.0
+
+# Output both GeoParquet and GeoJSON formats
+gcover qa process /path/to/issue.gdb --format both
+
+# Local processing only (no S3 upload)
+gcover qa process /path/to/issue.gdb --no-upload
+
+# Verbose logging for debugging
+gcover qa process /path/to/issue.gdb --verbose
+```
+
+##### `gcover qa batch`
+
+Process multiple FileGDBs in a directory.
+
+```bash
+# Process all issue.gdb files
+gcover qa batch /media/marco/SANDISK/Verifications
+
+# Apply geometry simplification to all files
+gcover qa batch /path/to/verifications --simplify-tolerance 1.0
+
+# Dry run to preview what would be processed
+gcover qa batch /path/to/verifications --dry-run
+```
+
+##### `gcover qa stats`
+
+Display verification statistics from the database.
+
+```bash
+# Recent statistics (last 30 days)
+gcover qa stats
+
+# Filter by verification type and timeframe
+gcover qa stats --verification-type Topology --days-back 7
+
+# Filter by RC version
+gcover qa stats --rc-version 2030-12-31
+
+# Export results to CSV
+gcover qa stats --export-csv verification_report.csv
+```
+
+##### `gcover qa dashboard`
+
+Generate an HTML dashboard with charts and statistics.
+
+```bash
+# Create dashboard with last 90 days of data
+gcover qa dashboard
+```
+
+Opens `verification_dashboard.html` with interactive charts showing:
+- Issue counts by type (Error/Warning)
+- Top failing tests over time
+- Verification trends and statistics
+
+##### `gcover qa diagnose`
+
+Investigate FileGDB structure and identify potential issues.
+
+```bash
+# Analyze all layers
+gcover qa diagnose /path/to/issue.gdb
+
+# Focus on specific problematic layer
+gcover qa diagnose /path/to/issue.gdb --layer IssuePolygons
+```
+
+##### `gcover qa test-read`
+
+Test different reading strategies for problematic FileGDBs.
+
+```bash
+# Test reading capabilities
+gcover qa test-read /path/to/issue.gdb --layer IssuePolygons
+
+# Limit test to fewer features
+gcover qa test-read /path/to/issue.gdb --max-features 5
+```
+
+#### Configuration
+
+Uses your existing `config/gdb_config.yaml`:
+
+```yaml
+# Standard GDB configuration
+s3:
+  bucket: "swisstopo-gcover-prod"
+  profile: "gcover"
+database:
+  path: "/home/user/.config/gcover/assets.duckdb"
+temp_dir: "/tmp/gcover"
+
+# QA-specific settings (optional)
+verification:
+  layers: ["IssuePolygons", "IssueLines", "IssuePoints", "IssueStatistics"]
+  s3_prefix: "verifications/"
+  coordinate_systems:
+    source_crs: "EPSG:2056"  # Swiss LV95
+    target_crs: "EPSG:4326"  # WGS84 for web
+```
+
+**Environment Variables:**
+```bash
+export GDB_S3_BUCKET=swisstopo-gcover-prod
+export GDB_S3_PROFILE=gcover
+export GDB_DB_PATH=/home/user/.config/gcover/assets.duckdb
+export GDB_TEMP_DIR=/tmp/gcover
+```
+
+#### File Structure
+
+**Input:** ESRI FileGDB with verification results
+```
+issue.gdb/
+├── IssuePolygons    # 30,743 features (complex polygons)
+├── IssueLines       # 12,796 features  
+├── IssuePoints      # 2,273 features
+└── IssueStatistics  # 45 features (summary data)
+```
+
+**Output S3 Structure:**
+```
+s3://bucket/verifications/
+├── Topology/2030-12-31/20250718_070012/
+│   ├── IssuePolygons.parquet
+│   ├── IssueLines.parquet
+│   ├── IssuePoints.parquet
+│   └── IssueStatistics.parquet
+└── TechnicalQualityAssurance/2016-12-31/...
+```
+
+**Statistics Database:**
+- `verification_stats.duckdb` (created alongside main assets DB)
+- Tables: `gdb_summaries`, `layer_stats`, `test_stats`
+
+#### Troubleshooting
+
+##### Complex Geometry Issues
+
+If you see warnings about complex polygons or coordinate sequences:
+
+```bash
+# Apply geometry simplification (1-meter tolerance)
+gcover qa process /path/to/issue.gdb --simplify-tolerance 1.0
+
+# For very complex geometries, use higher tolerance
+gcover qa process /path/to/issue.gdb --simplify-tolerance 5.0
+```
+
+##### Reading Failures
+
+If layers can't be read:
+
+```bash
+# Diagnose the FileGDB first
+gcover qa diagnose /path/to/issue.gdb
+
+# Test reading strategies
+gcover qa test-read /path/to/issue.gdb --layer IssuePolygons
+
+# Enable verbose logging
+gcover qa process /path/to/issue.gdb --verbose
+```
+
+##### Empty Results
+
+If all layers are skipped:
+- Check that the FileGDB contains data (use `diagnose`)
+- Verify file permissions and path
+- Ensure the FileGDB isn't corrupted
+
+#### Weekly Processing Workflow
+
+Example automation script:
+
+```bash
+#!/bin/bash
+# Process new weekly verification results
+
+VERIFICATION_DIR="/media/marco/SANDISK/Verifications"
+
+# Process new files from last week
+gcover qa batch "$VERIFICATION_DIR" \
+    --pattern "**/$(date -d '7 days ago' +%Y%m%d)_*/issue.gdb"
+
+# Generate updated dashboard
+gcover qa dashboard
+
+# Export weekly report
+gcover qa stats --days-back 7 \
+    --export-csv "reports/weekly_$(date +%Y%m%d).csv"
+```
+
+
+
 ### SDE connection
 
     # Voir vos versions utilisateur
