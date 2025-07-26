@@ -477,19 +477,330 @@ gcover qa stats --days-back 7 \
 
 
 
-### SDE connection
+### SDE Connection Management
 
-    # Voir vos versions utilisateur
-    gcover sde user-versions
+The `gcover sde` command provides comprehensive tools for managing SDE (Spatial Database Engine) connections, versions, and user access.
 
-    # Lister toutes les versions de GCOVERP
-    gcover sde versions -i GCOVERP
+#### Quick Start
 
-    # Test de connexion interactif
-    gcover sde connect -i GCOVERP --interactive
+```bash
+# Find your user versions across all instances
+gcover sde user-versions
 
-    # Export JSON des versions
-    gcover sde versions -f json > versions.json
+# List all versions for a specific instance
+gcover sde versions -i GCOVERP
 
-    # Nettoyer les connexions
-    gcover sde connections --cleanup
+# Interactive connection test
+gcover sde connect -i GCOVERP --interactive
+
+# Export version information to JSON
+gcover sde versions -f json > versions.json
+
+# Clean up active connections
+gcover sde connections --cleanup
+```
+
+#### SDE Commands
+
+##### Version Management
+
+###### `gcover sde versions`
+Lists available versions on SDE instances with filtering and export options.
+
+```bash
+# List versions for specific instance(s)
+gcover sde versions -i GCOVERP
+gcover sde versions -i GCOVERP -i GCOVERQ
+
+# Show only user versions (contains your username)
+gcover sde versions --user-only
+
+# Export in different formats
+gcover sde versions --format json        # JSON export
+gcover sde versions --format csv         # CSV export  
+gcover sde versions --format table       # Table display (default)
+
+# Combine options
+gcover sde versions -i GCOVERP --user-only --format json
+```
+
+**Options:**
+- `--instance, -i`: Specify SDE instances to check (multiple allowed)
+- `--user-only, -u`: Show only versions containing your username
+- `--format, -f`: Output format (`table`, `json`, `csv`)
+
+###### `gcover sde user-versions`
+Automatically finds versions where you are the owner or that contain your username.
+
+```bash
+# Find user versions across all instances
+gcover sde user-versions
+
+# Check specific instances only
+gcover sde user-versions -i GCOVERP -i GCOVERQ
+```
+
+##### Connection Management
+
+###### `gcover sde connections`
+Lists and manages active SDE connections.
+
+```bash
+# List active connections
+gcover sde connections
+
+# List and clean up all connections
+gcover sde connections --cleanup
+```
+
+**Options:**
+- `--cleanup`: Clean up all active connections after displaying them
+
+###### `gcover sde connect`
+Test connections to SDE instances with interactive version selection.
+
+```bash
+# Quick connection test (uses SDE.DEFAULT)
+gcover sde connect -i GCOVERP
+
+# Interactive version selection
+gcover sde connect -i GCOVERP --interactive
+```
+
+**Options:**
+- `--instance, -i`: SDE instance to connect to (required)
+- `--interactive`: Enable interactive version selection menu
+
+#### Output Examples
+
+##### Version Listing
+```
+🔍 Vérification instance: GCOVERP
+
+📊 GCOVERP
+============================================================
+Version                     Parent      Status
+-----------------------------------------------------------------------------------
+SDE.DEFAULT                 -           -
+GCOVERP.RC_2016-12-31      SDE.DEFAULT  ✏️ Writable
+USER.MYVERSION_20250726    SDE.DEFAULT  👤 Owner ✏️ Writable ⭐ User
+```
+
+##### User Versions
+```
+👤 Recherche versions pour utilisateur: MYUSER
+
+📁 GCOVERP:
+  • USER.MYVERSION_20250726 (✏️ Writable)
+  • USER.BACKUP_20250720 (👁️ Read-only)
+```
+
+##### Active Connections
+```
+🔗 2 connexion(s) active(s):
+Instance    Version                Path
+--------------------------------------------------------------------------
+GCOVERP     SDE.DEFAULT           /tmp/gcover_GCOVERP_DEFAULT.sde
+GCOVERP     USER.MYVERSION        /tmp/gcover_GCOVERP_MYVERSION.sde
+```
+
+# Schema Management
+
+The `gcover schema` command provides tools for extracting, comparing, and documenting database schemas from GDB files and SDE connections.
+
+## Quick Start
+
+```bash
+# Extract schema from GDB to JSON
+gcover schema extract /path/to/data.gdb -o ./schemas -n myschema
+
+# Generate PlantUML diagram
+gcover schema diagram schema.json -o schema.puml
+
+# Compare two schemas
+gcover schema diff old_schema.json new_schema.json -o changes.json
+
+# Generate documentation
+gcover schema report schema.json -o documentation.html
+```
+
+#### Schema Commands
+
+##### `gcover schema extract`
+Extracts schema information from GDB files or SDE connections.
+
+```bash
+# Basic extraction
+gcover schema extract /path/to/geodatabase.gdb
+
+# Specify output directory and name
+gcover schema extract /path/to/data.gdb -o ./schemas -n production_schema
+
+# Multiple output formats
+gcover schema extract /path/to/data.gdb -f json -f html -f xml
+
+# Filter by table prefix
+gcover schema extract /path/to/data.gdb --filter-prefix GCOVER
+
+# Remove prefix from table names in output
+gcover schema extract /path/to/data.gdb --filter-prefix GCOVER --remove-prefix
+```
+
+**Arguments:**
+- `SOURCE`: Path to GDB file or SDE connection file
+
+**Options:**
+- `--output, -o`: Output directory for schema files
+- `--name, -n`: Name for the generated schema files
+- `--format, -f`: Output formats (`json`, `html`, `xml`) - multiple allowed
+- `--filter-prefix`: Include only tables with this prefix
+- `--remove-prefix/--keep-prefix`: Remove prefix from table names (default: keep)
+
+##### `gcover schema diagram`
+Generates PlantUML diagrams from schema JSON files.
+
+```bash
+# Basic diagram generation
+gcover schema diagram schema.json -o database_diagram.puml
+
+# Customize diagram
+gcover schema diagram schema.json -o diagram.puml --title "GeoCover Schema"
+
+# Simplified diagram (no field details)
+gcover schema diagram schema.json -o simple.puml --no-fields
+
+# Exclude relationships
+gcover schema diagram schema.json -o tables_only.puml --no-relationships
+
+# Include only specific tables
+gcover schema diagram schema.json -o filtered.puml -f GCOVER_POINTS -f GCOVER_LINES
+```
+
+**Arguments:**
+- `JSON_FILE`: Path to schema JSON file
+
+**Options:**
+- `--output, -o`: Output PlantUML file (required)
+- `--title`: Diagram title (default: "Database Schema")
+- `--no-fields`: Exclude field details from diagram
+- `--no-relationships`: Exclude relationships from diagram
+- `--filter, -f`: Include only specified tables (multiple allowed)
+
+##### `gcover schema diff`
+Compares two schemas and generates difference reports.
+
+```bash
+# Basic schema comparison
+gcover schema diff old_schema.json new_schema.json
+
+# Save diff report
+gcover schema diff v1.json v2.json -o changes.json
+
+# Different output formats
+gcover schema diff v1.json v2.json -o changes.html --format html
+gcover schema diff v1.json v2.json -o changes.md --format markdown
+```
+
+**Arguments:**
+- `OLD_SCHEMA`: Path to older schema JSON file
+- `NEW_SCHEMA`: Path to newer schema JSON file
+
+**Options:**
+- `--output, -o`: Output file for diff report
+- `--format`: Output format (`json`, `html`, `markdown`)
+
+##### `gcover schema report`
+Generates documentation from schema files.
+
+```bash
+# Generate HTML documentation
+gcover schema report schema.json -o documentation.html
+
+# Different report templates
+gcover schema report schema.json -t datamodel -o datamodel.html
+gcover schema report schema.json -t summary -o summary.html
+gcover schema report schema.json -t full -o complete_doc.html
+
+# Different output formats
+gcover schema report schema.json -o doc.md --format markdown
+gcover schema report schema.json -o doc.pdf --format pdf
+```
+
+**Arguments:**
+- `SCHEMA_FILE`: Path to schema JSON file
+
+**Options:**
+- `--template, -t`: Report template (`datamodel`, `summary`, `full`)
+- `--output, -o`: Output file (required)
+- `--format`: Output format (`html`, `markdown`, `pdf`)
+
+#### Typical Workflows
+
+##### Schema Documentation Workflow
+```bash
+# 1. Extract schema from production GDB
+gcover schema extract /path/to/production.gdb -o ./schemas -n prod_v2.1
+
+# 2. Generate visual diagram
+gcover schema diagram schemas/prod_v2.1.json -o docs/schema_diagram.puml --title "Production Schema v2.1"
+
+# 3. Generate comprehensive documentation
+gcover schema report schemas/prod_v2.1.json -t full -o docs/schema_doc.html
+```
+
+##### Schema Change Tracking
+```bash
+# 1. Extract current schema
+gcover schema extract /path/to/current.gdb -n current
+
+# 2. Compare with previous version  
+gcover schema diff schemas/previous.json schemas/current.json -o changes.json
+
+# 3. Generate change report
+gcover schema report changes.json -t summary -o change_summary.html
+```
+
+##### Multi-Instance Schema Comparison
+```bash
+# Extract from different SDE instances
+gcover schema extract gcoverp_connection.sde -n gcoverp_prod
+gcover schema extract gcoverq_connection.sde -n gcoverq_prod
+
+# Compare schemas between instances
+gcover schema diff gcoverp_prod.json gcoverq_prod.json -o instance_diff.json
+```
+
+#### Requirements
+
+The `gcover schema` commands require **arcpy** for schema extraction from GDB files and SDE connections. Ensure you have ArcGIS Pro installed and properly configured.
+
+```bash
+# Check if arcpy is available
+python -c "import arcpy; print('arcpy available')"
+```
+
+If arcpy is not available, you'll see:
+```
+❌ This command requires arcpy
+```
+
+#### Output Files
+
+##### Schema JSON Structure
+```json
+{
+  "metadata": {
+    "source": "/path/to/data.gdb",
+    "extracted_at": "2025-07-26T10:30:00",
+    "total_tables": 15
+  },
+  "tables": [
+    {
+      "name": "GCOVER_POINTS",
+      "type": "FeatureClass", 
+      "geometry_type": "Point",
+      "fields": [...]
+    }
+  ]
+}
+```
