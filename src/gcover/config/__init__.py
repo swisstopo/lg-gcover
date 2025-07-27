@@ -6,6 +6,7 @@ from .core import ConfigManager, load_config, BaseConfig
 from .gdb import GDBConfig
 from .sde import SDEConfig
 from .schema import SchemaConfig
+from .qa import QAConfig
 
 __all__ = [
     'ConfigManager',
@@ -13,5 +14,6 @@ __all__ = [
     'BaseConfig',
     'GDBConfig',
     'SDEConfig',
-    'SchemaConfig'
+    'SchemaConfig',
+    'QAConfig'
 ]

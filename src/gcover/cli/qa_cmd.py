@@ -14,7 +14,26 @@ from rich.console import Console
 from rich.table import Table
 import pandas as pd
 
+from gcover.config import load_config, GDBConfig, SDEConfig, SchemaConfig, QAConfig # TODO
+
 console = Console()
+
+
+def get_qa_config(ctx):
+    """Helper to get QA configuration with global S3 settings"""
+    config_manager = ctx.obj["config_manager"]
+
+    # Try to get QA-specific config, fall back to GDB config
+    try:
+        qa_config = config_manager.get_config("qa")
+    except ValueError:
+        # QA config not available, use GDB config as fallback
+        qa_config = config_manager.get_config("gdb")
+
+    global_config = config_manager.get_global_config()
+
+    return qa_config, global_config
+
 
 
 @click.group()
@@ -25,47 +44,13 @@ def qa():
 
 @qa.command()
 @click.argument("gdb_path", type=click.Path(exists=True, path_type=Path))
-@click.option(
-    "--output-dir",
-    "-o",
-    type=click.Path(path_type=Path),
-    help="Output directory for converted files",
-)
-@click.option(
-    "--config-file",
-    "-c",
-    type=click.Path(exists=True, path_type=Path),
-    help="Configuration file path",
-)
-@click.option(
-    "--environment",
-    "-e",
-    default="development",
-    help="Environment (development/production)",
-)
+@click.option("--output-dir", "-o", type=click.Path(path_type=Path))
 @click.option("--no-upload", is_flag=True, help="Skip S3 upload")
-@click.option(
-    "--format",
-    type=click.Choice(["geoparquet", "geojson", "both"]),
-    default="geoparquet",
-    help="Output format for spatial layers",
-)
-@click.option(
-    "--simplify-tolerance",
-    type=float,
-    help="Tolerance for geometry simplification (e.g., 1.0 for 1 meter). Use this for very complex geometries.",
-)
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
-def process(
-    gdb_path: Path,
-    output_dir: Optional[Path],
-    config_file: Optional[Path],
-    environment: str,
-    no_upload: bool,
-    format: str,
-    simplify_tolerance: Optional[float],
-    verbose: bool,
-):
+@click.option("--format", type=click.Choice(["geoparquet", "geojson", "both"]), default="geoparquet")
+@click.option("--simplify-tolerance", type=float)
+@click.pass_context
+def process(ctx, gdb_path: Path, output_dir: Optional[Path], no_upload: bool,
+           format: str, simplify_tolerance: Optional[float]):
     """
     Process a single verification FileGDB.
 
@@ -82,29 +67,48 @@ def process(
         # Verbose output for debugging
         gcover verification process /path/to/issue.gdb --verbose
     """
-    from ..gdb.config import load_config
-    from ..gdb.qa_converter import FileGDBConverter
-    import logging
-
-    if verbose:
-        logging.basicConfig(level=logging.DEBUG)
-        console.print("[dim]Verbose logging enabled[/dim]")
-
+    # from ..gdb.config import load_config TODO
     try:
-        config = load_config(config_file, environment)
-    except FileNotFoundError as e:
+        qa_config, global_config = get_qa_config(ctx)
+
+        # Get S3 settings from global config
+        s3_bucket = qa_config.get_s3_bucket(global_config)
+        s3_profile = qa_config.get_s3_profile(global_config)
+
+    except Exception as e:
         console.print(f"[red]Configuration error: {e}[/red]")
-        console.print("Create a configuration file or set environment variables:")
-        console.print("  GDB_S3_BUCKET, GDB_S3_PROFILE, GDB_DB_PATH, GDB_TEMP_DIR")
+        console.print("Make sure your configuration includes global S3 settings:")
+        console.print("  global.s3.bucket, global.s3.profile")
         raise click.Abort()
 
-    if simplify_tolerance:
-        console.print(
-            f"[yellow]⚠️  Geometry simplification enabled (tolerance: {simplify_tolerance})[/yellow]"
-        )
-        console.print("This will reduce geometry complexity but may affect precision.")
+    if verbose:
+        console.print(f"[dim]S3 Bucket: {s3_bucket}[/dim]")
+        console.print(f"[dim]S3 Profile: {s3_profile or 'default'}[/dim]")
 
-    converter = FileGDBConverter(config=config)
+    if simplify_tolerance:
+            console.print(
+                f"[yellow]⚠️  Geometry simplification enabled (tolerance: {simplify_tolerance})[/yellow]"
+            )
+            console.print("This will reduce geometry complexity but may affect precision.")
+
+            # Import and use the QA converter
+    from ..gdb.qa_converter import FileGDBConverter
+
+    # Create a temporary config object that includes S3 settings for the converter
+    # (This assumes your FileGDBConverter expects s3_bucket and s3_profile attributes)
+    class ConfigWrapper:
+        def __init__(self, qa_config, global_config):
+            # Copy QA config attributes
+            for attr in ['db_path', 'temp_dir', 'max_workers']:
+                if hasattr(qa_config, attr):
+                    setattr(self, attr, getattr(qa_config, attr))
+
+            # Add S3 settings from global config
+            self.s3_bucket = global_config.s3.bucket
+            self.s3_profile = global_config.s3.profile
+
+    config_wrapper = ConfigWrapper(qa_config, global_config)
+    converter = FileGDBConverter(config=config_wrapper)
 
     try:
         summary = converter.process_gdb(
@@ -114,6 +118,11 @@ def process(
             output_format=format,
             simplify_tolerance=simplify_tolerance,
         )
+
+        # Display summary
+        console.print(f"\n[green]✅ Processing complete![/green]")
+        console.print(f"S3 Bucket: {s3_bucket}")
+        console.print(f"Total Features: {summary.total_features:,}")
 
         # Display summary
         console.print(f"\n[green]✅ Processing complete![/green]")
@@ -358,7 +367,8 @@ def test_read(gdb_path: Path, layer: str, max_features: int):
         gcover verification test-read /path/to/issue.gdb --layer IssuePolygons
     """
     from ..gdb.qa_converter import FileGDBConverter
-    from ..gdb.config import load_config
+    # from ..gdb.config import load_config TODO
+    from ...config import load_config, GDBConfig, SDEConfig, SchemaConfig
 
     console.print(f"[bold blue]🧪 Testing read strategies for:[/bold blue] {gdb_path}")
     console.print(f"[dim]Layer: {layer}, Max features: {max_features}[/dim]")
@@ -475,7 +485,8 @@ def batch(
         gcover verification batch /media/marco/SANDISK/Verifications
         gcover verification batch /path/to/verifications --simplify-tolerance 1.0
     """
-    from ..gdb.config import load_config
+    # from ..gdb.config import load_config TODO
+    from ...config import load_config, GDBConfig, SDEConfig, SchemaConfig
     from ..gdb.qa_converter import FileGDBConverter
 
     try:
@@ -600,7 +611,8 @@ def batch(
     Example:
         gcover verification batch /media/marco/SANDISK/Verifications
     """
-    from ..gdb.config import load_config
+    # from ..gdb.config import load_config TODO
+    from ...config import load_config, GDBConfig, SDEConfig, SchemaConfig
     from ..gdb.qa_converter import FileGDBConverter
 
     try:
@@ -704,7 +716,8 @@ def stats(
     Example:
         gcover verification stats --verification-type Topology --days-back 7
     """
-    from ..gdb.config import load_config
+    # from ..gdb.config import load_config TODO
+    from ...config import load_config, GDBConfig, SDEConfig, SchemaConfig
     from ..gdb.qa_converter import FileGDBConverter
     from ..core.config import convert_rc, get_all_rcs
 
@@ -816,7 +829,8 @@ def dashboard(config_file: Optional[Path], environment: str):
 
     Creates a local HTML file with charts and statistics.
     """
-    from ..gdb.config import load_config
+    # from ..gdb.config import load_config TODO
+    from ...config import load_config, GDBConfig, SDEConfig, SchemaConfig
     from ..gdb.qa_converter import FileGDBConverter
 
     try:

@@ -19,7 +19,8 @@ from rich import print as rprint
 
 from gcover.gdb.manager import GDBAssetManager
 from gcover.gdb.storage import S3Uploader, MetadataDB
-from gcover.gdb.config import  load_config
+# from gcover.gdb.config import  load_config TODO
+from gcover.config import load_config, GDBConfig, SDEConfig, SchemaConfig
 from gcover.gdb.assets import (
     GDBAsset,
     BackupGDBAsset,

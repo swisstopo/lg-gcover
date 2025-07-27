@@ -1,6 +1,6 @@
 # src/gcover/config/core.py
 """
-Core configuration management system
+Core configuration management system with global S3 settings
 """
 import os
 import yaml
@@ -11,14 +11,13 @@ from dataclasses import dataclass
 
 T = TypeVar('T', bound='BaseConfig')
 
-
 class BaseConfig(ABC):
     """Base class for all module configurations"""
 
     @classmethod
     @abstractmethod
-    def from_dict(cls: Type[T], data: Dict[str, Any]) -> T:
-        """Create config instance from dictionary"""
+    def from_dict(cls: Type[T], data: Dict[str, Any], global_config: 'GlobalConfig' = None) -> T:
+        """Create config instance from dictionary with optional global config"""
         pass
 
     @classmethod
@@ -34,23 +33,45 @@ class BaseConfig(ABC):
 
 
 @dataclass
+class S3Config:
+    """S3 configuration settings"""
+    bucket: str
+    profile: Optional[str] = None
+    region: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'S3Config':
+        return cls(
+            bucket=data['bucket'],
+            profile=data.get('profile'),
+            region=data.get('region')
+        )
+
+
+@dataclass
 class GlobalConfig:
-    """Global configuration settings"""
+    """Global configuration settings with S3"""
     log_level: str = "INFO"
     temp_dir: Path = Path("/tmp/gcover")
     max_workers: int = 4
+    s3: S3Config = None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'GlobalConfig':
+        s3_config = None
+        if 's3' in data:
+            s3_config = S3Config.from_dict(data['s3'])
+
         return cls(
             log_level=data.get('log_level', 'INFO'),
             temp_dir=Path(data.get('temp_dir', '/tmp/gcover')),
-            max_workers=data.get('max_workers', 4)
+            max_workers=data.get('max_workers', 4),
+            s3=s3_config
         )
 
 
 class ConfigManager:
-    """Central configuration manager"""
+    """Central configuration manager with global S3 support"""
 
     def __init__(self):
         self._config_classes: Dict[str, Type[BaseConfig]] = {}
@@ -63,24 +84,27 @@ class ConfigManager:
         self._config_classes[section_name] = config_class
 
     def load_config(
-            self,
-            config_path: Optional[Path] = None,
-            environment: str = "development"
+        self,
+        config_path: Optional[Path] = None,
+        environment: str = "development"
     ) -> None:
         """Load configuration from YAML file"""
         config_data = self._load_yaml_config(config_path, environment)
 
-        # Load global config
+        # Load global config first (includes S3)
         global_data = config_data.get('global', {})
         self._apply_env_overrides(global_data, 'GCOVER_GLOBAL_')
         self._global_config = GlobalConfig.from_dict(global_data)
 
-        # Load module configs
+        # Load module configs (pass global config for S3 access)
         for section_name, config_class in self._config_classes.items():
             if section_name in config_data:
                 module_data = config_data[section_name].copy()
                 self._apply_env_overrides(module_data, config_class.get_env_prefix())
-                self._loaded_configs[section_name] = config_class.from_dict(module_data)
+                # Pass global config to module configs
+                self._loaded_configs[section_name] = config_class.from_dict(
+                    module_data, self._global_config
+                )
 
     def get_config(self, section_name: str) -> BaseConfig:
         """Get configuration for a specific section"""
@@ -95,9 +119,9 @@ class ConfigManager:
         return self._global_config
 
     def _load_yaml_config(
-            self,
-            config_path: Optional[Path],
-            environment: str
+        self,
+        config_path: Optional[Path],
+        environment: str
     ) -> Dict[str, Any]:
         """Load and merge YAML configuration"""
         if config_path is None:
@@ -135,7 +159,6 @@ class ConfigManager:
 
     def _is_environment_config(self, config: Dict[str, Any], environment: str) -> bool:
         """Check if config section is for the target environment"""
-        # Look for environment indicators in the config
         env_keys = ['environment', 'env', '_environment']
         for key in env_keys:
             if key in config and config[key] == environment:
@@ -145,7 +168,7 @@ class ConfigManager:
     def _merge_configs(self, base: Dict[str, Any], override: Dict[str, Any]) -> None:
         """Recursively merge configuration dictionaries"""
         for key, value in override.items():
-            if key.startswith('_'):  # Skip meta keys like _environment
+            if key.startswith('_'):  # Skip meta keys
                 continue
             if key in base and isinstance(base[key], dict) and isinstance(value, dict):
                 self._merge_configs(base[key], value)
@@ -156,15 +179,14 @@ class ConfigManager:
         """Apply environment variable overrides"""
         for env_var, value in os.environ.items():
             if env_var.startswith(prefix):
-                # Convert ENV_VAR_NAME to nested config path
                 config_path = env_var[len(prefix):].lower().split('_')
                 self._set_nested_value(config, config_path, value)
 
     def _set_nested_value(
-            self,
-            config: Dict[str, Any],
-            path: list,
-            value: str
+        self,
+        config: Dict[str, Any],
+        path: list,
+        value: str
     ) -> None:
         """Set a nested configuration value"""
         current = config
@@ -180,8 +202,8 @@ _config_manager = ConfigManager()
 
 
 def load_config(
-        config_path: Optional[Path] = None,
-        environment: str = "development"
+    config_path: Optional[Path] = None,
+    environment: str = "development"
 ) -> ConfigManager:
     """Load configuration and return manager instance"""
     _config_manager.load_config(config_path, environment)
@@ -191,4 +213,3 @@ def load_config(
 def get_config_manager() -> ConfigManager:
     """Get the global configuration manager"""
     return _config_manager
-

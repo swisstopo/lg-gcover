@@ -6,6 +6,9 @@ global:
   log_level: INFO
   temp_dir: /tmp/gcover
   max_workers: 4
+  s3:
+    bucket: "gcover-assets-dev"
+    profile: "default"  # AWS profile name
 
 # GDB Asset Management configuration
 gdb:
