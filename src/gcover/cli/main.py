@@ -19,20 +19,55 @@ except ImportError:
     HAS_ARCPY = False
 
 
+
+
+
 @click.group()
 @click.version_option(version=__version__, prog_name="gcover")
+@click.option(
+    "--config", "-c",
+    type=click.Path(exists=True),
+    help="Configuration file path"
+)
+@click.option(
+    "--env", "-e",
+    type=click.Choice(["development", "dev", "production", "prod"]),
+    default="development",
+    help="Environment (dev/prod)"
+)
+@click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 @click.pass_context
-def cli(ctx):
-    """
-    gcover - Geological vector data management tool.
-
-    A comprehensive toolkit for working with geological vector data,
-    providing bridge functionality between GeoPandas and ESRI formats,
-    schema management, quality assurance, and geodatabase management.
-    """
-    # Contexte global si nécessaire
+def cli(ctx, config, env, verbose):
+    """gcover - Swiss GeoCover data processing toolkit"""
     ctx.ensure_object(dict)
     ctx.obj["has_arcpy"] = HAS_ARCPY
+
+    # Normalize environment name
+    environment = "production" if env in ["prod", "production"] else "development"
+
+    try:
+        # Load centralized configuration
+        config_manager = load_config(
+            config_path=Path(config) if config else None,
+            environment=environment
+        )
+
+        ctx.obj["config_manager"] = config_manager
+        ctx.obj["environment"] = environment
+        ctx.obj["verbose"] = verbose
+
+        if verbose:
+            global_config = config_manager.get_global_config()
+            rprint(f"[cyan]Environment: {environment}[/cyan]")
+            rprint(f"[cyan]Log Level: {global_config.log_level}[/cyan]")
+            rprint(f"[cyan]Temp Dir: {global_config.temp_dir}[/cyan]")
+
+    except Exception as e:
+        rprint(f"[red]Configuration error: {e}[/red]")
+        if verbose:
+            import traceback
+            rprint(f"[red]{traceback.format_exc()}[/red]")
+        sys.exit(1)
 
 
 @cli.command()
