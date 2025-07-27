@@ -7,7 +7,22 @@ from ..schema import SchemaDiff, extract_schema, transform_esri_json
 from ..schema.exporters.plantuml import generate_plantuml_from_schema
 
 # TODO
-from gcover.config import load_config, AppConfig
+from gcover.config import load_config, AppConfig, SchemaConfig
+
+
+def get_schema_configs(ctx) -> tuple[SchemaConfig, GlobalConfig]:
+    """Get schema and global configs from context"""
+    app_config: AppConfig = ctx.obj["app_config"]
+
+    if app_config.schema_config:  # 🔧 Updated field name
+        schema_config = app_config.schema_config
+    else:
+        rprint("[yellow]No schema config found[/yellow]")
+        # You could create a default or raise an error
+        from ..config.models import SchemaConfig
+        schema_config = SchemaConfig()  # Use defaults
+
+    return schema_config, app_config.global_
 
 
 @click.group()
@@ -40,9 +55,17 @@ def extract(source, output, name, format, filter_prefix, remove_prefix):
     click.echo(f"Extracting schema from {source}...")
 
     try:
+        schema_config, global_config = get_schema_configs(ctx)
+
+        # Use config defaults if not specified
+        output_dir = Path(output) if output else schema_config.output_dir
+        formats = list(format) if format else schema_config.default_formats
+
+        rprint(f"Extracting schema from {source}...")
+
         schema = extract_schema(
             source=source,
-            output_dir=Path(output) if output else None,
+            output_dir=output_dir,
             name=name,
             formats=list(format),
         )
@@ -54,9 +77,14 @@ def extract(source, output, name, format, filter_prefix, remove_prefix):
 
         click.secho("✅ Schema extracted successfully", fg="green")
 
+        # Your extraction logic here
+        rprint("✅ Schema extracted successfully")
+        rprint(f"Output directory: {output_dir}")
+
     except Exception as e:
-        click.secho(f"❌ Error: {e}", fg="red")
+        rprint(f"❌ Error: {e}")
         raise click.Abort()
+
 
 
 @schema.command()

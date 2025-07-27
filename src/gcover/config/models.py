@@ -177,11 +177,11 @@ class QAConfig(BaseModel):
 
 
 class AppConfig(BaseModel):
-    """Main application configuration - this is the root config"""
+    """Main application configuration - FIXED schema field conflict"""
     global_: GlobalConfig = Field(alias="global")
     gdb: GDBConfig
     sde: Optional[SDEConfig] = None
-    schema: Optional[SchemaConfig] = None
+    schema_config: Optional[SchemaConfig] = Field(None, alias="schema")  # 🔧 FIX: Use alias
     qa: Optional[QAConfig] = None
 
     class Config:
