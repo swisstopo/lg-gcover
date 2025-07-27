@@ -5,6 +5,7 @@ Main CLI entry point for gcover.
 
 import sys
 from pathlib import Path
+from rich import print as rprint
 
 import click
 
@@ -18,7 +19,9 @@ except ImportError:
     __version__ = "unknown"
     HAS_ARCPY = False
 
+# from ..config import load_config
 
+from gcover.config import load_config, AppConfig
 
 
 

@@ -13,7 +13,8 @@ __version__ = "0.1.0"
 from gcover._version import __version__
 
 # Import des modules principaux pour un accès facile
-from .core.config import Config
+#from .core.config import Config
+
 
 # TODO
 from .schema.models import ESRISchema
@@ -22,7 +23,7 @@ from .utils.imports import HAS_ARCPY
 # Définir ce qui est exporté avec "from gcover import *"
 __all__ = [
     "__version__",
-    "Config",
+   # TODO  "Config",
     "HAS_ARCPY",
 ]
 

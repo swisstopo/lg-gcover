@@ -6,6 +6,9 @@ import click
 from ..schema import SchemaDiff, extract_schema, transform_esri_json
 from ..schema.exporters.plantuml import generate_plantuml_from_schema
 
+# TODO
+from gcover.config import load_config, AppConfig
+
 
 @click.group()
 def schema():

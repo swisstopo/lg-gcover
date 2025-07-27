@@ -14,7 +14,7 @@ from rich.console import Console
 from rich.table import Table
 import pandas as pd
 
-from gcover.config import load_config, GDBConfig, SDEConfig, SchemaConfig, QAConfig # TODO
+from gcover.config import load_config, AppConfig # TODO
 
 console = Console()
 

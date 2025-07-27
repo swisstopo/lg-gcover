@@ -7,6 +7,8 @@ from typing import List
 from ..sde import SDEConnectionManager
 from ..config import SDE_INSTANCES  # Si vous avez un fichier config
 
+from gcover.config import load_config, AppConfig  # TODO
+
 
 @click.group(name="sde")
 def sde_commands():

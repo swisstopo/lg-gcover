@@ -1,19 +1,13 @@
 # src/gcover/config/__init__.py
 """
-Centralized configuration management for gcover
+Unified configuration system using Pydantic
+Consolidates all previous config approaches into one clean system
 """
-from .core import ConfigManager, load_config, BaseConfig
-from .gdb import GDBConfig
-from .sde import SDEConfig
-from .schema import SchemaConfig
-from .qa import QAConfig
+from .models import AppConfig, GlobalConfig, GDBConfig, SDEConfig, QAConfig, S3Config
+from .loader import load_config, get_config
 
 __all__ = [
-    'ConfigManager',
-    'load_config',
-    'BaseConfig',
-    'GDBConfig',
-    'SDEConfig',
-    'SchemaConfig',
-    'QAConfig'
+    'AppConfig', 'GlobalConfig', 'GDBConfig', 'SDEConfig', 'QAConfig', 'S3Config',
+    'load_config', 'get_config'
 ]
+
