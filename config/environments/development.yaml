@@ -2,13 +2,14 @@
 _environment: development
 
 global:
-log_level: DEBUG
+  log_level: DEBUG
 
 gdb:
-s3:
-bucket: "gcover-assets-dev"
+  processing:
+    compression_level: 2
+
 
 database:
-path: "data/dev_gdb_metadata.duckdb"
+  path: "data/dev_gdb_metadata.duckdb"
 
 # Development-specific SDE instances could go here if different

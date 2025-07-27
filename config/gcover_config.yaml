@@ -16,11 +16,6 @@ gdb:
     backup: "/media/marco/SANDISK/GCOVER"
     verification: "/media/marco/SANDISK/Verifications"
     increment: "/media/marco/SANDISK/Increment"
-
-  s3:
-    bucket: "gcover-assets-dev"
-    profile: "default"  # AWS profile name
-
   database:
     path: "data/dev_gdb_metadata.duckdb"
 
