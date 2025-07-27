@@ -16,8 +16,7 @@ gdb:
     backup: "/media/marco/SANDISK/GCOVER"
     verification: "/media/marco/SANDISK/Verifications"
     increment: "/media/marco/SANDISK/Increment"
-  database:
-    path: "data/dev_gdb_metadata.duckdb"
+  db_path: "data/dev_gdb_metadata.duckdb"
 
   temp_dir: "/tmp/gcover/gdb"
 

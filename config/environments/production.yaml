@@ -13,8 +13,7 @@ gdb:
     compression_level: 6
 
 
-database:
-  path: "data/prod_gdb_metadata.duckdb"
+db_path: "data/prod_gdb_metadata.duckdb"
 
   processing:
     compression_level: 9
