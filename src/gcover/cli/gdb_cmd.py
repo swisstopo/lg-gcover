@@ -309,7 +309,7 @@ def search(ctx, search_term, download, output_dir):
     """Search for GDB assets"""
 
 
-    gdb_config, global_config, environment, verbose = get_gdb_config(ctx)
+    gdb_config, global_config, environment, verbose = get_config(ctx)
 
     try:
         db = MetadataDB(gdb_config.db_path)
@@ -374,7 +374,7 @@ def search(ctx, search_term, download, output_dir):
 @click.pass_context
 def status(ctx):
     """Show system status and statistics"""
-    gdb_config, global_config, environment, verbose = get_gdb_config(ctx)
+    gdb_config, global_config, environment, verbose = get_configs(ctx)
 
     try:
         db = MetadataDB(gdb_config.db_path)
@@ -438,7 +438,7 @@ def status(ctx):
 @click.pass_context
 def process(ctx, gdb_path):
     """Process a single GDB asset"""
-    gdb_config, global_config, environment, verbose = get_gdb_config(ctx)
+    gdb_config, global_config, environment, verbose = get_configs(ctx)
 
     try:
         # Get S3 settings from global config
