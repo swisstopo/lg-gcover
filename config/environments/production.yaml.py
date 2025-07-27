@@ -1,0 +1,36 @@
+# Production environment overrides
+_environment: production
+
+global:
+log_level: WARNING
+max_workers: 8
+
+gdb:
+s3:
+bucket: "gcover-assets-prod"
+profile: "production"
+
+database:
+path: "data/prod_gdb_metadata.duckdb"
+
+processing:
+compression_level: 9
+max_workers: 8
+
+sde:
+instances:
+GCOVERP:
+host: "sde-prod.example.com"
+port: 5151
+database: "GCOVERP"
+
+GCOVERQ:
+host: "sde-prod.example.com"
+port: 5151
+database: "GCOVERQ"
+
+connection_timeout: 60
+
+schema:
+output_dir: "/var/lib/gcover/schemas"
+max_diagram_tables: 100
