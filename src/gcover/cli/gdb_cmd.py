@@ -31,13 +31,16 @@ from gcover.gdb.assets import (
     ReleaseCandidate,
 )
 
+from loguru import logger
+
 
 console = Console()
 
 
 
 def get_configs(ctx) -> tuple[GDBConfig, GlobalConfig, str, bool]:
-    app_config: AppConfig =  load_config()   #ctx.obj["app_config"]
+    app_config: AppConfig =  load_config(environment=ctx.obj["environment"])   #ctx.obj["app_config"]
+    logger.info(f"env: {ctx.obj['environment']}")
     return (
         app_config.gdb,
         app_config.global_,
@@ -190,7 +193,7 @@ def sync(ctx, dry_run):
             if verbose:
                 rprint(f"[dim]Environment: {environment}[/dim]")
                 rprint(f"[dim]S3 Bucket: {s3_bucket}[/dim]")
-                rprint(f"[dim]Workers: {gdb_config.max_workers}[/dim]")
+                rprint(f"[dim]Workers: {gdb_config.processing.max_workers}[/dim]")
 
             stats = manager.sync_all()
 
@@ -423,8 +426,8 @@ def status(ctx):
         if verbose:
             rprint(f"\n[dim]Configuration Details:[/dim]")
             rprint(f"[dim]  Log Level: {global_config.log_level}[/dim]")
-            rprint(f"[dim]  Max Workers: {gdb_config.max_workers}[/dim]")
-            rprint(f"[dim]  Compression: {gdb_config.compression_level}[/dim]")
+            rprint(f"[dim]  Max Workers: {gdb_config.processing.max_workers}[/dim]")
+            rprint(f"[dim]  Compression: {gdb_config.processing.compression_level}[/dim]")
             rprint(f"[dim]  Temp Dir: {gdb_config.temp_dir}[/dim]")
             rprint(f"[dim]  S3 Profile: {global_config.s3.profile or 'default'}[/dim]")
 

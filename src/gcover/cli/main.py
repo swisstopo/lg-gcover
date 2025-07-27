@@ -51,23 +51,21 @@ def cli(ctx, config, env, verbose):
 
     try:
         # Load centralized configuration
-        app_config: AppConfig = load_config()
+        app_config: AppConfig = load_config(environment=environment)
 
-        '''config_manager = load_config(
-            config_path=Path(config) if config else None,
-            environment=environment
-        )'''
 
         # ctx.obj["config_manager"] = config_manager
         ctx.obj["environment"] = environment
         ctx.obj["verbose"] = verbose
 
+
         if verbose:
-            #global_config = config_manager.get_global_config()
             global_config = app_config.global_
             rprint(f"[cyan]Environment: {environment}[/cyan]")
             rprint(f"[cyan]Log Level: {global_config.log_level}[/cyan]")
+            rprint(f"[cyan]Bucket name: {global_config.s3.bucket}[/cyan]")
             rprint(f"[cyan]Temp Dir: {global_config.temp_dir}[/cyan]")
+            rprint(f"[cyan]Has arcpy: {HAS_ARCPY}[/cyan]")
 
     except Exception as e:
         rprint(f"[red]Configuration error: {e}[/red]")

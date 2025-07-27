@@ -21,6 +21,7 @@ class ConfigManager:
         environment: str = "development"
     ) -> AppConfig:
         """Load configuration with separate environment files"""
+        print(f"Environment: {environment}")
 
         # 1. Load base configuration
         base_config_data = self._load_base_config(config_path)

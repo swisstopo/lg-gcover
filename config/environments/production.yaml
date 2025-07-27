@@ -3,7 +3,8 @@
 global:
   log_level: WARNING
   s3:
-    bucket: "gcover-assets-prod"
+    bucket: "terraform-gdb-upload-wqbnop"
+    profile: "gcover_bucket"
 
 gdb:
   processing:
