@@ -1,12 +1,21 @@
 # Development environment overrides
-_environment: development
+
 
 global:
   log_level: DEBUG
+  s3:
+    bucket: "gcover-assets-dev"
+    profile: "gcover_bucket"  # AWS profile name
+
+
+
 
 gdb:
-  processing:
-    compression_level: 2
+  base_paths:
+    backup: "/home/marco/DATA/GCOVER"
+    verification: "/home/marco/DATA/Verifications"
+    increment: "/home/marco/DATA/Increment"
+  db_path: "data/dev_gdb_metadata.duckdb"
 
 
 db_path: "data/dev_gdb_metadata.duckdb"

@@ -25,6 +25,7 @@ from gcover.config import load_config, AppConfig
 
 
 
+
 @click.group()
 @click.version_option(version=__version__, prog_name="gcover")
 @click.option(
@@ -50,17 +51,20 @@ def cli(ctx, config, env, verbose):
 
     try:
         # Load centralized configuration
-        config_manager = load_config(
+        app_config: AppConfig = load_config()
+
+        '''config_manager = load_config(
             config_path=Path(config) if config else None,
             environment=environment
-        )
+        )'''
 
-        ctx.obj["config_manager"] = config_manager
+        # ctx.obj["config_manager"] = config_manager
         ctx.obj["environment"] = environment
         ctx.obj["verbose"] = verbose
 
         if verbose:
-            global_config = config_manager.get_global_config()
+            #global_config = config_manager.get_global_config()
+            global_config = app_config.global_
             rprint(f"[cyan]Environment: {environment}[/cyan]")
             rprint(f"[cyan]Log Level: {global_config.log_level}[/cyan]")
             rprint(f"[cyan]Temp Dir: {global_config.temp_dir}[/cyan]")

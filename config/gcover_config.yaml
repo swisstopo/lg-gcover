@@ -8,7 +8,7 @@ global:
   max_workers: 4
   s3:
     bucket: "gcover-assets-dev"
-    profile: "default"  # AWS profile name
+    profile: "default-aws-profile"  # AWS profile name
 
 # GDB Asset Management configuration
 gdb:
