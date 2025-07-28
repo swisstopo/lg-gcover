@@ -276,9 +276,9 @@ class ESRISchema:
                     origin.foreign_keys[rel.origin_foreign_key] = rel.destination_table
 
                 if rel.destination_foreign_key:
-                    destination.foreign_keys[
-                        rel.destination_foreign_key
-                    ] = rel.origin_table
+                    destination.foreign_keys[rel.destination_foreign_key] = (
+                        rel.origin_table
+                    )
 
     def detect_primary_keys(self):
         """

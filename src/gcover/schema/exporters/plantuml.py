@@ -681,7 +681,9 @@ def generate_junction_tables(
                     f"  + <b>🔑🔗 {rel.origin_foreign_key}</b> : UUID → {origin_clean}"
                 )
             else:
-                lines.append(f"  + <b>🔑🔗 {origin_clean}_ID</b> : UUID → {origin_clean}")
+                lines.append(
+                    f"  + <b>🔑🔗 {origin_clean}_ID</b> : UUID → {origin_clean}"
+                )
 
             if rel.destination_foreign_key:
                 lines.append(

@@ -23,6 +23,7 @@ def get_schema_configs(ctx) -> tuple[SchemaConfig, GlobalConfig]:
         rprint("[yellow]No schema config found[/yellow]")
         # You could create a default or raise an error
         from ..config.models import SchemaConfig
+
         schema_config = SchemaConfig()  # Use defaults
 
     return schema_config, app_config.global_
@@ -87,7 +88,6 @@ def extract(source, output, name, format, filter_prefix, remove_prefix):
     except Exception as e:
         rprint(f"❌ Error: {e}")
         raise click.Abort()
-
 
 
 @schema.command()
