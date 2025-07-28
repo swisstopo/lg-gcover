@@ -36,6 +36,15 @@ from .models import (
 from .reporter import generate_report
 from .transformer import transform_esri_json
 
+from gcover.schema.serializer import (
+    serialize_esri_schema_to_dict,
+    serialize_esri_schema_to_json,
+    save_esri_schema_to_file,
+    serialize_domains_only,
+    serialize_feature_classes_only,
+)
+
+
 # Import conditionnel de l'extracteur (nécessite arcpy)
 try:
     from .extractor import can_extract_schema, extract_schema
@@ -85,4 +94,9 @@ __all__ = [
     "export_schema_diff_to_json",
     "generate_plantuml_from_schema",
     "generate_report",
+    "serialize_esri_schema_to_dict",
+    "serialize_esri_schema_to_json",
+    "save_esri_schema_to_file",
+    "serialize_domains_only",
+    "serialize_feature_classes_only",
 ]

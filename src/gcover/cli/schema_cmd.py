@@ -3,11 +3,14 @@ from pathlib import Path
 
 import click
 
-from ..schema import SchemaDiff, extract_schema, transform_esri_json
-from ..schema.exporters.plantuml import generate_plantuml_from_schema
+from gcover.schema import SchemaDiff, extract_schema, transform_esri_json
+from gcover.schema.exporters.plantuml import generate_plantuml_from_schema
+from gcover.config import GlobalConfig, SchemaConfig
 
 # TODO
 from gcover.config import load_config, AppConfig, SchemaConfig
+
+from loguru import logger
 
 
 def get_schema_configs(ctx) -> tuple[SchemaConfig, GlobalConfig]:
@@ -20,6 +23,7 @@ def get_schema_configs(ctx) -> tuple[SchemaConfig, GlobalConfig]:
         rprint("[yellow]No schema config found[/yellow]")
         # You could create a default or raise an error
         from ..config.models import SchemaConfig
+
         schema_config = SchemaConfig()  # Use defaults
 
     return schema_config, app_config.global_
@@ -86,7 +90,6 @@ def extract(source, output, name, format, filter_prefix, remove_prefix):
         raise click.Abort()
 
 
-
 @schema.command()
 @click.argument("json_file", type=click.Path(exists=True))
 @click.option("--output", "-o", required=True, help="Output PlantUML file")
@@ -147,7 +150,7 @@ def diff(old_schema, new_schema, output, format):
     summary = diff.get_summary()
     click.echo("\nSummary of changes:")
     for key, value in summary.items():
-        print("DEBUG:", value, type(value))
+        logger.debug("DEBUG:", value, type(value))
         if any(v > 0 for v in value.values()):
             click.echo(f"  {key}: {value}")
 
