@@ -3,11 +3,11 @@
 Unified configuration system using Pydantic
 Consolidates all previous config approaches into one clean system
 """
-from .models import AppConfig, GlobalConfig, GDBConfig, SDEConfig, QAConfig, S3Config
+from .models import AppConfig, GlobalConfig, GDBConfig, SDEConfig, QAConfig, S3Config, SchemaConfig
 from .loader import load_config, get_config
 
 __all__ = [
-    'AppConfig', 'GlobalConfig', 'GDBConfig', 'SDEConfig', 'QAConfig', 'S3Config',
+    'AppConfig', 'GlobalConfig', 'GDBConfig', 'SDEConfig', 'QAConfig', 'S3Config', 'SchemaConfig',
     'load_config', 'get_config'
 ]
 

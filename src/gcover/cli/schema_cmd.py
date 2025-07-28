@@ -3,8 +3,9 @@ from pathlib import Path
 
 import click
 
-from ..schema import SchemaDiff, extract_schema, transform_esri_json
-from ..schema.exporters.plantuml import generate_plantuml_from_schema
+from gcover.schema import SchemaDiff, extract_schema, transform_esri_json
+from gcover.schema.exporters.plantuml import generate_plantuml_from_schema
+from gcover.config import GlobalConfig, SchemaConfig
 
 # TODO
 from gcover.config import load_config, AppConfig, SchemaConfig
