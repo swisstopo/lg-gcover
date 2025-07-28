@@ -19,7 +19,9 @@ from rich import print as rprint
 
 from gcover.gdb.manager import GDBAssetManager
 from gcover.gdb.storage import S3Uploader, MetadataDB
-from gcover.gdb.config import  load_config
+# from gcover.gdb.config import  load_config TODO
+from gcover.config import load_config, AppConfig
+from gcover.config.models import GDBConfig, GlobalConfig
 from gcover.gdb.assets import (
     GDBAsset,
     BackupGDBAsset,
@@ -29,72 +31,57 @@ from gcover.gdb.assets import (
     ReleaseCandidate,
 )
 
+from loguru import logger
+
 
 console = Console()
 
 
+
+def get_configs(ctx) -> tuple[GDBConfig, GlobalConfig, str, bool]:
+    app_config: AppConfig =  load_config(environment=ctx.obj["environment"])   #ctx.obj["app_config"]
+    logger.info(f"env: {ctx.obj['environment']}")
+    return (
+        app_config.gdb,
+        app_config.global_,
+        ctx.obj["environment"],
+        ctx.obj.get("verbose", False)
+    )
+
+
+
 @click.group()
-@click.option(
-    "--config", "-c", type=click.Path(exists=True), help="Configuration file path"
-)
-@click.option(
-    "--env",
-    "-e",
-    type=click.Choice(["development", "dev", "production", "prod"]),
-    default="development",
-    help="Environment (dev/prod)",
-)
-@click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 @click.pass_context
-def gdb(ctx, config, env, verbose):
+def gdb(ctx):
     """GDB Asset Management commands"""
-    ctx.ensure_object(dict)
-
-    # Normalize environment name
-    environment = "production" if env in ["prod", "production"] else "development"
-
-    try:
-        # Load configuration with environment
-        config_obj = load_config(
-            config_path=Path(config) if config else None, environment=environment
-        )
-        ctx.obj["config"] = config_obj
-        ctx.obj["environment"] = environment
-        ctx.obj["verbose"] = verbose
-
-        if verbose:
-            rprint(f"[cyan]Environment: {environment}[/cyan]")
-            rprint(f"[cyan]S3 Bucket: {config_obj.s3_bucket}[/cyan]")
-            rprint(f"[cyan]Database: {config_obj.db_path}[/cyan]")
-
-    except Exception as e:
-        rprint(f"[red]Configuration error: {e}[/red]")
-        if verbose:
-            import traceback
-
-            rprint(f"[red]{traceback.format_exc()}[/red]")
-        sys.exit(1)
+    pass
 
 
 @gdb.command()
 @click.pass_context
 def init(ctx):
     """Initialize GDB management system"""
-    config = ctx.obj["config"]
-    env = ctx.obj["environment"]
+    gdb_config, global_config, environment, verbose = get_configs(ctx)
 
-    rprint(f"[cyan]Initializing GDB system ({env})...[/cyan]")
+    rprint(f"[cyan]Initializing GDB system ({environment})...[/cyan]")
 
     try:
         # Test database
-        db = MetadataDB(config.db_path)
-        rprint(f"[green]✅ Database initialized {config.db_path}[/green]")
+        db = MetadataDB(gdb_config.db_path)
+        rprint(f"[green]✅ Database initialized: {gdb_config.db_path}[/green]")
 
-        # Test S3 (simplified)
-        from ..gdb.storage import S3Uploader
+        # Test S3 using global config
+        s3_bucket = gdb_config.get_s3_bucket(global_config)
+        s3_profile = gdb_config.get_s3_profile(global_config)
 
-        s3 = S3Uploader(config.s3_bucket, config.s3_profile)
+        s3 = S3Uploader(s3_bucket, s3_profile)
         rprint("[green]✅ S3 connection ready[/green]")
+
+        if verbose:
+            rprint(f"[dim]S3 Bucket: {s3_bucket}[/dim]")
+            rprint(f"[dim]S3 Profile: {s3_profile or 'default'}[/dim]")
+            rprint(f"[dim]S3 Region: {global_config.s3.region or 'default'}[/dim]")
+            rprint(f"[dim]Temp Dir: {gdb_config.temp_dir}[/dim]")
 
         rprint("[green]Initialization complete![/green]")
 
@@ -107,22 +94,30 @@ def init(ctx):
 @click.pass_context
 def scan(ctx):
     """Scan filesystem for GDB assets"""
-    config = ctx.obj["config"]
+    gdb_config, global_config, environment, verbose = get_configs(ctx)
 
     try:
+        # Get S3 settings from global config
+        s3_bucket = gdb_config.get_s3_bucket(global_config)
+        s3_profile = gdb_config.get_s3_profile(global_config)
+
         manager = GDBAssetManager(
-            base_paths=config.base_paths,
-            s3_bucket=config.s3_bucket,
-            db_path=config.db_path,
-            temp_dir=config.temp_dir,
-            aws_profile=config.s3_profile,
+            base_paths=gdb_config.base_paths,
+            s3_bucket=s3_bucket,  # From global config
+            db_path=gdb_config.db_path,
+            temp_dir=gdb_config.temp_dir,
+            aws_profile=s3_profile,  # From global config
         )
 
         rprint("[cyan]Scanning filesystem...[/cyan]")
+        if verbose:
+            for name, path in gdb_config.base_paths.items():
+                rprint(f"[dim]  {name}: {path}[/dim]")
+
         assets = manager.scan_filesystem()
 
         if assets:
-            # Group by type for display
+            # Display results (same as before)
             by_type = {}
             for asset in assets:
                 asset_type = asset.info.asset_type.value
@@ -150,39 +145,44 @@ def scan(ctx):
 
     except Exception as e:
         rprint(f"[red]Scan failed: {e}[/red]")
-        if ctx.obj["verbose"]:
+        if verbose:
             import traceback
-
             rprint(f"[red]{traceback.format_exc()}[/red]")
         sys.exit(1)
 
+
 @gdb.command()
-@click.pass_context
 @click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
 def sync(ctx, dry_run):
     """Sync GDB assets to S3 and database"""
-    config = ctx.obj["config"]
+    gdb_config, global_config, environment, verbose = get_configs(ctx)
 
     try:
+        # Get S3 settings from global config
+        s3_bucket = gdb_config.get_s3_bucket(global_config)
+        s3_profile = gdb_config.get_s3_profile(global_config)
+
         manager = GDBAssetManager(
-            base_paths=config.base_paths,
-            s3_bucket=config.s3_bucket,
-            db_path=config.db_path,
-            temp_dir=config.temp_dir,
-            aws_profile=config.s3_profile,
+            base_paths=gdb_config.base_paths,
+            s3_bucket=s3_bucket,
+            db_path=gdb_config.db_path,
+            temp_dir=gdb_config.temp_dir,
+            aws_profile=s3_profile,
         )
 
         if dry_run:
             rprint("[yellow]DRY RUN MODE - No changes will be made[/yellow]")
-            # Show what would be synced
+
             assets = manager.scan_filesystem()
             new_assets = [
                 a for a in assets if not manager.metadata_db.asset_exists(a.path)
             ]
 
             if new_assets:
-                rprint(f"[cyan]Would sync {len(new_assets)} new assets:[/cyan]")
-                for asset in new_assets[:10]:  # Show first 10
+                rprint(f"[cyan]Would sync {len(new_assets)} new assets to:[/cyan]")
+                rprint(f"[cyan]  S3 Bucket: {s3_bucket}[/cyan]")
+                for asset in new_assets[:10]:
                     rprint(f"  - {asset.path.name}")
                 if len(new_assets) > 10:
                     rprint(f"  ... and {len(new_assets) - 10} more")
@@ -190,6 +190,11 @@ def sync(ctx, dry_run):
                 rprint("[green]No new assets to sync[/green]")
         else:
             rprint("[cyan]Starting sync...[/cyan]")
+            if verbose:
+                rprint(f"[dim]Environment: {environment}[/dim]")
+                rprint(f"[dim]S3 Bucket: {s3_bucket}[/dim]")
+                rprint(f"[dim]Workers: {gdb_config.processing.max_workers}[/dim]")
+
             stats = manager.sync_all()
 
             table = Table(title="Sync Results")
@@ -202,21 +207,15 @@ def sync(ctx, dry_run):
             console.print(table)
 
             if stats.get("failed", 0) > 0:
-                rprint(
-                    "[yellow]Some assets failed to sync. Check logs for details.[/yellow]"
-                )
+                rprint("[yellow]Some assets failed to sync. Check logs for details.[/yellow]")
             else:
                 rprint("[green]All assets synced successfully![/green]")
 
     except Exception as e:
         rprint(f"[red]Sync failed: {e}[/red]")
-        if ctx.obj["verbose"]:
-            import traceback
-
-            rprint(f"[red]{traceback.format_exc()}[/red]")
         sys.exit(1)
 
-
+# TODO: use central config
 @gdb.command()
 @click.option(
     "--type",
@@ -232,10 +231,11 @@ def sync(ctx, dry_run):
 @click.pass_context
 def list(ctx, asset_type, rc, since, limit):
     """List GDB assets from database"""
-    config = ctx.obj["config"]
+
+    gdb_config, global_config, environment, verbose = get_configs(ctx)
 
     try:
-        db = MetadataDB(config.db_path)
+        db = MetadataDB(gdb_config.db_path)
 
         query = "SELECT * FROM gdb_assets WHERE 1=1"
         params = []
@@ -300,7 +300,7 @@ def list(ctx, asset_type, rc, since, limit):
             rprint(f"[red]{traceback.format_exc()}[/red]")
         sys.exit(1)
 
-
+# TODO: use central config
 @gdb.command()
 @click.argument("search_term")
 @click.option("--download", is_flag=True, help="Download the asset")
@@ -311,10 +311,11 @@ def list(ctx, asset_type, rc, since, limit):
 def search(ctx, search_term, download, output_dir):
     """Search for GDB assets"""
 
-    config = ctx.obj["config"]
+
+    gdb_config, global_config, environment, verbose = get_config(ctx)
 
     try:
-        db = MetadataDB(config.db_path)
+        db = MetadataDB(gdb_config.db_path)
 
         query = """
         SELECT * FROM gdb_assets 
@@ -372,32 +373,28 @@ def search(ctx, search_term, download, output_dir):
             rprint(f"[red]{traceback.format_exc()}[/red]")
         sys.exit(1)
 
-
 @gdb.command()
 @click.pass_context
 def status(ctx):
     """Show system status and statistics"""
-    config = ctx.obj["config"]
+    gdb_config, global_config, environment, verbose = get_configs(ctx)
 
     try:
-        db = MetadataDB(config.db_path)
-
-        import duckdb
+        db = MetadataDB(gdb_config.db_path)
+        s3_bucket = gdb_config.get_s3_bucket(global_config)
 
         with duckdb.connect(str(db.db_path)) as conn:
-            # Basic stats
+            # Basic stats (same as before)
             total = conn.execute("SELECT COUNT(*) FROM gdb_assets").fetchone()[0]
             uploaded = conn.execute(
                 "SELECT COUNT(*) FROM gdb_assets WHERE uploaded = true"
             ).fetchone()[0]
 
-            # Size info
             size_result = conn.execute(
                 "SELECT SUM(file_size) FROM gdb_assets WHERE file_size IS NOT NULL"
             ).fetchone()[0]
             total_size_gb = round(size_result / (1024**3), 2) if size_result else 0
 
-            # By type
             by_type = conn.execute("""
                 SELECT asset_type, COUNT(*) 
                 FROM gdb_assets 
@@ -415,8 +412,9 @@ def status(ctx):
             f"{uploaded} ({uploaded / total * 100:.1f}%)" if total > 0 else "0",
         )
         table.add_row("Total Size", f"{total_size_gb} GB")
-        table.add_row("Environment", ctx.obj["environment"])
-        table.add_row("S3 Bucket", config.s3_bucket)
+        table.add_row("Environment", environment)
+        table.add_row("S3 Bucket", s3_bucket)  # From global config
+        table.add_row("Database", str(gdb_config.db_path))
 
         console.print(table)
 
@@ -425,12 +423,16 @@ def status(ctx):
             for asset_type, count in by_type:
                 rprint(f"  {asset_type}: {count}")
 
+        if verbose:
+            rprint(f"\n[dim]Configuration Details:[/dim]")
+            rprint(f"[dim]  Log Level: {global_config.log_level}[/dim]")
+            rprint(f"[dim]  Max Workers: {gdb_config.processing.max_workers}[/dim]")
+            rprint(f"[dim]  Compression: {gdb_config.processing.compression_level}[/dim]")
+            rprint(f"[dim]  Temp Dir: {gdb_config.temp_dir}[/dim]")
+            rprint(f"[dim]  S3 Profile: {global_config.s3.profile or 'default'}[/dim]")
+
     except Exception as e:
         rprint(f"[red]Status check failed: {e}[/red]")
-        if ctx.obj["verbose"]:
-            import traceback
-
-            rprint(f"[red]{traceback.format_exc()}[/red]")
         sys.exit(1)
 
 
@@ -439,14 +441,24 @@ def status(ctx):
 @click.pass_context
 def process(ctx, gdb_path):
     """Process a single GDB asset"""
-    manager = GDBAssetManager(
-        base_paths=ctx.obj["base_paths"],
-        s3_bucket=ctx.obj["s3_bucket"],
-        db_path=ctx.obj["db_path"],
-        temp_dir=ctx.obj["temp_dir"],
-    )
+    gdb_config, global_config, environment, verbose = get_configs(ctx)
 
     try:
+        # Get S3 settings from global config
+        s3_bucket = gdb_config.get_s3_bucket(global_config)
+        s3_profile = gdb_config.get_s3_profile(global_config)
+
+        manager = GDBAssetManager(
+            base_paths=gdb_config.base_paths,
+            s3_bucket=s3_bucket,
+            db_path=gdb_config.db_path,
+            temp_dir=gdb_config.temp_dir,
+            aws_profile=s3_profile,
+        )
+
+
+
+
         asset = manager.create_asset(Path(gdb_path))
         rprint(f"[cyan]Processing: {gdb_path}[/cyan]")
         rprint(f"Type: {asset.info.asset_type.value}")
@@ -467,4 +479,4 @@ def process(ctx, gdb_path):
 
 
 if __name__ == "__main__":
-    cli()
+    gdb()

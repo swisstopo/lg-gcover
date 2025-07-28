@@ -1,0 +1,16 @@
+# Production environment overrides
+
+global:
+  log_level: WARNING
+  s3:
+    bucket: "terraform-gdb-upload-wqbnop"
+    profile: "gcover_bucket"
+
+gdb:
+  processing:
+    max_workers: 8
+  db_path: "data/prod_gdb_metadata.duckdb"
+
+  processing:
+    compression_level: 9
+    max_workers: 8

@@ -1,0 +1,55 @@
+# config/gcover_config.yaml
+# Unified configuration for all gcover modules
+
+# Global settings applied to all modules
+global:
+  log_level: INFO
+  temp_dir: /tmp/gcover
+  max_workers: 4
+  s3:
+    bucket: "gcover-assets-dev"
+    profile: "default-aws-profile"  # AWS profile name
+
+# GDB Asset Management configuration
+gdb:
+  base_paths:
+    backup: "/media/marco/SANDISK/GCOVER"
+    verification: "/media/marco/SANDISK/Verifications"
+    increment: "/media/marco/SANDISK/Increment"
+  db_path: "data/dev_gdb_metadata.duckdb"
+
+  temp_dir: "/tmp/gcover/gdb"
+
+  processing:
+    compression_level: 6
+    max_workers: 4
+
+# SDE Connection configuration
+sde:
+  instances:
+    GCOVERP:
+      host: "sde-server.example.com"
+      port: 5151
+      database: "GCOVERP"
+      version: "SDE.DEFAULT"
+      user: null  # Use current user
+
+    GCOVERQ:
+      host: "sde-server.example.com"
+      port: 5151
+      database: "GCOVERQ"
+      version: "SDE.DEFAULT"
+      user: null
+
+  connection_timeout: 30
+  temp_dir: "/tmp/gcover/sde"
+  cleanup_on_exit: true
+
+# Schema management configuration
+schema:
+  output_dir: "./schemas"
+  template_dir: "./templates/schema"  # Optional custom templates
+  default_formats: ["json", "html"]
+  plantuml_path: "/usr/local/bin/plantuml"  # Optional PlantUML installation
+  max_diagram_tables: 50
+  include_system_tables: false

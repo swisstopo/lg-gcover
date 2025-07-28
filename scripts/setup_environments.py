@@ -245,7 +245,7 @@ def main():
         return
 
     # Create main configuration
-    config_file = args.config_dir / "gdb_config.yaml"
+    config_file = args.config_dir / "gcover_config.yaml"
     create_config_file(config_file, interactive=not args.non_interactive)
 
     # Create environment-specific .env files

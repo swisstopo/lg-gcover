@@ -13,7 +13,6 @@ lg-gcover simplifies the processing and analysis of geological vector datasets f
 
 Perfect for geologists, GIS analysts, and researchers working with Swiss geological datasets who need efficient, reproducible data processing workflows.
 
-
 ## Usage
 
 ### GDB Asset Management - Usage
@@ -22,17 +21,17 @@ Perfect for geologists, GIS analysts, and researchers working with Swiss geologi
 
 ```bash
 # Initialize the system
-gcover gdb --env dev init
+gcover --env dev gdb init
 
 # Scan for GDB files
-gcover gdb --env dev scan
+gcover --env dev gdb scan
 
 # Sync to S3 (dry run first)
-gcover gdb --env dev sync --dry-run
-gcover gdb --env dev sync
+gcover --env dev gdb sync --dry-run
+gcover --env dev gdb sync
 
 # Check status
-gcover gdb --env dev status
+gcover --env dev gdb status
 ```
 
 #### Core Commands
@@ -67,20 +66,19 @@ gcover gdb process /path/to/specific.gdb    # Process single asset
 
 ```bash
 # Development environment (default)
-gcover gdb --env dev scan
-gcover gdb --env development scan
+gcover --env dev gdb scan
+gcover --env development gdb scan
 
 # Production environment  
-gcover gdb --env prod sync
-gcover gdb --env production sync
+gcover --env prod gdb sync
+gcover --env production gdb sync
 
 # With custom config
-gcover gdb --config ./my-config.yaml --env prod sync
+gcover --config ./my-config.yaml --env prod gdb sync
 
 # With environment variables
-export GDB_ENV=production
-export GDB_S3_BUCKET=my-prod-bucket
-gcover gdb sync
+export GCOVER_GLOBAL_S3_BUCKET=my-prod-bucket
+gcover --env prod gdb sync
 ```
 
 #### Asset Types
@@ -137,25 +135,47 @@ with duckdb.connect("data/dev_gdb_metadata.duckdb") as conn:
 
 ##### Environment Variables
 ```bash
-GDB_ENV=development|production      # Environment selection
-GDB_S3_BUCKET=my-bucket            # Override S3 bucket
-GDB_S3_PROFILE=my-profile          # AWS profile
-GDB_DB_PATH=/path/to/db.duckdb     # Database path
-GDB_LOG_LEVEL=DEBUG|INFO|WARNING   # Logging level
+# Global settings (affect all modules)
+GCOVER_GLOBAL_LOG_LEVEL=DEBUG|INFO|WARNING   # Logging level
+GCOVER_GLOBAL_S3_BUCKET=my-bucket            # S3 bucket name
+GCOVER_GLOBAL_S3_PROFILE=my-profile          # AWS profile
+GCOVER_GLOBAL_TEMP_DIR=/custom/temp          # Temporary directory
+
+# GDB-specific settings
+GCOVER_GDB_DATABASE_PATH=/path/to/db.duckdb  # Database path
+GCOVER_GDB_PROCESSING_MAX_WORKERS=8          # Number of workers
 ```
 
-###### Config File (`config/gdb_config.yaml`)
+##### Config File (`config/gcover_config.yaml`)
 ```yaml
-base_paths:
-  backup: "/path/to/GCOVER"
-  verification: "/path/to/Verifications"
-  increment: "/path/to/Increment"
+# Global settings for all modules
+global:
+  log_level: INFO
+  temp_dir: /tmp/gcover
+  max_workers: 4
+  s3:
+    bucket: "gcover-assets-dev"
+    profile: "default"
 
-s3:
-  bucket: "your-gdb-bucket"
-  
-database:
-  path: "data/gdb_metadata.duckdb"
+# GDB-specific configuration
+gdb:
+  base_paths:
+    backup: "/path/to/GCOVER"
+    verification: "/path/to/Verifications"
+    increment: "/path/to/Increment"
+  database:
+    path: "data/gdb_metadata.duckdb"
+  processing:
+    compression_level: 6
+    max_workers: 4
+
+# Environment-specific overrides
+# config/environments/production.yaml
+global:
+  log_level: WARNING
+  s3:
+    bucket: "gcover-assets-prod"
+    profile: "production"
 ```
 
 #### Maintenance
@@ -165,7 +185,7 @@ database:
 cp data/dev_gdb_metadata.duckdb data/backup_$(date +%Y%m%d).duckdb
 
 # Clean temporary files
-rm -rf /tmp/gdb_zips/*
+rm -rf /tmp/gcover/gdb/*
 
 # Database maintenance
 duckdb data/dev_gdb_metadata.duckdb 'VACUUM;'
@@ -175,10 +195,10 @@ duckdb data/dev_gdb_metadata.duckdb 'VACUUM;'
 
 ```bash
 # Verbose output for debugging
-gcover gdb --env dev --verbose scan
+gcover --env dev --verbose gdb scan
 
 # Check configuration
-gcover gdb --env dev --verbose status
+gcover --env dev --verbose gdb status
 
 # Verify AWS credentials
 aws s3 ls s3://your-bucket/
@@ -193,14 +213,13 @@ duckdb data/dev_gdb_metadata.duckdb 'SELECT COUNT(*) FROM gdb_assets;'
 ```bash
 #!/bin/bash
 # Daily sync script
-export GDB_ENV=production
-gcover gdb sync 2>&1 | logger -t gdb-sync
+gcover --env production gdb sync 2>&1 | logger -t gdb-sync
 ```
 
 ##### Weekly Report
 ```bash
 # Generate weekly report
-gcover gdb list --since $(date -d '7 days ago' +%Y-%m-%d) > weekly_report.txt
+gcover --env prod gdb list --since $(date -d '7 days ago' +%Y-%m-%d) > weekly_report.txt
 ```
 
 ##### Find Missing Backups
@@ -230,10 +249,6 @@ WHERE missing_date NOT IN (SELECT backup_date FROM daily_backups);
 - **Metadata** is stored in local DuckDB for fast querying  
 - **Database** serves as a catalog of your S3 assets
 - **No cloud database costs** - everything runs locally
-
-
-
-
 
 ### Quality Assurance (QA) Commands
 
@@ -287,7 +302,7 @@ gcover qa process /path/to/issue.gdb --format both
 gcover qa process /path/to/issue.gdb --no-upload
 
 # Verbose logging for debugging
-gcover qa process /path/to/issue.gdb --verbose
+gcover --verbose qa process /path/to/issue.gdb
 ```
 
 ##### `gcover qa batch`
@@ -363,32 +378,28 @@ gcover qa test-read /path/to/issue.gdb --max-features 5
 
 #### Configuration
 
-Uses your existing `config/gdb_config.yaml`:
+QA commands use the same unified configuration system:
 
 ```yaml
-# Standard GDB configuration
-s3:
-  bucket: "swisstopo-gcover-prod"
-  profile: "gcover"
-database:
-  path: "/home/user/.config/gcover/assets.duckdb"
-temp_dir: "/tmp/gcover"
+# config/gcover_config.yaml
+global:
+  s3:
+    bucket: "gcover-assets-dev"
+    profile: "default"
 
 # QA-specific settings (optional)
-verification:
-  layers: ["IssuePolygons", "IssueLines", "IssuePoints", "IssueStatistics"]
-  s3_prefix: "verifications/"
-  coordinate_systems:
-    source_crs: "EPSG:2056"  # Swiss LV95
-    target_crs: "EPSG:4326"  # WGS84 for web
+qa:
+  output_dir: "./qa_output"
+  database:
+    path: "data/qa_metadata.duckdb"
+  default_simplify_tolerance: 1.0
 ```
 
 **Environment Variables:**
 ```bash
-export GDB_S3_BUCKET=swisstopo-gcover-prod
-export GDB_S3_PROFILE=gcover
-export GDB_DB_PATH=/home/user/.config/gcover/assets.duckdb
-export GDB_TEMP_DIR=/tmp/gcover
+export GCOVER_GLOBAL_S3_BUCKET=gcover-assets-prod
+export GCOVER_GLOBAL_S3_PROFILE=production
+export GCOVER_QA_DATABASE_PATH=/home/user/.config/gcover/qa.duckdb
 ```
 
 #### File Structure
@@ -443,7 +454,7 @@ gcover qa diagnose /path/to/issue.gdb
 gcover qa test-read /path/to/issue.gdb --layer IssuePolygons
 
 # Enable verbose logging
-gcover qa process /path/to/issue.gdb --verbose
+gcover --verbose qa process /path/to/issue.gdb
 ```
 
 ##### Empty Results
@@ -464,7 +475,7 @@ Example automation script:
 VERIFICATION_DIR="/media/marco/SANDISK/Verifications"
 
 # Process new files from last week
-gcover qa batch "$VERIFICATION_DIR" \
+gcover --env production qa batch "$VERIFICATION_DIR" \
     --pattern "**/$(date -d '7 days ago' +%Y%m%d)_*/issue.gdb"
 
 # Generate updated dashboard
@@ -474,8 +485,6 @@ gcover qa dashboard
 gcover qa stats --days-back 7 \
     --export-csv "reports/weekly_$(date +%Y%m%d).csv"
 ```
-
-
 
 ### SDE Connection Management
 
@@ -604,11 +613,11 @@ GCOVERP     SDE.DEFAULT           /tmp/gcover_GCOVERP_DEFAULT.sde
 GCOVERP     USER.MYVERSION        /tmp/gcover_GCOVERP_MYVERSION.sde
 ```
 
-# Schema Management
+### Schema Management
 
 The `gcover schema` command provides tools for extracting, comparing, and documenting database schemas from GDB files and SDE connections.
 
-## Quick Start
+#### Quick Start
 
 ```bash
 # Extract schema from GDB to JSON
@@ -803,4 +812,99 @@ If arcpy is not available, you'll see:
     }
   ]
 }
+```
+
+## Global Configuration
+
+All gcover commands use a unified configuration system with global and module-specific settings.
+
+### Configuration Files
+
+**Main config**: `config/gcover_config.yaml`
+```yaml
+global:
+  log_level: INFO
+  temp_dir: /tmp/gcover
+  max_workers: 4
+  s3:
+    bucket: "gcover-assets-dev"
+    profile: "default"
+
+gdb:
+  base_paths:
+    backup: "/path/to/GCOVER"
+  database:
+    path: "data/metadata.duckdb"
+
+sde:
+  instances:
+    GCOVERP:
+      host: "sde-server.com"
+      port: 5151
+      database: "GCOVERP"
+
+schema:
+  output_dir: "./schemas"
+  default_formats: ["json"]
+```
+
+**Environment overrides**: `config/environments/{environment}.yaml`
+```yaml
+# config/environments/production.yaml
+global:
+  log_level: WARNING
+  s3:
+    bucket: "gcover-assets-prod"
+    profile: "production"
+```
+
+### Global Command Options
+
+All commands support these global options:
+
+```bash
+gcover [GLOBAL_OPTIONS] COMMAND [COMMAND_OPTIONS]
+
+Global Options:
+  --config, -c PATH    Configuration file path
+  --env, -e ENV        Environment (dev/development, prod/production)
+  --verbose, -v        Enable verbose output
+  --help               Show help message
+```
+
+### Examples
+
+```bash
+# Use development environment (default)
+gcover gdb status
+
+# Use production environment
+gcover --env prod gdb sync
+
+# Use custom config file
+gcover --config /path/to/config.yaml --env prod gdb status
+
+# Enable verbose logging
+gcover --verbose --env dev gdb scan
+
+# Combine global options
+gcover --config custom.yaml --env prod --verbose qa process file.gdb
+```
+
+### Environment Variables
+
+Global settings can be overridden with environment variables:
+
+```bash
+# Global overrides (affect all modules)
+export GCOVER_GLOBAL_LOG_LEVEL=DEBUG
+export GCOVER_GLOBAL_S3_BUCKET=my-custom-bucket
+export GCOVER_GLOBAL_S3_PROFILE=my-profile
+
+# Module-specific overrides
+export GCOVER_GDB_DATABASE_PATH=/custom/path/db.duckdb
+export GCOVER_SDE_CONNECTION_TIMEOUT=120
+
+# Use the overrides
+gcover gdb status  # Will use custom S3 bucket and debug logging
 ```

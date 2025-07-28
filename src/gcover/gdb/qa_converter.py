@@ -21,6 +21,8 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 import boto3
 from botocore.exceptions import ClientError
 
+from gcover.config import load_config, AppConfig
+
 console = Console()
 logger = logging.getLogger(__name__)
 
@@ -69,7 +71,8 @@ class FileGDBConverter:
             config: GDBConfig instance (loads from file if None)
             s3_prefix: S3 prefix for verification files
         """
-        from .config import load_config
+        # TODO from .config import load_config
+        from gcover.config import load_config, AppConfig
 
         self.config = config or load_config()
         self.s3_prefix = s3_prefix.rstrip("/") + "/"
@@ -688,7 +691,8 @@ class FileGDBConverter:
 
     def main():
         """Example usage of the FileGDBConverter."""
-        from .config import load_config
+        # from .config import load_config TODO
+        from gcover.config import load_config, AppConfig
 
         # Load configuration
         config = load_config()
