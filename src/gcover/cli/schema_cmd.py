@@ -10,6 +10,8 @@ from gcover.config import GlobalConfig, SchemaConfig
 # TODO
 from gcover.config import load_config, AppConfig, SchemaConfig
 
+from loguru import logger
+
 
 def get_schema_configs(ctx) -> tuple[SchemaConfig, GlobalConfig]:
     """Get schema and global configs from context"""
@@ -148,7 +150,7 @@ def diff(old_schema, new_schema, output, format):
     summary = diff.get_summary()
     click.echo("\nSummary of changes:")
     for key, value in summary.items():
-        print("DEBUG:", value, type(value))
+        logger.debug("DEBUG:", value, type(value))
         if any(v > 0 for v in value.values()):
             click.echo(f"  {key}: {value}")
 

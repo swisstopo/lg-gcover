@@ -10,6 +10,8 @@ from typing import Any, Union, List, Dict, Set
 
 from loguru import logger
 
+from gcover.config import EXCLUDED_TABLES, DEFAULT_EXCLUDED_FIELDS
+
 # Import the dataclasses
 from .models import (
     CodedDomain,
@@ -461,32 +463,10 @@ def transform_esri_json(
         ESRISchema instance with all parsed data
     """
     if excluded_tables is None:
-        excluded_tables = {
-            "GC_CONFLICT_POLYGON",
-            "GC_ERRORS_LINE", 
-            "GC_ERRORS_ROW",
-            "GC_CONFLICT_ROW",
-            "GC_VERSION",
-            "GC_ERRORS_MULTIPOINT",
-            "GC_ERRORS_POLYGON",
-            "GC_REVISIONSEBENE",
-            # Also include prefixed versions
-            "TOPGIS_GC.GC_CONFLICT_POLYGON",
-            "TOPGIS_GC.GC_ERRORS_LINE",
-            "TOPGIS_GC.GC_ERRORS_ROW", 
-            "TOPGIS_GC.GC_CONFLICT_ROW",
-            "TOPGIS_GC.GC_VERSION",
-            "TOPGIS_GC.GC_ERRORS_MULTIPOINT",
-            "TOPGIS_GC.GC_ERRORS_POLYGON",
-            "TOPGIS_GC.GC_REVISIONSEBENE",
-        }
+        excluded_tables = EXCLUDED_TABLES
     
     # Define metadata fields to exclude
-    EXCLUDED_FIELDS = {
-        "REVISION_MONTH", "CREATION_DAY", "REVISION_DAY", "CREATION_MONTH",
-        "REVISION_YEAR", "CREATION_YEAR", "REVISION_DATE", "CREATION_DATE", 
-        "LAST_UPDATE", "CREATED_USER", "LAST_USER"
-    } if exclude_metadata_fields else set()
+    EXCLUDED_FIELDS = DEFAULT_EXCLUDED_FIELDS if exclude_metadata_fields else set()
     
     schema = ESRISchema()
     
