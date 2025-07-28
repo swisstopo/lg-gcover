@@ -27,6 +27,8 @@ logger.remove()  # remove the old handler. Else, the old one will work along wit
 logger.add(sys.stderr, level="INFO")
 
 
+
+
 def remove_prefix_from_name(
     text: Union[str, list[str]], prefix: str = "TOPGIS_GC."
 ) -> Union[str, list[str]]:
@@ -139,6 +141,12 @@ def transform_esri_json(
 
     schema = ESRISchema()
 
+    # Extract and process all components
+    tables_list = []
+    featclasses_list = []
+    relationships_list = []
+    subtypes_list = []
+
     try:
         # Add metadata (unchanged)
         if any(
@@ -203,11 +211,7 @@ def transform_esri_json(
                     )
                     schema.range_domains[domain_name] = range_domain
 
-        # Extract and process all components
-        tables_list = []
-        featclasses_list = []
-        relationships_list = []
-        subtypes_list = []
+
 
         logger.info("Extracting datasets...")
         # Pass filter function to extract_datasets
@@ -221,7 +225,7 @@ def transform_esri_json(
         )
 
         # Process tables - WITH FIELD FILTERING
-        logger.info("Processing tables...")
+        logger.info(f"Processing {len(tables_list)} tables...")
         for table_item in tables_list:
             if isinstance(table_item, dict):
                 for table_name, table_data in table_item.items():
@@ -250,7 +254,7 @@ def transform_esri_json(
                     schema.tables[table_name] = table
 
         # Process feature classes - WITH FIELD FILTERING
-        logger.info("Processing feature classes...")
+        logger.info(f"Processing {len(featclasses_list)} feature classes...")
         for featclass_item in featclasses_list:
             if isinstance(featclass_item, dict):
                 for fc_name, fc_data in featclass_item.items():
@@ -272,7 +276,7 @@ def transform_esri_json(
                     schema.feature_classes[fc_name] = feature_class
 
         # Process relationships - WITH FILTERING
-        logger.info("Processing relationships...")
+        logger.info(f"Processing {len(relationships_list)} relationships...")
         for rel_data in relationships_list:
             if isinstance(rel_data, dict) and "name" in rel_data:
                 rel_name = rel_data.pop("name")
@@ -298,9 +302,9 @@ def transform_esri_json(
                 schema.relationships[rel_name] = relationship
 
         # Process subtypes
-        logger.info("Processing subtypes...")
         subtypes_dict = {}
         extract_subtypes(input_data, subtypes_dict)
+        logger.info(f"Processing {len(subtypes_dict)}subtypes...")
 
         # Create a simple Subtype object from the flat dictionary
         # Since your extract_subtypes only gets code->name mappings,
@@ -598,12 +602,14 @@ def extract_datasets_filtered(
             and data.get("datasetType") == "esriDTTable"
         ):
             table_name = data.get("name")
+            logger.info(f"  found table {table_name}")
 
             if not table_name.endswith("_I") and should_import_func(table_name):
                 # Create basic table info
                 table_info = {
                     "name": table_name,
                 }
+                logger.info(f"  basic table info")
 
                 # Add parent path information if available
                 if parent_path:
@@ -612,12 +618,15 @@ def extract_datasets_filtered(
                 # Extract field information if available
                 if "fields" in data and "fieldArray" in data["fields"]:
                     field_list = get_field_list(data)
+                    logger.info(f"  fields  {field_list}")
 
                     # Store the table with its fields
                     tables_list.append({table_name: field_list})
+                    logger.info(f"  no fields")
                 else:
                     # If no fields available, just add the basic info
                     tables_list.append(table_info)
+                    logger.info(f"  adding table")
 
         # Handle feature datasets
         elif (
@@ -631,6 +640,7 @@ def extract_datasets_filtered(
                 dataset_info = {
                     "name": feat_name,
                 }
+                logger.info(f"  found feature class {feat_name}")
 
                 if parent_path:
                     dataset_info["path"] = f"{parent_path}/{data.get('name')}"
@@ -788,6 +798,9 @@ def extract_datasets_filtered(
                 should_import_func,
                 parent_path=parent_path,
             )
+
+    if  len(tables_list)>0:
+        logger.info(tables_list)
 
 
 def extract_subtypes(data, subtypes_dict):
