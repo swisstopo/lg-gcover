@@ -1,0 +1,238 @@
+# Schema Comparison Report
+
+**Comparison Date:** {{ metadata.comparison_date | format_datetime }}  
+**Old Schema:** `{{ metadata.old_schema_name }}`  
+**New Schema:** `{{ metadata.new_schema_name }}`
+
+---
+
+## Summary
+
+{% set total = summary | total_changes -%}
+{% if total == 0 -%}
+✅ **No changes detected** - The schemas are identical.
+{% else -%}
+📊 **Total Changes:** {{ total }}
+
+| Category | Added | Removed | Modified | Total |
+|----------|-------|---------|----------|-------|
+{% for category, counts in summary.items() -%}
+{% set category_total = counts.added + counts.removed + counts.modified -%}
+{% if category_total > 0 -%}
+| {{ category.replace('_', ' ').title() }} | {{ counts.added }} | {{ counts.removed }} | {{ counts.modified }} | {{ category_total }} |
+{% endif -%}
+{% endfor -%}
+{% endif %}
+
+---
+
+{% if changes.domains -%}
+## 🏷️ Domain Changes
+
+{% for change in changes.domains -%}
+### {{ change.change_type | format_change_type }} `{{ change.name }}`
+
+{% if change.change_type == 'added' -%}
+A new domain has been added to the schema.
+{% elif change.change_type == 'removed' -%}
+This domain has been removed from the schema.
+{% elif change.change_type == 'modified' -%}
+This domain has been modified.
+{% endif %}
+
+{% if change.coded_value_changes -%}
+#### Coded Value Changes
+
+| Code | Change |
+|------|--------|
+{% for code, change_type in change.coded_value_changes.items() -%}
+| `{{ code }}` | {{ change_type | format_change_type }} |
+{% endfor %}
+{% endif %}
+
+{% if change.property_changes -%}
+#### Property Changes
+
+| Property | Old Value | New Value |
+|----------|-----------|-----------|
+{% for prop, values in change.property_changes.items() -%}
+| **{{ prop }}** | `{{ values.old }}` | `{{ values.new }}` |
+{% endfor %}
+{% endif %}
+
+---
+
+{% endfor -%}
+{% endif -%}
+
+{% if changes.tables -%}
+## 📋 Table Changes
+
+{% for change in changes.tables -%}
+### {{ change.change_type | format_change_type }} `{{ change.name }}`
+
+{% if change.change_type == 'added' -%}
+A new table has been added to the schema.
+{% elif change.change_type == 'removed' -%}
+This table has been removed from the schema.
+{% elif change.change_type == 'modified' -%}
+This table has been modified.
+{% endif %}
+
+{% if change.field_changes -%}
+#### Field Changes
+
+{% for field in change.field_changes -%}
+##### {{ field.change_type | format_change_type }} Field: `{{ field.name }}`
+
+{% if field.property_changes -%}
+**Property Changes:**
+
+| Property | Old Value | New Value |
+|----------|-----------|-----------|
+{% for prop, values in field.property_changes.items() -%}
+| **{{ prop }}** | `{{ values.old }}` | `{{ values.new }}` |
+{% endfor %}
+{% endif %}
+
+{% endfor -%}
+{% endif %}
+
+{% if change.property_changes -%}
+#### Table Property Changes
+
+| Property | Old Value | New Value |
+|----------|-----------|-----------|
+{% for prop, values in change.property_changes.items() -%}
+| **{{ prop }}** | `{{ values.old }}` | `{{ values.new }}` |
+{% endfor %}
+{% endif %}
+
+---
+
+{% endfor -%}
+{% endif -%}
+
+{% if changes.feature_classes -%}
+## 🗺️ Feature Class Changes
+
+{% for change in changes.feature_classes -%}
+### {{ change.change_type | format_change_type }} `{{ change.name }}`
+
+{% if change.change_type == 'added' -%}
+A new feature class has been added to the schema.
+{% elif change.change_type == 'removed' -%}
+This feature class has been removed from the schema.
+{% elif change.change_type == 'modified' -%}
+This feature class has been modified.
+{% endif %}
+
+{% if change.field_changes -%}
+#### Field Changes
+
+{% for field in change.field_changes -%}
+##### {{ field.change_type | format_change_type }} Field: `{{ field.name }}`
+
+{% if field.property_changes -%}
+**Property Changes:**
+
+| Property | Old Value | New Value |
+|----------|-----------|-----------|
+{% for prop, values in field.property_changes.items() -%}
+| **{{ prop }}** | `{{ values.old }}` | `{{ values.new }}` |
+{% endfor %}
+{% endif %}
+
+{% endfor -%}
+{% endif %}
+
+{% if change.property_changes -%}
+#### Feature Class Property Changes
+
+| Property | Old Value | New Value |
+|----------|-----------|-----------|
+{% for prop, values in change.property_changes.items() -%}
+| **{{ prop }}** | `{{ values.old }}` | `{{ values.new }}` |
+{% endfor %}
+{% endif %}
+
+---
+
+{% endfor -%}
+{% endif -%}
+
+{% if changes.relationships -%}
+## 🔗 Relationship Changes
+
+{% for change in changes.relationships -%}
+### {{ change.change_type | format_change_type }} `{{ change.name }}`
+
+{% if change.change_type == 'added' -%}
+A new relationship has been added to the schema.
+{% elif change.change_type == 'removed' -%}
+This relationship has been removed from the schema.
+{% elif change.change_type == 'modified' -%}
+This relationship has been modified.
+{% endif %}
+
+{% if change.property_changes -%}
+#### Property Changes
+
+| Property | Old Value | New Value |
+|----------|-----------|-----------|
+{% for prop, values in change.property_changes.items() -%}
+| **{{ prop }}** | `{{ values.old }}` | `{{ values.new }}` |
+{% endfor %}
+{% endif %}
+
+---
+
+{% endfor -%}
+{% endif -%}
+
+{% if changes.subtypes -%}
+## 🏷️ Subtype Changes
+
+{% for change in changes.subtypes -%}
+### {{ change.change_type | format_change_type }} `{{ change.name }}`
+
+{% if change.change_type == 'added' -%}
+A new subtype has been added to the schema.
+{% elif change.change_type == 'removed' -%}
+This subtype has been removed from the schema.
+{% elif change.change_type == 'modified' -%}
+This subtype has been modified.
+{% endif %}
+
+{% if change.value_changes -%}
+#### Value Changes
+
+| Code | Change |
+|------|--------|
+{% for code, change_type in change.value_changes.items() -%}
+| `{{ code }}` | {{ change_type | format_change_type }} |
+{% endfor %}
+{% endif %}
+
+{% if change.property_changes -%}
+#### Property Changes
+
+| Property | Old Value | New Value |
+|----------|-----------|-----------|
+{% for prop, values in change.property_changes.items() -%}
+| **{{ prop }}** | `{{ values.old }}` | `{{ values.new }}` |
+{% endfor %}
+{% endif %}
+
+---
+
+{% endfor -%}
+{% endif -%}
+
+## Report Generation
+
+This report was generated automatically by lg-gcover schema comparison tool.
+
+**Generated on:** {{ metadata.comparison_date | format_datetime }}  
+**Tool:** lg-gcover schema diff  
+**Format:** Markdown

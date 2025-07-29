@@ -127,11 +127,30 @@ def diagram(json_file, output, title, no_fields, no_relationships, filter):
 @click.argument("new_schema", type=click.Path(exists=True))
 @click.option("--output", "-o", help="Output file for diff report")
 @click.option(
-    "--format", type=click.Choice(["json", "html", "markdown"]), default="json"
+    "--format",
+    type=click.Choice(["json", "html", "markdown"]),
+    default="json",
+    help="Output format for the report"
 )
-def diff(old_schema, new_schema, output, format):
+@click.option(
+    "--template",
+    type=click.Choice(["summary", "full", "minimal"]),
+    default="full",
+    help="Template type to use for report generation"
+)
+@click.option(
+    "--template-dir",
+    type=click.Path(exists=True),
+    help="Custom template directory"
+)
+@click.option("--filter-prefix", help="Filter objects by prefix (e.g., 'GC_')")
+@click.option("--open-browser", is_flag=True, help="Open HTML report in browser")
+def diff(old_schema, new_schema, output, format, template, template_dir, filter_prefix, open_browser):
     """Compare two schemas and generate diff report."""
-    click.echo("Comparing schemas...")
+
+    from ..schema.reporter import generate_report
+
+    click.echo("Loading schemas...")
 
     # Charger les schémas
     with open(old_schema) as f:
@@ -139,36 +158,68 @@ def diff(old_schema, new_schema, output, format):
     with open(new_schema) as f:
         new_data = json.load(f)
 
-    # Transformer
-    old = transform_esri_json(old_data)
-    new = transform_esri_json(new_data)
+    # Transformer avec filtrage optionnel
+    old = transform_esri_json(old_data, target_prefix=filter_prefix)
+    new = transform_esri_json(new_data, target_prefix=filter_prefix)  # was filter_prefix TODO
+
+    click.echo("Comparing schemas...")
 
     # Comparer
     diff = SchemaDiff(old, new)
 
-    # Afficher le résumé
+    # Afficher le résumé en console
     summary = diff.get_summary()
-    click.echo("\nSummary of changes:")
-    for key, value in summary.items():
-        logger.debug("DEBUG:", value, type(value))
-        if any(v > 0 for v in value.values()):
-            click.echo(f"  {key}: {value}")
+    total_changes = sum(sum(counts.values()) for counts in summary.values())
 
-    # Sauvegarder si demandé
+    if total_changes == 0:
+        click.secho("✅ No changes detected", fg="green")
+    else:
+        click.echo(f"\n📊 Summary of changes (Total: {total_changes}):")
+        for category, counts in summary.items():
+            category_total = sum(counts.values())
+            if category_total > 0:
+                click.echo(f"  {category.replace('_', ' ').title()}: "
+                           f"{counts['added']} added, "
+                           f"{counts['removed']} removed, "
+                           f"{counts['modified']} modified")
+
+    # Générer le rapport si demandé
     if output:
-        if format == "json":
-            from ..schema.exporters.json import export_schema_diff_to_json
+        click.echo(f"\nGenerating {format} report...")
 
-            result = export_schema_diff_to_json(diff)
-            Path(output).write_text(json.dumps(result, indent=2))
-        elif format == "html":
-            # Générer HTML
-            pass
-        elif format == "markdown":
-            # Générer Markdown
-            pass
+        try:
+            report_content = generate_report(
+                diff=diff,
+                template=template,
+                format=format,
+                template_dir=Path(template_dir) if template_dir else None,
+                output_file=Path(output)
+            )
 
-        click.secho(f"✅ Diff report saved to {output}", fg="green")
+            click.secho(f"✅ Report saved to {output}", fg="green")
+
+            # Ouvrir dans le navigateur si demandé
+            if open_browser and format == "html":
+                import webbrowser
+                webbrowser.open(f"file://{Path(output).absolute()}")
+                click.echo("🌐 Report opened in browser")
+
+        except Exception as e:
+            click.secho(f"❌ Error generating report: {e}", fg="red")
+            raise click.Abort()
+    else:
+        # Afficher un rapport simple en console
+        if total_changes > 0:
+            click.echo("\nDetailed changes:")
+            for change in diff.domain_changes[:5]:  # Limite à 5 pour éviter le spam
+                click.echo(f"  Domain {change.domain_name}: {change.change_type.value}")
+            for change in diff.table_changes[:5]:
+                click.echo(f"  Table {change.table_name}: {change.change_type.value}")
+            for change in diff.feature_class_changes[:5]:
+                click.echo(f"  Feature Class {change.table_name}: {change.change_type.value}")
+
+            if len(diff.domain_changes) + len(diff.table_changes) + len(diff.feature_class_changes) > 15:
+                click.echo("  ... (use --output to see full report)")
 
 
 @schema.command()
@@ -178,14 +229,24 @@ def diff(old_schema, new_schema, output, format):
     "-t",
     type=click.Choice(["datamodel", "summary", "full"]),
     default="datamodel",
+    help="Template type for documentation"
 )
 @click.option("--output", "-o", required=True, help="Output file")
 @click.option(
-    "--format", type=click.Choice(["html", "markdown", "pdf"]), default="html"
+    "--format",
+    type=click.Choice(["html", "markdown", "pdf"]),
+    default="html",
+    help="Output format"
 )
-def report(schema_file, template, output, format):
+@click.option(
+    "--template-dir",
+    type=click.Path(exists=True),
+    help="Custom template directory"
+)
+def report(schema_file, template, output, format, template_dir):
     """Generate documentation from schema."""
     click.echo(f"Generating {template} report...")
+    from ..schema.reporter import generate_report
 
     # Charger le schéma
     with open(schema_file) as f:
@@ -194,9 +255,88 @@ def report(schema_file, template, output, format):
     schema = transform_esri_json(data)
 
     # Générer le rapport selon le template
+    try:
+        report_content = generate_report(
+            schema=schema,
+            template=template,
+            format=format,
+            template_dir=Path(template_dir) if template_dir else None,
+            output_file=Path(output)
+        )
+
+        click.secho(f"✅ Report saved to {output}", fg="green")
+
+    except Exception as e:
+        click.secho(f"❌ Error generating report: {e}", fg="red")
+        raise click.Abort()
+
+
+@schema.command()
+@click.argument("old_schema", type=click.Path(exists=True))
+@click.argument("new_schema", type=click.Path(exists=True))
+@click.option("--output-dir", "-o", required=True, help="Output directory for all reports")
+@click.option("--filter-prefix", help="Filter objects by prefix")
+@click.option("--open-browser", is_flag=True, help="Open HTML reports in browser")
+def diff_all(old_schema, new_schema, output_dir, filter_prefix, open_browser):
+    """Generate comprehensive diff reports in all formats."""
     from ..schema.reporter import generate_report
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
 
-    report_content = generate_report(schema=schema, template=template, format=format)
+    click.echo("Loading schemas...")
 
-    Path(output).write_text(report_content)
-    click.secho(f"✅ Report saved to {output}", fg="green")
+    # Charger les schémas
+    with open(old_schema) as f:
+        old_data = json.load(f)
+    with open(new_schema) as f:
+        new_data = json.load(f)
+
+    # Transformer
+    old = transform_esri_json(old_data, filter_prefix=filter_prefix)
+    new = transform_esri_json(new_data, filter_prefix=filter_prefix)
+
+    click.echo("Comparing schemas...")
+    diff = SchemaDiff(old, new)
+
+    # Générer tous les formats
+    formats_templates = [
+        ("json", "full"),
+        ("html", "full"),
+        ("html", "summary"),
+        ("markdown", "full")
+    ]
+
+    generated_files = []
+
+    for fmt, tpl in formats_templates:
+        filename = f"schema_diff_{tpl}.{fmt}"
+        output_file = output_path / filename
+
+        try:
+            click.echo(f"Generating {fmt} {tpl} report...")
+            generate_report(
+                diff=diff,
+                template=tpl,
+                format=fmt,
+                output_file=output_file
+            )
+            generated_files.append(output_file)
+            click.secho(f"✅ {filename}", fg="green")
+
+        except Exception as e:
+            click.secho(f"❌ Failed to generate {filename}: {e}", fg="red")
+
+    # Résumé
+    summary = diff.get_summary()
+    total_changes = sum(sum(counts.values()) for counts in summary.values())
+
+    click.echo(f"\n📊 Total changes detected: {total_changes}")
+    click.echo(f"📁 Reports saved to: {output_path}")
+
+    # Ouvrir dans le navigateur
+    if open_browser and generated_files:
+        html_files = [f for f in generated_files if f.suffix == '.html']
+        if html_files:
+            import webbrowser
+            webbrowser.open(f"file://{html_files[0].absolute()}")
+            click.echo("🌐 HTML report opened in browser")

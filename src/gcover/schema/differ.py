@@ -96,8 +96,18 @@ class SchemaDiff:
 
         self.metadata = {}  # TODO
 
+        self._set_metadata()
+
         # Perform the diff
         self._compute_diff()
+
+    def _set_metadata(self):
+        metadata = {}
+        metadata['old_schema'] = {'name': self.old_schema.get('name', 'unknown')}
+        metadata['new_schema'] = {'name': self.new_schema.get('name', 'unknown')}
+
+        self.metadata = metadata
+
 
     def _compute_diff(self):
         """Compute all differences between the schemas"""
