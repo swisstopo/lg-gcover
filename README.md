@@ -15,6 +15,59 @@ Perfect for geologists, GIS analysts, and researchers working with Swiss geologi
 
 ## Usage
 
+
+### Global Command Options
+
+All commands support these global options:
+
+```bash
+gcover [GLOBAL_OPTIONS] COMMAND [COMMAND_OPTIONS]
+
+Global Options:
+  --config, -c PATH    Configuration file path
+  --env, -e ENV        Environment (dev/development, prod/production)
+  --verbose, -v        Enable verbose output
+  --help               Show help message
+```
+
+### Examples
+
+```bash
+# Use development environment (default)
+gcover gdb status
+
+# Use production environment
+gcover --env prod gdb sync
+
+# Use custom config file
+gcover --config /path/to/config.yaml --env prod gdb status
+
+# Enable verbose logging
+gcover --verbose --env dev gdb scan
+
+# Combine global options
+gcover --config custom.yaml --env prod --verbose qa process file.gdb
+```
+
+### Environment Variables
+
+Global settings can be overridden with environment variables:
+
+```bash
+# Global overrides (affect all modules)
+export GCOVER_GLOBAL_LOG_LEVEL=DEBUG
+export GCOVER_GLOBAL_S3_BUCKET=my-custom-bucket
+export GCOVER_GLOBAL_S3_PROFILE=my-profile
+
+# Module-specific overrides
+export GCOVER_GDB_DATABASE_PATH=/custom/path/db.duckdb
+export GCOVER_SDE_CONNECTION_TIMEOUT=120
+
+# Use the overrides
+gcover gdb status  # Will use custom S3 bucket and debug logging
+```
+
+
 ### GDB Asset Management - Usage
 
 #### Quick Start
@@ -615,204 +668,204 @@ GCOVERP     USER.MYVERSION        /tmp/gcover_GCOVERP_MYVERSION.sde
 
 ### Schema Management
 
-The `gcover schema` command provides tools for extracting, comparing, and documenting database schemas from GDB files and SDE connections.
+
+The `gcover schema` command provides tools for extracting, comparing, and documenting ESRI geodatabase schemas.
 
 #### Quick Start
 
 ```bash
-# Extract schema from GDB to JSON
-gcover schema extract /path/to/data.gdb -o ./schemas -n myschema
-
-# Generate PlantUML diagram
-gcover schema diagram schema.json -o schema.puml
+# Extract schema from GDB
+gcover schema extract /path/to/your.gdb --output schema.json
 
 # Compare two schemas
-gcover schema diff old_schema.json new_schema.json -o changes.json
+gcover schema diff old_schema.json new_schema.json --output report.html
 
-# Generate documentation
-gcover schema report schema.json -o documentation.html
+# Generate all report formats
+gcover schema diff-all old.json new.json --output-dir ./reports
 ```
 
-#### Schema Commands
-
-##### `gcover schema extract`
-Extracts schema information from GDB files or SDE connections.
+#### Schema Extraction
 
 ```bash
-# Basic extraction
-gcover schema extract /path/to/geodatabase.gdb
+# Extract schema to JSON
+gcover schema extract /path/to/database.gdb --output schema.json
 
-# Specify output directory and name
-gcover schema extract /path/to/data.gdb -o ./schemas -n production_schema
+# Extract with filtering
+gcover schema extract database.gdb --filter-prefix "GC_" --output filtered_schema.json
 
 # Multiple output formats
-gcover schema extract /path/to/data.gdb -f json -f html -f xml
-
-# Filter by table prefix
-gcover schema extract /path/to/data.gdb --filter-prefix GCOVER
-
-# Remove prefix from table names in output
-gcover schema extract /path/to/data.gdb --filter-prefix GCOVER --remove-prefix
+gcover schema extract database.gdb --format json xml --output-dir ./schemas
 ```
 
-**Arguments:**
-- `SOURCE`: Path to GDB file or SDE connection file
-
-**Options:**
-- `--output, -o`: Output directory for schema files
-- `--name, -n`: Name for the generated schema files
-- `--format, -f`: Output formats (`json`, `html`, `xml`) - multiple allowed
-- `--filter-prefix`: Include only tables with this prefix
-- `--remove-prefix/--keep-prefix`: Remove prefix from table names (default: keep)
-
-##### `gcover schema diagram`
-Generates PlantUML diagrams from schema JSON files.
+#### Schema Comparison
 
 ```bash
-# Basic diagram generation
-gcover schema diagram schema.json -o database_diagram.puml
-
-# Customize diagram
-gcover schema diagram schema.json -o diagram.puml --title "GeoCover Schema"
-
-# Simplified diagram (no field details)
-gcover schema diagram schema.json -o simple.puml --no-fields
-
-# Exclude relationships
-gcover schema diagram schema.json -o tables_only.puml --no-relationships
-
-# Include only specific tables
-gcover schema diagram schema.json -o filtered.puml -f GCOVER_POINTS -f GCOVER_LINES
-```
-
-**Arguments:**
-- `JSON_FILE`: Path to schema JSON file
-
-**Options:**
-- `--output, -o`: Output PlantUML file (required)
-- `--title`: Diagram title (default: "Database Schema")
-- `--no-fields`: Exclude field details from diagram
-- `--no-relationships`: Exclude relationships from diagram
-- `--filter, -f`: Include only specified tables (multiple allowed)
-
-##### `gcover schema diff`
-Compares two schemas and generates difference reports.
-
-```bash
-# Basic schema comparison
+# Basic comparison (console output)
 gcover schema diff old_schema.json new_schema.json
 
-# Save diff report
-gcover schema diff v1.json v2.json -o changes.json
+# HTML report
+gcover schema diff old.json new.json --output changes.html --format html
 
-# Different output formats
-gcover schema diff v1.json v2.json -o changes.html --format html
-gcover schema diff v1.json v2.json -o changes.md --format markdown
+# Markdown documentation
+gcover schema diff old.json new.json --output changes.md --format markdown
+
+# JSON export for automation
+gcover schema diff old.json new.json --output changes.json --format json
 ```
 
-**Arguments:**
-- `OLD_SCHEMA`: Path to older schema JSON file
-- `NEW_SCHEMA`: Path to newer schema JSON file
+#### Report Templates
 
-**Options:**
-- `--output, -o`: Output file for diff report
-- `--format`: Output format (`json`, `html`, `markdown`)
-
-##### `gcover schema report`
-Generates documentation from schema files.
+| Template | Description | Best For |
+|----------|-------------|----------|
+| `full` | Detailed technical analysis | Complete schema documentation |
+| `summary` | Executive overview | Management reports |
+| `minimal` | Condensed view | Dashboards and monitoring |
+| `incident` | Risk assessment format | Change impact analysis |
 
 ```bash
-# Generate HTML documentation
-gcover schema report schema.json -o documentation.html
+# Use specific template
+gcover schema diff old.json new.json --template summary --output executive_report.html
 
-# Different report templates
-gcover schema report schema.json -t datamodel -o datamodel.html
-gcover schema report schema.json -t summary -o summary.html
-gcover schema report schema.json -t full -o complete_doc.html
-
-# Different output formats
-gcover schema report schema.json -o doc.md --format markdown
-gcover schema report schema.json -o doc.pdf --format pdf
+# Generate comprehensive reports
+gcover schema diff-all old.json new.json --output-dir ./monthly_reports --filter-prefix "GC_"
 ```
 
-**Arguments:**
-- `SCHEMA_FILE`: Path to schema JSON file
+#### Advanced Options
 
-**Options:**
-- `--template, -t`: Report template (`datamodel`, `summary`, `full`)
-- `--output, -o`: Output file (required)
-- `--format`: Output format (`html`, `markdown`, `pdf`)
+```bash
+# Filter by object prefix
+gcover schema diff old.json new.json --filter-prefix "GC_" --output geocover_changes.html
+
+# Custom template directory
+gcover schema diff old.json new.json --template-dir ./custom_templates --output report.html
+
+# Open in browser automatically
+gcover schema diff old.json new.json --output report.html --open-browser
+
+# PDF generation (requires pandoc)
+gcover schema diff old.json new.json --output report.html
+pandoc report.html --pdf-engine=xelatex -o report.pdf
+```
+
+#### Schema Documentation
+
+```bash
+# Generate schema documentation
+gcover schema report schema.json --output documentation.html --template datamodel
+
+# Create PlantUML diagram
+gcover schema diagram schema.json --output schema_diagram.puml --title "GeoCover Schema"
+
+# Generate multiple documentation formats
+gcover schema report schema.json --template full --format html --output docs.html
+gcover schema report schema.json --template full --format markdown --output docs.md
+```
 
 #### Typical Workflows
 
-##### Schema Documentation Workflow
+##### Daily Schema Monitoring
 ```bash
-# 1. Extract schema from production GDB
-gcover schema extract /path/to/production.gdb -o ./schemas -n prod_v2.1
+#!/bin/bash
+# Compare latest daily backups
+LATEST=$(ls -1 /media/marco/SANDISK/GCOVER/daily/*.gdb | tail -1)
+PREVIOUS=$(ls -1 /media/marco/SANDISK/GCOVER/daily/*.gdb | tail -2 | head -1)
 
-# 2. Generate visual diagram
-gcover schema diagram schemas/prod_v2.1.json -o docs/schema_diagram.puml --title "Production Schema v2.1"
-
-# 3. Generate comprehensive documentation
-gcover schema report schemas/prod_v2.1.json -t full -o docs/schema_doc.html
+gcover schema diff "$PREVIOUS" "$LATEST" \
+    --output "daily_$(date +%Y%m%d).html" \
+    --template summary \
+    --filter-prefix "GC_"
 ```
 
-##### Schema Change Tracking
+##### Monthly Schema Reports
 ```bash
-# 1. Extract current schema
-gcover schema extract /path/to/current.gdb -n current
+# Generate comprehensive monthly comparison
+CURRENT_MONTH=$(ls -1 /media/marco/SANDISK/GCOVER/monthly/*$(date +%Y%m)*.gdb | tail -1)
+PREVIOUS_MONTH=$(ls -1 /media/marco/SANDISK/GCOVER/monthly/*$(date -d '1 month ago' +%Y%m)*.gdb | tail -1)
 
-# 2. Compare with previous version  
-gcover schema diff schemas/previous.json schemas/current.json -o changes.json
-
-# 3. Generate change report
-gcover schema report changes.json -t summary -o change_summary.html
+gcover schema diff-all "$PREVIOUS_MONTH" "$CURRENT_MONTH" \
+    --output-dir "./reports/$(date +%Y-%m)" \
+    --filter-prefix "GC_"
 ```
 
-##### Multi-Instance Schema Comparison
+##### Quality Assurance Verification
 ```bash
-# Extract from different SDE instances
-gcover schema extract gcoverp_connection.sde -n gcoverp_prod
-gcover schema extract gcoverq_connection.sde -n gcoverq_prod
+# Compare production schema with QA results
+BASELINE="/media/marco/SANDISK/GCOVER/daily/baseline.gdb"
+QA_RESULTS="/media/marco/SANDISK/Verifications/TechnicalQualityAssurance/RC_2030-12-31/latest/issue.gdb"
 
-# Compare schemas between instances
-gcover schema diff gcoverp_prod.json gcoverq_prod.json -o instance_diff.json
+gcover schema diff "$BASELINE" "$QA_RESULTS" \
+    --output qa_verification.html \
+    --template incident \
+    --filter-prefix "GC_"
+```
+
+#### Configuration
+
+Schema commands can be configured via YAML:
+
+```yaml
+# config/schema_config.yaml
+template:
+  default_template: "full"
+  default_format: "html"
+
+filtering:
+  default_prefix_filter: "GC_"
+  exclude_empty_changes: true
+
+output:
+  auto_open_browser: false
+  create_backup: true
+
+notifications:
+  slack_webhook: "https://hooks.slack.com/..."
+  threshold: 10
+```
+
+Use with: `gcover schema diff --config config/schema_config.yaml old.json new.json`
+
+#### Output Formats
+
+- **HTML**: Interactive reports with styling and navigation
+- **Markdown**: Documentation-friendly format for version control
+- **JSON**: Structured data for programmatic processing
+- **PDF**: Professional reports (requires pandoc and LaTeX)
+
+#### Integration with Automation
+
+```python
+# Python API usage
+from gcover.schema import SchemaDiff, transform_esri_json
+from gcover.schema.reporter import generate_report
+
+# Load and compare schemas
+with open('old_schema.json') as f:
+    old_data = json.load(f)
+with open('new_schema.json') as f:
+    new_data = json.load(f)
+
+old_schema = transform_esri_json(old_data)
+new_schema = transform_esri_json(new_data)
+
+diff = SchemaDiff(old_schema, new_schema)
+
+if diff.has_changes():
+    # Generate report
+    generate_report(diff, template="summary", format="html", output_file="changes.html")
+    
+    # Process changes programmatically
+    for change in diff.domain_changes:
+        if change.change_type == ChangeType.REMOVED:
+            print(f"Warning: Domain {change.domain_name} was removed")
 ```
 
 #### Requirements
 
-The `gcover schema` commands require **arcpy** for schema extraction from GDB files and SDE connections. Ensure you have ArcGIS Pro installed and properly configured.
+- **arcpy**: Required for GDB schema extraction (ArcGIS Pro installation)
+- **jinja2**: Template rendering for reports
+- **pyyaml**: Configuration file support
+- **pandoc**: Optional, for PDF generation
 
-```bash
-# Check if arcpy is available
-python -c "import arcpy; print('arcpy available')"
-```
-
-If arcpy is not available, you'll see:
-```
-❌ This command requires arcpy
-```
-
-#### Output Files
-
-##### Schema JSON Structure
-```json
-{
-  "metadata": {
-    "source": "/path/to/data.gdb",
-    "extracted_at": "2025-07-26T10:30:00",
-    "total_tables": 15
-  },
-  "tables": [
-    {
-      "name": "GCOVER_POINTS",
-      "type": "FeatureClass", 
-      "geometry_type": "Point",
-      "fields": [...]
-    }
-  ]
-}
-```
 
 ## Global Configuration
 
@@ -858,53 +911,3 @@ global:
     profile: "production"
 ```
 
-### Global Command Options
-
-All commands support these global options:
-
-```bash
-gcover [GLOBAL_OPTIONS] COMMAND [COMMAND_OPTIONS]
-
-Global Options:
-  --config, -c PATH    Configuration file path
-  --env, -e ENV        Environment (dev/development, prod/production)
-  --verbose, -v        Enable verbose output
-  --help               Show help message
-```
-
-### Examples
-
-```bash
-# Use development environment (default)
-gcover gdb status
-
-# Use production environment
-gcover --env prod gdb sync
-
-# Use custom config file
-gcover --config /path/to/config.yaml --env prod gdb status
-
-# Enable verbose logging
-gcover --verbose --env dev gdb scan
-
-# Combine global options
-gcover --config custom.yaml --env prod --verbose qa process file.gdb
-```
-
-### Environment Variables
-
-Global settings can be overridden with environment variables:
-
-```bash
-# Global overrides (affect all modules)
-export GCOVER_GLOBAL_LOG_LEVEL=DEBUG
-export GCOVER_GLOBAL_S3_BUCKET=my-custom-bucket
-export GCOVER_GLOBAL_S3_PROFILE=my-profile
-
-# Module-specific overrides
-export GCOVER_GDB_DATABASE_PATH=/custom/path/db.duckdb
-export GCOVER_SDE_CONNECTION_TIMEOUT=120
-
-# Use the overrides
-gcover gdb status  # Will use custom S3 bucket and debug logging
-```

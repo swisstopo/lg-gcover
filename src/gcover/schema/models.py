@@ -1,6 +1,10 @@
 from dataclasses import dataclass, field
 from typing import Any, Optional, Union
 
+from datetime import datetime
+
+from .metadata import SchemaMetadata
+
 
 @dataclass
 class CodedValue:
@@ -166,6 +170,131 @@ class ESRISchema:
 
     # Metadata
     metadata: dict[str, Any] = field(default_factory=dict)
+    schema_metadata: Optional[SchemaMetadata] = field(
+        default_factory=lambda: SchemaMetadata()
+    )
+
+    @property
+    def name(self) -> str:
+        """Get schema name from metadata."""
+        if self.schema_metadata and self.schema_metadata.gdb_name:
+            return self.schema_metadata.gdb_name
+        return self.metadata.get("name", "Unknown Schema")
+
+    @property
+    def backup_date(self) -> Optional[datetime]:
+        """Get backup date from metadata."""
+        if self.schema_metadata:
+            return self.schema_metadata.backup_date
+        return None
+
+    @property
+    def backup_info(self) -> str:
+        """Get formatted backup information."""
+        if self.schema_metadata:
+            return self.schema_metadata.formatted_backup_info
+        return "Unknown"
+
+    def set_metadata_from_esri_json(self, esri_json: dict[str, Any]):
+        """Extract and set metadata from ESRI JSON export."""
+        if not self.schema_metadata:
+            self.schema_metadata = SchemaMetadata()
+
+        # Extract metadata from JSON root
+        if "dateExported" in esri_json:
+            try:
+                self.schema_metadata.date_exported = datetime.fromisoformat(
+                    esri_json["dateExported"].replace("Z", "+00:00")
+                )
+            except ValueError:
+                try:
+                    self.schema_metadata.date_exported = datetime.strptime(
+                        esri_json["dateExported"], "%Y-%m-%dT%H:%M:%S"
+                    )
+                except ValueError:
+                    pass
+
+        # Map other metadata fields
+        metadata_mapping = {
+            "datasetType": "dataset_type",
+            "catalogPath": "catalog_path",
+            "name": "gdb_name",
+        }
+
+        for esri_key, metadata_key in metadata_mapping.items():
+            if esri_key in esri_json:
+                setattr(self.schema_metadata, metadata_key, esri_json[esri_key])
+
+        # Trigger GDB name parsing
+        if self.schema_metadata.gdb_name:
+            self.schema_metadata._parse_gdb_name()
+
+    def get_metadata_summary(self) -> dict[str, Any]:
+        """Get a summary of schema metadata."""
+        if not hasattr(self, "schema_metadata") or not self.schema_metadata:
+            return {"error": "No metadata available"}
+
+        return {
+            "name": self.name,
+            "backup_date": self.backup_date.isoformat() if self.backup_date else None,
+            "backup_info": self.backup_info,
+            "is_file_gdb": self.schema_metadata.is_file_gdb,
+            "version": self.schema_metadata.version_string,
+            "age_days": self.schema_metadata.age_days,
+            "reference_date": self.schema_metadata.reference_date,
+            "backup_type": self.schema_metadata.backup_type,
+        }
+
+    def compare_metadata(self, other: "ESRISchema") -> dict[str, Any]:
+        """Compare metadata with another schema."""
+        if not all(
+            hasattr(schema, "schema_metadata") and schema.schema_metadata
+            for schema in [self, other]
+        ):
+            return {"error": "Both schemas must have metadata"}
+
+        self_meta = self.schema_metadata
+        other_meta = other.schema_metadata
+
+        comparison = {
+            "time_difference": None,
+            "backup_type_same": self_meta.backup_type == other_meta.backup_type,
+            "reference_date_same": self_meta.reference_date
+            == other_meta.reference_date,
+            "complexity_difference": None,
+            "version_same": self_meta.version_string == other_meta.version_string,
+        }
+
+        # Calculate time difference
+        if self_meta.backup_datetime and other_meta.backup_datetime:
+            time_diff = abs(
+                (self_meta.backup_datetime - other_meta.backup_datetime).total_seconds()
+            )
+            comparison["time_difference"] = {
+                "seconds": time_diff,
+                "hours": time_diff / 3600,
+                "days": time_diff / 86400,
+            }
+
+        # Calculate complexity difference
+        if self_meta.schema_complexity_score and other_meta.schema_complexity_score:
+            comparison["complexity_difference"] = {
+                "absolute": abs(
+                    self_meta.schema_complexity_score
+                    - other_meta.schema_complexity_score
+                ),
+                "percentage": abs(
+                    self_meta.schema_complexity_score
+                    - other_meta.schema_complexity_score
+                )
+                / max(
+                    self_meta.schema_complexity_score,
+                    other_meta.schema_complexity_score,
+                )
+                * 100,
+            }
+
+        return comparison
 
     @property
     def geological_datamodel_version(self):
