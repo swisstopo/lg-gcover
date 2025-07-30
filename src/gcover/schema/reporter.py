@@ -35,6 +35,41 @@ def schema_diff_to_dict(diff: SchemaDiff) -> Dict[str, Any]:
         Dictionary representation suitable for JSON export and templates
     """
 
+    # Remplacez la section metadata par:
+    metadata = {
+        "old_schema_name": getattr(diff.old_schema, "name", "Unknown"),
+        "new_schema_name": getattr(diff.new_schema, "name", "Unknown"),
+        "comparison_date": datetime.now().isoformat(),
+    }
+
+    # Add rich metadata if available
+    if hasattr(diff.old_schema, "schema_metadata") and diff.old_schema.schema_metadata:
+        old_meta = diff.old_schema.get_metadata_summary()
+        metadata.update(
+            {
+                "old_schema_backup_date": old_meta.get("backup_date"),
+                "old_schema_backup_info": old_meta.get("backup_info"),
+                "old_schema_age_days": old_meta.get("age_days"),
+            }
+        )
+
+    if hasattr(diff.new_schema, "schema_metadata") and diff.new_schema.schema_metadata:
+        new_meta = diff.new_schema.get_metadata_summary()
+        metadata.update(
+            {
+                "new_schema_backup_date": new_meta.get("backup_date"),
+                "new_schema_backup_info": new_meta.get("backup_info"),
+                "new_schema_age_days": new_meta.get("age_days"),
+            }
+        )
+
+    # Add metadata comparison
+    if all(
+        hasattr(schema, "schema_metadata") and schema.schema_metadata
+        for schema in [diff.old_schema, diff.new_schema]
+    ):
+        metadata["comparison"] = diff.old_schema.compare_metadata(diff.new_schema)
+
     # Helper function to extract coded value changes
     def extract_coded_value_changes(change):
         if hasattr(change, "coded_value_changes") and change.coded_value_changes:
@@ -167,11 +202,7 @@ def schema_diff_to_dict(diff: SchemaDiff) -> Dict[str, Any]:
             "subtypes": subtype_changes,
         },
         "has_changes": diff.has_changes(),
-        "metadata": {
-            "old_schema_name": getattr(diff.old_schema, "name", "Unknown"),
-            "new_schema_name": getattr(diff.new_schema, "name", "Unknown"),
-            "comparison_date": datetime.now().isoformat(),
-        },
+        "metadata": metadata,
     }
 
     return _convert_enum_to_string(result)

@@ -27,7 +27,7 @@
 ---
 
 {% if changes.domains -%}
-## 🏷️ Domain Changes
+## 🏷 Domain Changes
 
 {% for change in changes.domains -%}
 ### {{ change.change_type | format_change_type }} `{{ change.name }}`
@@ -114,7 +114,7 @@ This table has been modified.
 {% endif -%}
 
 {% if changes.feature_classes -%}
-## 🗺️ Feature Class Changes
+## 🗺 Feature Class Changes
 
 {% for change in changes.feature_classes -%}
 ### {{ change.change_type | format_change_type }} `{{ change.name }}`
@@ -191,7 +191,8 @@ This relationship has been modified.
 {% endif -%}
 
 {% if changes.subtypes -%}
-## 🏷️ Subtype Changes
+## 🏷 Subtype Changes
+🏷 Subtype Changes
 
 {% for change in changes.subtypes -%}
 ### {{ change.change_type | format_change_type }} `{{ change.name }}`

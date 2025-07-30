@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import traceback
 
 import click
 
@@ -130,22 +131,29 @@ def diagram(json_file, output, title, no_fields, no_relationships, filter):
     "--format",
     type=click.Choice(["json", "html", "markdown"]),
     default="json",
-    help="Output format for the report"
+    help="Output format for the report",
 )
 @click.option(
     "--template",
     type=click.Choice(["summary", "full", "minimal"]),
     default="full",
-    help="Template type to use for report generation"
+    help="Template type to use for report generation",
 )
 @click.option(
-    "--template-dir",
-    type=click.Path(exists=True),
-    help="Custom template directory"
+    "--template-dir", type=click.Path(exists=True), help="Custom template directory"
 )
 @click.option("--filter-prefix", help="Filter objects by prefix (e.g., 'GC_')")
 @click.option("--open-browser", is_flag=True, help="Open HTML report in browser")
-def diff(old_schema, new_schema, output, format, template, template_dir, filter_prefix, open_browser):
+def diff(
+    old_schema,
+    new_schema,
+    output,
+    format,
+    template,
+    template_dir,
+    filter_prefix,
+    open_browser,
+):
     """Compare two schemas and generate diff report."""
 
     from ..schema.reporter import generate_report
@@ -160,7 +168,9 @@ def diff(old_schema, new_schema, output, format, template, template_dir, filter_
 
     # Transformer avec filtrage optionnel
     old = transform_esri_json(old_data, target_prefix=filter_prefix)
-    new = transform_esri_json(new_data, target_prefix=filter_prefix)  # was filter_prefix TODO
+    new = transform_esri_json(
+        new_data, target_prefix=filter_prefix
+    )  # was filter_prefix TODO
 
     click.echo("Comparing schemas...")
 
@@ -178,10 +188,12 @@ def diff(old_schema, new_schema, output, format, template, template_dir, filter_
         for category, counts in summary.items():
             category_total = sum(counts.values())
             if category_total > 0:
-                click.echo(f"  {category.replace('_', ' ').title()}: "
-                           f"{counts['added']} added, "
-                           f"{counts['removed']} removed, "
-                           f"{counts['modified']} modified")
+                click.echo(
+                    f"  {category.replace('_', ' ').title()}: "
+                    f"{counts['added']} added, "
+                    f"{counts['removed']} removed, "
+                    f"{counts['modified']} modified"
+                )
 
     # Générer le rapport si demandé
     if output:
@@ -193,7 +205,7 @@ def diff(old_schema, new_schema, output, format, template, template_dir, filter_
                 template=template,
                 format=format,
                 template_dir=Path(template_dir) if template_dir else None,
-                output_file=Path(output)
+                output_file=Path(output),
             )
 
             click.secho(f"✅ Report saved to {output}", fg="green")
@@ -201,11 +213,15 @@ def diff(old_schema, new_schema, output, format, template, template_dir, filter_
             # Ouvrir dans le navigateur si demandé
             if open_browser and format == "html":
                 import webbrowser
+
                 webbrowser.open(f"file://{Path(output).absolute()}")
                 click.echo("🌐 Report opened in browser")
 
         except Exception as e:
             click.secho(f"❌ Error generating report: {e}", fg="red")
+            error_details = traceback.format_exc()
+            click.secho(error_details, fg="red")
+
             raise click.Abort()
     else:
         # Afficher un rapport simple en console
@@ -216,9 +232,16 @@ def diff(old_schema, new_schema, output, format, template, template_dir, filter_
             for change in diff.table_changes[:5]:
                 click.echo(f"  Table {change.table_name}: {change.change_type.value}")
             for change in diff.feature_class_changes[:5]:
-                click.echo(f"  Feature Class {change.table_name}: {change.change_type.value}")
+                click.echo(
+                    f"  Feature Class {change.table_name}: {change.change_type.value}"
+                )
 
-            if len(diff.domain_changes) + len(diff.table_changes) + len(diff.feature_class_changes) > 15:
+            if (
+                len(diff.domain_changes)
+                + len(diff.table_changes)
+                + len(diff.feature_class_changes)
+                > 15
+            ):
                 click.echo("  ... (use --output to see full report)")
 
 
@@ -229,19 +252,17 @@ def diff(old_schema, new_schema, output, format, template, template_dir, filter_
     "-t",
     type=click.Choice(["datamodel", "summary", "full"]),
     default="datamodel",
-    help="Template type for documentation"
+    help="Template type for documentation",
 )
 @click.option("--output", "-o", required=True, help="Output file")
 @click.option(
     "--format",
     type=click.Choice(["html", "markdown", "pdf"]),
     default="html",
-    help="Output format"
+    help="Output format",
 )
 @click.option(
-    "--template-dir",
-    type=click.Path(exists=True),
-    help="Custom template directory"
+    "--template-dir", type=click.Path(exists=True), help="Custom template directory"
 )
 def report(schema_file, template, output, format, template_dir):
     """Generate documentation from schema."""
@@ -261,7 +282,7 @@ def report(schema_file, template, output, format, template_dir):
             template=template,
             format=format,
             template_dir=Path(template_dir) if template_dir else None,
-            output_file=Path(output)
+            output_file=Path(output),
         )
 
         click.secho(f"✅ Report saved to {output}", fg="green")
@@ -274,12 +295,15 @@ def report(schema_file, template, output, format, template_dir):
 @schema.command()
 @click.argument("old_schema", type=click.Path(exists=True))
 @click.argument("new_schema", type=click.Path(exists=True))
-@click.option("--output-dir", "-o", required=True, help="Output directory for all reports")
+@click.option(
+    "--output-dir", "-o", required=True, help="Output directory for all reports"
+)
 @click.option("--filter-prefix", help="Filter objects by prefix")
 @click.option("--open-browser", is_flag=True, help="Open HTML reports in browser")
 def diff_all(old_schema, new_schema, output_dir, filter_prefix, open_browser):
     """Generate comprehensive diff reports in all formats."""
     from ..schema.reporter import generate_report
+
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
@@ -303,7 +327,7 @@ def diff_all(old_schema, new_schema, output_dir, filter_prefix, open_browser):
         ("json", "full"),
         ("html", "full"),
         ("html", "summary"),
-        ("markdown", "full")
+        ("markdown", "full"),
     ]
 
     generated_files = []
@@ -315,10 +339,7 @@ def diff_all(old_schema, new_schema, output_dir, filter_prefix, open_browser):
         try:
             click.echo(f"Generating {fmt} {tpl} report...")
             generate_report(
-                diff=diff,
-                template=tpl,
-                format=fmt,
-                output_file=output_file
+                diff=diff, template=tpl, format=fmt, output_file=output_file
             )
             generated_files.append(output_file)
             click.secho(f"✅ {filename}", fg="green")
@@ -335,8 +356,9 @@ def diff_all(old_schema, new_schema, output_dir, filter_prefix, open_browser):
 
     # Ouvrir dans le navigateur
     if open_browser and generated_files:
-        html_files = [f for f in generated_files if f.suffix == '.html']
+        html_files = [f for f in generated_files if f.suffix == ".html"]
         if html_files:
             import webbrowser
+
             webbrowser.open(f"file://{html_files[0].absolute()}")
             click.echo("🌐 HTML report opened in browser")
