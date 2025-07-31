@@ -33,7 +33,7 @@ from .models import (
     SubtypeValue,
     Table,
 )
-from .reporter import generate_report
+
 from .transformer import transform_esri_json
 
 from gcover.schema.serializer import (
@@ -44,6 +44,8 @@ from gcover.schema.serializer import (
     serialize_feature_classes_only,
 )
 
+
+from .reporter import generate_report, schema_diff_to_dict
 
 # Import conditionnel de l'extracteur (nécessite arcpy)
 try:
@@ -58,17 +60,10 @@ except ImportError:
 
 
 # Import des exporteurs
-# TODO
-"""from .exporters import (
-    export_esri_schema_to_json,
-    export_schema_diff_to_json,
-    generate_plantuml_from_schema
-)"""
-
-
 from .exporters.json import (
     export_esri_schema_to_json,
     export_schema_diff_to_json,
+    # TODO PlantUML
 )
 
 from .filegdb_parser import parse_filegdb_to_esri_schema
@@ -102,4 +97,6 @@ __all__ = [
     "serialize_domains_only",
     "serialize_feature_classes_only",
     "parse_filegdb_to_esri_schema",
+    "generate_report",
+    "schema_diff_to_dict",
 ]

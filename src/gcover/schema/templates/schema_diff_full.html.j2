@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schema Comparison Report</title>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --success-color: #27ae60;
+            --danger-color: #e74c3c;
+            --warning-color: #f39c12;
+            --info-color: #3498db;
+            --light-bg: #f8f9fa;
+            --card-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            --border-radius: 8px;
+        }
+        
+        * {
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 2rem;
+            background: var(--light-bg);
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: var(--border-radius);
+            box-shadow: var(--card-shadow);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, var(--primary-color), #34495e);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+        }
+        
+        .header h1 {
+            margin: 0 0 1rem 0;
+            font-size: 2.5rem;
+            font-weight: 300;
+        }
+        
+        .metadata {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .metadata-item {
+            background: rgba(255,255,255,0.1);
+            padding: 1rem;
+            border-radius: 4px;
+            text-align: left;
+        }
+        
+        .metadata-item strong {
+            display: block;
+            font-size: 0.9rem;
+            opacity: 0.8;
+            margin-bottom: 0.25rem;
+        }
+        
+        .content {
+            padding: 2rem;
+        }
+        
+        .summary {
+            background: linear-gradient(135deg, #e8f5e8, #d4edda);
+            padding: 2rem;
+            border-radius: var(--border-radius);
+            margin-bottom: 2rem;
+            border-left: 5px solid var(--success-color);
+        }
+        
+        .summary.has-changes {
+            background: linear-gradient(135deg, #fff3cd, #fef9e7);
+            border-left-color: var(--warning-color);
+        }
+        
+        .summary h2 {
+            margin-top: 0;
+            color: var(--primary-color);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: var(--border-radius);
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .stat-card h3 {
+            margin: 0 0 1rem 0;
+            color: var(--primary-color);
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .stat-badges {
+            display: flex;
+            justify-content: space-around;
+            gap: 0.5rem;
+        }
+        
+        .badge {
+            padding: 0.4rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            min-width: 40px;
+            text-align: center;
+        }
+        
+        .badge.added {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .badge.removed {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .badge.modified {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .section {
+            margin: 2rem 0;
+        }
+        
+        .section h2 {
+            color: var(--primary-color);
+            border-bottom: 3px solid var(--info-color);
+            padding-bottom: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .change-item {
+            margin: 1rem 0;
+            border-radius: var(--border-radius);
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .change-header {
+            padding: 1rem 1.5rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .change-header:hover {
+            opacity: 0.9;
+        }
+        
+        .change-header.added {
+            background: linear-gradient(135deg, #d4edda, #c3e6cb);
+            color: #155724;
+        }
+        
+        .change-header.removed {
+            background: linear-gradient(135deg, #f8d7da, #f5c6cb);
+            color: #721c24;
+        }
+        
+        .change-header.modified {
+            background: linear-gradient(135deg, #fff3cd, #ffeaa7);
+            color: #856404;
+        }
+        
+        .change-icon {
+            font-size: 1.2rem;
+        }
+        
+        .change-body {
+            background: white;
+            padding: 1.5rem;
+            border-top: 1px solid rgba(0,0,0,0.1);
+        }
+        
+        .change-details {
+            display: grid;
+            gap: 1rem;
+        }
+        
+        .detail-section h4 {
+            color: var(--primary-color);
+            margin: 0 0 0.5rem 0;
+            font-size: 1rem;
+        }
+        
+        .field-changes, .property-changes, .coded-values {
+            background: var(--light-bg);
+            padding: 1rem;
+            border-radius: 4px;
+        }
+        
+        .field-change {
+            padding: 0.75rem;
+            margin: 0.5rem 0;
+            border-radius: 4px;
+            border-left: 3px solid;
+        }
+        
+        .field-change.added { 
+            border-color: var(--success-color); 
+            background: #e8f5e8; 
+        }
+        .field-change.removed { 
+            border-color: var(--danger-color); 
+            background: #fdeaea; 
+        }
+        .field-change.modified { 
+            border-color: var(--warning-color); 
+            background: #fef9e7; 
+        }
+        
+        .field-name {
+            font-weight: 600;
+            font-family: 'Courier New', monospace;
+            color: var(--primary-color);
+        }
+        
+        .property-change {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .property-change:last-child {
+            border-bottom: none;
+        }
+        
+        .property-name {
+            font-weight: 600;
+            color: var(--primary-color);
+        }
+        
+        .property-values {
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+        
+        .old-value {
+            color: var(--danger-color);
+            text-decoration: line-through;
+        }
+        
+        .new-value {
+            color: var(--success-color);
+            font-weight: 600;
+        }
+        
+        .arrow {
+            margin: 0 0.5rem;
+            color: #666;
+        }
+        
+        .coded-value-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem;
+            margin: 0.25rem 0;
+            background: white;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .no-changes {
+            text-align: center;
+            padding: 3rem;
+            color: #666;
+        }
+        
+        .no-changes .icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+        
+        @media (max-width: 768px) {
+            body {
+                padding: 1rem;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .stat-badges {
+                flex-direction: column;
+                gap: 0.25rem;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .metadata {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Schema Comparison Report</h1>
+            <div class="metadata">
+                <div class="metadata-item">
+                    <strong>Old Schema</strong>
+                    <code>{{ metadata.old_schema_name }}</code>
+                </div>
+                <div class="metadata-item">
+                    <strong>New Schema</strong>
+                    <code>{{ metadata.new_schema_name }}</code>
+                </div>
+                <div class="metadata-item">
+                    <strong>Comparison Date</strong>
+                    {{ metadata.comparison_date | format_datetime }}
+                </div>
+            </div>
+        </div>
+
+        <div class="content">
+            <!-- Summary Section -->
+            {% set total = summary | total_changes %}
+            <div class="summary {% if total > 0 %}has-changes{% endif %}">
+                <h2>Summary</h2>
+                {% if total == 0 %}
+                    <div class="no-changes">
+                        <div class="icon">✅</div>
+                        <h3>No Changes Detected</h3>
+                        <p>The schemas are identical.</p>
+                    </div>
+                {% else %}
+                    <p><strong>Total Changes:</strong> {{ total }}</p>
+                    <div class="stats-grid">
+                        {% for category, counts in summary.items() %}
+                        {% set category_total = counts.added + counts.removed + counts.modified %}
+                        {% if category_total > 0 %}
+                        <div class="stat-card">
+                            <h3>{{ category.replace('_', ' ').title() }}</h3>
+                            <div class="stat-badges">
+                                <div class="badge added">+{{ counts.added }}</div>
+                                <div class="badge removed">-{{ counts.removed }}</div>
+                                <div class="badge modified">~{{ counts.modified }}</div>
+                            </div>
+                        </div>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- Domain Changes -->
+            {% if changes.domains %}
+            <div class="section">
+                <h2>🏷️ Domain Changes</h2>
+                {% for change in changes.domains %}
+                <div class="change-item">
+                    <div class="change-header {{ change.change_type }}">
+                        <span class="change-icon">
+                            {% if change.change_type == 'added' %}➕
+                            {% elif change.change_type == 'removed' %}➖
+                            {% else %}🔄{% endif %}
+                        </span>
+                        <span>{{ change.name }}</span>
+                        <span style="margin-left: auto; font-size: 0.9em; opacity: 0.8;">
+                            {{ change.change_type.title() }}
+                        </span>
+                    </div>
+                    
+                    {% if change.coded_value_changes or change.property_changes %}
+                    <div class="change-body">
+                        <div class="change-details">
+                            {% if change.coded_value_changes %}
+                            <div class="detail-section">
+                                <h4>Coded Value Changes</h4>
+                                <div class="coded-values">
+                                    {% for code, change_type in change.coded_value_changes.items() %}
+                                    <div class="coded-value-item">
+                                        <code>{{ code }}</code>
+                                        <span class="badge {{ change_type }}">{{ change_type }}</span>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
+                            
+                            {% if change.property_changes %}
+                            <div class="detail-section">
+                                <h4>Property Changes</h4>
+                                <div class="property-changes">
+                                    {% for prop, values in change.property_changes.items() %}
+                                    <div class="property-change">
+                                        <span class="property-name">{{ prop }}</span>
+                                        <div class="property-values">
+                                            <span class="old-value">{{ values.old }}</span>
+                                            <span class="arrow">→</span>
+                                            <span class="new-value">{{ values.new }}</span>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- Table Changes -->
+            {% if changes.tables %}
+            <div class="section">
+                <h2>📋 Table Changes</h2>
+                {% for change in changes.tables %}
+                <div class="change-item">
+                    <div class="change-header {{ change.change_type }}">
+                        <span class="change-icon">
+                            {% if change.change_type == 'added' %}➕
+                            {% elif change.change_type == 'removed' %}➖
+                            {% else %}🔄{% endif %}
+                        </span>
+                        <span>{{ change.name }}</span>
+                        <span style="margin-left: auto; font-size: 0.9em; opacity: 0.8;">
+                            {{ change.change_type.title() }}
+                        </span>
+                    </div>
+                    
+                    {% if change.field_changes or change.property_changes %}
+                    <div class="change-body">
+                        <div class="change-details">
+                            {% if change.field_changes %}
+                            <div class="detail-section">
+                                <h4>Field Changes</h4>
+                                <div class="field-changes">
+                                    {% for field in change.field_changes %}
+                                    <div class="field-change {{ field.change_type }}">
+                                        <div class="field-name">{{ field.name }}</div>
+                                        <div>{{ field.change_type.title() }}</div>
+                                        {% if field.property_changes %}
+                                        <div style="margin-top: 0.5rem; font-size: 0.9rem;">
+                                            {% for prop, values in field.property_changes.items() %}
+                                            <div>
+                                                <strong>{{ prop }}:</strong>
+                                                <span class="old-value">{{ values.old }}</span>
+                                                <span class="arrow">→</span>
+                                                <span class="new-value">{{ values.new }}</span>
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
+                            
+                            {% if change.property_changes %}
+                            <div class="detail-section">
+                                <h4>Property Changes</h4>
+                                <div class="property-changes">
+                                    {% for prop, values in change.property_changes.items() %}
+                                    <div class="property-change">
+                                        <span class="property-name">{{ prop }}</span>
+                                        <div class="property-values">
+                                            <span class="old-value">{{ values.old }}</span>
+                                            <span class="arrow">→</span>
+                                            <span class="new-value">{{ values.new }}</span>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- Feature Class Changes -->
+            {% if changes.feature_classes %}
+            <div class="section">
+                <h2>🗺️ Feature Class Changes</h2>
+                {% for change in changes.feature_classes %}
+                <div class="change-item">
+                    <div class="change-header {{ change.change_type }}">
+                        <span class="change-icon">
+                            {% if change.change_type == 'added' %}➕
+                            {% elif change.change_type == 'removed' %}➖
+                            {% else %}🔄{% endif %}
+                        </span>
+                        <span>{{ change.name }}</span>
+                        <span style="margin-left: auto; font-size: 0.9em; opacity: 0.8;">
+                            {{ change.change_type.title() }}
+                        </span>
+                    </div>
+                    
+                    {% if change.field_changes or change.property_changes %}
+                    <div class="change-body">
+                        <div class="change-details">
+                            {% if change.field_changes %}
+                            <div class="detail-section">
+                                <h4>Field Changes</h4>
+                                <div class="field-changes">
+                                    {% for field in change.field_changes %}
+                                    <div class="field-change {{ field.change_type }}">
+                                        <div class="field-name">{{ field.name }}</div>
+                                        <div>{{ field.change_type.title() }}</div>
+                                        {% if field.property_changes %}
+                                        <div style="margin-top: 0.5rem; font-size: 0.9rem;">
+                                            {% for prop, values in field.property_changes.items() %}
+                                            <div>
+                                                <strong>{{ prop }}:</strong>
+                                                <span class="old-value">{{ values.old }}</span>
+                                                <span class="arrow">→</span>
+                                                <span class="new-value">{{ values.new }}</span>
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
+                            
+                            {% if change.property_changes %}
+                            <div class="detail-section">
+                                <h4>Property Changes</h4>
+                                <div class="property-changes">
+                                    {% for prop, values in change.property_changes.items() %}
+                                    <div class="property-change">
+                                        <span class="property-name">{{ prop }}</span>
+                                        <div class="property-values">
+                                            <span class="old-value">{{ values.old }}</span>
+                                            <span class="arrow">→</span>
+                                            <span class="new-value">{{ values.new }}</span>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- Relationship Changes -->
+            {% if changes.relationships %}
+            <div class="section">
+                <h2>🔗 Relationship Changes</h2>
+                {% for change in changes.relationships %}
+                <div class="change-item">
+                    <div class="change-header {{ change.change_type }}">
+                        <span class="change-icon">
+                            {% if change.change_type == 'added' %}➕
+                            {% elif change.change_type == 'removed' %}➖
+                            {% else %}🔄{% endif %}
+                        </span>
+                        <span>{{ change.name }}</span>
+                        <span style="margin-left: auto; font-size: 0.9em; opacity: 0.8;">
+                            {{ change.change_type.title() }}
+                        </span>
+                    </div>
+                    
+                    {% if change.property_changes %}
+                    <div class="change-body">
+                        <div class="change-details">
+                            <div class="detail-section">
+                                <h4>Property Changes</h4>
+                                <div class="property-changes">
+                                    {% for prop, values in change.property_changes.items() %}
+                                    <div class="property-change">
+                                        <span class="property-name">{{ prop }}</span>
+                                        <div class="property-values">
+                                            <span class="old-value">{{ values.old }}</span>
+                                            <span class="arrow">→</span>
+                                            <span class="new-value">{{ values.new }}</span>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- Subtype Changes -->
+            {% if changes.subtypes %}
+            <div class="section">
+                <h2>🏷️ Subtype Changes</h2>
+                {% for change in changes.subtypes %}
+                <div class="change-item">
+                    <div class="change-header {{ change.change_type }}">
+                        <span class="change-icon">
+                            {% if change.change_type == 'added' %}➕
+                            {% elif change.change_type == 'removed' %}➖
+                            {% else %}🔄{% endif %}
+                        </span>
+                        <span>{{ change.name }}</span>
+                        <span style="margin-left: auto; font-size: 0.9em; opacity: 0.8;">
+                            {{ change.change_type.title() }}
+                        </span>
+                    </div>
+                    
+                    {% if change.value_changes or change.property_changes %}
+                    <div class="change-body">
+                        <div class="change-details">
+                            {% if change.value_changes %}
+                            <div class="detail-section">
+                                <h4>Value Changes</h4>
+                                <div class="coded-values">
+                                    {% for code, change_type in change.value_changes.items() %}
+                                    <div class="coded-value-item">
+                                        <code>{{ code }}</code>
+                                        <span class="badge {{ change_type }}">{{ change_type }}</span>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
+                            
+                            {% if change.property_changes %}
+                            <div class="detail-section">
+                                <h4>Property Changes</h4>
+                                <div class="property-changes">
+                                    {% for prop, values in change.property_changes.items() %}
+                                    <div class="property-change">
+                                        <span class="property-name">{{ prop }}</span>
+                                        <div class="property-values">
+                                            <span class="old-value">{{ values.old }}</span>
+                                            <span class="arrow">→</span>
+                                            <span class="new-value">{{ values.new }}</span>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

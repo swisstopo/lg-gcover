@@ -583,6 +583,9 @@ def transform_esri_json(
         schema.infer_keys_from_relationships()
         schema.detect_primary_keys()
 
+        # Set metadata
+        schema.set_metadata_from_esri_json(input_data)
+
         # Validation
         validation_errors = schema.validate_domain_references()
         if validation_errors:
