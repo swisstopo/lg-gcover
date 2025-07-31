@@ -66,6 +66,8 @@ from .exporters.json import (
     # TODO PlantUML
 )
 
+from .filegdb_parser import parse_filegdb_to_esri_schema
+
 
 __all__ = [
     # Classes principales
@@ -94,6 +96,7 @@ __all__ = [
     "save_esri_schema_to_file",
     "serialize_domains_only",
     "serialize_feature_classes_only",
+    "parse_filegdb_to_esri_schema",
     "generate_report",
     "schema_diff_to_dict",
 ]
