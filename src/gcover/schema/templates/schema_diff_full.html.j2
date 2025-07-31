@@ -288,11 +288,75 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 0.5rem;
-            margin: 0.25rem 0;
+            padding: 0.75rem;
+            margin: 0.5rem 0;
             background: white;
             border-radius: 4px;
             font-family: 'Courier New', monospace;
+            border-left: 4px solid;
+        }
+        
+        .coded-value-item.added {
+            border-color: var(--success-color);
+            background: rgba(39, 174, 96, 0.05);
+        }
+        
+        .coded-value-item.removed {
+            border-color: var(--danger-color);
+            background: rgba(231, 76, 60, 0.05);
+        }
+        
+        .coded-value-item.modified {
+            border-color: var(--warning-color);
+            background: rgba(243, 156, 18, 0.05);
+        }
+        
+        .coded-value-code {
+            font-weight: 700;
+            color: var(--primary-color);
+            margin-right: 1rem;
+        }
+        
+        .coded-value-names {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .coded-value-name {
+            font-style: italic;
+        }
+        
+        .coded-value-summary {
+            background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+            padding: 1rem;
+            border-radius: var(--border-radius);
+            margin: 1rem 0;
+            border-left: 4px solid var(--info-color);
+        }
+        
+        .coded-value-summary h3 {
+            margin-top: 0;
+            color: var(--primary-color);
+        }
+        
+        .cv-summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 0.5rem;
+        }
+        
+        .cv-summary-table th,
+        .cv-summary-table td {
+            padding: 0.5rem;
+            text-align: left;
+            border-bottom: 1px solid rgba(255,255,255,0.3);
+        }
+        
+        .cv-summary-table th {
+            background: rgba(255,255,255,0.2);
+            font-weight: 600;
         }
         
         .no-changes {
@@ -327,6 +391,16 @@
             
             .metadata {
                 grid-template-columns: 1fr;
+            }
+            
+            .coded-value-item {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.5rem;
+            }
+            
+            .coded-value-names {
+                width: 100%;
             }
         }
     </style>
@@ -379,6 +453,40 @@
                         {% endif %}
                         {% endfor %}
                     </div>
+                    
+                    <!-- Enhanced Coded Value Summary -->
+                    {% if coded_value_summary.total.added + coded_value_summary.total.removed + coded_value_summary.total.modified > 0 %}
+                    <div class="coded-value-summary">
+                        <h3>🏷️ Coded Value Changes Summary</h3>
+                        <p><strong>Total:</strong> 
+                            <span class="badge added">{{ coded_value_summary.total.added }} added</span>
+                            <span class="badge removed">{{ coded_value_summary.total.removed }} removed</span>
+                            <span class="badge modified">{{ coded_value_summary.total.modified }} modified</span>
+                        </p>
+                        {% if coded_value_summary.by_domain %}
+                        <table class="cv-summary-table">
+                            <thead>
+                                <tr>
+                                    <th>Domain</th>
+                                    <th>Added</th>
+                                    <th>Removed</th>
+                                    <th>Modified</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for domain_name, counts in coded_value_summary.by_domain.items() %}
+                                <tr>
+                                    <td><code>{{ domain_name }}</code></td>
+                                    <td><span class="badge added">{{ counts.added }}</span></td>
+                                    <td><span class="badge removed">{{ counts.removed }}</span></td>
+                                    <td><span class="badge modified">{{ counts.modified }}</span></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        {% endif %}
+                    </div>
+                    {% endif %}
                 {% endif %}
             </div>
 
@@ -405,12 +513,23 @@
                         <div class="change-details">
                             {% if change.coded_value_changes %}
                             <div class="detail-section">
-                                <h4>Coded Value Changes</h4>
+                                <h4>Coded Value Changes ({{ change.coded_value_changes | length }} total)</h4>
                                 <div class="coded-values">
-                                    {% for code, change_type in change.coded_value_changes.items() %}
-                                    <div class="coded-value-item">
-                                        <code>{{ code }}</code>
-                                        <span class="badge {{ change_type }}">{{ change_type }}</span>
+                                    {% for cv_change in change.coded_value_changes %}
+                                    <div class="coded-value-item {{ cv_change.change_type }}">
+                                        <div class="coded-value-code">{{ cv_change.code }}</div>
+                                        <div class="coded-value-names">
+                                            {% if cv_change.change_type == 'added' %}
+                                                <span class="coded-value-name new-value">{{ cv_change.new_name }}</span>
+                                            {% elif cv_change.change_type == 'removed' %}
+                                                <span class="coded-value-name old-value">{{ cv_change.old_name }}</span>
+                                            {% elif cv_change.change_type == 'modified' %}
+                                                <span class="coded-value-name old-value">{{ cv_change.old_name }}</span>
+                                                <span class="arrow">→</span>
+                                                <span class="coded-value-name new-value">{{ cv_change.new_name }}</span>
+                                            {% endif %}
+                                        </div>
+                                        <span class="badge {{ cv_change.change_type }}">{{ cv_change.change_type }}</span>
                                     </div>
                                     {% endfor %}
                                 </div>

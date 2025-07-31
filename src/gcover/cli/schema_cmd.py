@@ -328,6 +328,7 @@ def diff_all(old_schema, new_schema, output_dir, filter_prefix, open_browser):
         ("html", "full"),
         ("html", "summary"),
         ("markdown", "full"),
+        ("markdown", "summary"),
     ]
 
     generated_files = []

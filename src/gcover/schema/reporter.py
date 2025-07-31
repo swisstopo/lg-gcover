@@ -1,5 +1,5 @@
 """
-Schema report generation module using Jinja2 templates.
+Enhanced Schema report generation module with detailed coded value tracking.
 """
 
 import json
@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Union
 from jinja2 import Environment, FileSystemLoader, Template
 from loguru import logger
 
-from .differ import SchemaDiff, ChangeType
+from .differ import SchemaDiff, ChangeType, CodedValueChange
 
 
 def _convert_enum_to_string(obj):
@@ -24,6 +24,21 @@ def _convert_enum_to_string(obj):
     return obj
 
 
+def coded_value_change_to_dict(cv_change: CodedValueChange) -> Dict[str, Any]:
+    """Convert CodedValueChange to dictionary for JSON serialization"""
+    result = {
+        "code": cv_change.code,
+        "change_type": cv_change.change_type.value,
+    }
+
+    if cv_change.old_name is not None:
+        result["old_name"] = cv_change.old_name
+    if cv_change.new_name is not None:
+        result["new_name"] = cv_change.new_name
+
+    return result
+
+
 def schema_diff_to_dict(diff: SchemaDiff) -> Dict[str, Any]:
     """
     Convert SchemaDiff to dictionary format for templates.
@@ -35,7 +50,7 @@ def schema_diff_to_dict(diff: SchemaDiff) -> Dict[str, Any]:
         Dictionary representation suitable for JSON export and templates
     """
 
-    # Remplacez la section metadata par:
+    # Enhanced metadata
     metadata = {
         "old_schema_name": getattr(diff.old_schema, "name", "Unknown"),
         "new_schema_name": getattr(diff.new_schema, "name", "Unknown"),
@@ -70,14 +85,15 @@ def schema_diff_to_dict(diff: SchemaDiff) -> Dict[str, Any]:
     ):
         metadata["comparison"] = diff.old_schema.compare_metadata(diff.new_schema)
 
-    # Helper function to extract coded value changes
+    # Helper function to extract enhanced coded value changes
     def extract_coded_value_changes(change):
+        """Extract detailed coded value changes"""
         if hasattr(change, "coded_value_changes") and change.coded_value_changes:
-            return {
-                code: change_type.value
-                for code, change_type in change.coded_value_changes.items()
-            }
-        return {}
+            return [
+                coded_value_change_to_dict(cv_change)
+                for cv_change in change.coded_value_changes
+            ]
+        return []
 
     # Helper function to extract property changes
     def extract_property_changes(change):
@@ -106,7 +122,7 @@ def schema_diff_to_dict(diff: SchemaDiff) -> Dict[str, Any]:
             field_changes.append(field_data)
         return field_changes
 
-    # Process domain changes
+    # Process domain changes with enhanced coded value tracking
     domain_changes = []
     for change in diff.domain_changes:
         domain_data = {
@@ -114,9 +130,14 @@ def schema_diff_to_dict(diff: SchemaDiff) -> Dict[str, Any]:
             "name": change.domain_name,
         }
 
+        # Enhanced coded value changes
         coded_value_changes = extract_coded_value_changes(change)
         if coded_value_changes:
             domain_data["coded_value_changes"] = coded_value_changes
+            # Also add summary for template convenience
+            domain_data["coded_value_summary"] = (
+                change.get_coded_value_changes_summary()
+            )
 
         property_changes = extract_property_changes(change)
         if property_changes:
@@ -124,7 +145,7 @@ def schema_diff_to_dict(diff: SchemaDiff) -> Dict[str, Any]:
 
         domain_changes.append(domain_data)
 
-    # Process table changes
+    # Process table changes (unchanged from original)
     table_changes = []
     for change in diff.table_changes:
         table_data = {
@@ -142,7 +163,7 @@ def schema_diff_to_dict(diff: SchemaDiff) -> Dict[str, Any]:
 
         table_changes.append(table_data)
 
-    # Process feature class changes
+    # Process feature class changes (unchanged from original)
     feature_class_changes = []
     for change in diff.feature_class_changes:
         fc_data = {"change_type": change.change_type.value, "name": change.table_name}
@@ -157,7 +178,7 @@ def schema_diff_to_dict(diff: SchemaDiff) -> Dict[str, Any]:
 
         feature_class_changes.append(fc_data)
 
-    # Process relationship changes
+    # Process relationship changes (unchanged from original)
     relationship_changes = []
     for change in diff.relationship_changes:
         rel_data = {
@@ -171,7 +192,7 @@ def schema_diff_to_dict(diff: SchemaDiff) -> Dict[str, Any]:
 
         relationship_changes.append(rel_data)
 
-    # Process subtype changes
+    # Process subtype changes (unchanged from original)
     subtype_changes = []
     for change in diff.subtype_changes:
         subtype_data = {
@@ -191,9 +212,10 @@ def schema_diff_to_dict(diff: SchemaDiff) -> Dict[str, Any]:
 
         subtype_changes.append(subtype_data)
 
-    # Build final structure
+    # Build final structure with enhanced coded value summary
     result = {
         "summary": diff.get_summary(),
+        "coded_value_summary": diff.get_detailed_coded_value_summary(),
         "changes": {
             "domains": domain_changes,
             "tables": table_changes,
@@ -255,11 +277,55 @@ def get_template_environment(template_dir: Optional[Path] = None) -> Environment
         except:
             return iso_string
 
+    def format_coded_value_change(cv_change: Dict) -> str:
+        """Format a coded value change for display."""
+        code = cv_change["code"]
+        change_type = cv_change["change_type"]
+
+        if change_type == "added":
+            return f"+ {code}: '{cv_change['new_name']}'"
+        elif change_type == "removed":
+            return f"- {code}: '{cv_change['old_name']}'"
+        elif change_type == "modified":
+            return f"~ {code}: '{cv_change['old_name']}' → '{cv_change['new_name']}'"
+        else:
+            return f"? {code}: {change_type}"
+
+    def get_coded_value_display(cv_change: Dict) -> Dict[str, str]:
+        """Get display information for a coded value change."""
+        code = cv_change["code"]
+        change_type = cv_change["change_type"]
+
+        result = {
+            "code": code,
+            "change_type": change_type,
+            "icon": {"added": "➕", "removed": "➖", "modified": "🔄"}.get(
+                change_type, "❓"
+            ),
+        }
+
+        if change_type == "added":
+            result["display_text"] = cv_change.get("new_name", "")
+            result["description"] = f"Added: {cv_change.get('new_name', '')}"
+        elif change_type == "removed":
+            result["display_text"] = cv_change.get("old_name", "")
+            result["description"] = f"Removed: {cv_change.get('old_name', '')}"
+        elif change_type == "modified":
+            result["old_text"] = cv_change.get("old_name", "")
+            result["new_text"] = cv_change.get("new_name", "")
+            result["description"] = (
+                f"Changed from '{cv_change.get('old_name', '')}' to '{cv_change.get('new_name', '')}'"
+            )
+
+        return result
+
     # Register filters
     env.filters["format_change_type"] = format_change_type
     env.filters["change_count"] = change_count
     env.filters["total_changes"] = total_changes
     env.filters["format_datetime"] = format_datetime
+    env.filters["format_coded_value_change"] = format_coded_value_change
+    env.filters["get_coded_value_display"] = get_coded_value_display
 
     return env
 
@@ -305,9 +371,9 @@ def generate_report(
             logger.error(f"Template {template_name} not found: {e}")
             # Fallback to inline template
             if format == "markdown":
-                template_obj = Template(_get_default_markdown_template())
+                template_obj = Template(_get_enhanced_markdown_template())
             else:
-                template_obj = Template(_get_default_html_template())
+                template_obj = Template(_get_enhanced_html_template())
 
         # Render template
         report_content = template_obj.render(**diff_data)
@@ -320,8 +386,8 @@ def generate_report(
     return report_content
 
 
-def _get_default_markdown_template() -> str:
-    """Default Markdown template as fallback."""
+def _get_enhanced_markdown_template() -> str:
+    """Enhanced Markdown template with coded value details."""
     return """# Schema Comparison Report
 
 **Comparison Date:** {{ metadata.comparison_date | format_datetime }}  
@@ -341,6 +407,15 @@ def _get_default_markdown_template() -> str:
 {% for category, counts in summary.items() -%}
 | {{ category.replace('_', ' ').title() }} | {{ counts.added }} | {{ counts.removed }} | {{ counts.modified }} |
 {% endfor -%}
+
+### Coded Value Changes Summary
+
+| Domain | Added | Removed | Modified |
+|--------|-------|---------|----------|
+{% for domain_name, counts in coded_value_summary.by_domain.items() -%}
+| {{ domain_name }} | {{ counts.added }} | {{ counts.removed }} | {{ counts.modified }} |
+{% endfor -%}
+**Total:** {{ coded_value_summary.total.added }} added, {{ coded_value_summary.total.removed }} removed, {{ coded_value_summary.total.modified }} modified
 {% endif %}
 
 {% if changes.domains -%}
@@ -351,8 +426,8 @@ def _get_default_markdown_template() -> str:
 
 {% if change.coded_value_changes -%}
 **Coded Value Changes:**
-{% for code, change_type in change.coded_value_changes.items() -%}
-- `{{ code }}`: {{ change_type | format_change_type }}
+{% for cv_change in change.coded_value_changes -%}
+- {{ cv_change | format_coded_value_change }}
 {% endfor %}
 {% endif -%}
 
@@ -370,8 +445,8 @@ def _get_default_markdown_template() -> str:
 """
 
 
-def _get_default_html_template() -> str:
-    """Default HTML template as fallback."""
+def _get_enhanced_html_template() -> str:
+    """Enhanced HTML template with coded value details."""
     return """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -383,6 +458,10 @@ def _get_default_html_template() -> str:
         .container { max-width: 1200px; margin: 0 auto; background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         h1, h2, h3 { color: #2c3e50; }
         .summary { background: #e8f5e8; padding: 1rem; border-radius: 6px; margin: 1rem 0; }
+        .coded-value-change { margin: 0.5rem 0; padding: 0.75rem; border-radius: 4px; font-family: 'Courier New', monospace; }
+        .coded-value-change.added { background: #d4edda; border-left: 4px solid #28a745; }
+        .coded-value-change.removed { background: #f8d7da; border-left: 4px solid #dc3545; }
+        .coded-value-change.modified { background: #fff3cd; border-left: 4px solid #ffc107; }
         .change-item { margin: 1rem 0; padding: 1rem; border-left: 4px solid #3498db; background: #f7f9fc; }
         .added { border-color: #27ae60; background-color: #e8f5e8; }
         .removed { border-color: #e74c3c; background-color: #fdeaea; }
@@ -395,6 +474,9 @@ def _get_default_html_template() -> str:
         .badge.added { background: #d4edda; color: #155724; }
         .badge.removed { background: #f8d7da; color: #721c24; }
         .badge.modified { background: #fff3cd; color: #856404; }
+        .old-value { color: #dc3545; text-decoration: line-through; }
+        .new-value { color: #28a745; font-weight: 600; }
+        .arrow { margin: 0 0.5rem; color: #666; }
     </style>
 </head>
 <body>
@@ -435,6 +517,28 @@ def _get_default_html_template() -> str:
                     {% endfor -%}
                 </tbody>
             </table>
+            
+            <h3>Coded Value Changes</h3>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Domain</th>
+                        <th>Added</th>
+                        <th>Removed</th>
+                        <th>Modified</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for domain_name, counts in coded_value_summary.by_domain.items() -%}
+                    <tr>
+                        <td><code>{{ domain_name }}</code></td>
+                        <td><span class="badge added">{{ counts.added }}</span></td>
+                        <td><span class="badge removed">{{ counts.removed }}</span></td>
+                        <td><span class="badge modified">{{ counts.modified }}</span></td>
+                    </tr>
+                    {% endfor -%}
+                </tbody>
+            </table>
             {% endif -%}
         </div>
 
@@ -446,11 +550,31 @@ def _get_default_html_template() -> str:
             
             {% if change.coded_value_changes -%}
             <h4>Coded Value Changes:</h4>
-            <ul>
-            {% for code, change_type in change.coded_value_changes.items() -%}
-                <li><code>{{ code }}</code>: <span class="badge {{ change_type }}">{{ change_type }}</span></li>
+            {% for cv_change in change.coded_value_changes -%}
+            {% set cv_display = cv_change | get_coded_value_display -%}
+            <div class="coded-value-change {{ cv_change.change_type }}">
+                <strong>{{ cv_display.icon }} Code {{ cv_change.code }}:</strong>
+                {% if cv_change.change_type == 'modified' -%}
+                <span class="old-value">{{ cv_display.old_text }}</span>
+                <span class="arrow">→</span>
+                <span class="new-value">{{ cv_display.new_text }}</span>
+                {% else -%}
+                <span>{{ cv_display.display_text }}</span>
+                {% endif -%}
+            </div>
             {% endfor -%}
-            </ul>
+            {% endif -%}
+            
+            {% if change.property_changes -%}
+            <h4>Property Changes:</h4>
+            {% for prop, values in change.property_changes.items() -%}
+            <div>
+                <strong>{{ prop }}:</strong>
+                <span class="old-value">{{ values.old }}</span>
+                <span class="arrow">→</span>
+                <span class="new-value">{{ values.new }}</span>
+            </div>
+            {% endfor -%}
             {% endif -%}
         </div>
         {% endfor -%}
