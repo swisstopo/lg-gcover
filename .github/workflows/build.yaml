@@ -39,7 +39,7 @@ jobs:
     - name: Install build tools
       shell: bash -el {0}
       run: |
-        conda install -y conda-build pip setuptools setuptools-scm build
+        conda install -y conda-build pip setuptools setuptools-scm build gdal
 
     - name: Get version from SCM
       shell: bash -el {0}
