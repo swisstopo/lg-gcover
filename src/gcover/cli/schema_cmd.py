@@ -1,17 +1,26 @@
 import json
 from pathlib import Path
 import traceback
+from rich.console import Console
+from rich.table import Table
 
 import click
 
 from gcover.schema import SchemaDiff, extract_schema, transform_esri_json
 from gcover.schema.exporters.plantuml import generate_plantuml_from_schema
 from gcover.config import GlobalConfig, SchemaConfig
+from gcover.schema.serializer import (
+    serialize_esri_schema_to_dict,
+    save_esri_schema_to_file,
+)
+
 
 # TODO
 from gcover.config import load_config, AppConfig, SchemaConfig
 
 from loguru import logger
+
+console = Console()
 
 
 def get_schema_configs(ctx) -> tuple[SchemaConfig, GlobalConfig]:
@@ -34,6 +43,157 @@ def get_schema_configs(ctx) -> tuple[SchemaConfig, GlobalConfig]:
 def schema():
     """Schema management commands."""
     pass
+
+
+@schema.command()
+@click.argument("input_file", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Output JSON file (default: adds '_transformed' suffix to input)",
+)
+@click.option(
+    "--target-prefix",
+    default="GC_",
+    help="Only import items with this prefix (default: GC_)",
+)
+@click.option(
+    "--exclude-tables",
+    multiple=True,
+    help="Table names to exclude (can be specified multiple times)",
+)
+@click.option(
+    "--include-metadata-fields/--exclude-metadata-fields",
+    default=False,
+    help="Include/exclude metadata fields (default: exclude)",
+)
+@click.option(
+    "--schema-prefix",
+    default="TOPGIS_GC.",
+    help="Default schema prefix for non-prefixed names",
+)
+@click.option(
+    "--pretty/--compact",
+    default=True,
+    help="Pretty-print JSON output (default: pretty)",
+)
+@click.option(
+    "--show-summary", is_flag=True, default=True, help="Show transformation summary"
+)
+def transform(
+    input_file,
+    output,
+    target_prefix,
+    exclude_tables,
+    include_metadata_fields,
+    schema_prefix,
+    pretty,
+    show_summary,
+):
+    """Transform ESRI schema JSON to simplified ESRISchema format.
+
+    Takes an ESRI schema export (JSON file) and transforms it into a simplified
+    ESRISchema format suitable for further processing.
+    """
+    console.print(f"🔄 Transforming ESRI schema: [bold blue]{input_file}[/bold blue]")
+
+    try:
+        # Determine output path
+        if output is None:
+            output = input_file.parent / f"{input_file.stem}_transformed.json"
+
+        # Load input JSON
+        console.print("📖 Loading input file...")
+        with open(input_file, "r", encoding="utf-8") as f:
+            esri_json_data = json.load(f)
+
+        console.print("✅ Input JSON loaded successfully")
+
+        # Prepare excluded tables set
+        excluded_tables_set = set(exclude_tables) if exclude_tables else None
+
+        # Transform the schema
+        console.print("⚙️ Transforming schema...")
+
+        with console.status("[bold green]Processing datasets...") as status:
+            schema = transform_esri_json(
+                input_data=esri_json_data,
+                target_prefix=target_prefix,
+                excluded_tables=excluded_tables_set,
+                exclude_metadata_fields=not include_metadata_fields,
+                default_schema_prefix=schema_prefix,
+            )
+
+        console.print("✅ Schema transformation completed")
+
+        # Save output using your existing serializer
+        console.print(f"💾 Saving to: [bold green]{output}[/bold green]")
+
+        save_esri_schema_to_file(
+            schema=schema,
+            filepath=str(output),
+            indent=2 if pretty else None,
+            ensure_ascii=False,
+            add_timestamp=True,
+        )
+
+        console.print("✅ Output saved successfully")
+
+        # Show summary if requested
+        if show_summary:
+            summary = schema.get_schema_summary()
+
+            console.print("\n📊 [bold]Transformation Summary[/bold]")
+            console.print("─" * 40)
+
+            # Parse the summary and display nicely
+            if isinstance(summary, str):
+                console.print(summary)
+            else:
+                for key, value in summary.items():
+                    console.print(
+                        f"  {key.replace('_', ' ').title()}: [bold cyan]{value}[/bold cyan]"
+                    )
+
+            console.print(f"\n📁 Output file: [bold green]{output}[/bold green]")
+            console.print(
+                f"📏 File size: [bold cyan]{output.stat().st_size:,}[/bold cyan] bytes"
+            )
+
+            # Show some examples of what was found
+            if schema.tables:
+                console.print(f"\n📋 [bold]Sample Tables[/bold] (showing first 5):")
+                for i, table_name in enumerate(list(schema.tables.keys())[:5]):
+                    console.print(f"  {i + 1}. {table_name}")
+                if len(schema.tables) > 5:
+                    console.print(f"  ... and {len(schema.tables) - 5} more")
+
+            if schema.feature_classes:
+                console.print(
+                    f"\n🗺️  [bold]Sample Feature Classes[/bold] (showing first 5):"
+                )
+                for i, fc_name in enumerate(list(schema.feature_classes.keys())[:5]):
+                    console.print(f"  {i + 1}. {fc_name}")
+                if len(schema.feature_classes) > 5:
+                    console.print(f"  ... and {len(schema.feature_classes) - 5} more")
+
+        console.print(
+            f"\n🎉 [bold green]Transformation completed successfully![/bold green]"
+        )
+
+    except FileNotFoundError:
+        console.print(f"❌ [bold red]Input file not found:[/bold red] {input_file}")
+        raise click.Abort()
+
+    except json.JSONDecodeError as e:
+        console.print(f"❌ [bold red]Invalid JSON in input file:[/bold red] {e}")
+        raise click.Abort()
+
+    except Exception as e:
+        console.print(f"❌ [bold red]Transformation failed:[/bold red] {e}")
+        logger.error(f"Full error details: {traceback.format_exc()}")
+        raise click.Abort()
 
 
 @schema.command()
