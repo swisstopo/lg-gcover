@@ -115,7 +115,7 @@ def export_tables(output_dir, workspace, all_tables, include_incremental, format
 
     STANDARD_TABLES = [
         "GC_CHARCAT", "GC_ADMIXTURE", "GC_COMPOSIT",
-        "GC_GEOL_MAPPING_UNIT", "GC_LITSTRAT_UNCO", "GC_CORRELATION"
+        "GC_GEOL_MAPPING_UNIT", "GC_GEOL_MAPPING_UNIT_ATT", "GC_LITSTRAT_UNCO", "GC_CORRELATION"
     ]
 
     ALL_GC_TABLES = TREE_TABLES + STANDARD_TABLES
