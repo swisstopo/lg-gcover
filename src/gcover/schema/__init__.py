@@ -35,6 +35,8 @@ from .models import (
 )
 
 from .transformer import transform_esri_json
+from .simple_transformer import transform_esri_flat_json
+
 
 from gcover.schema.serializer import (
     serialize_esri_schema_to_dict,
@@ -87,6 +89,7 @@ __all__ = [
     "extract_schema",
     "can_extract_schema",
     "transform_esri_json",
+    "transform_esri_flat_json",
     "export_esri_schema_to_json",
     "export_schema_diff_to_json",
     "generate_plantuml_from_schema",

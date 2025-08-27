@@ -13,6 +13,7 @@ from gcover.schema.serializer import (
     serialize_esri_schema_to_dict,
     save_esri_schema_to_file,
 )
+from gcover.schema.simple_transformer import transform_esri_flat_json
 
 
 # TODO
@@ -43,6 +44,141 @@ def get_schema_configs(ctx) -> tuple[SchemaConfig, GlobalConfig]:
 def schema():
     """Schema management commands."""
     pass
+
+
+@schema.command(name="transform-simple")
+@click.argument("input_file", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Output JSON file (default: adds '_simple' suffix to input)",
+)
+@click.option(
+    "--pretty/--compact",
+    default=True,
+    help="Pretty-print JSON output (default: pretty)",
+)
+@click.option(
+    "--validate", is_flag=True, help="Validate input as ESRI DEWorkspace export"
+)
+def transform_simple_format(input_file, output, pretty, validate):
+    """Transform ESRI schema JSON to simple flat format.
+
+    Converts an ESRI schema export to a simplified flat JSON structure
+    with version 2 format. This is a lighter alternative to the full
+    dataclass-based transformation.
+
+    Examples:
+
+        # Basic transformation
+        gcover schema transform-simple esri_export.json
+
+        # Custom output file
+        gcover schema transform-simple esri_export.json -o simple_schema.json
+
+        # Compact output without validation
+        gcover schema transform-simple esri_export.json --compact
+    """
+    console.print(
+        f"Converting ESRI schema to simple format: [bold blue]{input_file}[/bold blue]"
+    )
+
+    try:
+        # Determine output path
+        if output is None:
+            output = input_file.parent / f"{input_file.stem}_simple.json"
+
+        # Load and validate input JSON
+        console.print("Loading input file...")
+        with open(input_file, "r", encoding="utf-8") as f:
+            input_data = json.load(f)
+
+        # Optional validation
+        if validate:
+            if (
+                input_data.get("datasetType") != "DEWorkspace"
+                or input_data.get("majorVersion", 0) < 3
+            ):
+                console.print(
+                    "[bold red]Error:[/bold red] Not a valid ESRI 'DEWorkspace' export JSON"
+                )
+                raise click.Abort()
+            console.print("✅ Input validation passed")
+
+        # Transform using simple format
+        console.print("Transforming schema...")
+        with console.status("[bold green]Processing datasets..."):
+            result = transform_esri_flat_json(input_data)
+
+        console.print("✅ Schema transformation completed")
+
+        # Save output
+        console.print(f"Saving to: [bold green]{output}[/bold green]")
+        with open(output, "w", encoding="utf-8") as f:
+            if pretty:
+                json.dump(result, f, indent=4, ensure_ascii=False)
+            else:
+                json.dump(result, f, ensure_ascii=False)
+
+        console.print("✅ Output saved successfully")
+
+        # Show summary
+        console.print("\n📊 [bold]Transformation Summary[/bold]")
+        console.print("─" * 40)
+
+        stats = {}
+        if "coded_domain" in result:
+            stats["Coded Domains"] = len(result["coded_domain"])
+        if "tables" in result:
+            stats["Tables"] = len(result["tables"])
+        if "featclasses" in result:
+            stats["Feature Classes"] = len(result["featclasses"])
+        if "relationships" in result:
+            stats["Relationships"] = len(result["relationships"])
+        if "subtypes" in result:
+            stats["Subtypes"] = len(result["subtypes"])
+
+        for key, value in stats.items():
+            console.print(f"  {key}: [bold cyan]{value}[/bold cyan]")
+
+        console.print(f"\n📁 Output file: [bold green]{output}[/bold green]")
+        console.print(
+            f"📏 File size: [bold cyan]{output.stat().st_size:,}[/bold cyan] bytes"
+        )
+        console.print(
+            f"🔖 Format version: [bold cyan]{result.get('version', 'unknown')}[/bold cyan]"
+        )
+
+        # Show sample content
+        if "tables" in result and result["tables"]:
+            console.print(f"\n📋 [bold]Sample Tables:[/bold]")
+            for i, table_name in enumerate(list(result["tables"].keys())[:3]):
+                field_count = len(result["tables"][table_name].get("fields", []))
+                console.print(f"  {i + 1}. {table_name} ({field_count} fields)")
+
+        if "featclasses" in result and result["featclasses"]:
+            console.print(f"\n🗺️  [bold]Sample Feature Classes:[/bold]")
+            for i, fc_name in enumerate(list(result["featclasses"].keys())[:3]):
+                field_count = len(result["featclasses"][fc_name].get("fields", []))
+                console.print(f"  {i + 1}. {fc_name} ({field_count} fields)")
+
+        console.print(
+            f"\n🎉 [bold green]Simple format transformation completed![/bold green]"
+        )
+
+    except FileNotFoundError:
+        console.print(f"❌ [bold red]Input file not found:[/bold red] {input_file}")
+        raise click.Abort()
+
+    except json.JSONDecodeError as e:
+        console.print(f"❌ [bold red]Invalid JSON in input file:[/bold red] {e}")
+        raise click.Abort()
+
+    except Exception as e:
+        console.print(f"❌ [bold red]Transformation failed:[/bold red] {e}")
+        logger.error(f"Full error details: {traceback.format_exc()}")
+        raise click.Abort()
 
 
 @schema.command()
