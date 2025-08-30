@@ -185,7 +185,8 @@ class AppConfig(BaseModel):
     qa: Optional[QAConfig] = None
 
     class Config:
-        allow_population_by_field_name = True
+        # allow_population_by_field_name = True
+        validate_by_name = True
 
     @validator('global_', pre=True)
     def validate_global_config(cls, v):
