@@ -74,17 +74,17 @@ gcover gdb status  # Will use custom S3 bucket and debug logging
 
 ```bash
 # Initialize the system
-gcover gdb --env dev init
+gcover --env dev gdb init
 
 # Scan for GDB files
-gcover gdb --env dev scan
+gcover --env dev gdb scan
 
 # Process all found GDBs (dry run first)
-gcover gdb --env dev process-all --dry-run
-gcover gdb --env dev process-all
+gcover --env dev gdb process-all --dry-run
+gcover --env dev gdb process-all
 
 # Check status
-gcover gdb --env dev status
+gcover --env dev gdb status
 ```
 
 #### Core Commands
@@ -161,15 +161,15 @@ gcover gdb stats --storage               # Storage and upload statistics
 
 ```bash
 # Development environment (default)
-gcover gdb --env dev scan
-gcover gdb --env development scan
+gcover --env dev gdb scan
+gcover --env development gdb scan
 
 # Production environment  
-gcover gdb --env prod sync
-gcover gdb --env production sync
+gcover --env prod gdb sync
+gcover --env production gdb sync
 
 # With custom config
-gcover gdb --config ./my-config.yaml --env prod sync
+gcover --config ./my-config.yaml --env prod gdb sync
 
 # With environment variables
 export GDB_ENV=production
@@ -272,13 +272,13 @@ gcover gdb validate --check-s3 --check-integrity
 
 ```bash
 # Verbose output for debugging
-gcover gdb --env dev --verbose scan
+gcover --env dev --verbose gdb scan
 
 # Check configuration
-gcover gdb --env dev --verbose status
+gcover --env dev --verbose gdb status
 
 # Debug specific processing issues
-gcover gdb --env dev --verbose process-all --dry-run --filter-type backup_daily
+gcover --env dev --verbose gdb process-all --dry-run --filter-type backup_daily
 
 # Verify AWS credentials
 aws s3 ls s3://your-bucket/
@@ -297,34 +297,33 @@ export GDB_ENV=production
 
 # Scan for new assets
 echo "Scanning for new GDB assets..."
-gcover gdb scan
+gcover --env production gdb scan
 
 # Process only new assets from today
 echo "Processing today's assets..."
-gcover gdb process-all --since $(date +%Y-%m-%d) --continue-on-error
+gcover --env production gdb process-all --since $(date +%Y-%m-%d) --continue-on-error
 
 # Clean up temporary files
 echo "Cleaning up..."
-gcover gdb clean-temp
+gcover --env production gdb clean-temp
 
 # Generate daily report
 echo "Generating report..."
-gcover gdb stats --storage > daily_report_$(date +%Y%m%d).txt
+gcover --env production gdb stats --storage > daily_report_$(date +%Y%m%d).txt
 ```
 
 ##### Weekly Maintenance
 ```bash
 #!/bin/bash
 # Weekly maintenance script
-export GDB_ENV=production
 
 # Full system validation
 echo "Validating system integrity..."
-gcover gdb validate --check-s3
+gcover --env production gdb validate --check-s3
 
 # Comprehensive statistics
 echo "Generating weekly statistics..."
-gcover gdb stats --by-date --by-type --storage > weekly_stats_$(date +%Y%m%d).txt
+gcover --env production gdb stats --by-date --by-type --storage > weekly_stats_$(date +%Y%m%d).txt
 
 # Database maintenance
 echo "Optimizing database..."
@@ -340,7 +339,7 @@ gcover gdb process-all --filter-type verification_topology --force --continue-on
 gcover gdb process-all --since 2025-01-01 --filter-rc RC1 --force
 
 # Process with maximum verbosity for debugging
-gcover gdb --verbose process-all --dry-run --filter-type backup_daily
+gcover --verbose gdb process-all --dry-run --filter-type backup_daily
 ```
 
 ##### Monthly Report Generation
@@ -354,15 +353,15 @@ echo "# GeoCover GDB Assets Monthly Report - $MONTH" > $REPORT_FILE
 echo "" >> $REPORT_FILE
 
 echo "## System Overview" >> $REPORT_FILE
-gcover gdb status >> $REPORT_FILE
+gcover --env production gdb status >> $REPORT_FILE
 echo "" >> $REPORT_FILE
 
 echo "## Monthly Statistics" >> $REPORT_FILE
-gcover gdb stats --by-date --storage >> $REPORT_FILE
+gcover --env production gdb stats --by-date --storage >> $REPORT_FILE
 echo "" >> $REPORT_FILE
 
 echo "## Asset Type Breakdown" >> $REPORT_FILE
-gcover gdb stats --by-type >> $REPORT_FILE
+gcover --env production gdb stats --by-type >> $REPORT_FILE
 
 echo "Monthly report generated: $REPORT_FILE"
 ```
@@ -416,7 +415,7 @@ gcover gdb process-all --since $(date -d '1 week ago' +%Y-%m-%d)
 ##### Monitoring Processing
 ```bash
 # Monitor with verbose output and timestamps
-gcover gdb --verbose process-all 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee processing.log
+gcover --verbose gdb process-all 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee processing.log
 
 # Monitor S3 uploads separately
 aws s3 ls s3://your-bucket/gdb-assets/ --recursive | tail -f
