@@ -18,6 +18,6 @@ gdb:
   db_path: "data/dev_gdb_metadata.duckdb"
 
 
-db_path: "data/dev_gdb_metadata.duckdb"
+
 
 # Development-specific SDE instances could go here if different

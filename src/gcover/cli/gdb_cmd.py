@@ -56,7 +56,14 @@ def get_configs(ctx) -> tuple[GDBConfig, GlobalConfig, str, bool]:
 @click.pass_context
 def gdb(ctx):
     """GDB Asset Management commands"""
-    pass
+    # Ensure context object exists and has required keys
+    if ctx.obj is None:
+        ctx.ensure_object(dict)
+
+    # Set defaults if not provided by parent gcover command
+    ctx.obj.setdefault("environment", "development")
+    ctx.obj.setdefault("verbose", False)
+    ctx.obj.setdefault("config_path", None)
 
 
 @gdb.command()
@@ -222,7 +229,7 @@ def sync(ctx, dry_run):
 
 
 # TODO: use central config
-@gdb.command()
+@gdb.command("list-assets")
 @click.option(
     "--type",
     "asset_type",
@@ -235,7 +242,7 @@ def sync(ctx, dry_run):
 @click.option("--since", type=str, help="Show assets since date (YYYY-MM-DD)")
 @click.option("--limit", type=int, default=20, help="Limit number of results")
 @click.pass_context
-def list(ctx, asset_type, rc, since, limit):
+def list_assets(ctx, asset_type, rc, since, limit):
     """List GDB assets from database"""
 
     gdb_config, global_config, environment, verbose = get_configs(ctx)
@@ -754,14 +761,14 @@ def process_all(
 @click.pass_context
 def clean_temp(ctx, dry_run):
     """Clean temporary zip files from processing"""
-    config = ctx.obj["config"]
-    temp_dir = Path(config.temp_dir)
+    gdb_config, global_config, environment, verbose = get_configs(ctx)
+    temp_dir = Path(gdb_config.temp_dir)
 
     if not temp_dir.exists():
         rprint("[yellow]Temp directory doesn't exist[/yellow]")
         return
 
-    zip_files = list(temp_dir.glob("*.zip"))
+    zip_files = [f for f in temp_dir.glob("*.zip")]
     if not zip_files:
         rprint("[green]No temporary files to clean[/green]")
         return
@@ -791,10 +798,11 @@ def clean_temp(ctx, dry_run):
 @click.pass_context
 def validate(ctx, check_s3, check_integrity):
     """Validate processed assets"""
-    config = ctx.obj["config"]
+
+    gdb_config, global_config, environment, verbose = get_configs(ctx)
 
     try:
-        db = MetadataDB(config.db_path)
+        db = MetadataDB(gdb_config.db_path)
 
         with duckdb.connect(str(db.db_path)) as conn:
             results = conn.execute("""
@@ -862,10 +870,11 @@ def validate(ctx, check_s3, check_integrity):
 @click.pass_context
 def stats(ctx, by_date, by_type, storage):
     """Show detailed statistics"""
-    config = ctx.obj["config"]
+
+    gdb_config, global_config, environment, verbose = get_configs(ctx)
 
     try:
-        db = MetadataDB(config.db_path)
+        db = MetadataDB(gdb_config.db_path)
 
         with duckdb.connect(str(db.db_path)) as conn:
             if by_date:
