@@ -23,21 +23,28 @@ except ImportError:
 
 from gcover.config import load_config, AppConfig
 
-
+env_map = {
+    "prod": "production",
+    "production": "production",
+    "dev": "development",
+    "development": "development",
+    "sandisk": "sandisk",
+    "integration": "integration",
+    "int": "integration",
+}
 
 
 @click.group()
 @click.version_option(version=__version__, prog_name="gcover")
 @click.option(
-    "--config", "-c",
-    type=click.Path(exists=True),
-    help="Configuration file path"
+    "--config", "-c", type=click.Path(exists=True), help="Configuration file path"
 )
 @click.option(
-    "--env", "-e",
-    type=click.Choice(["development", "dev", "production", "prod"]),
+    "--env",
+    "-e",
+    type=click.Choice(env_map.keys()),
     default="development",
-    help="Environment (dev/prod)"
+    help="Environment (dev/prod)",
 )
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 @click.pass_context
@@ -47,17 +54,18 @@ def cli(ctx, config, env, verbose):
     ctx.obj["has_arcpy"] = HAS_ARCPY
 
     # Normalize environment name
-    environment = "production" if env in ["prod", "production"] else "development"
+    try:
+        environment = env_map[env.lower()]
+    except KeyError:
+        raise click.BadParameter(f"Unsupported environment: {env}")
 
     try:
         # Load centralized configuration
         app_config: AppConfig = load_config(environment=environment)
 
-
         # ctx.obj["config_manager"] = config_manager
         ctx.obj["environment"] = environment
         ctx.obj["verbose"] = verbose
-
 
         if verbose:
             global_config = app_config.global_
@@ -71,6 +79,7 @@ def cli(ctx, config, env, verbose):
         rprint(f"[red]Configuration error: {e}[/red]")
         if verbose:
             import traceback
+
             rprint(f"[red]{traceback.format_exc()}[/red]")
         sys.exit(1)
 
