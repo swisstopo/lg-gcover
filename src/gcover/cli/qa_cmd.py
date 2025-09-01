@@ -192,6 +192,13 @@ def process_single(
     help="Show what would be processed without actually processing",
 )
 @click.option(
+    "--format",
+    type=click.Choice(["geoparquet", "geojson", "flatgeobuf", "both"]),
+    default="geoparquet",
+    help="Output format",
+)
+@click.option("--no-upload", is_flag=True, help="Skip S3 upload")
+@click.option(
     "--simplify-tolerance",
     type=float,
     help="Tolerance for geometry simplification (applies to all GDBs)",
@@ -204,6 +211,8 @@ def process_all(
     base_directory: Path,
     qa_type: str,
     dry_run: bool,
+    format: str,
+    no_upload: bool,
     simplify_tolerance: Optional[float],
     max_workers: Optional[int],
     verbose: bool,
@@ -234,6 +243,7 @@ def process_all(
 
     console.print(f"[blue]Scanning directory: {base_directory}[/blue]")
     console.print(f"[dim]QA Type filter: {qa_type}[/dim]")
+    console.print(f"[dim]Output format: {format}[/dim]")
     if simplify_tolerance:
         console.print(f"[yellow]Geometry simplification: {simplify_tolerance}[/yellow]")
 
@@ -325,9 +335,12 @@ def process_all(
                     console.print(
                         f"\n[blue]Processing {i}/{len(filtered_assets)}: {asset.path.name}[/blue]"
                     )
-
+                    # TODO output_dir=output_dir,
                     summary = converter.process_gdb(
-                        gdb_path=asset.path, simplify_tolerance=simplify_tolerance
+                        gdb_path=asset.path,
+                        simplify_tolerance=simplify_tolerance,
+                        output_format=format,
+                        upload_to_s3=not no_upload,
                     )
 
                     if summary.total_features > 0:

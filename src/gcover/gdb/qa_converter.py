@@ -365,6 +365,19 @@ class FileGDBConverter:
                 df_web.to_parquet(output_path, compression="snappy")
                 logger.info(f"Converted to GeoParquet (EPSG:4326): {output_path}")
 
+            elif format.lower() == "flatgeobuf" and is_spatial:
+                # Ensure we have a valid CRS
+                if df.crs is None:
+                    logger.warning(
+                        "No CRS found, assuming EPSG:2056 (Swiss coordinates)"
+                    )
+                    df.set_crs("EPSG:2056", inplace=True)
+
+                # Convert to WGS84 for web compatibility
+                df_web = df.to_crs("EPSG:4326")
+                df_web.to_file(output_path, driver="FlatGeobuf")
+                logger.info(f"Converted to FlatGeoBuffer (EPSG:4326): {output_path}")
+
             elif format == "geojson" and is_spatial:
                 # Ensure WGS84 for GeoJSON
                 if df.crs is None:
@@ -582,6 +595,8 @@ class FileGDBConverter:
                         file_path = output_dir / f"{layer_name}.parquet"
                     elif output_format == "geojson":
                         file_path = output_dir / f"{layer_name}.geojson"
+                    elif output_format == "flatgeobuf":
+                        file_path = output_dir / f"{layer_name}.fgb"
                     else:  # both
                         # Create both formats
                         parquet_path = output_dir / f"{layer_name}.parquet"
