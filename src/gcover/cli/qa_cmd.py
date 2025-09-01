@@ -791,22 +791,24 @@ def stats(
         table.add_column("Verification Type")
         table.add_column("RC Version")
         table.add_column("Test Name", max_width=30)
-        table.add_column(
-            "Issue Type",
-            style="red"
-            if "error" in str(df["issue_type"].iloc[0]).lower()
-            else "yellow",
-        )
+        table.add_column("Issue Type")
         table.add_column("Total Count", justify="right")
         table.add_column("Runs", justify="right")
         table.add_column("Latest", style="dim")
 
         for _, row in df.head(20).iterrows():
+            issue_type = str(row["issue_type"]).lower()
+            if "error" in issue_type:
+                style = "bold red"
+            elif "warning" in issue_type:
+                style = "bold yellow"
+            else:
+                style = "dim"
             table.add_row(
                 row["verification_type"],
                 row["rc_version"],
                 row["test_name"],
-                row["issue_type"],
+                f"[{style}]{row['issue_type']}[/{style}]",
                 f"{row['total_count']:,}",
                 str(row["num_runs"]),
                 row["latest_run"].strftime("%Y-%m-%d"),
