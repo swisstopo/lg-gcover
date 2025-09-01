@@ -375,7 +375,7 @@ def diagnose(gdb_path: Path, layer: Optional[str]):
         console.print(f"[red]Failed to diagnose FileGDB: {e}[/red]")
 
 
-@qa.command()
+@qa.command("process-all")
 @click.argument("gdb_path", type=click.Path(exists=True, path_type=Path))
 @click.option(
     "--layer", default="IssuePolygons", help="Layer to test (default: IssuePolygons)"
@@ -479,18 +479,6 @@ def test_read(gdb_path: Path, layer: str, max_features: int):
     "--pattern", default="**/issue.gdb", help="Glob pattern to find GDB files"
 )
 @click.option(
-    "--config-file",
-    "-c",
-    type=click.Path(exists=True, path_type=Path),
-    help="Configuration file path",
-)
-@click.option(
-    "--environment",
-    "-e",
-    default="development",
-    help="Environment (development/production)",
-)
-@click.option(
     "--dry-run",
     is_flag=True,
     help="Show what would be processed without actually processing",
@@ -500,11 +488,11 @@ def test_read(gdb_path: Path, layer: str, max_features: int):
     type=float,
     help="Tolerance for geometry simplification (applies to all GDBs)",
 )
-def batch(
+@click.pass_context
+def process_all(
+    ctx,
     directory: Path,
     pattern: str,
-    config_file: Optional[Path],
-    environment: str,
     dry_run: bool,
     simplify_tolerance: Optional[float],
 ):
@@ -516,14 +504,28 @@ def batch(
         gcover verification batch /path/to/verifications --simplify-tolerance 1.0
     """
     # from ..gdb.config import load_config TODO
-    from ...config import load_config, GDBConfig, SDEConfig, SchemaConfig
-    from ..gdb.qa_converter import FileGDBConverter
+    from gcover.config import load_config, GDBConfig, SDEConfig, SchemaConfig, QAConfig
+    from gcover.gdb.qa_converter import FileGDBConverter
 
     try:
+        # TODO qa_config, global_config = get_qa_config(ctx)
+        qa_config, global_config, environment, verbose = get_configs(ctx)
+
+        # Get S3 settings from global config
+        s3_bucket = qa_config.get_s3_bucket(global_config)
+        s3_profile = qa_config.get_s3_profile(global_config)
+
+    except Exception as e:
+        console.print(f"[red]Configuration error: {e}[/red]")
+        console.print("Make sure your configuration includes global S3 settings:")
+        console.print("  global.s3.bucket, global.s3.profile")
+        raise click.Abort()
+
+    """try:
         config = load_config(config_file, environment)
     except FileNotFoundError as e:
         console.print(f"[red]Configuration error: {e}[/red]")
-        raise click.Abort()
+        raise click.Abort()"""
 
     # Find all matching GDB files
     gdb_files = list(directory.glob(pattern))
@@ -533,7 +535,7 @@ def batch(
         return
 
     console.print(f"Found {len(gdb_files)} GDB files to process")
-    console.print(f"S3 Bucket: {config.s3_bucket}")
+    console.print(f"S3 Bucket: {s3_bucket}")
 
     if simplify_tolerance:
         console.print(f"[yellow]Geometry simplification: {simplify_tolerance}[/yellow]")
@@ -561,7 +563,10 @@ def batch(
         return
 
     # Process each file
-    converter = FileGDBConverter(config=config)
+    # TODO: fix config
+    config_wrapper = ConfigWrapper(qa_config, global_config)
+    console.print(config_wrapper)
+    converter = FileGDBConverter(config=config_wrapper)
 
     try:
         processed = 0
@@ -608,6 +613,7 @@ def batch(
         converter.close()
 
 
+'''
 @click.option(
     "--pattern", default="**/issue.gdb", help="Glob pattern to find GDB files"
 )
@@ -705,6 +711,7 @@ def batch(
 
     finally:
         converter.close()
+'''
 
 
 @qa.command()
