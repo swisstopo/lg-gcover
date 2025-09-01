@@ -13,6 +13,7 @@ lg-gcover simplifies the processing and analysis of geological vector datasets f
 
 Perfect for geologists, GIS analysts, and researchers working with Swiss geological datasets who need efficient, reproducible data processing workflows.
 
+
 ## Usage
 
 
@@ -67,7 +68,6 @@ export GCOVER_SDE_CONNECTION_TIMEOUT=120
 gcover gdb status  # Will use custom S3 bucket and debug logging
 ```
 
-
 ### GDB Asset Management - Usage
 
 #### Quick Start
@@ -79,9 +79,9 @@ gcover --env dev gdb init
 # Scan for GDB files
 gcover --env dev gdb scan
 
-# Sync to S3 (dry run first)
-gcover --env dev gdb sync --dry-run
-gcover --env dev gdb sync
+# Process all found GDBs (dry run first)
+gcover --env dev gdb process-all --dry-run
+gcover --env dev gdb process-all
 
 # Check status
 gcover --env dev gdb status
@@ -100,19 +100,61 @@ gcover gdb status                  # Show system statistics and health
 
 ##### Asset Discovery
 ```bash
-gcover gdb list                    # List recent assets (default: 20)
-gcover gdb list --limit 50         # List more assets
-gcover gdb list --type backup_daily # Filter by asset type
-gcover gdb list --rc RC1           # Filter by release candidate
-gcover gdb list --since 2025-07-01 # Filter by date
+gcover gdb list-assets                    # List recent assets (default: 20)
+gcover gdb list-assets --limit 50         # List more assets
+gcover gdb list-assets --type backup_daily # Filter by asset type
+gcover gdb list-assets --rc RC1           # Filter by release candidate
+gcover gdb list-assets --since 2025-07-01 # Filter by date
 
 gcover gdb search "2025"           # Search assets by term
 gcover gdb search "topology" --download # Search and download
 ```
 
 ##### Processing
+
+**Single Asset Processing**
 ```bash
 gcover gdb process /path/to/specific.gdb    # Process single asset
+```
+
+**Batch Processing**
+```bash
+# Process all discovered assets
+gcover gdb process-all                      # Process all found assets
+gcover gdb process-all --dry-run           # Preview what would be processed
+
+# Filtered processing
+gcover gdb process-all --filter-type backup_daily    # Only daily backups
+gcover gdb process-all --filter-rc RC1              # Only RC1 assets
+gcover gdb process-all --since 2025-01-01           # Assets since date
+
+# Advanced options
+gcover gdb process-all --force                       # Reprocess even if already in DB
+gcover gdb process-all --continue-on-error          # Don't stop on failures
+gcover gdb process-all --max-workers 2              # Parallel processing (experimental)
+
+# Combined filters
+gcover gdb process-all --filter-type verification_topology --filter-rc RC2 --since 2025-02-01
+```
+
+##### Maintenance & Utilities
+
+**System Maintenance**
+```bash
+gcover gdb clean-temp                      # Clean temporary zip files
+gcover gdb clean-temp --dry-run           # Preview cleanup
+
+gcover gdb validate                        # Validate processed assets
+gcover gdb validate --check-s3            # Also validate S3 uploads
+gcover gdb validate --check-integrity     # Verify file integrity
+```
+
+**Advanced Statistics**
+```bash
+gcover gdb stats                          # Basic overview
+gcover gdb stats --by-date               # Statistics by month
+gcover gdb stats --by-type               # Statistics by asset type and RC
+gcover gdb stats --storage               # Storage and upload statistics
 ```
 
 #### Environment Management
@@ -130,8 +172,9 @@ gcover --env production gdb sync
 gcover --config ./my-config.yaml --env prod gdb sync
 
 # With environment variables
-export GCOVER_GLOBAL_S3_BUCKET=my-prod-bucket
-gcover --env prod gdb sync
+export GDB_ENV=production
+export GDB_S3_BUCKET=my-prod-bucket
+gcover gdb sync
 ```
 
 #### Asset Types
@@ -188,47 +231,25 @@ with duckdb.connect("data/dev_gdb_metadata.duckdb") as conn:
 
 ##### Environment Variables
 ```bash
-# Global settings (affect all modules)
-GCOVER_GLOBAL_LOG_LEVEL=DEBUG|INFO|WARNING   # Logging level
-GCOVER_GLOBAL_S3_BUCKET=my-bucket            # S3 bucket name
-GCOVER_GLOBAL_S3_PROFILE=my-profile          # AWS profile
-GCOVER_GLOBAL_TEMP_DIR=/custom/temp          # Temporary directory
-
-# GDB-specific settings
-GCOVER_GDB_DATABASE_PATH=/path/to/db.duckdb  # Database path
-GCOVER_GDB_PROCESSING_MAX_WORKERS=8          # Number of workers
+GDB_ENV=development|production      # Environment selection
+GDB_S3_BUCKET=my-bucket            # Override S3 bucket
+GDB_S3_PROFILE=my-profile          # AWS profile
+GDB_DB_PATH=/path/to/db.duckdb     # Database path
+GDB_LOG_LEVEL=DEBUG|INFO|WARNING   # Logging level
 ```
 
-##### Config File (`config/gcover_config.yaml`)
+###### Config File (`config/gdb_config.yaml`)
 ```yaml
-# Global settings for all modules
-global:
-  log_level: INFO
-  temp_dir: /tmp/gcover
-  max_workers: 4
-  s3:
-    bucket: "gcover-assets-dev"
-    profile: "default"
+base_paths:
+  backup: "/path/to/GCOVER"
+  verification: "/path/to/Verifications"
+  increment: "/path/to/Increment"
 
-# GDB-specific configuration
-gdb:
-  base_paths:
-    backup: "/path/to/GCOVER"
-    verification: "/path/to/Verifications"
-    increment: "/path/to/Increment"
-  database:
-    path: "data/gdb_metadata.duckdb"
-  processing:
-    compression_level: 6
-    max_workers: 4
-
-# Environment-specific overrides
-# config/environments/production.yaml
-global:
-  log_level: WARNING
-  s3:
-    bucket: "gcover-assets-prod"
-    profile: "production"
+s3:
+  bucket: "your-gdb-bucket"
+  
+database:
+  path: "data/gdb_metadata.duckdb"
 ```
 
 #### Maintenance
@@ -238,10 +259,13 @@ global:
 cp data/dev_gdb_metadata.duckdb data/backup_$(date +%Y%m%d).duckdb
 
 # Clean temporary files
-rm -rf /tmp/gcover/gdb/*
+gcover gdb clean-temp
 
 # Database maintenance
 duckdb data/dev_gdb_metadata.duckdb 'VACUUM;'
+
+# Validate system integrity
+gcover gdb validate --check-s3 --check-integrity
 ```
 
 #### Troubleshooting
@@ -253,6 +277,9 @@ gcover --env dev --verbose gdb scan
 # Check configuration
 gcover --env dev --verbose gdb status
 
+# Debug specific processing issues
+gcover --env dev --verbose gdb process-all --dry-run --filter-type backup_daily
+
 # Verify AWS credentials
 aws s3 ls s3://your-bucket/
 
@@ -262,17 +289,94 @@ duckdb data/dev_gdb_metadata.duckdb 'SELECT COUNT(*) FROM gdb_assets;'
 
 #### Common Workflows
 
-##### Daily Sync
+##### Daily Processing Workflow
 ```bash
 #!/bin/bash
-# Daily sync script
-gcover --env production gdb sync 2>&1 | logger -t gdb-sync
+# Daily processing script
+export GDB_ENV=production
+
+# Scan for new assets
+echo "Scanning for new GDB assets..."
+gcover --env production gdb scan
+
+# Process only new assets from today
+echo "Processing today's assets..."
+gcover --env production gdb process-all --since $(date +%Y-%m-%d) --continue-on-error
+
+# Clean up temporary files
+echo "Cleaning up..."
+gcover --env production gdb clean-temp
+
+# Generate daily report
+echo "Generating report..."
+gcover --env production gdb stats --storage > daily_report_$(date +%Y%m%d).txt
 ```
 
-##### Weekly Report
+##### Weekly Maintenance
 ```bash
-# Generate weekly report
-gcover --env prod gdb list --since $(date -d '7 days ago' +%Y-%m-%d) > weekly_report.txt
+#!/bin/bash
+# Weekly maintenance script
+
+# Full system validation
+echo "Validating system integrity..."
+gcover --env production gdb validate --check-s3
+
+# Comprehensive statistics
+echo "Generating weekly statistics..."
+gcover --env production gdb stats --by-date --by-type --storage > weekly_stats_$(date +%Y%m%d).txt
+
+# Database maintenance
+echo "Optimizing database..."
+duckdb data/prod_gdb_metadata.duckdb 'VACUUM; ANALYZE;'
+```
+
+##### Bulk Reprocessing
+```bash
+# Reprocess all assets of a specific type
+gcover gdb process-all --filter-type verification_topology --force --continue-on-error
+
+# Reprocess assets from a specific time period
+gcover gdb process-all --since 2025-01-01 --filter-rc RC1 --force
+
+# Process with maximum verbosity for debugging
+gcover --verbose gdb process-all --dry-run --filter-type backup_daily
+```
+
+##### Monthly Report Generation
+```bash
+#!/bin/bash
+# Monthly comprehensive report
+MONTH=$(date -d "last month" +%Y-%m)
+REPORT_FILE="gcover_monthly_report_${MONTH}.md"
+
+echo "# GeoCover GDB Assets Monthly Report - $MONTH" > $REPORT_FILE
+echo "" >> $REPORT_FILE
+
+echo "## System Overview" >> $REPORT_FILE
+gcover --env production gdb status >> $REPORT_FILE
+echo "" >> $REPORT_FILE
+
+echo "## Monthly Statistics" >> $REPORT_FILE
+gcover --env production gdb stats --by-date --storage >> $REPORT_FILE
+echo "" >> $REPORT_FILE
+
+echo "## Asset Type Breakdown" >> $REPORT_FILE
+gcover --env production gdb stats --by-type >> $REPORT_FILE
+
+echo "Monthly report generated: $REPORT_FILE"
+```
+
+##### Emergency Recovery
+```bash
+# If you need to rebuild the database from S3
+gcover gdb init  # Recreate database structure
+
+# Re-scan filesystem and reprocess everything
+gcover gdb scan
+gcover gdb process-all --force --continue-on-error
+
+# Validate everything was processed correctly
+gcover gdb validate --check-s3
 ```
 
 ##### Find Missing Backups
@@ -292,16 +396,44 @@ SELECT generate_series(
 WHERE missing_date NOT IN (SELECT backup_date FROM daily_backups);
 ```
 
+#### Performance Tips
+
+##### For Large Datasets
+```bash
+# Use continue-on-error for resilient processing
+gcover gdb process-all --continue-on-error
+
+# Process in smaller batches by type
+gcover gdb process-all --filter-type backup_daily
+gcover gdb process-all --filter-type verification_tqa
+gcover gdb process-all --filter-type increment
+
+# Use date filtering for incremental processing
+gcover gdb process-all --since $(date -d '1 week ago' +%Y-%m-%d)
+```
+
+##### Monitoring Processing
+```bash
+# Monitor with verbose output and timestamps
+gcover --verbose gdb process-all 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee processing.log
+
+# Monitor S3 uploads separately
+aws s3 ls s3://your-bucket/gdb-assets/ --recursive | tail -f
+```
+
 #### Data Flow
 
 ```
-📁 Local GDB Files → 📦 ZIP Creation → ☁️ S3 Upload → 💾 Local Database Update
+📁 Local GDB Files → 🔍 Scan Discovery → 📦 ZIP Creation → 🔐 Hash Verification → ☁️ S3 Upload → 💾 Database Update
 ```
 
-- **GDB assets** are compressed and uploaded to S3
+- **GDB assets** are discovered via filesystem scanning
+- **Assets** are compressed and uploaded to S3 with integrity verification
 - **Metadata** is stored in local DuckDB for fast querying  
 - **Database** serves as a catalog of your S3 assets
 - **No cloud database costs** - everything runs locally
+
+
 
 ### Quality Assurance (QA) Commands
 
@@ -543,6 +675,7 @@ gcover qa stats --days-back 7 \
 
 The `gcover sde` command provides comprehensive tools for managing SDE (Spatial Database Engine) connections, versions, and user access.
 
+
 #### Quick Start
 
 ```bash
@@ -562,11 +695,9 @@ gcover sde versions -f json > versions.json
 gcover sde connections --cleanup
 ```
 
-#### SDE Commands
 
 ##### Version Management
 
-###### `gcover sde versions`
 Lists available versions on SDE instances with filtering and export options.
 
 ```bash
@@ -666,7 +797,9 @@ GCOVERP     SDE.DEFAULT           /tmp/gcover_GCOVERP_DEFAULT.sde
 GCOVERP     USER.MYVERSION        /tmp/gcover_GCOVERP_MYVERSION.sde
 ```
 
-### Schema Management
+
+
+### Schema Management  ###
 
 
 The `gcover schema` command provides tools for extracting, comparing, and documenting ESRI geodatabase schemas.
@@ -910,4 +1043,3 @@ global:
     bucket: "gcover-assets-prod"
     profile: "production"
 ```
-
