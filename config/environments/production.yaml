@@ -2,9 +2,13 @@
 
 global:
   log_level: WARNING
+
   s3:
     bucket: "lg-gcover-dev-d48b6c57"
     profile: "gcover_bucket"
+
+qa:
+  db_path: "data/prod_verification_stats.duckdb"
 
 gdb:
   processing:

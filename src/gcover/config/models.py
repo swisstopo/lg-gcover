@@ -151,7 +151,8 @@ class SchemaConfig(BaseModel):
 class QAConfig(BaseModel):
     """Quality Assurance configuration"""
     output_dir: Path = Path("./qa_output")
-    database: DatabaseConfig
+    # database: DatabaseConfig
+    db_path: Path = Path("data/prod_verification_stats.duckdb")
     temp_dir: Path = Path("/tmp/gcover/qa")
     processing: ProcessingConfig = ProcessingConfig()
     default_simplify_tolerance: Optional[float] = None

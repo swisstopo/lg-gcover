@@ -15,8 +15,24 @@ from rich.table import Table
 import pandas as pd
 
 from gcover.config import load_config, AppConfig # TODO
+from gcover.config.models import GDBConfig, GlobalConfig, QAConfig
+
+from loguru import logger
 
 console = Console()
+
+# Create a temporary config object that includes S3 settings for the converter
+# (This assumes your FileGDBConverter expects s3_bucket and s3_profile attributes)
+class ConfigWrapper:
+        def __init__(self, qa_config, global_config):
+            # Copy QA config attributes
+            for attr in ['db_path', 'temp_dir', 'max_workers']:
+                if hasattr(qa_config, attr):
+                    setattr(self, attr, getattr(qa_config, attr))
+
+            # Add S3 settings from global config
+            self.s3_bucket = global_config.s3.bucket
+            self.s3_profile = global_config.s3.profile
 
 
 def get_qa_config(ctx):
@@ -34,6 +50,17 @@ def get_qa_config(ctx):
 
     return qa_config, global_config
 
+def get_configs(ctx) -> tuple[QAConfig, GlobalConfig, str, bool]:
+    app_config: AppConfig = load_config(
+        environment=ctx.obj["environment"]
+    )  # ctx.obj["app_config"]
+    logger.info(f"env: {ctx.obj['environment']}")
+    return (
+        app_config.qa,
+        app_config.global_,
+        ctx.obj["environment"],
+        ctx.obj.get("verbose", False),
+    )
 
 
 @click.group()
@@ -69,7 +96,8 @@ def process(ctx, gdb_path: Path, output_dir: Optional[Path], no_upload: bool,
     """
     # from ..gdb.config import load_config TODO
     try:
-        qa_config, global_config = get_qa_config(ctx)
+        # TODO qa_config, global_config = get_qa_config(ctx)
+        qa_config, global_config, environment, verbose = get_configs(ctx)
 
         # Get S3 settings from global config
         s3_bucket = qa_config.get_s3_bucket(global_config)
@@ -94,20 +122,10 @@ def process(ctx, gdb_path: Path, output_dir: Optional[Path], no_upload: bool,
             # Import and use the QA converter
     from ..gdb.qa_converter import FileGDBConverter
 
-    # Create a temporary config object that includes S3 settings for the converter
-    # (This assumes your FileGDBConverter expects s3_bucket and s3_profile attributes)
-    class ConfigWrapper:
-        def __init__(self, qa_config, global_config):
-            # Copy QA config attributes
-            for attr in ['db_path', 'temp_dir', 'max_workers']:
-                if hasattr(qa_config, attr):
-                    setattr(self, attr, getattr(qa_config, attr))
 
-            # Add S3 settings from global config
-            self.s3_bucket = global_config.s3.bucket
-            self.s3_profile = global_config.s3.profile
-
+    # TODO: fix config
     config_wrapper = ConfigWrapper(qa_config, global_config)
+    console.print(config_wrapper)
     converter = FileGDBConverter(config=config_wrapper)
 
     try:
@@ -130,7 +148,7 @@ def process(ctx, gdb_path: Path, output_dir: Optional[Path], no_upload: bool,
         console.print(f"RC Version: {summary.rc_version}")
         console.print(f"Timestamp: {summary.timestamp}")
         console.print(f"Total Features: {summary.total_features:,}")
-        console.print(f"S3 Bucket: {config.s3_bucket}")
+        console.print(f"S3 Bucket: {s3_bucket}")
 
         # Show layer breakdown
         table = Table(title="Layer Summary")
@@ -679,18 +697,6 @@ def batch(
 
 @qa.command()
 @click.option(
-    "--config-file",
-    "-c",
-    type=click.Path(exists=True, path_type=Path),
-    help="Configuration file path",
-)
-@click.option(
-    "--environment",
-    "-e",
-    default="development",
-    help="Environment (development/production)",
-)
-@click.option(
     "--qa-type",
     type=click.Choice(["Topology", "TechnicalQualityAssurance"]),
     help="Filter by QA type",
@@ -701,9 +707,9 @@ def batch(
     "--export-csv", type=click.Path(path_type=Path), help="Export results to CSV file"
 )
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
+@click.pass_context
 def stats(
-    config_file: Optional[Path],
-    environment: str,
+    ctx,
     qa_type: Optional[str],
     rc_version: Optional[str],
     days_back: int,
@@ -717,9 +723,9 @@ def stats(
         gcover verification stats --verification-type Topology --days-back 7
     """
     # from ..gdb.config import load_config TODO
-    from ...config import load_config, GDBConfig, SDEConfig, SchemaConfig
-    from ..gdb.qa_converter import FileGDBConverter
-    from ..core.config import convert_rc, get_all_rcs
+    from gcover.config import load_config, GDBConfig, SDEConfig, SchemaConfig
+    from gcover.gdb.qa_converter import FileGDBConverter
+    from gcover.core.config import convert_rc, get_all_rcs
 
     from loguru import logger
 
@@ -732,20 +738,26 @@ def stats(
     logger.add(sys.stderr, level=log_level.upper())
 
     try:
-        config = load_config(config_file, environment)
+        #config = load_config(config_file, environment)
+        qa_config, global_config, environment, verbose = get_configs(ctx)
+        console.log(qa_config)
     except FileNotFoundError as e:
         console.print(f"[red]Configuration error: {e}[/red]")
         raise click.Abort()
 
     # Check if database exists
-    verification_db = config.db_path.parent / "verification_stats.duckdb"
+    # verification_db = config.db_path.parent / "verification_stats.duckdb"
+    verification_db = qa_config.db_path
     console.print(f"[dim]Using DB {verification_db}[/dim]")
     if not verification_db.exists():
         console.print(f"[red]Statistics database not found: {verification_db}[/red]")
         console.print("Run 'gcover verification process' first to generate statistics.")
         return
 
-    converter = FileGDBConverter(config=config)
+    config_wrapper = ConfigWrapper(qa_config, global_config)
+    console.print(config_wrapper)
+    converter = FileGDBConverter(config=config_wrapper)
+
 
     try:
         if rc_version:

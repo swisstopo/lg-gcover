@@ -24,7 +24,7 @@ from botocore.exceptions import ClientError
 from gcover.config import load_config, AppConfig
 
 console = Console()
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 @dataclass
@@ -78,7 +78,8 @@ class FileGDBConverter:
         self.s3_prefix = s3_prefix.rstrip("/") + "/"
 
         # Use verification-specific database path
-        verification_db = self.config.db_path.parent / "verification_stats.duckdb"
+        #verification_db = self.config.db_path.parent / "verification_stats.duckdb"
+        verification_db = self.config.db_path
         self.duckdb_path = verification_db
 
         # Initialize S3 client with profile support
@@ -86,16 +87,18 @@ class FileGDBConverter:
         self.s3_client = session.client("s3")
 
         # Initialize DuckDB connection
+        console.print(f"DuckDB: {self.duckdb_path}")
         self.conn = duckdb.connect(str(self.duckdb_path))
         self._init_stats_tables()
 
         # Setup logging
-        import logging
+        # TODO configure logging
+        '''import logging
 
         logging.basicConfig(level=getattr(logging, self.config.log_level))
         self.logger = logging.getLogger(__name__)
 
-        self.logger.info(self.config)
+        self.logger.info(self.config)'''
 
     def _init_stats_tables(self):
         """Initialize DuckDB tables for statistics storage."""
@@ -214,7 +217,7 @@ class FileGDBConverter:
                         continue
 
             if not records:
-                self.logger.warning(f"No valid records found in {layer_name}")
+                logger.warning(f"No valid records found in {layer_name}")
                 return None
 
             # Create DataFrame
@@ -231,7 +234,7 @@ class FileGDBConverter:
                 return df
 
         except Exception as e:
-            self.logger.warning(f"Could not read layer {layer_name}: {e}")
+            logger.warning(f"Could not read layer {layer_name}: {e}")
             return None
 
     def _read_layer_complexe(
@@ -247,12 +250,12 @@ class FileGDBConverter:
                     # List available layers
                     layers = fiona.listlayers(str(gdb_path))
                     if layer_name not in layers:
-                        self.logger.warning(
+                        logger.warning(
                             f"Layer {layer_name} not found in {gdb_path}"
                         )
                         return None
                 except Exception:
-                    self.logger.error(f"Could not list layers in {gdb_path}")
+                    logger.error(f"Could not list layers in {gdb_path}")
                     return None
 
             # Read the layer
@@ -303,7 +306,7 @@ class FileGDBConverter:
                     return gdf
 
         except Exception as e:
-            self.logger.warning(
+            logger.warning(
                 f"Could not read layer {layer_name} from {gdb_path}: {e}"
             )
         return None
@@ -347,7 +350,7 @@ class FileGDBConverter:
             if format == "geoparquet" and is_spatial:
                 # Ensure we have a valid CRS
                 if df.crs is None:
-                    self.logger.warning(
+                    logger.warning(
                         "No CRS found, assuming EPSG:2056 (Swiss coordinates)"
                     )
                     df.set_crs("EPSG:2056", inplace=True)
@@ -355,7 +358,7 @@ class FileGDBConverter:
                 # Convert to WGS84 for web compatibility
                 df_web = df.to_crs("EPSG:4326")
                 df_web.to_parquet(output_path, compression="snappy")
-                self.logger.info(f"Converted to GeoParquet (EPSG:4326): {output_path}")
+                logger.info(f"Converted to GeoParquet (EPSG:4326): {output_path}")
 
             elif format == "geojson" and is_spatial:
                 # Ensure WGS84 for GeoJSON
@@ -363,7 +366,7 @@ class FileGDBConverter:
                     df.set_crs("EPSG:2056", inplace=True)
                 df_web = df.to_crs("EPSG:4326")
                 df_web.to_file(output_path, driver="GeoJSON")
-                self.logger.info(f"Converted to GeoJSON: {output_path}")
+                logger.info(f"Converted to GeoJSON: {output_path}")
 
             else:
                 # Non-spatial data or fallback - save as JSON/Parquet
@@ -373,21 +376,21 @@ class FileGDBConverter:
                     # Change extension to .parquet for non-spatial data
                     parquet_path = output_path.with_suffix(".parquet")
                     df.to_parquet(parquet_path, compression="snappy")
-                    self.logger.info(f"Converted to Parquet: {parquet_path}")
+                    logger.info(f"Converted to Parquet: {parquet_path}")
 
         except Exception as e:
-            self.logger.error(f"Failed to convert to {format}: {e}")
+            logger.error(f"Failed to convert to {format}: {e}")
             raise
 
     def _upload_to_s3(self, local_path: Path, s3_key: str) -> bool:
         """Upload a file to S3."""
         try:
             self.s3_client.upload_file(str(local_path), self.config.s3_bucket, s3_key)
-            self.logger.info(f"Uploaded to S3: s3://{self.config.s3_bucket}/{s3_key}")
+            logger.info(f"Uploaded to S3: s3://{self.config.s3_bucket}/{s3_key}")
             return True
 
         except ClientError as e:
-            self.logger.error(f"Failed to upload to S3: {e}")
+            logger.error(f"Failed to upload to S3: {e}")
             return False
 
     def _store_statistics(self, summary: GDBSummary) -> int:
@@ -446,7 +449,7 @@ class FileGDBConverter:
             geometry_errors = 0
 
             with fiona.open(str(gdb_path), layer=layer_name) as src:
-                self.logger.info(f"Reading {len(src)} features from {layer_name}...")
+                logger.info(f"Reading {len(src)} features from {layer_name}...")
 
                 for i, record in enumerate(src):
                     try:
@@ -465,7 +468,7 @@ class FileGDBConverter:
                         continue
 
             if geometry_errors > 0:
-                self.logger.warning(
+                logger.warning(
                     f"Skipped {geometry_errors} features with geometry errors in {layer_name}"
                 )
 
@@ -481,7 +484,7 @@ class FileGDBConverter:
             return None
 
         except Exception as e:
-            self.logger.error(f"Fiona fallback failed for {layer_name}: {e}")
+            logger.error(f"Fiona fallback failed for {layer_name}: {e}")
             return None
 
     def _simplify_geometries(
@@ -492,7 +495,7 @@ class FileGDBConverter:
             if "geometry" not in gdf.columns or gdf.empty:
                 return gdf
 
-            self.logger.info(
+            logger.info(
                 f"Simplifying geometries in {layer_name} with tolerance {tolerance}"
             )
             gdf["geometry"] = gdf["geometry"].simplify(
@@ -503,7 +506,7 @@ class FileGDBConverter:
             return gdf
 
         except Exception as e:
-            self.logger.warning(f"Error simplifying geometries for {layer_name}: {e}")
+            logger.warning(f"Error simplifying geometries for {layer_name}: {e}")
             return gdf
 
     def process_gdb(
