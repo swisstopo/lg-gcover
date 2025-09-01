@@ -597,23 +597,27 @@ class FileGDBConverter:
                         file_path = output_dir / f"{layer_name}.geojson"
                     elif output_format == "flatgeobuf":
                         file_path = output_dir / f"{layer_name}.fgb"
-                    else:  # both
-                        # Create both formats
+                    else:  # all
+                        # Create all formats
                         parquet_path = output_dir / f"{layer_name}.parquet"
                         geojson_path = output_dir / f"{layer_name}.geojson"
+                        flatgeobuf_path = output_dir / f"{layer_name}.fgb"
 
                         self._convert_to_web_format(gdf, parquet_path, "geoparquet")
                         self._convert_to_web_format(gdf, geojson_path, "geojson")
+                        self._convert_to_web_format(gdf, flatgeobuf_path, "flatgeobuf")
 
                         if upload_to_s3:
                             s3_key_parquet = f"{self.s3_prefix}{verification_type}/{rc_version}/{timestamp.strftime('%Y%m%d_%H%M%S')}/{layer_name}.parquet"
                             s3_key_geojson = f"{self.s3_prefix}{verification_type}/{rc_version}/{timestamp.strftime('%Y%m%d_%H%M%S')}/{layer_name}.geojson"
+                            s3_key_fgb = f"{self.s3_prefix}{verification_type}/{rc_version}/{timestamp.strftime('%Y%m%d_%H%M%S')}/{layer_name}.fgb"
                             self._upload_to_s3(parquet_path, s3_key_parquet)
                             self._upload_to_s3(geojson_path, s3_key_geojson)
+                            self._upload_to_s3(flatgeobuf_path, s3_key_fgb)
 
                         progress.update(
                             task,
-                            description=f"✅ Processed {layer_name} ({layer_stats.feature_count:,} features) - both formats",
+                            description=f"✅ Processed {layer_name} ({layer_stats.feature_count:,} features) - all formats",
                         )
                         continue
 
@@ -626,7 +630,7 @@ class FileGDBConverter:
 
                 # Save non-spatial data as JSON/Parquet
                 else:
-                    if output_format in ["geoparquet", "both"]:
+                    if output_format in ["geoparquet", "all"]:
                         file_path = output_dir / f"{layer_name}.parquet"
                     else:
                         file_path = output_dir / f"{layer_name}.json"

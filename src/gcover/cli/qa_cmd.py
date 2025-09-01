@@ -193,7 +193,7 @@ def process_single(
 )
 @click.option(
     "--format",
-    type=click.Choice(["geoparquet", "geojson", "flatgeobuf", "both"]),
+    type=click.Choice(["geoparquet", "geojson", "flatgeobuf", "all"]),
     default="geoparquet",
     help="Output format",
 )
@@ -324,6 +324,9 @@ def process_all(
             s3_profile=s3_profile,
             max_workers=global_config.max_workers,
         )
+        console.print(
+            f"\n[blue]Converted assets will be saved in: {qa_config.temp_dir}[/blue]"
+        )
 
         try:
             processed = 0
@@ -332,6 +335,17 @@ def process_all(
 
             for i, asset in enumerate(filtered_assets, 1):
                 try:
+                    verification_type, rc_version, timestamp = (
+                        converter._parse_gdb_path(asset.path)
+                    )
+
+                    converted_dir = (
+                        Path(qa_config.temp_dir)
+                        / verification_type
+                        / rc_version
+                        / timestamp.strftime("%Y%m%d_%H%M%S")
+                    )
+                    converted_dir.mkdir(parents=True, exist_ok=True)
                     console.print(
                         f"\n[blue]Processing {i}/{len(filtered_assets)}: {asset.path.name}[/blue]"
                     )
@@ -341,6 +355,7 @@ def process_all(
                         simplify_tolerance=simplify_tolerance,
                         output_format=format,
                         upload_to_s3=not no_upload,
+                        output_dir=converted_dir,
                     )
 
                     if summary.total_features > 0:
