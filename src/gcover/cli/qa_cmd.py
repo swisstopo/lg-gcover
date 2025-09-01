@@ -14,25 +14,26 @@ from rich.console import Console
 from rich.table import Table
 import pandas as pd
 
-from gcover.config import load_config, AppConfig # TODO
+from gcover.config import load_config, AppConfig  # TODO
 from gcover.config.models import GDBConfig, GlobalConfig, QAConfig
 
 from loguru import logger
 
 console = Console()
 
+
 # Create a temporary config object that includes S3 settings for the converter
 # (This assumes your FileGDBConverter expects s3_bucket and s3_profile attributes)
 class ConfigWrapper:
-        def __init__(self, qa_config, global_config):
-            # Copy QA config attributes
-            for attr in ['db_path', 'temp_dir', 'max_workers']:
-                if hasattr(qa_config, attr):
-                    setattr(self, attr, getattr(qa_config, attr))
+    def __init__(self, qa_config, global_config):
+        # Copy QA config attributes
+        for attr in ["db_path", "temp_dir", "max_workers"]:
+            if hasattr(qa_config, attr):
+                setattr(self, attr, getattr(qa_config, attr))
 
-            # Add S3 settings from global config
-            self.s3_bucket = global_config.s3.bucket
-            self.s3_profile = global_config.s3.profile
+        # Add S3 settings from global config
+        self.s3_bucket = global_config.s3.bucket
+        self.s3_profile = global_config.s3.profile
 
 
 def get_qa_config(ctx):
@@ -49,6 +50,7 @@ def get_qa_config(ctx):
     global_config = config_manager.get_global_config()
 
     return qa_config, global_config
+
 
 def get_configs(ctx) -> tuple[QAConfig, GlobalConfig, str, bool]:
     app_config: AppConfig = load_config(
@@ -73,11 +75,21 @@ def qa():
 @click.argument("gdb_path", type=click.Path(exists=True, path_type=Path))
 @click.option("--output-dir", "-o", type=click.Path(path_type=Path))
 @click.option("--no-upload", is_flag=True, help="Skip S3 upload")
-@click.option("--format", type=click.Choice(["geoparquet", "geojson", "both"]), default="geoparquet")
+@click.option(
+    "--format",
+    type=click.Choice(["geoparquet", "geojson", "both"]),
+    default="geoparquet",
+)
 @click.option("--simplify-tolerance", type=float)
 @click.pass_context
-def process(ctx, gdb_path: Path, output_dir: Optional[Path], no_upload: bool,
-           format: str, simplify_tolerance: Optional[float]):
+def process(
+    ctx,
+    gdb_path: Path,
+    output_dir: Optional[Path],
+    no_upload: bool,
+    format: str,
+    simplify_tolerance: Optional[float],
+):
     """
     Process a single verification FileGDB.
 
@@ -114,14 +126,13 @@ def process(ctx, gdb_path: Path, output_dir: Optional[Path], no_upload: bool,
         console.print(f"[dim]S3 Profile: {s3_profile or 'default'}[/dim]")
 
     if simplify_tolerance:
-            console.print(
-                f"[yellow]⚠️  Geometry simplification enabled (tolerance: {simplify_tolerance})[/yellow]"
-            )
-            console.print("This will reduce geometry complexity but may affect precision.")
+        console.print(
+            f"[yellow]⚠️  Geometry simplification enabled (tolerance: {simplify_tolerance})[/yellow]"
+        )
+        console.print("This will reduce geometry complexity but may affect precision.")
 
-            # Import and use the QA converter
+        # Import and use the QA converter
     from ..gdb.qa_converter import FileGDBConverter
-
 
     # TODO: fix config
     config_wrapper = ConfigWrapper(qa_config, global_config)
@@ -385,6 +396,7 @@ def test_read(gdb_path: Path, layer: str, max_features: int):
         gcover verification test-read /path/to/issue.gdb --layer IssuePolygons
     """
     from ..gdb.qa_converter import FileGDBConverter
+
     # from ..gdb.config import load_config TODO
     from ...config import load_config, GDBConfig, SDEConfig, SchemaConfig
 
@@ -738,7 +750,7 @@ def stats(
     logger.add(sys.stderr, level=log_level.upper())
 
     try:
-        #config = load_config(config_file, environment)
+        # config = load_config(config_file, environment)
         qa_config, global_config, environment, verbose = get_configs(ctx)
         console.log(qa_config)
     except FileNotFoundError as e:
@@ -757,7 +769,6 @@ def stats(
     config_wrapper = ConfigWrapper(qa_config, global_config)
     console.print(config_wrapper)
     converter = FileGDBConverter(config=config_wrapper)
-
 
     try:
         if rc_version:

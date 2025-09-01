@@ -78,7 +78,7 @@ class FileGDBConverter:
         self.s3_prefix = s3_prefix.rstrip("/") + "/"
 
         # Use verification-specific database path
-        #verification_db = self.config.db_path.parent / "verification_stats.duckdb"
+        # verification_db = self.config.db_path.parent / "verification_stats.duckdb"
         verification_db = self.config.db_path
         self.duckdb_path = verification_db
 
@@ -93,12 +93,12 @@ class FileGDBConverter:
 
         # Setup logging
         # TODO configure logging
-        '''import logging
+        """import logging
 
         logging.basicConfig(level=getattr(logging, self.config.log_level))
         self.logger = logging.getLogger(__name__)
 
-        self.logger.info(self.config)'''
+        self.logger.info(self.config)"""
 
     def _init_stats_tables(self):
         """Initialize DuckDB tables for statistics storage."""
@@ -250,9 +250,7 @@ class FileGDBConverter:
                     # List available layers
                     layers = fiona.listlayers(str(gdb_path))
                     if layer_name not in layers:
-                        logger.warning(
-                            f"Layer {layer_name} not found in {gdb_path}"
-                        )
+                        logger.warning(f"Layer {layer_name} not found in {gdb_path}")
                         return None
                 except Exception:
                     logger.error(f"Could not list layers in {gdb_path}")
@@ -306,9 +304,7 @@ class FileGDBConverter:
                     return gdf
 
         except Exception as e:
-            logger.warning(
-                f"Could not read layer {layer_name} from {gdb_path}: {e}"
-            )
+            logger.warning(f"Could not read layer {layer_name} from {gdb_path}: {e}")
         return None
 
     def _analyze_layer(self, df: pd.DataFrame, layer_name: str) -> LayerStats:
