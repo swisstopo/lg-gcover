@@ -100,11 +100,11 @@ gcover gdb status                  # Show system statistics and health
 
 ##### Asset Discovery
 ```bash
-gcover gdb list                    # List recent assets (default: 20)
-gcover gdb list --limit 50         # List more assets
-gcover gdb list --type backup_daily # Filter by asset type
-gcover gdb list --rc RC1           # Filter by release candidate
-gcover gdb list --since 2025-07-01 # Filter by date
+gcover gdb list-assets                    # List recent assets (default: 20)
+gcover gdb list-assets --limit 50         # List more assets
+gcover gdb list-assets --type backup_daily # Filter by asset type
+gcover gdb list-assets --rc RC1           # Filter by release candidate
+gcover gdb list-assets --since 2025-07-01 # Filter by date
 
 gcover gdb search "2025"           # Search assets by term
 gcover gdb search "topology" --download # Search and download
