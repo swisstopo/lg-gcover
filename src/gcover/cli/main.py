@@ -163,9 +163,9 @@ except ImportError:
     pass
 
 try:
-    from .qa_cmd import qa
+    from .qa_cmd import qa_commands
 
-    cli.add_command(qa)
+    cli.add_command(qa_commands)
 except ImportError:
     pass
 

@@ -7,7 +7,7 @@ Converts ESRI FileGDB verification results to web formats and generates statisti
 
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, Union
 from dataclasses import dataclass
 from datetime import datetime
 import json
@@ -62,7 +62,13 @@ class FileGDBConverter:
     ]
 
     def __init__(
-        self, config: Optional["GDBConfig"] = None, s3_prefix: str = "verifications/"
+        self,
+        db_path: Union[str, Path],
+        temp_dir: Union[str, Path],
+        s3_bucket: str,
+        s3_profile: str,
+        s3_prefix: str = "verifications/",
+        max_workers: Optional[int] = None,
     ):
         """
         Initialize the converter using existing GDBConfig.
@@ -74,16 +80,19 @@ class FileGDBConverter:
         # TODO from .config import load_config
         from gcover.config import load_config, AppConfig
 
-        self.config = config or load_config()
         self.s3_prefix = s3_prefix.rstrip("/") + "/"
+        self.db_path = Path(db_path)
+        self.temp_dir = Path(temp_dir)
+        self.s3_bucket = s3_bucket
+        self.s3_profile = s3_profile
+        self.max_workers = max_workers or 4
 
         # Use verification-specific database path
         # verification_db = self.config.db_path.parent / "verification_stats.duckdb"
-        verification_db = self.config.db_path
-        self.duckdb_path = verification_db
+        self.duckdb_path = db_path
 
         # Initialize S3 client with profile support
-        session = boto3.Session(profile_name=self.config.s3_profile)
+        session = boto3.Session(profile_name=self.s3_profile)
         self.s3_client = session.client("s3")
 
         # Initialize DuckDB connection
@@ -381,8 +390,8 @@ class FileGDBConverter:
     def _upload_to_s3(self, local_path: Path, s3_key: str) -> bool:
         """Upload a file to S3."""
         try:
-            self.s3_client.upload_file(str(local_path), self.config.s3_bucket, s3_key)
-            logger.info(f"Uploaded to S3: s3://{self.config.s3_bucket}/{s3_key}")
+            self.s3_client.upload_file(str(local_path), self.s3_bucket, s3_key)
+            logger.info(f"Uploaded to S3: s3://{self.s3_bucket}/{s3_key}")
             return True
 
         except ClientError as e:
@@ -532,8 +541,7 @@ class FileGDBConverter:
         # Setup output directory
         if output_dir is None:
             output_dir = (
-                self.config.temp_dir
-                / f"converted_{timestamp.strftime('%Y%m%d_%H%M%S')}"
+                self.temp_dir / f"converted_{timestamp.strftime('%Y%m%d_%H%M%S')}"
             )
         output_dir.mkdir(parents=True, exist_ok=True)
 
