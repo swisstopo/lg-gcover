@@ -4,7 +4,7 @@
 global:
   log_level: DEBUG
   s3:
-    bucket: "gcover-assets-dev"
+    bucket: "lg-gcover-prod-d48b6c57"
     profile: "gcover_bucket"  # AWS profile name
 
 
