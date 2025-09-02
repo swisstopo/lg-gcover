@@ -24,6 +24,9 @@ gdb:
     compression_level: 6
     max_workers: 4
 
+qa:
+  db_path: "data/prod_verification_stats.duckdb"
+
 # SDE Connection configuration
 sde:
   instances:

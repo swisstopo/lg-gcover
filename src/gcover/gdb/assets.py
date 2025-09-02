@@ -51,9 +51,16 @@ class ReleaseCandidate(Enum):
         return None
 
     @property
+    def long_name(self) -> str:
+        """Get long name (2016-12-31, 2030-12-31)"""
+
+        return self.value
+
+    @property
     def short_name(self) -> str:
         """Get short name (RC1, RC2)"""
-        return "RC1" if self == ReleaseCandidate.RC1 else "RC2"
+
+        return self.name
 
 
 @dataclass
