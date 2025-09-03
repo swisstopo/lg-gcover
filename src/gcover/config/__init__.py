@@ -15,6 +15,19 @@ from .models import (
 )
 from .loader import load_config, get_config
 
+# Instances SDE disponibles
+SDE_INSTANCES = {
+    "prod": "GCOVERP",
+    "integration": "GCOVERI",
+}
+
+# Versions par défaut
+DEFAULT_VERSIONS = {"GCOVERP": "SDE.DEFAULT", "GCOVERI": "SDE.DEFAULT"}
+
+DEFAULT_CHUNK_SIZE = 1024
+
+DEFAULT_NUM_WORKERS = 4
+
 EXCLUDED_TABLES = {
     "GC_CONFLICT_POLYGON",
     "GC_ERRORS_LINE",
@@ -61,4 +74,8 @@ __all__ = [
     "get_config",
     "EXCLUDED_TABLES",
     "DEFAULT_EXCLUDED_FIELDS",
+    "SDE_INSTANCES",
+    "DEFAULT_VERSIONS",
+    "DEFAULT_CHUNK_SIZE",
+    "DEFAULT_NUM_WORKERS",
 ]
