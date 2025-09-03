@@ -14,6 +14,72 @@ lg-gcover simplifies the processing and analysis of geological vector datasets f
 Perfect for geologists, GIS analysts, and researchers working with Swiss geological datasets who need efficient, reproducible data processing workflows.
 
 
+
+## Installation
+
+### For ArcGIS Pro Users:
+```bash
+# Activate ArcGIS Pro's Python environment
+# Usually: conda activate arcgispro-py3
+
+# Install without GDAL (uses ESRI's version)
+pip install gcover[esri]
+
+# For development
+pip install gcover[esri-dev]
+```
+
+### For Standalone Users:
+```bash
+# Create new conda environment
+conda create -n gcover python=3.11
+
+# Install with latest GDAL
+pip install gcover[standalone]
+
+# Or with conda for GDAL
+conda install -c conda-forge gdal>=3.11
+pip install gcover
+```
+
+
+## Development Mode Installation
+
+### For ArcGIS Pro Development:
+```bash
+# Clone the repository
+git clone https://github.com/swisstopo/lg-gcover.git
+cd lg-gcover
+
+# Activate ArcGIS Pro environment
+conda activate arcgispro-py3
+
+# Install in development mode (uses ESRI's GDAL)
+pip install -e .[esri-dev]
+
+# Or if you prefer separating dev tools:
+pip install -e .[esri]
+pip install -e .[dev]
+```
+
+### For Standalone Development:
+```bash
+# Clone the repository
+git clone https://github.com/swisstopo/lg-gcover.git
+cd lg-gcover
+
+# Create and activate environment
+conda create -n gcover-dev python=3.11
+conda activate gcover-dev
+
+# Install in development mode with latest GDAL
+pip install -e .[full]
+
+# Or step by step:
+pip install -e .[standalone,dev,docs,viz]
+```
+
+
 ## Usage
 
 
