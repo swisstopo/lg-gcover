@@ -26,6 +26,20 @@ class ReadOnlyError(Exception):
     """Raised when attempting write operations on read-only versions."""
     pass
 
+# Feature class shortcuts mapping
+FEATURE_CLASS_SHORTCUTS = {
+    "bedrock": "TOPGIS_GC.GC_ROCK_BODIES/TOPGIS_GC.GC_BEDROCK",
+    "unco": "TOPGIS_GC.GC_ROCK_BODIES/TOPGIS_GC.GC_UNCO_DESPOSIT",
+    "points": "TOPGIS_GC.GC_ROCK_BODIES/TOPGIS_GC.GC_POINT_OBJECTS",
+    "surfaces": "TOPGIS_GC.GC_ROCK_BODIES/TOPGIS_GC.GC_SURFACES",
+    "lines": "TOPGIS_GC.GC_ROCK_BODIES/TOPGIS_GC.GC_LINEAR_OBJECTS",
+    "fossils": "TOPGIS_GC.GC_ROCK_BODIES/TOPGIS_GC.GC_FOSSILS"
+}
+
+def resolve_feature_class(name: str) -> str:
+    """Resolve feature class name from shortcut or return full path."""
+    return FEATURE_CLASS_SHORTCUTS.get(name.lower(), name)
+
 
 class GCoverSDEBridge:
     """
@@ -407,12 +421,14 @@ class GCoverSDEBridge:
 
     def _get_layer_fields(self, feature_class: str) -> List[str]:
         """Get list of field names for feature class."""
+        feature_class = resolve_feature_class(feature_class)
         full_path = f"{self.workspace}/{feature_class}"
         return [f.name for f in arcpy.ListFields(full_path)
                 if f.type not in ('OID',)]
 
     def _get_existing_uuids(self, feature_class: str) -> set:
         """Get set of existing UUIDs in feature class."""
+        feature_class = resolve_feature_class(feature_class)
         full_path = f"{self.workspace}/{feature_class}"
         with arcpy.da.SearchCursor(full_path, [self.uuid_field]) as cursor:
             return {row[0] for row in cursor}

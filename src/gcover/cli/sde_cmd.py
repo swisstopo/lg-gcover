@@ -1,14 +1,16 @@
 # gcover/cli/sde_cmd.py
 import os
+import sys
 import click
 from tabulate import tabulate
-from typing import List
+from typing import Optional, List
+from pathlib import Path
 
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 
-from gcover.sde import SDEConnectionManager
+from gcover.sde import SDEConnectionManager, create_bridge
 from gcover.config import SDE_INSTANCES  
 
 from gcover.config import load_config, AppConfig  # TODO
