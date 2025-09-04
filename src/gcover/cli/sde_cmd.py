@@ -4,8 +4,8 @@ import click
 from tabulate import tabulate
 from typing import List
 
-from ..sde import SDEConnectionManager
-from ..config import SDE_INSTANCES  # Si vous avez un fichier config
+from gcover.sde import SDEConnectionManager
+from gcover.config import SDE_INSTANCES  
 
 from gcover.config import load_config, AppConfig  # TODO
 
