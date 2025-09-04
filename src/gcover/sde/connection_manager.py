@@ -11,11 +11,19 @@ from loguru import logger
 class SDEConnectionManager:
     """Gestionnaire centralisé des connexions SDE pour Enterprise Geodatabase"""
 
-    def __init__(self):
+    def __init__(self,  version: str = "SDE.DEFAULT", instance: str="GCOVERP"):
         self._connections: Dict[str, Path] = {}  # Cache des connexions actives
         self._temp_dirs: List[Path] = []  # Suivi des répertoires temporaires
+        self._version = version
+        self._instance = instance
 
     def __enter__(self):
+
+        users_version = self.find_user_versions(instances=['GCOVERP'])
+        if users_version and len(users_version)>0:
+            user_version = users_version[0]
+            self.create_connection(instance='GCOVERP', version=user_version)
+
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
