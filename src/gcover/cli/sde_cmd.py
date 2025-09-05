@@ -789,6 +789,8 @@ def import_data(
     default=True,
     help="Require confirmation for delete operations",
 )
+@click.option("--no-progress", is_flag=True, help="Disable progress bars")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress all output except errors")
 def sync_data(
     input_path,
     feature_class,
@@ -799,10 +801,15 @@ def sync_data(
     operator,
     dryrun,
     confirm_deletes,
+    no_progress,
+    quiet,
 ):
-    """Synchronize data using operation field (insert/update/delete)"""
+    """Synchronize data using operation field (insert/update/delete) with progress tracking"""
 
     input_path = Path(input_path)
+
+    # Configure progress display
+    show_progress = not (no_progress or quiet)
 
     try:
         # Load and validate data
@@ -818,27 +825,49 @@ def sync_data(
 
         # Analyze operations
         ops_summary = gdf[operation_field].value_counts().to_dict()
-        click.echo(f"📄 Input file: {input_path}")
-        click.echo(f"   Total features: {len(gdf)}")
-        click.echo(f"   Operations: {ops_summary}")
+
+        if not quiet:
+            click.echo(f"📄 Input file: {input_path}")
+            click.echo(f"   Total features: {len(gdf):,}")
+            click.echo(f"   Operations: {ops_summary}")
 
         # Check for delete operations
         deletes = ops_summary.get("delete", 0)
-        if deletes > 0 and confirm_deletes and not dryrun:
+        if deletes > 0 and confirm_deletes and not dryrun and not quiet:
             click.echo(f"\n⚠️  {deletes} features will be DELETED")
             if not click.confirm("Continue with delete operations?"):
                 click.echo("Operation cancelled")
                 sys.exit(0)
 
-        with create_bridge(instance=instance, version=version) as bridge:
-            click.echo(f"\n🎯 Target: {bridge.instance}::{bridge.version_name}")
-            click.echo(f"   Feature class: {feature_class}")
+        with create_bridge(
+            instance=instance, version=version, show_progress=show_progress
+        ) as bridge:
+            if not quiet:
+                click.echo(f"\n🎯 Target: {bridge.instance}::{bridge.version_name}")
+                click.echo(f"   Feature class: {feature_class}")
 
             if not bridge.is_writable:
                 click.echo("❌ Cannot perform sync on read-only version")
                 sys.exit(1)
 
-            click.echo(f"🔄 Starting synchronization...")
+            if not quiet:
+                click.echo(f"🔄 Starting synchronization...")
+
+            # Custom progress callback for detailed sync progress
+            progress_info = {"last_update": 0, "start_time": dt.now()}
+
+            def sync_progress_callback(current: int, total: int):
+                if not quiet and not show_progress:
+                    if current - progress_info["last_update"] > max(total * 0.05, 50):
+                        elapsed = (
+                            dt.now() - progress_info["start_time"]
+                        ).total_seconds()
+                        rate = current / elapsed if elapsed > 0 else 0
+                        click.echo(
+                            f"   🔄 Synchronizing: {current:,}/{total:,} features "
+                            f"({current / total * 100:.1f}%) - {rate:.0f} features/sec"
+                        )
+                        progress_info["last_update"] = current
 
             # Use the execute_operations method from your original bridge
             # This would need to be implemented in the new bridge class
@@ -849,22 +878,28 @@ def sync_data(
                 operation_field=operation_field,
                 operator=operator,
                 dryrun=dryrun,
+                progress_callback=sync_progress_callback if not show_progress else None,
             )
 
             # Display results
-            click.echo(f"\n📊 Synchronization Results:")
-            for operation, count in ops_summary.items():
-                success = (
-                    result.get("details", {}).get(operation, {}).get("success_count", 0)
-                )
-                click.echo(f"   {operation.title()}: {success}/{count} successful")
+            if not quiet:
+                click.echo(f"\n📊 Synchronization Results:")
+                for operation, count in ops_summary.items():
+                    success = (
+                        result.get("details", {})
+                        .get(operation, {})
+                        .get("success_count", 0)
+                    )
+                    click.echo(
+                        f"   {operation.title()}: {success:,}/{count:,} successful"
+                    )
 
-            if dryrun:
-                click.echo(
-                    f"\n💡 This was a dry run. Remove --dryrun to apply changes."
-                )
-            else:
-                click.echo(f"\n✅ Synchronization completed!")
+                if dryrun:
+                    click.echo(
+                        f"\n💡 This was a dry run. Remove --dryrun to apply changes."
+                    )
+                else:
+                    click.echo(f"\n✅ Synchronization completed!")
 
     except Exception as e:
         click.echo(f"❌ Sync failed: {e}", err=True)
