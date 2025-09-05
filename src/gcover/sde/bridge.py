@@ -2,6 +2,7 @@
 """
 GCover SDE Bridge - High-level interface for geodata import/export with ESRI Enterprise Geodatabase
 """
+
 from typing import Dict, List, Optional, Union, Any, Callable
 import contextlib
 from pathlib import Path
@@ -20,7 +21,7 @@ from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
     TimeElapsedColumn,
-    TimeRemainingColumn
+    TimeRemainingColumn,
 )
 
 try:
@@ -34,7 +35,9 @@ from .connection_manager import SDEConnectionManager
 
 class ReadOnlyError(Exception):
     """Raised when attempting write operations on read-only versions."""
+
     pass
+
 
 # Feature class shortcuts mapping
 FEATURE_CLASS_SHORTCUTS = {
@@ -43,8 +46,9 @@ FEATURE_CLASS_SHORTCUTS = {
     "points": "TOPGIS_GC.GC_ROCK_BODIES/TOPGIS_GC.GC_POINT_OBJECTS",
     "surfaces": "TOPGIS_GC.GC_ROCK_BODIES/TOPGIS_GC.GC_SURFACES",
     "lines": "TOPGIS_GC.GC_ROCK_BODIES/TOPGIS_GC.GC_LINEAR_OBJECTS",
-    "fossils": "TOPGIS_GC.GC_ROCK_BODIES/TOPGIS_GC.GC_FOSSILS"
+    "fossils": "TOPGIS_GC.GC_ROCK_BODIES/TOPGIS_GC.GC_FOSSILS",
 }
+
 
 def resolve_feature_class(name: str) -> str:
     """Resolve feature class name from shortcut or return full path."""
@@ -63,13 +67,13 @@ class GCoverSDEBridge:
     DEFAULT_VERSION_TYPE = "user_writable"  # user_writable, user_any, default
 
     def __init__(
-            self,
-            instance: str = "GCOVERP",
-            version: Optional[str] = None,
-            version_type: str = "user_writable",
-            uuid_field: str = "UUID",
-            connection_manager: Optional[SDEConnectionManager] = None,
-            show_progress: bool = True
+        self,
+        instance: str = "GCOVERP",
+        version: Optional[str] = None,
+        version_type: str = "user_writable",
+        uuid_field: str = "UUID",
+        connection_manager: Optional[SDEConnectionManager] = None,
+        show_progress: bool = True,
     ):
         """
         Initialize SDE Bridge.
@@ -133,7 +137,9 @@ class GCoverSDEBridge:
         self._version_info = self._get_version_info(version)
         self.is_writable = self._version_info.get("writable", False)
 
-        logger.info(f"Connected to {self.instance}::{version} (writable: {self.is_writable})")
+        logger.info(
+            f"Connected to {self.instance}::{version} (writable: {self.is_writable})"
+        )
 
     def _find_target_version(self) -> Optional[str]:
         """Find appropriate version based on version_type."""
@@ -146,8 +152,9 @@ class GCoverSDEBridge:
 
             elif self.version_type == "user_writable":
                 for version in versions:
-                    if (current_user in version["name"].upper() and
-                            version.get("writable", False)):
+                    if current_user in version["name"].upper() and version.get(
+                        "writable", False
+                    ):
                         return version["name"]
 
             elif self.version_type == "user_any":
@@ -189,7 +196,9 @@ class GCoverSDEBridge:
         rc_map = {"2030-12-31": "RC2", "2016-12-31": "RC1"}
         return rc_map.get(self.rc_full, "RC?")
 
-    def _get_feature_count(self, feature_class: str, where_clause: Optional[str] = None) -> int:
+    def _get_feature_count(
+        self, feature_class: str, where_clause: Optional[str] = None
+    ) -> int:
         """Get approximate feature count for progress tracking."""
         full_path = f"{self.workspace}/{feature_class}"
         try:
@@ -212,14 +221,14 @@ class GCoverSDEBridge:
     # =============================================================================
 
     def export_to_geodataframe(
-            self,
-            feature_class: str,
-            where_clause: Optional[str] = None,
-            bbox: Optional[tuple] = None,
-            fields: Optional[List[str]] = None,
-            spatial_filter: Optional[Any] = None,
-            max_features: Optional[int] = None,
-            progress_callback: Optional[Callable[[int, int], None]] = None,
+        self,
+        feature_class: str,
+        where_clause: Optional[str] = None,
+        bbox: Optional[tuple] = None,
+        fields: Optional[List[str]] = None,
+        spatial_filter: Optional[Any] = None,
+        max_features: Optional[int] = None,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> gpd.GeoDataFrame:
         """
         Export SDE feature class to GeoPandas GeoDataFrame with progress tracking.
@@ -243,8 +252,11 @@ class GCoverSDEBridge:
 
         # Determine fields to export
         if fields is None:
-            fields = [f.name for f in arcpy.ListFields(full_path)
-                      if f.type not in ('OID', 'Geometry')]
+            fields = [
+                f.name
+                for f in arcpy.ListFields(full_path)
+                if f.type not in ("OID", "Geometry")
+            ]
 
         # Add geometry field
         cursor_fields = fields + ["SHAPE@"]
@@ -270,7 +282,9 @@ class GCoverSDEBridge:
         # Setup progress tracking
         progress = None
         task = None
-        if self.show_progress and total_features > 100:  # Only show for substantial datasets
+        if (
+            self.show_progress and total_features > 100
+        ):  # Only show for substantial datasets
             progress = Progress(
                 SpinnerColumn(),
                 TextColumn("[bold blue]{task.description}"),
@@ -282,7 +296,9 @@ class GCoverSDEBridge:
                 TimeRemainingColumn(),
             )
             progress.start()
-            task = progress.add_task(f"Exporting {Path(feature_class).name}", total=total_features)
+            task = progress.add_task(
+                f"Exporting {Path(feature_class).name}", total=total_features
+            )
 
         try:
             with arcpy.da.SearchCursor(full_path, **cursor_kwargs) as cursor:
@@ -296,9 +312,12 @@ class GCoverSDEBridge:
                         try:
                             wkt = esri_geom.WKT
                             from shapely import wkt as shapely_wkt
+
                             geometries.append(shapely_wkt.loads(wkt))
                         except Exception as e:
-                            logger.warning(f"Error converting geometry for row {i}: {e}")
+                            logger.warning(
+                                f"Error converting geometry for row {i}: {e}"
+                            )
                             geometries.append(None)
                     else:
                         geometries.append(None)
@@ -333,20 +352,18 @@ class GCoverSDEBridge:
         logger.info(f"Exported {len(gdf)} features from {feature_class}")
         return gdf
 
-
-
     def import_from_geodataframe(
-            self,
-            gdf: gpd.GeoDataFrame,
-            feature_class: str,
-            operation: str = "update",
-            update_fields: Optional[List[str]] = None,
-            update_attributes: bool = True,
-            update_geometry: bool = True,
-            ignore_duplicates: bool = True,
-            dryrun: bool = False,
-            operator: Optional[str] = None,
-            chunk_size: int = 1000,
+        self,
+        gdf: gpd.GeoDataFrame,
+        feature_class: str,
+        operation: str = "update",
+        update_fields: Optional[List[str]] = None,
+        update_attributes: bool = True,
+        update_geometry: bool = True,
+        ignore_duplicates: bool = True,
+        dryrun: bool = False,
+        operator: Optional[str] = None,
+        chunk_size: int = 1000,
     ) -> Dict[str, Union[int, List[str]]]:
         """
         Import GeoPandas GeoDataFrame to SDE feature class.
@@ -375,8 +392,14 @@ class GCoverSDEBridge:
         # Delegate to specific operation method
         if operation == "update":
             return self._bulk_update(
-                gdf, feature_class, update_fields, update_attributes,
-                update_geometry, dryrun, operator, chunk_size
+                gdf,
+                feature_class,
+                update_fields,
+                update_attributes,
+                update_geometry,
+                dryrun,
+                operator,
+                chunk_size,
             )
         elif operation == "insert":
             return self._bulk_insert(
@@ -386,19 +409,25 @@ class GCoverSDEBridge:
             return self._bulk_delete(gdf, feature_class, dryrun)
         elif operation == "upsert":
             return self._bulk_upsert(
-                gdf, feature_class, update_fields, update_attributes,
-                update_geometry, dryrun, operator, chunk_size
+                gdf,
+                feature_class,
+                update_fields,
+                update_attributes,
+                update_geometry,
+                dryrun,
+                operator,
+                chunk_size,
             )
         else:
             raise ValueError(f"Unsupported operation: {operation}")
 
     def import_from_file(
-            self,
-            file_path: Union[str, Path],
-            feature_class: str,
-            layer: Optional[str] = None,
-            operation: str = "update",
-            **kwargs
+        self,
+        file_path: Union[str, Path],
+        feature_class: str,
+        layer: Optional[str] = None,
+        operation: str = "update",
+        **kwargs,
     ) -> Dict[str, Union[int, List[str]]]:
         """
         Import geodata from file (GPKG, GeoJSON, Shapefile, etc.) to SDE.
@@ -439,12 +468,12 @@ class GCoverSDEBridge:
         )
 
     def export_to_file(
-            self,
-            feature_class: str,
-            output_path: Union[str, Path],
-            layer_name: Optional[str] = None,
-            driver: str = "GPKG",
-            **export_kwargs
+        self,
+        feature_class: str,
+        output_path: Union[str, Path],
+        layer_name: Optional[str] = None,
+        driver: str = "GPKG",
+        **export_kwargs,
     ) -> Path:
         """
         Export SDE feature class to file with progress tracking.
@@ -479,10 +508,10 @@ class GCoverSDEBridge:
 
         if self.show_progress and len(gdf) > 1000:
             with Progress(
-                    SpinnerColumn(),
-                    TextColumn("[bold green]Saving to {task.description}"),
-                    BarColumn(),
-                    TextColumn("{task.completed}/{task.total} features"),
+                SpinnerColumn(),
+                TextColumn("[bold green]Saving to {task.description}"),
+                BarColumn(),
+                TextColumn("{task.completed}/{task.total} features"),
             ) as progress:
                 task = progress.add_task(str(output_path.name), total=len(gdf))
 
@@ -490,14 +519,14 @@ class GCoverSDEBridge:
                 if len(gdf) > 10000:
                     chunk_size = 5000
                     for i in range(0, len(gdf), chunk_size):
-                        chunk = gdf.iloc[i:i + chunk_size]
+                        chunk = gdf.iloc[i : i + chunk_size]
                         if i == 0:
                             # First chunk creates the file
                             chunk.to_file(output_path, **save_kwargs)
                         else:
                             # Subsequent chunks append (if driver supports it)
                             try:
-                                chunk.to_file(output_path, mode='a', **save_kwargs)
+                                chunk.to_file(output_path, mode="a", **save_kwargs)
                             except:
                                 # If append not supported, just save everything at once
                                 gdf.to_file(output_path, **save_kwargs)
@@ -521,8 +550,7 @@ class GCoverSDEBridge:
         """Get list of field names for feature class."""
         feature_class = resolve_feature_class(feature_class)
         full_path = f"{self.workspace}/{feature_class}"
-        return [f.name for f in arcpy.ListFields(full_path)
-                if f.type not in ('OID',)]
+        return [f.name for f in arcpy.ListFields(full_path) if f.type not in ("OID",)]
 
     def _get_existing_uuids(self, feature_class: str) -> set:
         """Get set of existing UUIDs in feature class."""
@@ -533,7 +561,7 @@ class GCoverSDEBridge:
 
     def _chunk_data(self, data: list, chunk_size: int = 1000) -> list:
         """Split data into chunks for processing."""
-        return [data[i:i + chunk_size] for i in range(0, len(data), chunk_size)]
+        return [data[i : i + chunk_size] for i in range(0, len(data), chunk_size)]
 
     @contextlib.contextmanager
     def _edit_session(self):
@@ -555,8 +583,15 @@ class GCoverSDEBridge:
             arcpy.management.ClearWorkspaceCache()
 
     def _bulk_update(
-            self, gdf, feature_class, update_fields, update_attributes,
-            update_geometry, dryrun, operator, chunk_size
+        self,
+        gdf,
+        feature_class,
+        update_fields,
+        update_attributes,
+        update_geometry,
+        dryrun,
+        operator,
+        chunk_size,
     ):
         """Internal bulk update implementation."""
         # Implementation similar to your existing bulk_update method
@@ -574,8 +609,15 @@ class GCoverSDEBridge:
         pass  # Implement based on your existing code
 
     def _bulk_upsert(
-            self, gdf, feature_class, update_fields, update_attributes,
-            update_geometry, dryrun, operator, chunk_size
+        self,
+        gdf,
+        feature_class,
+        update_fields,
+        update_attributes,
+        update_geometry,
+        dryrun,
+        operator,
+        chunk_size,
     ):
         """Insert or update features (upsert operation)."""
         existing_uuids = self._get_existing_uuids(feature_class)
@@ -595,18 +637,28 @@ class GCoverSDEBridge:
         if update_mask.any():
             update_gdf = gdf[update_mask]
             results["update"] = self._bulk_update(
-                update_gdf, feature_class, update_fields, update_attributes,
-                update_geometry, dryrun, operator, chunk_size
+                update_gdf,
+                feature_class,
+                update_fields,
+                update_attributes,
+                update_geometry,
+                dryrun,
+                operator,
+                chunk_size,
             )
 
         # Combine results
-        total_success = results["insert"]["success_count"] + results["update"]["success_count"]
-        total_errors = results["insert"].get("errors", []) + results["update"].get("errors", [])
+        total_success = (
+            results["insert"]["success_count"] + results["update"]["success_count"]
+        )
+        total_errors = results["insert"].get("errors", []) + results["update"].get(
+            "errors", []
+        )
 
         return {
             "success_count": total_success,
             "errors": total_errors,
-            "details": results
+            "details": results,
         }
 
 
@@ -614,10 +666,9 @@ class GCoverSDEBridge:
 # CONVENIENCE FUNCTIONS
 # =============================================================================
 
+
 def create_bridge(
-        instance: str = "GCOVERP",
-        version: Optional[str] = None,
-        **kwargs
+    instance: str = "GCOVERP", version: Optional[str] = None, **kwargs
 ) -> GCoverSDEBridge:
     """
     Create and configure a GCoverSDEBridge instance.
@@ -634,10 +685,10 @@ def create_bridge(
 
 
 def quick_export(
-        feature_class: str,
-        output_path: Union[str, Path],
-        instance: str = "GCOVERP",
-        **kwargs
+    feature_class: str,
+    output_path: Union[str, Path],
+    instance: str = "GCOVERP",
+    **kwargs,
 ) -> Path:
     """
     Quick export of feature class to file.
@@ -656,10 +707,10 @@ def quick_export(
 
 
 def quick_import(
-        input_path: Union[str, Path],
-        feature_class: str,
-        instance: str = "GCOVERP",
-        **kwargs
+    input_path: Union[str, Path],
+    feature_class: str,
+    instance: str = "GCOVERP",
+    **kwargs,
 ) -> Dict[str, Union[int, List[str]]]:
     """
     Quick import of file to feature class.
