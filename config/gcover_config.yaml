@@ -9,6 +9,9 @@ global:
   s3:
     bucket: "gcover-assets-dev"
     profile: "default-aws-profile"  # AWS profile name
+  default_crs: "EPSG:2056"
+  chunk_size: 5000
+
 
 # GDB Asset Management configuration
 gdb:
