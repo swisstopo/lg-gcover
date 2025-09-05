@@ -11,18 +11,17 @@ from loguru import logger
 class SDEConnectionManager:
     """Gestionnaire centralisé des connexions SDE pour Enterprise Geodatabase"""
 
-    def __init__(self,  version: str = "SDE.DEFAULT", instance: str="GCOVERP"):
+    def __init__(self, version: str = "SDE.DEFAULT", instance: str = "GCOVERP"):
         self._connections: Dict[str, Path] = {}  # Cache des connexions actives
         self._temp_dirs: List[Path] = []  # Suivi des répertoires temporaires
         self._version = version
         self._instance = instance
 
     def __enter__(self):
-
-        users_version = self.find_user_versions(instances=['GCOVERP'])
-        if users_version and len(users_version)>0:
+        users_version = self.find_user_versions(instances=["GCOVERP"])
+        if users_version and len(users_version) > 0:
             user_version = users_version[0]
-            self.create_connection(instance='GCOVERP', version=user_version)
+            self.create_connection(instance="GCOVERP", version=user_version)
 
         return self
 
@@ -30,10 +29,7 @@ class SDEConnectionManager:
         self.cleanup_all()
 
     def create_connection(
-            self,
-            instance: str,
-            version: str = "SDE.DEFAULT",
-            reuse_existing: bool = True
+        self, instance: str, version: str = "SDE.DEFAULT", reuse_existing: bool = True
     ) -> Path:
         """
         Crée ou réutilise une connexion SDE
@@ -98,6 +94,7 @@ class SDEConnectionManager:
             # Nettoyer en cas d'erreur
             if temp_dir.exists():
                 import shutil
+
                 shutil.rmtree(temp_dir, ignore_errors=True)
             raise
 
@@ -112,13 +109,15 @@ class SDEConnectionManager:
             ver_list = arcpy.da.ListVersions(str(temp_connection))
 
             for version in ver_list:
-                versions.append({
-                    "name": version.name,
-                    "parent": version.parentVersionName,
-                    "isOwner": version.isOwner,
-                    "writable": version.isOwner,
-                    "instance": instance
-                })
+                versions.append(
+                    {
+                        "name": version.name,
+                        "parent": version.parentVersionName,
+                        "isOwner": version.isOwner,
+                        "writable": version.isOwner,
+                        "instance": instance,
+                    }
+                )
             return versions
 
         except Exception as e:
@@ -137,7 +136,8 @@ class SDEConnectionManager:
             try:
                 versions = self.get_versions(instance)
                 user_versions[instance] = [
-                    v for v in versions
+                    v
+                    for v in versions
                     if current_user in v["name"].upper() or v["isOwner"]
                 ]
             except Exception as e:
@@ -157,7 +157,9 @@ class SDEConnectionManager:
                 del self._connections[key]
         else:
             # Nettoyer toutes les connexions de cette instance
-            keys_to_remove = [k for k in self._connections.keys() if k.startswith(f"{instance}_")]
+            keys_to_remove = [
+                k for k in self._connections.keys() if k.startswith(f"{instance}_")
+            ]
             for key in keys_to_remove:
                 self.cleanup_connection(*key.split("_", 1))
 
@@ -173,6 +175,7 @@ class SDEConnectionManager:
 
         # Supprimer les répertoires temporaires
         import shutil
+
         for temp_dir in self._temp_dirs:
             if temp_dir.exists():
                 try:
@@ -189,10 +192,12 @@ class SDEConnectionManager:
         for key, path in self._connections.items():
             if path.exists():
                 instance, version = key.split("_", 1)
-                active.append({
-                    "instance": instance,
-                    "version": version,
-                    "path": str(path),
-                    "key": key
-                })
+                active.append(
+                    {
+                        "instance": instance,
+                        "version": version,
+                        "path": str(path),
+                        "key": key,
+                    }
+                )
         return active

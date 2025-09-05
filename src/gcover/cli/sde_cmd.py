@@ -11,11 +11,12 @@ from rich.table import Table
 from rich.panel import Panel
 
 from gcover.sde import SDEConnectionManager, create_bridge
-from gcover.config import SDE_INSTANCES  
+from gcover.config import SDE_INSTANCES
 
 from gcover.config import load_config, AppConfig  # TODO
 
 console = Console()
+
 
 @click.group(name="sde")
 def sde_commands():
@@ -24,16 +25,26 @@ def sde_commands():
 
 
 @sde_commands.command("versions")
-@click.option('--instance', '-i',
-              type=click.Choice(list(SDE_INSTANCES.values())),
-              multiple=True,
-              help='Instances à vérifier')
-@click.option('--user-only', '-u', is_flag=True,
-              help='Afficher seulement les versions utilisateur')
-@click.option('--format', '-f',
-              type=click.Choice(['table', 'json', 'csv']),
-              default='table',
-              help='Format de sortie')
+@click.option(
+    "--instance",
+    "-i",
+    type=click.Choice(list(SDE_INSTANCES.values())),
+    multiple=True,
+    help="Instances à vérifier",
+)
+@click.option(
+    "--user-only",
+    "-u",
+    is_flag=True,
+    help="Afficher seulement les versions utilisateur",
+)
+@click.option(
+    "--format",
+    "-f",
+    type=click.Choice(["table", "json", "csv"]),
+    default="table",
+    help="Format de sortie",
+)
 def list_versions(instance, user_only, format):
     """Liste les versions disponibles sur les instances SDE"""
 
@@ -50,24 +61,27 @@ def list_versions(instance, user_only, format):
                 versions = conn_mgr.get_versions(inst)
 
                 if user_only:
-                    versions = [v for v in versions if current_user in v["name"].upper()]
+                    versions = [
+                        v for v in versions if current_user in v["name"].upper()
+                    ]
 
                 # Ajouter l'instance à chaque version pour l'export
                 for v in versions:
-                    v['instance'] = inst
+                    v["instance"] = inst
                     all_versions.append(v)
 
-                if format == 'table':
+                if format == "table":
                     _display_versions_table(inst, versions, current_user)
 
             except Exception as e:
                 click.echo(f"❌ Erreur pour {inst}: {e}", err=True)
 
         # Export autres formats
-        if format == 'json':
+        if format == "json":
             import json
+
             click.echo(json.dumps(all_versions, indent=2))
-        elif format == 'csv':
+        elif format == "csv":
             _export_versions_csv(all_versions)
 
 
@@ -90,11 +104,7 @@ def _display_versions_table(instance: str, versions: List[dict], current_user: s
         if current_user in v["name"].upper():
             status.append("⭐ User")
 
-        table_data.append([
-            v["name"],
-            v["parent"] or "-",
-            " ".join(status) or "-"
-        ])
+        table_data.append([v["name"], v["parent"] or "-", " ".join(status) or "-"])
 
     headers = ["Version", "Parent", "Status"]
     click.echo(tabulate(table_data, headers=headers, tablefmt="grid"))
@@ -112,20 +122,23 @@ def _export_versions_csv(versions: List[dict]):
         writer.writeheader()
 
         for v in versions:
-            writer.writerow({
-                "instance": v["instance"],
-                "name": v["name"],
-                "parent": v["parent"] or "",
-                "isOwner": v["isOwner"],
-                "writable": v["writable"]
-            })
+            writer.writerow(
+                {
+                    "instance": v["instance"],
+                    "name": v["name"],
+                    "parent": v["parent"] or "",
+                    "isOwner": v["isOwner"],
+                    "writable": v["writable"],
+                }
+            )
 
     click.echo(output.getvalue())
 
 
 @sde_commands.command("connections")
-@click.option('--cleanup', is_flag=True,
-              help='Nettoyer les connexions actives après affichage')
+@click.option(
+    "--cleanup", is_flag=True, help="Nettoyer les connexions actives après affichage"
+)
 def list_connections(cleanup):
     """Liste et optionnellement nettoie les connexions SDE actives"""
 
@@ -139,8 +152,7 @@ def list_connections(cleanup):
         click.echo(f"🔗 {len(connections)} connexion(s) active(s):")
 
         table_data = [
-            [conn["instance"], conn["version"], conn["path"]]
-            for conn in connections
+            [conn["instance"], conn["version"], conn["path"]] for conn in connections
         ]
 
         headers = ["Instance", "Version", "Chemin SDE"]
@@ -153,12 +165,16 @@ def list_connections(cleanup):
 
 
 @sde_commands.command("connect")
-@click.option('--instance', '-i',
-              type=click.Choice(list(SDE_INSTANCES.values())),
-              prompt=True,
-              help='Instance SDE')
-@click.option('--interactive', is_flag=True,
-              help='Mode interactif pour sélection de version')
+@click.option(
+    "--instance",
+    "-i",
+    type=click.Choice(list(SDE_INSTANCES.values())),
+    prompt=True,
+    help="Instance SDE",
+)
+@click.option(
+    "--interactive", is_flag=True, help="Mode interactif pour sélection de version"
+)
 def quick_connect(instance, interactive):
     """Test rapide de connexion à une instance SDE"""
 
@@ -196,6 +212,7 @@ def quick_connect(instance, interactive):
             with click.progressbar(label="Test d'accès aux données") as bar:
                 try:
                     import arcpy
+
                     arcpy.env.workspace = str(sde_path)
                     datasets = arcpy.ListDatasets()
                     bar.update(1)
@@ -208,10 +225,13 @@ def quick_connect(instance, interactive):
 
 
 @sde_commands.command("user-versions")
-@click.option('--instance', '-i',
-              type=click.Choice(list(SDE_INSTANCES.values())),
-              multiple=True,
-              help='Instances à vérifier (toutes par défaut)')
+@click.option(
+    "--instance",
+    "-i",
+    type=click.Choice(list(SDE_INSTANCES.values())),
+    multiple=True,
+    help="Instances à vérifier (toutes par défaut)",
+)
 def find_user_versions(instance):
     """Trouve automatiquement les versions utilisateur"""
 
@@ -250,23 +270,31 @@ def find_user_versions(instance):
 # CONNECTION MANAGEMENT COMMANDS (existing, enhanced)
 # =============================================================================
 
+
 @sde_commands.command("versions")
-@click.option('--instance', '-i',
-              type=click.Choice(
-                  list(SDE_INSTANCES.values()) if 'SDE_INSTANCES' in globals() else ['GCOVERP', 'GCOVERI']),
-              multiple=True,
-              help='Instances to check')
-@click.option('--user-only', '-u', is_flag=True,
-              help='Show only user versions')
-@click.option('--writable-only', '-w', is_flag=True,
-              help='Show only writable versions')
-@click.option('--format', '-f',
-              type=click.Choice(['table', 'json', 'csv']),
-              default='table',
-              help='Output format')
+@click.option(
+    "--instance",
+    "-i",
+    type=click.Choice(
+        list(SDE_INSTANCES.values())
+        if "SDE_INSTANCES" in globals()
+        else ["GCOVERP", "GCOVERI"]
+    ),
+    multiple=True,
+    help="Instances to check",
+)
+@click.option("--user-only", "-u", is_flag=True, help="Show only user versions")
+@click.option("--writable-only", "-w", is_flag=True, help="Show only writable versions")
+@click.option(
+    "--format",
+    "-f",
+    type=click.Choice(["table", "json", "csv"]),
+    default="table",
+    help="Output format",
+)
 def list_versions(instance, user_only, writable_only, format):
     """List available versions on SDE instances"""
-    instances = instance or ['GCOVERP', 'GCOVERI']
+    instances = instance or ["GCOVERP", "GCOVERI"]
 
     with SDEConnectionManager() as conn_mgr:
         current_user = os.getlogin().upper()
@@ -280,56 +308,62 @@ def list_versions(instance, user_only, writable_only, format):
 
                 # Apply filters
                 if user_only:
-                    versions = [v for v in versions if current_user in v["name"].upper()]
+                    versions = [
+                        v for v in versions if current_user in v["name"].upper()
+                    ]
                 if writable_only:
                     versions = [v for v in versions if v.get("writable", False)]
 
                 # Add instance info
                 for v in versions:
-                    v['instance'] = inst
+                    v["instance"] = inst
                     all_versions.append(v)
 
-                if format == 'table':
+                if format == "table":
                     _display_versions_table(inst, versions, current_user)
 
             except Exception as e:
                 click.echo(f"❌ Error for {inst}: {e}", err=True)
 
         # Export other formats
-        if format == 'json':
+        if format == "json":
             import json
+
             click.echo(json.dumps(all_versions, indent=2))
-        elif format == 'csv':
+        elif format == "csv":
             _export_versions_csv(all_versions)
 
 
 @sde_commands.command("connect-test")
-@click.option('--instance', '-i', default='GCOVERP',
-              help='SDE instance name')
-@click.option('--version', '-v',
-              help='Specific version (auto-detected if not provided)')
-@click.option('--version-type',
-              type=click.Choice(['user_writable', 'user_any', 'default']),
-              default='user_writable',
-              help='Type of version to find automatically')
+@click.option("--instance", "-i", default="GCOVERP", help="SDE instance name")
+@click.option(
+    "--version", "-v", help="Specific version (auto-detected if not provided)"
+)
+@click.option(
+    "--version-type",
+    type=click.Choice(["user_writable", "user_any", "default"]),
+    default="user_writable",
+    help="Type of version to find automatically",
+)
 def test_connection(instance, version, version_type):
     """Test SDE connection and show bridge info"""
     try:
         with create_bridge(
-                instance=instance,
-                version=version,
-                version_type=version_type
+            instance=instance, version=version, version_type=version_type
         ) as bridge:
             click.echo("✅ Connection successful!")
             click.echo(f"   Instance: {bridge.instance}")
             click.echo(f"   Version: {bridge.version_name}")
             click.echo(f"   RC: {bridge.rc_full} ({bridge.rc_short})")
-            click.echo(f"   Writable: {'✏️ Yes' if bridge.is_writable else '👁️ Read-only'}")
+            click.echo(
+                f"   Writable: {'✏️ Yes' if bridge.is_writable else '👁️ Read-only'}"
+            )
             click.echo(f"   Workspace: {bridge.workspace}")
 
             # Test dataset access
             try:
                 import arcpy
+
                 arcpy.env.workspace = bridge.workspace
                 datasets = arcpy.ListDatasets()
                 click.echo(f"   📁 {len(datasets)} dataset(s) accessible")
@@ -347,31 +381,42 @@ def test_connection(instance, version, version_type):
 # DATA EXPORT COMMANDS
 # =============================================================================
 
+
 @sde_commands.command("export")
-@click.argument('feature_class')
-@click.argument('output_path', type=click.Path())
-@click.option('--instance', '-i', default='GCOVERP',
-              help='SDE instance name')
-@click.option('--version', '-v',
-              help='Specific version (auto-detected if not provided)')
-@click.option('--layer-name', '-l',
-              help='Output layer name (defaults to feature class name)')
-@click.option('--where', '-w',
-              help='SQL WHERE clause for filtering')
-@click.option('--bbox', type=str,
-              help='Bounding box as "minx,miny,maxx,maxy"')
-@click.option('--fields',
-              help='Comma-separated list of fields to export')
-@click.option('--max-features', type=int,
-              help='Maximum number of features to export')
-@click.option('--format', '-f',
-              type=click.Choice(['GPKG', 'GeoJSON', 'ESRI Shapefile']),
-              default='GPKG',
-              help='Output format')
-@click.option('--overwrite', is_flag=True,
-              help='Overwrite existing output file')
-def export_data(feature_class, output_path, instance, version, layer_name,
-                where, bbox, fields, max_features, format, overwrite):
+@click.argument("feature_class")
+@click.argument("output_path", type=click.Path())
+@click.option("--instance", "-i", default="GCOVERP", help="SDE instance name")
+@click.option(
+    "--version", "-v", help="Specific version (auto-detected if not provided)"
+)
+@click.option(
+    "--layer-name", "-l", help="Output layer name (defaults to feature class name)"
+)
+@click.option("--where", "-w", help="SQL WHERE clause for filtering")
+@click.option("--bbox", type=str, help='Bounding box as "minx,miny,maxx,maxy"')
+@click.option("--fields", help="Comma-separated list of fields to export")
+@click.option("--max-features", type=int, help="Maximum number of features to export")
+@click.option(
+    "--format",
+    "-f",
+    type=click.Choice(["GPKG", "GeoJSON", "ESRI Shapefile"]),
+    default="GPKG",
+    help="Output format",
+)
+@click.option("--overwrite", is_flag=True, help="Overwrite existing output file")
+def export_data(
+    feature_class,
+    output_path,
+    instance,
+    version,
+    layer_name,
+    where,
+    bbox,
+    fields,
+    max_features,
+    format,
+    overwrite,
+):
     """Export feature class data to file"""
 
     output_path = Path(output_path)
@@ -385,20 +430,20 @@ def export_data(feature_class, output_path, instance, version, layer_name,
     # Parse options
     export_kwargs = {}
     if where:
-        export_kwargs['where_clause'] = where
+        export_kwargs["where_clause"] = where
     if bbox:
         try:
-            bbox_coords = [float(x.strip()) for x in bbox.split(',')]
+            bbox_coords = [float(x.strip()) for x in bbox.split(",")]
             if len(bbox_coords) != 4:
                 raise ValueError("bbox must have 4 coordinates")
-            export_kwargs['bbox'] = tuple(bbox_coords)
+            export_kwargs["bbox"] = tuple(bbox_coords)
         except Exception:
             click.echo("❌ Invalid bbox format. Use: minx,miny,maxx,maxy")
             sys.exit(1)
     if fields:
-        export_kwargs['fields'] = [f.strip() for f in fields.split(',')]
+        export_kwargs["fields"] = [f.strip() for f in fields.split(",")]
     if max_features:
-        export_kwargs['max_features'] = max_features
+        export_kwargs["max_features"] = max_features
 
     try:
         with create_bridge(instance=instance, version=version) as bridge:
@@ -414,7 +459,7 @@ def export_data(feature_class, output_path, instance, version, layer_name,
                 output_path=output_path,
                 layer_name=layer_name,
                 driver=format,
-                **export_kwargs
+                **export_kwargs,
             )
 
             click.echo(f"✅ Export completed: {result_path}")
@@ -424,8 +469,9 @@ def export_data(feature_class, output_path, instance, version, layer_name,
                 gdf = gpd.read_file(result_path)
                 click.echo(f"   📊 {len(gdf)} features exported")
                 click.echo(
-                    f"   📄 {len(gdf.columns)} fields: {', '.join(gdf.columns[:5])}{'...' if len(gdf.columns) > 5 else ''}")
-                if hasattr(gdf, 'crs') and gdf.crs:
+                    f"   📄 {len(gdf.columns)} fields: {', '.join(gdf.columns[:5])}{'...' if len(gdf.columns) > 5 else ''}"
+                )
+                if hasattr(gdf, "crs") and gdf.crs:
                     click.echo(f"   🗺️  CRS: {gdf.crs}")
 
                 # Show file size
@@ -441,19 +487,25 @@ def export_data(feature_class, output_path, instance, version, layer_name,
 
 
 @sde_commands.command("export-bulk")
-@click.argument('config_file', type=click.Path(exists=True))
-@click.option('--instance', '-i', default='GCOVERP',
-              help='SDE instance name')
-@click.option('--version', '-v',
-              help='Specific version (auto-detected if not provided)')
-@click.option('--output-dir', '-o', type=click.Path(),
-              help='Output directory (defaults to current directory)')
-@click.option('--format', '-f',
-              type=click.Choice(['GPKG', 'GeoJSON']),
-              default='GPKG',
-              help='Output format')
-@click.option('--overwrite', is_flag=True,
-              help='Overwrite existing files')
+@click.argument("config_file", type=click.Path(exists=True))
+@click.option("--instance", "-i", default="GCOVERP", help="SDE instance name")
+@click.option(
+    "--version", "-v", help="Specific version (auto-detected if not provided)"
+)
+@click.option(
+    "--output-dir",
+    "-o",
+    type=click.Path(),
+    help="Output directory (defaults to current directory)",
+)
+@click.option(
+    "--format",
+    "-f",
+    type=click.Choice(["GPKG", "GeoJSON"]),
+    default="GPKG",
+    help="Output format",
+)
+@click.option("--overwrite", is_flag=True, help="Overwrite existing files")
 def export_bulk(config_file, instance, version, output_dir, format, overwrite):
     """Bulk export multiple feature classes using YAML/JSON config"""
 
@@ -464,9 +516,11 @@ def export_bulk(config_file, instance, version, output_dir, format, overwrite):
     # Load configuration
     try:
         import yaml
+
         with open(config_file) as f:
-            if config_file.suffix.lower() == '.json':
+            if config_file.suffix.lower() == ".json":
                 import json
+
                 config = json.load(f)
             else:
                 config = yaml.safe_load(f)
@@ -475,11 +529,11 @@ def export_bulk(config_file, instance, version, output_dir, format, overwrite):
         sys.exit(1)
 
     # Validate config structure
-    if 'exports' not in config:
+    if "exports" not in config:
         click.echo("❌ Config file must contain 'exports' section")
         sys.exit(1)
 
-    exports = config['exports']
+    exports = config["exports"]
     if not isinstance(exports, list):
         click.echo("❌ 'exports' must be a list of export configurations")
         sys.exit(1)
@@ -487,15 +541,17 @@ def export_bulk(config_file, instance, version, output_dir, format, overwrite):
     # Process exports
     try:
         with create_bridge(instance=instance, version=version) as bridge:
-            click.echo(f"🔄 Starting bulk export from {bridge.instance}::{bridge.version_name}")
+            click.echo(
+                f"🔄 Starting bulk export from {bridge.instance}::{bridge.version_name}"
+            )
             click.echo(f"   Output directory: {output_dir}")
 
             success_count = 0
             error_count = 0
 
             for i, export_config in enumerate(exports, 1):
-                feature_class = export_config.get('feature_class')
-                output_file = export_config.get('output_file')
+                feature_class = export_config.get("feature_class")
+                output_file = export_config.get("output_file")
 
                 if not feature_class or not output_file:
                     click.echo(f"❌ Export {i}: Missing feature_class or output_file")
@@ -510,17 +566,22 @@ def export_bulk(config_file, instance, version, output_dir, format, overwrite):
                     continue
 
                 try:
-                    click.echo(f"🔄 Export {i}/{len(exports)}: {feature_class} -> {output_path.name}")
+                    click.echo(
+                        f"🔄 Export {i}/{len(exports)}: {feature_class} -> {output_path.name}"
+                    )
 
                     # Extract export options
-                    export_kwargs = {k: v for k, v in export_config.items()
-                                     if k not in ('feature_class', 'output_file')}
+                    export_kwargs = {
+                        k: v
+                        for k, v in export_config.items()
+                        if k not in ("feature_class", "output_file")
+                    }
 
                     bridge.export_to_file(
                         feature_class=feature_class,
                         output_path=output_path,
                         driver=format,
-                        **export_kwargs
+                        **export_kwargs,
                     )
 
                     success_count += 1
@@ -543,36 +604,49 @@ def export_bulk(config_file, instance, version, output_dir, format, overwrite):
 # DATA IMPORT COMMANDS
 # =============================================================================
 
+
 @sde_commands.command("import")
-@click.argument('input_path', type=click.Path(exists=True))
-@click.argument('feature_class')
-@click.option('--instance', '-i', default='GCOVERP',
-              help='SDE instance name')
-@click.option('--version', '-v',
-              help='Specific version (auto-detected if not provided)')
-@click.option('--layer', '-l',
-              help='Layer name for multi-layer files (e.g., GPKG)')
-@click.option('--operation',
-              type=click.Choice(['insert', 'update', 'delete', 'upsert']),
-              default='update',
-              help='Operation type')
-@click.option('--update-fields',
-              help='Comma-separated list of fields to update')
-@click.option('--no-attributes', is_flag=True,
-              help='Skip attribute updates (geometry only)')
-@click.option('--no-geometry', is_flag=True,
-              help='Skip geometry updates (attributes only)')
-@click.option('--operator',
-              help='Operator name (defaults to CLI user)')
-@click.option('--chunk-size', type=int, default=1000,
-              help='Features per transaction chunk')
-@click.option('--dryrun', is_flag=True,
-              help='Test run without making changes')
-@click.option('--confirm', is_flag=True,
-              help='Require confirmation before import')
-def import_data(input_path, feature_class, instance, version, layer, operation,
-                update_fields, no_attributes, no_geometry, operator,
-                chunk_size, dryrun, confirm):
+@click.argument("input_path", type=click.Path(exists=True))
+@click.argument("feature_class")
+@click.option("--instance", "-i", default="GCOVERP", help="SDE instance name")
+@click.option(
+    "--version", "-v", help="Specific version (auto-detected if not provided)"
+)
+@click.option("--layer", "-l", help="Layer name for multi-layer files (e.g., GPKG)")
+@click.option(
+    "--operation",
+    type=click.Choice(["insert", "update", "delete", "upsert"]),
+    default="update",
+    help="Operation type",
+)
+@click.option("--update-fields", help="Comma-separated list of fields to update")
+@click.option(
+    "--no-attributes", is_flag=True, help="Skip attribute updates (geometry only)"
+)
+@click.option(
+    "--no-geometry", is_flag=True, help="Skip geometry updates (attributes only)"
+)
+@click.option("--operator", help="Operator name (defaults to CLI user)")
+@click.option(
+    "--chunk-size", type=int, default=1000, help="Features per transaction chunk"
+)
+@click.option("--dryrun", is_flag=True, help="Test run without making changes")
+@click.option("--confirm", is_flag=True, help="Require confirmation before import")
+def import_data(
+    input_path,
+    feature_class,
+    instance,
+    version,
+    layer,
+    operation,
+    update_fields,
+    no_attributes,
+    no_geometry,
+    operator,
+    chunk_size,
+    dryrun,
+    confirm,
+):
     """Import data from file to feature class"""
 
     input_path = Path(input_path)
@@ -580,7 +654,7 @@ def import_data(input_path, feature_class, instance, version, layer, operation,
     # Parse update fields
     update_fields_list = None
     if update_fields:
-        update_fields_list = [f.strip() for f in update_fields.split(',')]
+        update_fields_list = [f.strip() for f in update_fields.split(",")]
 
     # Set update flags
     update_attributes = not no_attributes
@@ -601,7 +675,9 @@ def import_data(input_path, feature_class, instance, version, layer, operation,
                 click.echo(f"   Layer: {layer}")
             click.echo(f"   Features: {total_features}")
             click.echo(f"   Fields: {list(preview_gdf.columns)}")
-            click.echo(f"   CRS: {preview_gdf.crs if hasattr(preview_gdf, 'crs') else 'Unknown'}")
+            click.echo(
+                f"   CRS: {preview_gdf.crs if hasattr(preview_gdf, 'crs') else 'Unknown'}"
+            )
 
         except Exception as e:
             click.echo(f"⚠️  Could not preview file: {e}")
@@ -612,9 +688,11 @@ def import_data(input_path, feature_class, instance, version, layer, operation,
             click.echo(f"\n🎯 Target: {bridge.instance}::{bridge.version_name}")
             click.echo(f"   Feature class: {feature_class}")
             click.echo(f"   Operation: {operation}")
-            click.echo(f"   Writable: {'✏️ Yes' if bridge.is_writable else '❌ Read-only'}")
+            click.echo(
+                f"   Writable: {'✏️ Yes' if bridge.is_writable else '❌ Read-only'}"
+            )
 
-            if not bridge.is_writable and operation in ('insert', 'update', 'upsert'):
+            if not bridge.is_writable and operation in ("insert", "update", "upsert"):
                 click.echo("❌ Cannot perform write operations on read-only version")
                 sys.exit(1)
 
@@ -652,14 +730,14 @@ def import_data(input_path, feature_class, instance, version, layer, operation,
                 update_geometry=update_geometry,
                 operator=operator,
                 chunk_size=chunk_size,
-                dryrun=dryrun
+                dryrun=dryrun,
             )
 
             # Display results
             click.echo(f"\n📊 {operation.title()} Results:")
             click.echo(f"   ✅ Success: {result.get('success_count', 0)}")
 
-            errors = result.get('errors', [])
+            errors = result.get("errors", [])
             if errors:
                 click.echo(f"   ❌ Errors: {len(errors)}")
                 if len(errors) <= 5:
@@ -671,13 +749,17 @@ def import_data(input_path, feature_class, instance, version, layer, operation,
                     click.echo(f"      ... and {len(errors) - 5} more errors")
 
             # Operation-specific results
-            if 'details' in result:
-                details = result['details']
+            if "details" in result:
+                details = result["details"]
                 for op, res in details.items():
-                    click.echo(f"   {op.title()}: {res.get('success_count', 0)} features")
+                    click.echo(
+                        f"   {op.title()}: {res.get('success_count', 0)} features"
+                    )
 
             if dryrun:
-                click.echo(f"\n💡 This was a dry run. Use --no-dryrun to apply changes.")
+                click.echo(
+                    f"\n💡 This was a dry run. Use --no-dryrun to apply changes."
+                )
             else:
                 click.echo(f"\n✅ Operation completed successfully!")
 
@@ -687,24 +769,37 @@ def import_data(input_path, feature_class, instance, version, layer, operation,
 
 
 @sde_commands.command("sync")
-@click.argument('input_path', type=click.Path(exists=True))
-@click.argument('feature_class')
-@click.option('--instance', '-i', default='GCOVERP',
-              help='SDE instance name')
-@click.option('--version', '-v',
-              help='Specific version (auto-detected if not provided)')
-@click.option('--operation-field', default='_operation',
-              help='Field containing operation type (insert/update/delete)')
-@click.option('--layer', '-l',
-              help='Layer name for multi-layer files')
-@click.option('--operator',
-              help='Operator name for changes')
-@click.option('--dryrun', is_flag=True,
-              help='Test run without making changes')
-@click.option('--confirm-deletes', is_flag=True, default=True,
-              help='Require confirmation for delete operations')
-def sync_data(input_path, feature_class, instance, version, operation_field,
-              layer, operator, dryrun, confirm_deletes):
+@click.argument("input_path", type=click.Path(exists=True))
+@click.argument("feature_class")
+@click.option("--instance", "-i", default="GCOVERP", help="SDE instance name")
+@click.option(
+    "--version", "-v", help="Specific version (auto-detected if not provided)"
+)
+@click.option(
+    "--operation-field",
+    default="_operation",
+    help="Field containing operation type (insert/update/delete)",
+)
+@click.option("--layer", "-l", help="Layer name for multi-layer files")
+@click.option("--operator", help="Operator name for changes")
+@click.option("--dryrun", is_flag=True, help="Test run without making changes")
+@click.option(
+    "--confirm-deletes",
+    is_flag=True,
+    default=True,
+    help="Require confirmation for delete operations",
+)
+def sync_data(
+    input_path,
+    feature_class,
+    instance,
+    version,
+    operation_field,
+    layer,
+    operator,
+    dryrun,
+    confirm_deletes,
+):
     """Synchronize data using operation field (insert/update/delete)"""
 
     input_path = Path(input_path)
@@ -728,7 +823,7 @@ def sync_data(input_path, feature_class, instance, version, operation_field,
         click.echo(f"   Operations: {ops_summary}")
 
         # Check for delete operations
-        deletes = ops_summary.get('delete', 0)
+        deletes = ops_summary.get("delete", 0)
         if deletes > 0 and confirm_deletes and not dryrun:
             click.echo(f"\n⚠️  {deletes} features will be DELETED")
             if not click.confirm("Continue with delete operations?"):
@@ -750,20 +845,24 @@ def sync_data(input_path, feature_class, instance, version, operation_field,
             result = bridge.import_from_geodataframe(
                 gdf=gdf,
                 feature_class=feature_class,
-                operation='sync',  # Special sync operation
+                operation="sync",  # Special sync operation
                 operation_field=operation_field,
                 operator=operator,
-                dryrun=dryrun
+                dryrun=dryrun,
             )
 
             # Display results
             click.echo(f"\n📊 Synchronization Results:")
             for operation, count in ops_summary.items():
-                success = result.get('details', {}).get(operation, {}).get('success_count', 0)
+                success = (
+                    result.get("details", {}).get(operation, {}).get("success_count", 0)
+                )
                 click.echo(f"   {operation.title()}: {success}/{count} successful")
 
             if dryrun:
-                click.echo(f"\n💡 This was a dry run. Remove --dryrun to apply changes.")
+                click.echo(
+                    f"\n💡 This was a dry run. Remove --dryrun to apply changes."
+                )
             else:
                 click.echo(f"\n✅ Synchronization completed!")
 
@@ -775,6 +874,7 @@ def sync_data(input_path, feature_class, instance, version, operation_field,
 # =============================================================================
 # UTILITY FUNCTIONS (from original code, enhanced)
 # =============================================================================
+
 
 def _display_versions_table(instance: str, versions: List[dict], current_user: str):
     """Display versions as a formatted table"""
@@ -795,11 +895,7 @@ def _display_versions_table(instance: str, versions: List[dict], current_user: s
         if current_user in v["name"].upper():
             status.append("⭐ User")
 
-        table_data.append([
-            v["name"],
-            v["parent"] or "-",
-            " ".join(status) or "-"
-        ])
+        table_data.append([v["name"], v["parent"] or "-", " ".join(status) or "-"])
 
     headers = ["Version", "Parent", "Status"]
     click.echo(tabulate(table_data, headers=headers, tablefmt="grid"))
@@ -817,12 +913,14 @@ def _export_versions_csv(versions: List[dict]):
         writer.writeheader()
 
         for v in versions:
-            writer.writerow({
-                "instance": v["instance"],
-                "name": v["name"],
-                "parent": v["parent"] or "",
-                "isOwner": v["isOwner"],
-                "writable": v.get("writable", False)
-            })
+            writer.writerow(
+                {
+                    "instance": v["instance"],
+                    "name": v["name"],
+                    "parent": v["parent"] or "",
+                    "isOwner": v["isOwner"],
+                    "writable": v.get("writable", False),
+                }
+            )
 
     click.echo(output.getvalue())
