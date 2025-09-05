@@ -2,7 +2,7 @@
 """
 GCover SDE Bridge - High-level interface for geodata import/export with ESRI Enterprise Geodatabase
 """
-from typing import Dict, List, Optional, Union, Any
+from typing import Dict, List, Optional, Union, Any, Callable
 import contextlib
 from pathlib import Path
 from datetime import datetime as dt
@@ -12,6 +12,16 @@ import os
 import geopandas as gpd
 import pandas as pd
 from loguru import logger
+from rich.progress import (
+    Progress,
+    TaskID,
+    SpinnerColumn,
+    TextColumn,
+    BarColumn,
+    MofNCompleteColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn
+)
 
 try:
     import arcpy
@@ -49,7 +59,7 @@ class GCoverSDEBridge:
     Uses SDEConnectionManager for connection lifecycle management.
     """
 
-    DEFAULT_OPERATOR = "gcover-cli"
+    DEFAULT_OPERATOR = "GC_Bridge"
     DEFAULT_VERSION_TYPE = "user_writable"  # user_writable, user_any, default
 
     def __init__(
@@ -58,7 +68,8 @@ class GCoverSDEBridge:
             version: Optional[str] = None,
             version_type: str = "user_writable",
             uuid_field: str = "UUID",
-            connection_manager: Optional[SDEConnectionManager] = None
+            connection_manager: Optional[SDEConnectionManager] = None,
+            show_progress: bool = True
     ):
         """
         Initialize SDE Bridge.
@@ -67,11 +78,9 @@ class GCoverSDEBridge:
             instance: SDE instance name (default: GCOVERP)
             version: Specific version name (auto-detected if None)
             version_type: Type of version to find if version is None
-                         - 'user_writable': First user-owned writable version
-                         - 'user_any': First user-owned version (any access)
-                         - 'default': SDE.DEFAULT
             uuid_field: Primary key field name for feature matching
             connection_manager: Optional external connection manager
+            show_progress: Whether to show progress bars for operations
         """
         if arcpy is None:
             raise ImportError("arcpy is required for SDE operations")
@@ -80,6 +89,7 @@ class GCoverSDEBridge:
         self.uuid_field = uuid_field
         self.version_type = version_type
         self._requested_version = version
+        self.show_progress = show_progress
 
         # Connection management
         self._external_conn_mgr = connection_manager is not None
@@ -179,6 +189,24 @@ class GCoverSDEBridge:
         rc_map = {"2030-12-31": "RC2", "2016-12-31": "RC1"}
         return rc_map.get(self.rc_full, "RC?")
 
+    def _get_feature_count(self, feature_class: str, where_clause: Optional[str] = None) -> int:
+        """Get approximate feature count for progress tracking."""
+        full_path = f"{self.workspace}/{feature_class}"
+        try:
+            if where_clause:
+                # Use management tool for filtered count (may be slow but accurate)
+                layer_name = f"temp_layer_{dt.now().strftime('%H%M%S')}"
+                arcpy.management.MakeFeatureLayer(full_path, layer_name, where_clause)
+                count = int(arcpy.management.GetCount(layer_name).getOutput(0))
+                arcpy.management.Delete(layer_name)
+                return count
+            else:
+                # Fast count for entire feature class
+                return int(arcpy.management.GetCount(full_path).getOutput(0))
+        except Exception as e:
+            logger.warning(f"Could not get feature count: {e}")
+            return 0
+
     # =============================================================================
     # GEODATA IMPORT/EXPORT METHODS
     # =============================================================================
@@ -191,17 +219,19 @@ class GCoverSDEBridge:
             fields: Optional[List[str]] = None,
             spatial_filter: Optional[Any] = None,
             max_features: Optional[int] = None,
+            progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> gpd.GeoDataFrame:
         """
-        Export SDE feature class to GeoPandas GeoDataFrame.
+        Export SDE feature class to GeoPandas GeoDataFrame with progress tracking.
 
         Args:
-            feature_class: Feature class path (e.g., "TOPGIS_GC.GC_ROCK_BODIES/TOPGIS_GC.GC_BEDROCK")
+            feature_class: Feature class path
             where_clause: SQL WHERE clause for attribute filtering
             bbox: Bounding box (minx, miny, maxx, maxy) for spatial filtering
             fields: Specific fields to export (None = all fields)
             spatial_filter: ESRI geometry object for spatial filtering
             max_features: Maximum number of features to export
+            progress_callback: Optional callback function(current, total)
 
         Returns:
             GeoDataFrame with feature class data
@@ -220,38 +250,73 @@ class GCoverSDEBridge:
         cursor_fields = fields + ["SHAPE@"]
 
         # Build search cursor parameters
-        cursor_kwargs = {"field_names": cursor_fields} # TODO
+        cursor_kwargs = {"field_names": cursor_fields}
         if where_clause:
             cursor_kwargs["where_clause"] = where_clause
         if spatial_filter:
             cursor_kwargs["spatial_reference"] = spatial_filter
 
-        # Read data
+        # Get feature count for progress tracking
+        total_features = self._get_feature_count(feature_class, where_clause)
+        if max_features:
+            total_features = min(total_features, max_features)
+
+        # Read data with progress tracking
         data = []
         geometries = []
 
         logger.info(f"Exporting {feature_class} with fields: {fields}")
 
-        with arcpy.da.SearchCursor(full_path, **cursor_kwargs) as cursor:
-            for i, row in enumerate(cursor):
-                if max_features and i >= max_features:
-                    break
+        # Setup progress tracking
+        progress = None
+        task = None
+        if self.show_progress and total_features > 100:  # Only show for substantial datasets
+            progress = Progress(
+                SpinnerColumn(),
+                TextColumn("[bold blue]{task.description}"),
+                BarColumn(),
+                MofNCompleteColumn(),
+                TextColumn("â€¢"),
+                TimeElapsedColumn(),
+                TextColumn("â€¢"),
+                TimeRemainingColumn(),
+            )
+            progress.start()
+            task = progress.add_task(f"Exporting {Path(feature_class).name}", total=total_features)
 
-                # Extract geometry
-                esri_geom = row[-1]  # SHAPE@ is always last
-                if esri_geom:
-                    try:
-                        wkt = esri_geom.WKT
-                        from shapely import wkt as shapely_wkt
-                        geometries.append(shapely_wkt.loads(wkt))
-                    except Exception as e:
-                        logger.warning(f"Error converting geometry for row {i}: {e}")
+        try:
+            with arcpy.da.SearchCursor(full_path, **cursor_kwargs) as cursor:
+                for i, row in enumerate(cursor):
+                    if max_features and i >= max_features:
+                        break
+
+                    # Extract geometry
+                    esri_geom = row[-1]  # SHAPE@ is always last
+                    if esri_geom:
+                        try:
+                            wkt = esri_geom.WKT
+                            from shapely import wkt as shapely_wkt
+                            geometries.append(shapely_wkt.loads(wkt))
+                        except Exception as e:
+                            logger.warning(f"Error converting geometry for row {i}: {e}")
+                            geometries.append(None)
+                    else:
                         geometries.append(None)
-                else:
-                    geometries.append(None)
 
-                # Extract attributes
-                data.append(dict(zip(fields, row[:-1])))
+                    # Extract attributes
+                    data.append(dict(zip(fields, row[:-1])))
+
+                    # Update progress
+                    if progress and task:
+                        progress.update(task, completed=i + 1)
+
+                    # Call custom progress callback if provided
+                    if progress_callback:
+                        progress_callback(i + 1, total_features)
+
+        finally:
+            if progress:
+                progress.stop()
 
         if not data:
             logger.warning(f"No features exported from {feature_class}")
@@ -267,6 +332,8 @@ class GCoverSDEBridge:
 
         logger.info(f"Exported {len(gdf)} features from {feature_class}")
         return gdf
+
+
 
     def import_from_geodataframe(
             self,
@@ -380,7 +447,7 @@ class GCoverSDEBridge:
             **export_kwargs
     ) -> Path:
         """
-        Export SDE feature class to file.
+        Export SDE feature class to file with progress tracking.
 
         Args:
             feature_class: Source feature class path
@@ -394,7 +461,7 @@ class GCoverSDEBridge:
         """
         output_path = Path(output_path)
 
-        # Export to GeoDataFrame
+        # Export to GeoDataFrame with progress
         gdf = self.export_to_geodataframe(feature_class, **export_kwargs)
 
         if gdf.empty:
@@ -404,15 +471,46 @@ class GCoverSDEBridge:
         if layer_name is None:
             layer_name = Path(feature_class).name
 
-        # Save to file
+        # Save to file with progress for large datasets
         save_kwargs = {"driver": driver}
         if driver == "GPKG":
             save_kwargs["layer"] = layer_name
             save_kwargs["engine"] = "pyogrio"  # Better GPKG support
 
-        gdf.to_file(output_path, **save_kwargs)
-        logger.info(f"Exported {len(gdf)} features to {output_path}")
+        if self.show_progress and len(gdf) > 1000:
+            with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[bold green]Saving to {task.description}"),
+                    BarColumn(),
+                    TextColumn("{task.completed}/{task.total} features"),
+            ) as progress:
+                task = progress.add_task(str(output_path.name), total=len(gdf))
 
+                # For very large datasets, save in chunks to show progress
+                if len(gdf) > 10000:
+                    chunk_size = 5000
+                    for i in range(0, len(gdf), chunk_size):
+                        chunk = gdf.iloc[i:i + chunk_size]
+                        if i == 0:
+                            # First chunk creates the file
+                            chunk.to_file(output_path, **save_kwargs)
+                        else:
+                            # Subsequent chunks append (if driver supports it)
+                            try:
+                                chunk.to_file(output_path, mode='a', **save_kwargs)
+                            except:
+                                # If append not supported, just save everything at once
+                                gdf.to_file(output_path, **save_kwargs)
+                                break
+                        progress.update(task, completed=min(i + chunk_size, len(gdf)))
+                else:
+                    gdf.to_file(output_path, **save_kwargs)
+                    progress.update(task, completed=len(gdf))
+        else:
+            # Small datasets - save directly without progress
+            gdf.to_file(output_path, **save_kwargs)
+
+        logger.info(f"Exported {len(gdf)} features to {output_path}")
         return output_path
 
     # =============================================================================
