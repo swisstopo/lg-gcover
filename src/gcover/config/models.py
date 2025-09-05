@@ -31,6 +31,8 @@ class GlobalConfig(BaseModel):
     temp_dir: Path = Path("/tmp/gcover")
     max_workers: int = 4
     s3: S3Config
+    default_crs: str = "EPSG:2056"
+    chunk_size: int = 1000
 
     @validator("temp_dir", pre=True)
     def parse_temp_dir(cls, v):

@@ -4,6 +4,9 @@ Unified configuration system using Pydantic
 Consolidates all previous config approaches into one clean system
 """
 
+import os
+from pathlib import Path
+
 from .models import (
     AppConfig,
     GlobalConfig,
@@ -15,10 +18,16 @@ from .models import (
 )
 from .loader import load_config, get_config
 
-# Instances SDE disponibles
+# Paths
+CONFIG_DIR = Path.home() / '.gcover'
+CONFIG_DIR.mkdir(exist_ok=True)
+
+# SDE Instance mapping
 SDE_INSTANCES = {
-    "prod": "GCOVERP",
-    "integration": "GCOVERI",
+    'prod': 'GCOVERP',
+    'integration': 'GCOVERI',
+    'GCOVERP': 'GCOVERP',
+    'GCOVERI': 'GCOVERI'
 }
 
 # Versions par défaut
@@ -27,6 +36,10 @@ DEFAULT_VERSIONS = {"GCOVERP": "SDE.DEFAULT", "GCOVERI": "SDE.DEFAULT"}
 DEFAULT_CHUNK_SIZE = 1024
 
 DEFAULT_NUM_WORKERS = 4
+
+DEFAULT_INSTANCE = 'GCOVERP'
+
+DEFAULT_CRS = 'EPSG:2056'
 
 EXCLUDED_TABLES = {
     "GC_CONFLICT_POLYGON",
