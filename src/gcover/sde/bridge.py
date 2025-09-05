@@ -220,7 +220,7 @@ class GCoverSDEBridge:
         cursor_fields = fields + ["SHAPE@"]
 
         # Build search cursor parameters
-        cursor_kwargs = {"fields": cursor_fields}
+        cursor_kwargs = {"field_names": cursor_fields} # TODO
         if where_clause:
             cursor_kwargs["where_clause"] = where_clause
         if spatial_filter:
