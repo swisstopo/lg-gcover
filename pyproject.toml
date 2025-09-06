@@ -125,6 +125,7 @@ exclude = ["tests*", "docs*"]
 [tool.setuptools.package-data]
 # Inclure explicitement les fichiers __init__.py et autres fichiers de données
 gcover = ["**/*.py", "**/*.yaml", "**/*.yml", "**/*.json"]
+data = ["data/*"]
 
 [tool.setuptools_scm]
 # Gestion automatique de la version basée sur les tags git
