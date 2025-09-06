@@ -8,6 +8,8 @@ store them in DuckDB, and query the results.
 
 import sys
 from pathlib import Path
+from pathlib import Path
+from datetime import datetime
 from typing import Optional, List
 import click
 from rich.console import Console
@@ -19,8 +21,14 @@ from gcover.config import load_config, AppConfig
 from gcover.gdb.manager import GDBAssetManager
 from gcover.gdb.assets import AssetType
 from gcover.gdb.qa_converter import FileGDBConverter
+from gcover.qa.analyzer import QAAnalyzer
+
+OUTPUT_FORMATS = ["csv", "xlsx", "json"]
+GROUP_BY_CHOICES = ["mapsheets", "work_units", "lots"]
 
 console = Console()
+
+
 
 
 @click.group(name="qa")
@@ -915,3 +923,415 @@ def _generate_dashboard_html(df, days_back: int) -> str:
     </script>
 </body>
 </html>"""
+
+
+@qa_commands.command("aggregate")
+@click.option(
+    "--rc1-gdb",
+    required=True,
+    type=click.Path(exists=True, dir_okay=True, file_okay=False,  path_type=Path),
+    help="Path to RC1 QA FileGDB (issue.gdb)"
+)
+@click.option(
+    "--rc2-gdb",
+    required=True,
+    type=click.Path(exists=True, dir_okay=True, file_okay=False,  path_type=Path),
+    help="Path to RC2 QA FileGDB (issue.gdb)"
+)
+@click.option(
+    "--zones-file",
+    default="gcover/data/administrative_zones.gpkg",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Path to administrative zones GPKG file"
+)
+@click.option(
+    "--group-by",
+    type=click.Choice(GROUP_BY_CHOICES, case_sensitive=False),
+    default="mapsheets",
+    help=f"Type of administrative zones to aggregate by. Choices: {', '.join(GROUP_BY_CHOICES)}"
+)
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(OUTPUT_FORMATS, case_sensitive=False),
+    default="csv",
+    help=f"Output format for aggregated statistics. Choices: {', '.join(OUTPUT_FORMATS)}"
+)
+@click.option(
+    "--output",
+    type=click.Path(path_type=Path),
+    help="Output file path (extension will be added based on format). If not specified, uses timestamp."
+)
+@click.option(
+    "--verbose", "-v",
+    is_flag=True,
+    help="Enable verbose logging"
+)
+def aggregate(
+        rc1_gdb: Path,
+        rc2_gdb: Path,
+        zones_file: Path,
+        group_by: str,
+        output_format: str,
+        output: Path,
+        verbose: bool
+):
+    """
+    Aggregate QA statistics by administrative zones.
+
+    This command processes QA test results from both RC1 and RC2 FileGDBs,
+    performs spatial joins with administrative zones, and outputs aggregated
+    statistics showing issue counts by zone, test type, and severity.
+
+    Bronze → Silver data transformation.
+
+    Example:
+        gcover qa aggregate \\
+            --rc1-gdb /data/bronze/qa/RC1/issue.gdb \\
+            --rc2-gdb /data/bronze/qa/RC2/issue.gdb \\
+            --group-by mapsheets \\
+            --format xlsx \\
+            --output /data/silver/qa/aggregated/weekly_stats
+    """
+    if verbose:
+        logger.add(lambda msg: click.echo(msg, err=True), level="DEBUG")
+
+    # Generate output filename if not provided
+    if output is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output = Path(f"qa_stats_{group_by}_{timestamp}")
+    console.log('Starting....')
+    try:
+        # Initialize analyzer
+        logger.info(f"Initializing QA analyzer with zones from {zones_file}")
+        analyzer = QAAnalyzer(zones_file)
+
+        # Aggregate statistics
+        logger.info(f"Aggregating QA data by {group_by}")
+        stats_df = analyzer.aggregate_by_zone(
+            rc1_gdb=rc1_gdb,
+            rc2_gdb=rc2_gdb,
+            zone_type=group_by.lower(),
+            output_format=output_format
+        )
+
+        if stats_df.empty:
+            click.echo("⚠️  No QA statistics could be aggregated", err=True)
+            return
+
+        # Write output
+        analyzer.write_aggregated_stats(stats_df, output, output_format)
+
+        # Summary
+        total_issues = stats_df["total_issues"].sum()
+        error_issues = stats_df["error_issues"].sum() if "error_issues" in stats_df.columns else 0
+        zones_count = stats_df[analyzer._get_zone_id_column(group_by.lower())].nunique()
+
+        click.echo(f"✅ Aggregation complete!")
+        click.echo(f"   📊 {total_issues:,} total issues across {zones_count} {group_by}")
+        click.echo(f"   🔴 {error_issues:,} error-level issues")
+        click.echo(f"   📁 Output: {output.with_suffix('.' + output_format)}")
+
+    except Exception as e:
+        logger.error(f"Aggregation failed: {e}")
+        click.echo(f"❌ Error: {e}", err=True)
+        raise click.Abort()
+
+
+@click.command("extract")
+@click.option(
+    "--rc1-gdb",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Path to RC1 QA FileGDB (issue.gdb)"
+)
+@click.option(
+    "--rc2-gdb",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Path to RC2 QA FileGDB (issue.gdb)"
+)
+@click.option(
+    "--zones-file",
+    default="gcover/data/administrative_zones.gpkg",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Path to administrative zones GPKG file"
+)
+@click.option(
+    "--output",
+    required=True,
+    type=click.Path(path_type=Path),
+    help="Output path (without extension)"
+)
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["gpkg", "filegdb"], case_sensitive=False),
+    default="gpkg",
+    help="Output format: GPKG for analysis, FileGDB for ESRI tools"
+)
+@click.option(
+    "--filter-by-source/--no-filter",
+    default=True,
+    help="Filter issues by mapsheet source (RC1/RC2). Disable to extract all issues."
+)
+@click.option(
+    "--verbose", "-v",
+    is_flag=True,
+    help="Enable verbose logging"
+)
+def extract(
+        rc1_gdb: Path,
+        rc2_gdb: Path,
+        zones_file: Path,
+        output: Path,
+        output_format: str,
+        filter_by_source: bool,
+        verbose: bool
+):
+    """
+    Extract relevant QA issues based on mapsheet source mapping.
+
+    This command extracts only the QA issues that are relevant for each mapsheet
+    based on the source mapping (RC1 or RC2). Features overlapping multiple zones
+    are included multiple times.
+
+    Bronze → Silver data transformation.
+
+    Example:
+        gcover qa extract \\
+            --rc1-gdb /data/bronze/qa/RC1/issue.gdb \\
+            --rc2-gdb /data/bronze/qa/RC2/issue.gdb \\
+            --output /data/silver/qa/filtered/relevant_issues \\
+            --format filegdb \\
+            --filter-by-source
+    """
+    if verbose:
+        logger.add(lambda msg: click.echo(msg, err=True), level="DEBUG")
+
+    try:
+        # Initialize analyzer
+        logger.info(f"Initializing QA analyzer with zones from {zones_file}")
+        analyzer = QAAnalyzer(zones_file)
+
+        # Extract relevant issues
+        if filter_by_source:
+            logger.info("Extracting relevant issues based on mapsheet sources")
+            stats = analyzer.extract_relevant_issues(
+                rc1_gdb=rc1_gdb,
+                rc2_gdb=rc2_gdb,
+                output_path=output,
+                output_format=output_format.lower()
+            )
+        else:
+            logger.info("Extracting all issues (no source filtering)")
+            stats = analyzer._extract_all_issues(
+                rc1_gdb, rc2_gdb, output, output_format.lower()
+            )
+
+        # Determine output file extension
+        ext = ".gdb" if output_format.lower() == "filegdb" else ".gpkg"
+        output_file = output.with_suffix(ext)
+
+        # Summary
+        click.echo(f"✅ Extraction complete!")
+        click.echo(f"   📊 {stats['total_issues']:,} total issues extracted")
+        click.echo(f"   🔵 {stats['rc1_issues']:,} RC1 issues")
+        click.echo(f"   🟢 {stats['rc2_issues']:,} RC2 issues")
+        click.echo(f"   📁 Output: {output_file}")
+        click.echo(
+            f"   🔧 Format: {output_format.upper()} ({'analysis' if output_format.lower() == 'gpkg' else 'ESRI tools'})")
+
+        if filter_by_source:
+            click.echo(f"   🎯 Source filtering: enabled (mapsheet-specific)")
+        else:
+            click.echo(f"   🎯 Source filtering: disabled (all issues)")
+
+    except Exception as e:
+        logger.error(f"Extraction failed: {e}")
+        click.echo(f"❌ Error: {e}", err=True)
+        raise click.Abort()
+
+
+@qa_commands.command("update_zones")
+@click.option(
+    "--zones-file",
+    default="gcover/data/administrative_zones.gpkg",
+    type=click.Path(path_type=Path),
+    help="Path where administrative zones GPKG will be created/updated"
+)
+@click.option(
+    "--source",
+    type=click.Choice(["webservice", "local"], case_sensitive=False),
+    default="local",
+    help="Source for zone data updates"
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Force update even if zones file exists"
+)
+def update_zones(zones_file: Path, source: str, force: bool):
+    """
+    Update administrative zones data.
+
+    Creates or updates the administrative_zones.gpkg file with the latest
+    mapsheets, work units, and lots data.
+
+    Example:
+        gcover qa update-zones --source local --force
+    """
+    if zones_file.exists() and not force:
+        click.echo(f"⚠️  Zones file already exists: {zones_file}")
+        click.echo("   Use --force to overwrite or specify a different path")
+        return
+
+    try:
+        # Create parent directory if needed
+        zones_file.parent.mkdir(parents=True, exist_ok=True)
+
+        if source == "webservice":
+            click.echo("🌐 Downloading zones from web service...")
+            # TODO: Implement web service download
+            click.echo("❌ Web service download not yet implemented")
+            click.echo("   Please use --source local for now")
+            return
+        else:
+            click.echo("📁 Using local zone data...")
+            # TODO: Implement local zone data processing
+            # This would use your existing script logic to create the zones GPKG
+            click.echo("❌ Local zone processing not yet implemented")
+            click.echo("   Please run your existing zone creation script manually")
+            return
+
+        click.echo(f"✅ Administrative zones updated: {zones_file}")
+
+    except Exception as e:
+        logger.error(f"Zone update failed: {e}")
+        click.echo(f"❌ Error: {e}", err=True)
+        raise click.Abort()
+
+
+# Add these commands to your existing qa command group
+# In your existing qa_cmd.py file, add:
+#
+# qa.add_command(aggregate)
+# qa.add_command(extract)
+# qa.add_command(update_zones)
+
+
+# Example of complete workflow command
+@qa_commands.command()
+@click.option(
+    "--bronze-dir",
+    required=True,
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Bronze data directory containing RC1 and RC2 subdirectories"
+)
+@click.option(
+    "--silver-dir",
+    required=True,
+    type=click.Path(path_type=Path),
+    help="Silver data output directory"
+)
+@click.option(
+    "--zones-file",
+    default="gcover/data/administrative_zones.gpkg",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Administrative zones GPKG file"
+)
+@click.option(
+    "--date-suffix",
+    help="Date suffix for output files (default: current date)"
+)
+def process_weekly(
+        bronze_dir: Path,
+        silver_dir: Path,
+        zones_file: Path,
+        date_suffix: str
+):
+    """
+    Process weekly QA data: Bronze → Silver transformation.
+
+    Runs the complete weekly QA processing pipeline:
+    1. Aggregate statistics by mapsheets, work units, and lots
+    2. Extract relevant issues for analysis and ESRI import
+
+    Example:
+        gcover qa process-weekly \\
+            --bronze-dir /data/bronze/qa/20250718 \\
+            --silver-dir /data/silver/qa \\
+            --date-suffix 20250718
+    """
+    if date_suffix is None:
+        date_suffix = datetime.now().strftime("%Y%m%d")
+
+    # Find RC1 and RC2 GDBs in bronze directory
+    rc1_gdb = bronze_dir / "RC1" / "issue.gdb"
+    rc2_gdb = bronze_dir / "RC2" / "issue.gdb"
+
+    if not rc1_gdb.exists():
+        click.echo(f"❌ RC1 GDB not found: {rc1_gdb}", err=True)
+        raise click.Abort()
+
+    if not rc2_gdb.exists():
+        click.echo(f"❌ RC2 GDB not found: {rc2_gdb}", err=True)
+        raise click.Abort()
+
+    # Create silver directories
+    silver_dir.mkdir(parents=True, exist_ok=True)
+    (silver_dir / "aggregated").mkdir(exist_ok=True)
+    (silver_dir / "filtered").mkdir(exist_ok=True)
+
+    try:
+        analyzer = QAAnalyzer(zones_file)
+
+        click.echo(f"🏃‍♂️ Processing weekly QA data for {date_suffix}")
+
+        # 1. Aggregate by all zone types
+        for zone_type in ["mapsheets", "work_units", "lots"]:
+            click.echo(f"   📊 Aggregating by {zone_type}...")
+
+            stats_df = analyzer.aggregate_by_zone(
+                rc1_gdb=rc1_gdb,
+                rc2_gdb=rc2_gdb,
+                zone_type=zone_type,
+                output_format="xlsx"
+            )
+
+            if not stats_df.empty:
+                output_path = silver_dir / "aggregated" / f"{date_suffix}_{zone_type}_stats"
+                analyzer.write_aggregated_stats(stats_df, output_path, "xlsx")
+                click.echo(f"      ✓ {len(stats_df)} rows → {output_path}.xlsx")
+
+        # 2. Extract relevant issues
+        click.echo(f"   🎯 Extracting relevant issues...")
+
+        # For analysis (GPKG)
+        analysis_output = silver_dir / "filtered" / f"{date_suffix}_relevant_issues"
+        stats_gpkg = analyzer.extract_relevant_issues(
+            rc1_gdb=rc1_gdb,
+            rc2_gdb=rc2_gdb,
+            output_path=analysis_output,
+            output_format="gpkg"
+        )
+
+        # For ESRI import (FileGDB)
+        esri_output = silver_dir / "filtered" / f"{date_suffix}_relevant_issues_esri"
+        stats_gdb = analyzer.extract_relevant_issues(
+            rc1_gdb=rc1_gdb,
+            rc2_gdb=rc2_gdb,
+            output_path=esri_output,
+            output_format="filegdb"
+        )
+
+        click.echo(f"      ✓ Analysis: {stats_gpkg['total_issues']} issues → {analysis_output}.gpkg")
+        click.echo(f"      ✓ ESRI: {stats_gdb['total_issues']} issues → {esri_output}.gdb")
+
+        click.echo(f"✅ Weekly QA processing complete!")
+        click.echo(f"   📁 Silver data: {silver_dir}")
+
+    except Exception as e:
+        logger.error(f"Weekly processing failed: {e}")
+        click.echo(f"❌ Error: {e}", err=True)
+        raise click.Abort()
