@@ -39,11 +39,22 @@ dependencies = [
     "pyyaml>=6.0",
     "structlog>=23.0.0",
     "python-dotenv>=1.0.0",
+    "boto3>=1.26.0",
+    "duckdb>=0.9.0",
+    "fiona>=1.9.0",
+    "pyarrow>=14.0.0",
+    "flask>=2.3.0",
+    "pyyaml>=6.0",
     "tabulate>=0.9.0",
     "loguru",
+    "jinja2>=3.0.0",
 ]
 
 [project.optional-dependencies]
+# For standalone installations (without ArcGIS Pro)
+standalone = [
+    "gdal>=3.11.0",  # Latest version for better FileGDB support
+]
 # arcpy ne peut pas être installé via pip, mais on documente la dépendance
 esri = []  # Les utilisateurs doivent installer ArcGIS Pro manuellement
 
@@ -77,9 +88,18 @@ viz = [
     "plotly>=5.0",
 ]
 
-all = [
-    "gcover[dev,docs,cloud,viz]",
+# Install with standalone GDAL
+full = [
+    "gcover[standalone,dev,docs,cloud,viz]",
 ]
+
+# Install for ESRI environments  
+esri-dev = [
+    "gcover[esri,dev,docs,cloud,viz]",
+]
+
+
+
 
 [project.urls]
 Homepage = "https://github.com/swisstopo/lg-gcover"
@@ -90,6 +110,8 @@ Changelog = "https://github.com/swisstopo/lg-gcover/blob/main/CHANGELOG.md"
 
 [project.scripts]
 gcover = "gcover.cli.main:cli"
+gcover-gdb = "gcover.cli.gdb_cli:cli"    # New GDB CLI
+gcover-dashboard = "gcover.gdb.dashboard:main"  # Dashboard
 
 [tool.setuptools]
 # Cette section est cruciale pour inclure vos __init__.py

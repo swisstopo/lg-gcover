@@ -5,6 +5,7 @@ Main CLI entry point for gcover.
 
 import sys
 from pathlib import Path
+from rich import print as rprint
 
 import click
 
@@ -18,21 +19,69 @@ except ImportError:
     __version__ = "unknown"
     HAS_ARCPY = False
 
+# from ..config import load_config
+
+from gcover.config import load_config, AppConfig
+
+env_map = {
+    "prod": "production",
+    "production": "production",
+    "dev": "development",
+    "development": "development",
+    "sandisk": "sandisk",
+    "integration": "integration",
+    "int": "integration",
+}
+
 
 @click.group()
 @click.version_option(version=__version__, prog_name="gcover")
+@click.option(
+    "--config", "-c", type=click.Path(exists=True), help="Configuration file path"
+)
+@click.option(
+    "--env",
+    "-e",
+    type=click.Choice(env_map.keys()),
+    default="development",
+    help="Environment (dev/prod)",
+)
+@click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 @click.pass_context
-def cli(ctx):
-    """
-    gcover - Geological vector data management tool.
-
-    A comprehensive toolkit for working with geological vector data,
-    providing bridge functionality between GeoPandas and ESRI formats,
-    schema management, quality assurance, and geodatabase management.
-    """
-    # Contexte global si nécessaire
+def cli(ctx, config, env, verbose):
+    """gcover - Swiss GeoCover data processing toolkit"""
     ctx.ensure_object(dict)
     ctx.obj["has_arcpy"] = HAS_ARCPY
+
+    # Normalize environment name
+    try:
+        environment = env_map[env.lower()]
+    except KeyError:
+        raise click.BadParameter(f"Unsupported environment: {env}")
+
+    try:
+        # Load centralized configuration
+        app_config: AppConfig = load_config(environment=environment)
+
+        # ctx.obj["config_manager"] = config_manager
+        ctx.obj["environment"] = environment
+        ctx.obj["verbose"] = verbose
+
+        if verbose:
+            global_config = app_config.global_
+            rprint(f"[cyan]Environment: {environment}[/cyan]")
+            rprint(f"[cyan]Log Level: {global_config.log_level}[/cyan]")
+            rprint(f"[cyan]Bucket name: {global_config.s3.bucket}[/cyan]")
+            rprint(f"[cyan]Temp Dir: {global_config.temp_dir}[/cyan]")
+            rprint(f"[cyan]Has arcpy: {HAS_ARCPY}[/cyan]")
+
+    except Exception as e:
+        rprint(f"[red]Configuration error: {e}[/red]")
+        if verbose:
+            import traceback
+
+            rprint(f"[red]{traceback.format_exc()}[/red]")
+        sys.exit(1)
 
 
 @cli.command()
@@ -74,6 +123,13 @@ def info() -> None:
         modules.append("✗ manage (not available)")
 
     try:
+        from gcover import gdb
+
+        modules.append("✓ gdb (GDB management)")
+    except ImportError:
+        modules.append("✗ gdb (not available)")
+
+    try:
         from gcover import sde
 
         modules.append("✓ sde (SDE management)")
@@ -107,9 +163,9 @@ except ImportError:
     pass
 
 try:
-    from .qa_cmd import qa
+    from .qa_cmd import qa_commands
 
-    cli.add_command(qa)
+    cli.add_command(qa_commands)
 except ImportError:
     pass
 
@@ -126,8 +182,6 @@ try:
     cli.add_command(sde_commands)
 except ImportError:
     pass
-
-
 
 
 def main() -> None:

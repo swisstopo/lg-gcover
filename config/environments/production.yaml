@@ -1,0 +1,20 @@
+# Production environment overrides
+
+global:
+  log_level: WARNING
+
+  s3:
+    bucket: "lg-gcover-dev-d48b6c57"
+    profile: "gcover_bucket"
+
+qa:
+  db_path: "data/prod_verification_stats.duckdb"
+
+gdb:
+  processing:
+    max_workers: 8
+  db_path: "data/prod_gdb_metadata.duckdb"
+
+  processing:
+    compression_level: 9
+    max_workers: 8
