@@ -29,8 +29,6 @@ GROUP_BY_CHOICES = ["mapsheets", "work_units", "lots"]
 console = Console()
 
 
-
-
 @click.group(name="qa")
 def qa_commands():
     """Process and analyze QA test results from FileGDBs"""
@@ -929,52 +927,48 @@ def _generate_dashboard_html(df, days_back: int) -> str:
 @click.option(
     "--rc1-gdb",
     required=True,
-    type=click.Path(exists=True, dir_okay=True, file_okay=False,  path_type=Path),
-    help="Path to RC1 QA FileGDB (issue.gdb)"
+    type=click.Path(exists=True, dir_okay=True, file_okay=False, path_type=Path),
+    help="Path to RC1 QA FileGDB (issue.gdb)",
 )
 @click.option(
     "--rc2-gdb",
     required=True,
-    type=click.Path(exists=True, dir_okay=True, file_okay=False,  path_type=Path),
-    help="Path to RC2 QA FileGDB (issue.gdb)"
+    type=click.Path(exists=True, dir_okay=True, file_okay=False, path_type=Path),
+    help="Path to RC2 QA FileGDB (issue.gdb)",
 )
 @click.option(
     "--zones-file",
     default="gcover/data/administrative_zones.gpkg",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Path to administrative zones GPKG file"
+    help="Path to administrative zones GPKG file",
 )
 @click.option(
     "--group-by",
     type=click.Choice(GROUP_BY_CHOICES, case_sensitive=False),
     default="mapsheets",
-    help=f"Type of administrative zones to aggregate by. Choices: {', '.join(GROUP_BY_CHOICES)}"
+    help=f"Type of administrative zones to aggregate by. Choices: {', '.join(GROUP_BY_CHOICES)}",
 )
 @click.option(
     "--format",
     "output_format",
     type=click.Choice(OUTPUT_FORMATS, case_sensitive=False),
     default="csv",
-    help=f"Output format for aggregated statistics. Choices: {', '.join(OUTPUT_FORMATS)}"
+    help=f"Output format for aggregated statistics. Choices: {', '.join(OUTPUT_FORMATS)}",
 )
 @click.option(
     "--output",
     type=click.Path(path_type=Path),
-    help="Output file path (extension will be added based on format). If not specified, uses timestamp."
+    help="Output file path (extension will be added based on format). If not specified, uses timestamp.",
 )
-@click.option(
-    "--verbose", "-v",
-    is_flag=True,
-    help="Enable verbose logging"
-)
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 def aggregate(
-        rc1_gdb: Path,
-        rc2_gdb: Path,
-        zones_file: Path,
-        group_by: str,
-        output_format: str,
-        output: Path,
-        verbose: bool
+    rc1_gdb: Path,
+    rc2_gdb: Path,
+    zones_file: Path,
+    group_by: str,
+    output_format: str,
+    output: Path,
+    verbose: bool,
 ):
     """
     Aggregate QA statistics by administrative zones.
@@ -1000,7 +994,7 @@ def aggregate(
     if output is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output = Path(f"qa_stats_{group_by}_{timestamp}")
-    console.log('Starting....')
+    console.log("Starting....")
     try:
         # Initialize analyzer
         logger.info(f"Initializing QA analyzer with zones from {zones_file}")
@@ -1012,7 +1006,7 @@ def aggregate(
             rc1_gdb=rc1_gdb,
             rc2_gdb=rc2_gdb,
             zone_type=group_by.lower(),
-            output_format=output_format
+            output_format=output_format,
         )
 
         if stats_df.empty:
@@ -1024,11 +1018,15 @@ def aggregate(
 
         # Summary
         total_issues = stats_df["total_issues"].sum()
-        error_issues = stats_df["error_issues"].sum() if "error_issues" in stats_df.columns else 0
+        error_issues = (
+            stats_df["error_issues"].sum() if "error_issues" in stats_df.columns else 0
+        )
         zones_count = stats_df[analyzer._get_zone_id_column(group_by.lower())].nunique()
 
         click.echo(f"✅ Aggregation complete!")
-        click.echo(f"   📊 {total_issues:,} total issues across {zones_count} {group_by}")
+        click.echo(
+            f"   📊 {total_issues:,} total issues across {zones_count} {group_by}"
+        )
         click.echo(f"   🔴 {error_issues:,} error-level issues")
         click.echo(f"   📁 Output: {output.with_suffix('.' + output_format)}")
 
@@ -1043,51 +1041,47 @@ def aggregate(
     "--rc1-gdb",
     required=True,
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Path to RC1 QA FileGDB (issue.gdb)"
+    help="Path to RC1 QA FileGDB (issue.gdb)",
 )
 @click.option(
     "--rc2-gdb",
     required=True,
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Path to RC2 QA FileGDB (issue.gdb)"
+    help="Path to RC2 QA FileGDB (issue.gdb)",
 )
 @click.option(
     "--zones-file",
     default="gcover/data/administrative_zones.gpkg",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Path to administrative zones GPKG file"
+    help="Path to administrative zones GPKG file",
 )
 @click.option(
     "--output",
     required=True,
     type=click.Path(path_type=Path),
-    help="Output path (without extension)"
+    help="Output path (without extension)",
 )
 @click.option(
     "--format",
     "output_format",
     type=click.Choice(["gpkg", "filegdb"], case_sensitive=False),
     default="gpkg",
-    help="Output format: GPKG for analysis, FileGDB for ESRI tools"
+    help="Output format: GPKG for analysis, FileGDB for ESRI tools",
 )
 @click.option(
     "--filter-by-source/--no-filter",
     default=True,
-    help="Filter issues by mapsheet source (RC1/RC2). Disable to extract all issues."
+    help="Filter issues by mapsheet source (RC1/RC2). Disable to extract all issues.",
 )
-@click.option(
-    "--verbose", "-v",
-    is_flag=True,
-    help="Enable verbose logging"
-)
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 def extract(
-        rc1_gdb: Path,
-        rc2_gdb: Path,
-        zones_file: Path,
-        output: Path,
-        output_format: str,
-        filter_by_source: bool,
-        verbose: bool
+    rc1_gdb: Path,
+    rc2_gdb: Path,
+    zones_file: Path,
+    output: Path,
+    output_format: str,
+    filter_by_source: bool,
+    verbose: bool,
 ):
     """
     Extract relevant QA issues based on mapsheet source mapping.
@@ -1121,7 +1115,7 @@ def extract(
                 rc1_gdb=rc1_gdb,
                 rc2_gdb=rc2_gdb,
                 output_path=output,
-                output_format=output_format.lower()
+                output_format=output_format.lower(),
             )
         else:
             logger.info("Extracting all issues (no source filtering)")
@@ -1140,7 +1134,8 @@ def extract(
         click.echo(f"   🟢 {stats['rc2_issues']:,} RC2 issues")
         click.echo(f"   📁 Output: {output_file}")
         click.echo(
-            f"   🔧 Format: {output_format.upper()} ({'analysis' if output_format.lower() == 'gpkg' else 'ESRI tools'})")
+            f"   🔧 Format: {output_format.upper()} ({'analysis' if output_format.lower() == 'gpkg' else 'ESRI tools'})"
+        )
 
         if filter_by_source:
             click.echo(f"   🎯 Source filtering: enabled (mapsheet-specific)")
@@ -1158,19 +1153,15 @@ def extract(
     "--zones-file",
     default="gcover/data/administrative_zones.gpkg",
     type=click.Path(path_type=Path),
-    help="Path where administrative zones GPKG will be created/updated"
+    help="Path where administrative zones GPKG will be created/updated",
 )
 @click.option(
     "--source",
     type=click.Choice(["webservice", "local"], case_sensitive=False),
     default="local",
-    help="Source for zone data updates"
+    help="Source for zone data updates",
 )
-@click.option(
-    "--force",
-    is_flag=True,
-    help="Force update even if zones file exists"
-)
+@click.option("--force", is_flag=True, help="Force update even if zones file exists")
 def update_zones(zones_file: Path, source: str, force: bool):
     """
     Update administrative zones data.
@@ -1226,29 +1217,25 @@ def update_zones(zones_file: Path, source: str, force: bool):
     "--bronze-dir",
     required=True,
     type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="Bronze data directory containing RC1 and RC2 subdirectories"
+    help="Bronze data directory containing RC1 and RC2 subdirectories",
 )
 @click.option(
     "--silver-dir",
     required=True,
     type=click.Path(path_type=Path),
-    help="Silver data output directory"
+    help="Silver data output directory",
 )
 @click.option(
     "--zones-file",
     default="gcover/data/administrative_zones.gpkg",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Administrative zones GPKG file"
+    help="Administrative zones GPKG file",
 )
 @click.option(
-    "--date-suffix",
-    help="Date suffix for output files (default: current date)"
+    "--date-suffix", help="Date suffix for output files (default: current date)"
 )
 def process_weekly(
-        bronze_dir: Path,
-        silver_dir: Path,
-        zones_file: Path,
-        date_suffix: str
+    bronze_dir: Path, silver_dir: Path, zones_file: Path, date_suffix: str
 ):
     """
     Process weekly QA data: Bronze → Silver transformation.
@@ -1296,11 +1283,13 @@ def process_weekly(
                 rc1_gdb=rc1_gdb,
                 rc2_gdb=rc2_gdb,
                 zone_type=zone_type,
-                output_format="xlsx"
+                output_format="xlsx",
             )
 
             if not stats_df.empty:
-                output_path = silver_dir / "aggregated" / f"{date_suffix}_{zone_type}_stats"
+                output_path = (
+                    silver_dir / "aggregated" / f"{date_suffix}_{zone_type}_stats"
+                )
                 analyzer.write_aggregated_stats(stats_df, output_path, "xlsx")
                 click.echo(f"      ✓ {len(stats_df)} rows → {output_path}.xlsx")
 
@@ -1313,7 +1302,7 @@ def process_weekly(
             rc1_gdb=rc1_gdb,
             rc2_gdb=rc2_gdb,
             output_path=analysis_output,
-            output_format="gpkg"
+            output_format="gpkg",
         )
 
         # For ESRI import (FileGDB)
@@ -1322,11 +1311,15 @@ def process_weekly(
             rc1_gdb=rc1_gdb,
             rc2_gdb=rc2_gdb,
             output_path=esri_output,
-            output_format="filegdb"
+            output_format="filegdb",
         )
 
-        click.echo(f"      ✓ Analysis: {stats_gpkg['total_issues']} issues → {analysis_output}.gpkg")
-        click.echo(f"      ✓ ESRI: {stats_gdb['total_issues']} issues → {esri_output}.gdb")
+        click.echo(
+            f"      ✓ Analysis: {stats_gpkg['total_issues']} issues → {analysis_output}.gpkg"
+        )
+        click.echo(
+            f"      ✓ ESRI: {stats_gdb['total_issues']} issues → {esri_output}.gdb"
+        )
 
         click.echo(f"✅ Weekly QA processing complete!")
         click.echo(f"   📁 Silver data: {silver_dir}")
