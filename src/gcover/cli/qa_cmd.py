@@ -28,6 +28,12 @@ GROUP_BY_CHOICES = ["mapsheets", "work_units", "lots"]
 
 console = Console()
 
+from rich.logging import RichHandler
+import logging
+
+logging.basicConfig(level="DEBUG", format="%(message)s", handlers=[RichHandler()])
+logger = logging.getLogger("rich")
+
 
 @click.group(name="qa")
 def qa_commands():
@@ -1036,17 +1042,17 @@ def aggregate(
         raise click.Abort()
 
 
-@click.command("extract")
+@qa_commands.command("extract")
 @click.option(
     "--rc1-gdb",
     required=True,
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    type=click.Path(exists=True, dir_okay=True, path_type=Path),
     help="Path to RC1 QA FileGDB (issue.gdb)",
 )
 @click.option(
     "--rc2-gdb",
     required=True,
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    type=click.Path(exists=True, dir_okay=True, path_type=Path),
     help="Path to RC2 QA FileGDB (issue.gdb)",
 )
 @click.option(
@@ -1101,8 +1107,9 @@ def extract(
             --filter-by-source
     """
     if verbose:
-        logger.add(lambda msg: click.echo(msg, err=True), level="DEBUG")
-
+        # logger.remove()  # Remove default sink
+        # logger.add(lambda msg: click.echo(msg, err=True), level="DEBUG")
+        pass
     try:
         # Initialize analyzer
         logger.info(f"Initializing QA analyzer with zones from {zones_file}")

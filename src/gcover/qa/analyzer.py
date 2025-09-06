@@ -340,23 +340,37 @@ class QAAnalyzer:
         Returns:
             Dictionary with extraction statistics
         """
+        SOURCE_COLUMN_NAMES = ["BKP", "SOURCE_RC"]
         if "mapsheets" not in self.zones_data:
             raise ValueError("Mapsheets data required for relevance filtering")
 
         mapsheets_gdf = self.zones_data["mapsheets"]
 
-        if "BKP" not in mapsheets_gdf.columns:
-            logger.warning("No BKP (source) column found in mapsheets. Using all data.")
+        # TODO: decide how to call the column for rc sources
+        SOURCE_RC_COLUMN = next(
+            (item for item in SOURCE_COLUMN_NAMES if item in mapsheets_gdf.columns),
+            None,
+        )
+
+        if not SOURCE_RC_COLUMN:
+            logger.warning(
+                f"No {','.join(SOURCE_COLUMN_NAMES)} (source RC) column found in mapsheets. Using all data."
+            )
             # Fallback: combine all data without filtering
             return self._extract_all_issues(
                 rc1_gdb, rc2_gdb, output_path, output_format
             )
+        else:
+            if SOURCE_RC_COLUMN == "SOURCE_RC":
+                mapsheets_gdf = mapsheets_gdf.rename(columns={"SOURCE_RC": "source_rc"})
+                SOURCE_RC_COLUMN = "source_rc"
+            logger.info(f"Using '{SOURCE_RC_COLUMN}' to select source RC")
 
         logger.info("Extracting relevant QA issues based on mapsheet sources")
 
         # Split mapsheets by source
-        rc1_mapsheets = mapsheets_gdf[mapsheets_gdf["BKP"] == "RC1"]
-        rc2_mapsheets = mapsheets_gdf[mapsheets_gdf["BKP"] == "RC2"]
+        rc1_mapsheets = mapsheets_gdf[mapsheets_gdf[SOURCE_RC_COLUMN] == "RC1"]
+        rc2_mapsheets = mapsheets_gdf[mapsheets_gdf[SOURCE_RC_COLUMN] == "RC2"]
 
         logger.info(
             f"RC1 mapsheets: {len(rc1_mapsheets)}, RC2 mapsheets: {len(rc2_mapsheets)}"
@@ -491,6 +505,7 @@ class QAAnalyzer:
 
         # Remove existing file
         if output_file.exists():
+            logger.warning(f"Removing existing ouput file: {output_file}")
             if output_format == "filegdb":
                 import shutil
 
