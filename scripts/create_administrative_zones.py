@@ -16,6 +16,8 @@ from loguru import logger
 import pandas as pd
 import warnings
 
+from importlib.resources import files
+
 warnings.filterwarnings("ignore", category=UserWarning)
 
 DEFAULT_CRS = "EPSG:2056"
@@ -441,17 +443,18 @@ def clean_wu(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return gdf
 
 
-@click.command()
+@click.command(context_settings={"show_default": True})
 @click.option(
     "--output",
     "-o",
-    default="gcover/data/administrative_zones.gpkg",
+    default=str(files("gcover.data").joinpath("administrative_zones.gpkg")),
     type=click.Path(path_type=Path),
     help="Output GPKG file path",
 )
 @click.option(
     "--lots-file",
     required=True,
+    default=str(files("gcover.data").joinpath("lots.geojson")),
     type=click.Path(exists=True, path_type=Path),
     help="Path to lots file (shapefile or geojson)",
 )
@@ -460,18 +463,21 @@ def clean_wu(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     required=True,
     type=click.Path(exists=True, path_type=Path),
     help="Path to work units geojson file",
+    default=str(files("gcover.data").joinpath("WU.json")),
 )
 @click.option(
     "--mapsheets-file",
     required=True,
     type=click.Path(exists=True, path_type=Path),
     help="Path to mapsheets geojson file",
+    default=str(files("gcover.data").joinpath("mapsheets.geojson")),
 )
 @click.option(
     "--sources-file",
     required=True,
     type=click.Path(exists=True, path_type=Path),
     help="Path to sources Excel file",
+    default=str(files("gcover.data").joinpath("GC_Sources_PA.xlsx")),
 )
 @click.option("--overwrite", is_flag=True, help="Overwrite existing output file")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
