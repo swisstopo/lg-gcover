@@ -34,7 +34,7 @@ env_map = {
 }
 
 
-@click.group()
+@click.group(context_settings={'show_default': True})
 @click.version_option(version=__version__, prog_name="gcover")
 @click.option(
     "--config", "-c", type=click.Path(exists=True), help="Configuration file path"
@@ -142,9 +142,9 @@ def info() -> None:
 
 # Import des sous-commandes si disponibles
 try:
-    from .bridge_cmd import bridge
+    from .bridge_cmd import bridge_commands
 
-    cli.add_command(bridge)
+    cli.add_command(bridge_commands)
 except ImportError:
     pass
 
