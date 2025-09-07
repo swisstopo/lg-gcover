@@ -1,5 +1,6 @@
 name: Uploading assets to GitHub release
 on:
+  workflow_dispatch:
   push:
     tags:
       - "v*.*.*"
