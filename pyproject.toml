@@ -43,12 +43,14 @@ dependencies = [
     "duckdb>=0.9.0",
     "fiona>=1.9.0",
     "pyarrow>=14.0.0",
+    "pyogrio>=0.7.0",
     "flask>=2.3.0",
     "pyyaml>=6.0",
     "tabulate>=0.9.0",
     "loguru",
     "jinja2>=3.0.0",
 ]
+
 
 [project.optional-dependencies]
 # For standalone installations (without ArcGIS Pro)
@@ -125,6 +127,7 @@ exclude = ["tests*", "docs*"]
 [tool.setuptools.package-data]
 # Inclure explicitement les fichiers __init__.py et autres fichiers de données
 gcover = ["**/*.py", "**/*.yaml", "**/*.yml", "**/*.json"]
+data = ["data/*"]
 
 [tool.setuptools_scm]
 # Gestion automatique de la version basée sur les tags git
