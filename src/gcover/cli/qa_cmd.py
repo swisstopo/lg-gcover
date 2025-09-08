@@ -1145,6 +1145,9 @@ def aggregate(
         # Auto-detect QA couple if not provided
         rc1_gdb, rc2_gdb = _auto_detect_qa_couple(ctx, rc1_gdb, rc2_gdb)
 
+        logger.info(f"Using for RC1: {rc1_gdb}")
+        logger.info(f"Using for RC2: {rc2_gdb}")
+
         # Generate output filename if not provided
         if output is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1275,6 +1278,9 @@ def extract(
     try:
         # Auto-detect QA couple if not provided
         rc1_gdb, rc2_gdb = _auto_detect_qa_couple(ctx, rc1_gdb, rc2_gdb)
+
+        logger.info(f"Using for RC1: {rc1_gdb}")
+        logger.info(f"Using for RC2: {rc2_gdb}")
 
         # Initialize analyzer
         logger.info(f"Initializing QA analyzer with zones from {zones_file}")
