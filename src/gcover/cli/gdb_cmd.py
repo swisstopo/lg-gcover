@@ -6,7 +6,7 @@ CLI for GDB Asset Management System
 import click
 import sys
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Tuple, Dict
 from datetime import datetime, timedelta
 
 import duckdb
@@ -1005,6 +1005,363 @@ def stats(ctx, by_date, by_type, storage):
     except Exception as e:
         rprint(f"[red]Stats failed: {e}[/red]")
         sys.exit(1)
+
+
+@gdb.command("latest-by-rc")
+@click.option(
+    "--type",
+    "asset_type",
+    type=click.Choice([t.value for t in AssetType]),
+    help="Filter by asset type (e.g., verification_topology)",
+)
+@click.option(
+    "--days-back",
+    type=int,
+    default=30,
+    help="Only consider assets from the last N days",
+)
+@click.option(
+    "--show-couple",
+    is_flag=True,
+    help="Also show if they form a release couple (created close together)",
+)
+@click.pass_context
+def latest_by_rc(ctx, asset_type, days_back, show_couple):
+    """Show the latest asset for each RC (RC1/RC2)"""
+    gdb_config, global_config, environment, verbose = get_configs(ctx)
+
+    try:
+        # Create manager instance (reusing existing logic)
+        s3_bucket = gdb_config.get_s3_bucket(global_config)
+        s3_profile = gdb_config.get_s3_profile(global_config)
+
+        manager = GDBAssetManager(
+            base_paths=gdb_config.base_paths,
+            s3_bucket=s3_bucket,
+            db_path=gdb_config.db_path,
+            temp_dir=gdb_config.temp_dir,
+            aws_profile=s3_profile,
+        )
+
+        # Get latest assets
+        latest_assets = manager.get_latest_assets_by_rc(
+            asset_type=asset_type, days_back=days_back
+        )
+
+        if not latest_assets:
+            asset_filter = f" for {asset_type}" if asset_type else ""
+            rprint(
+                f"[yellow]No assets found{asset_filter} in the last {days_back} days[/yellow]"
+            )
+            return
+
+        # Display results
+        table = Table(
+            title=f"Latest Assets by RC{' - ' + asset_type if asset_type else ''}"
+        )
+        table.add_column("RC", style="cyan", width=8)
+        table.add_column("Date", style="magenta", width=20)
+        table.add_column("Type", style="green", width=25)
+        table.add_column("File", style="yellow", max_width=40)
+        table.add_column("Size", justify="right", style="blue", width=12)
+        table.add_column("Status", style="red", width=8)
+
+        for rc_name in ["RC1", "RC2"]:
+            if rc_name in latest_assets:
+                data = latest_assets[rc_name]
+                table.add_row(
+                    rc_name,
+                    data["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
+                    data["asset_type"],
+                    Path(data["path"]).name,
+                    f"{data['file_size'] / 1024 / 1024:.1f} MB"
+                    if data["file_size"]
+                    else "N/A",
+                    "✅" if data["uploaded"] else "❌",
+                )
+            else:
+                table.add_row(rc_name, "Not found", "-", "-", "-", "-")
+
+        console.print(table)
+
+        # Show release couple information
+        if show_couple and len(latest_assets) == 2:
+            couple = manager.get_latest_release_couple(asset_type=asset_type)
+            if couple:
+                rc1_date, rc2_date = couple
+                days_apart = abs((rc1_date - rc2_date).days)
+                hours_apart = abs((rc1_date - rc2_date).total_seconds() / 3600)
+
+                if days_apart == 0:
+                    time_diff = f"{hours_apart:.1f} hours apart"
+                else:
+                    time_diff = f"{days_apart} days apart"
+
+                rprint(f"\n[green]✅ Release Couple Found:[/green]")
+                rprint(f"  RC1: {rc1_date.strftime('%Y-%m-%d %H:%M')}")
+                rprint(f"  RC2: {rc2_date.strftime('%Y-%m-%d %H:%M')}")
+                rprint(f"  Time difference: {time_diff}")
+            else:
+                rprint(
+                    f"\n[yellow]⚠️  Latest RC1 and RC2 are not close enough to form a release couple[/yellow]"
+                )
+
+        # Summary for script usage
+        if latest_assets:
+            rprint(f"\n[dim]Latest dates:[/dim]")
+            for rc_name, data in latest_assets.items():
+                rprint(
+                    f"[dim]  {rc_name}: {data['timestamp'].strftime('%Y-%m-%d')}[/dim]"
+                )
+
+    except Exception as e:
+        rprint(f"[red]Command failed: {e}[/red]")
+        if verbose:
+            import traceback
+
+            rprint(f"[red]{traceback.format_exc()}[/red]")
+        sys.exit(1)
+
+
+@gdb.command("latest-topology")
+@click.option(
+    "--max-days-apart",
+    type=int,
+    default=7,
+    help="Maximum days between RC1 and RC2 to consider them a couple",
+)
+@click.pass_context
+def latest_topology(ctx, max_days_apart):
+    """Show the latest topology verification tests for each RC"""
+    gdb_config, global_config, environment, verbose = get_configs(ctx)
+
+    try:
+        # Create manager instance
+        s3_bucket = gdb_config.get_s3_bucket(global_config)
+        s3_profile = gdb_config.get_s3_profile(global_config)
+
+        manager = GDBAssetManager(
+            base_paths=gdb_config.base_paths,
+            s3_bucket=s3_bucket,
+            db_path=gdb_config.db_path,
+            temp_dir=gdb_config.temp_dir,
+            aws_profile=s3_profile,
+        )
+
+        # Get latest topology verification for each RC
+        latest_assets = manager.get_latest_assets_by_rc(
+            asset_type="verification_topology"
+        )
+
+        if not latest_assets:
+            rprint("[yellow]No topology verification tests found[/yellow]")
+            return
+
+        # Display results
+        table = Table(title="Latest Topology Verification Tests")
+        table.add_column("RC", style="cyan", width=8)
+        table.add_column("Test Date", style="magenta", width=20)
+        table.add_column("File", style="yellow", max_width=40)
+        table.add_column("Size", justify="right", style="blue", width=12)
+        table.add_column("Status", style="red", width=8)
+
+        dates_found = []
+        for rc_name in ["RC1", "RC2"]:
+            if rc_name in latest_assets:
+                data = latest_assets[rc_name]
+                dates_found.append(data["timestamp"])
+                table.add_row(
+                    rc_name,
+                    data["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
+                    Path(data["path"]).name,
+                    f"{data['file_size'] / 1024 / 1024:.1f} MB"
+                    if data["file_size"]
+                    else "N/A",
+                    "✅" if data["uploaded"] else "❌",
+                )
+            else:
+                table.add_row(rc_name, "Not found", "-", "-", "-")
+
+        console.print(table)
+
+        # Check if they form a release couple
+        if len(dates_found) == 2:
+            days_diff = abs((dates_found[0] - dates_found[1]).days)
+            hours_diff = abs((dates_found[0] - dates_found[1]).total_seconds() / 3600)
+
+            if days_diff <= max_days_apart:
+                if days_diff == 0:
+                    time_desc = f"{hours_diff:.1f} hours apart"
+                else:
+                    time_desc = f"{days_diff} days apart"
+
+                rprint(f"\n[green]✅ Latest Release Couple:[/green] {time_desc}")
+
+                # Show the dates in the format the user requested
+                latest_dates = sorted(
+                    [d.strftime("%Y-%m-%d") for d in dates_found], reverse=True
+                )
+                rprint(
+                    f"[green]Latest tests: {latest_dates[0]} and {latest_dates[1]}[/green]"
+                )
+            else:
+                rprint(
+                    f"\n[yellow]⚠️  RC1 and RC2 are {days_diff} days apart (max allowed: {max_days_apart})[/yellow]"
+                )
+                rprint("[yellow]They don't form a release couple[/yellow]")
+
+        # Answer the user's specific question
+        if len(latest_assets) >= 1:
+            rprint(
+                f"\n[cyan]Answer: The latest topology verification tests are:[/cyan]"
+            )
+            for rc_name in ["RC1", "RC2"]:
+                if rc_name in latest_assets:
+                    date_str = latest_assets[rc_name]["timestamp"].strftime("%Y-%m-%d")
+                    rprint(f"  {rc_name}: [bold]{date_str}[/bold]")
+
+    except Exception as e:
+        rprint(f"[red]Command failed: {e}[/red]")
+        if verbose:
+            import traceback
+
+            rprint(f"[red]{traceback.format_exc()}[/red]")
+        sys.exit(1)
+
+
+@gdb.command("latest-verifications")
+@click.pass_context
+def latest_verifications(ctx):
+    """Show latest verification runs for all verification types"""
+    gdb_config, global_config, environment, verbose = get_configs(ctx)
+
+    try:
+        # Create manager instance
+        s3_bucket = gdb_config.get_s3_bucket(global_config)
+        s3_profile = gdb_config.get_s3_profile(global_config)
+
+        manager = GDBAssetManager(
+            base_paths=gdb_config.base_paths,
+            s3_bucket=s3_bucket,
+            db_path=gdb_config.db_path,
+            temp_dir=gdb_config.temp_dir,
+            aws_profile=s3_profile,
+        )
+
+        # Get all latest verification runs
+        verification_runs = manager.get_latest_verification_runs()
+
+        if not verification_runs:
+            rprint("[yellow]No verification runs found[/yellow]")
+            return
+
+        # Display results grouped by verification type
+        for verification_type, runs in verification_runs.items():
+            # Clean up the verification type name for display
+            display_name = (
+                verification_type.replace("verification_", "").replace("_", " ").title()
+            )
+
+            table = Table(title=f"Latest {display_name} Verification")
+            table.add_column("RC", style="cyan", width=8)
+            table.add_column("Date", style="magenta", width=20)
+            table.add_column("File", style="yellow", max_width=40)
+            table.add_column("Size", justify="right", style="blue", width=12)
+            table.add_column("Status", style="red", width=8)
+
+            # Group by RC for display
+            runs_by_rc = {run["rc_name"]: run for run in runs}
+
+            dates_for_couple = []
+            for rc_name in ["RC1", "RC2"]:
+                if rc_name in runs_by_rc:
+                    run = runs_by_rc[rc_name]
+                    dates_for_couple.append(run["timestamp"])
+                    table.add_row(
+                        rc_name,
+                        run["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
+                        Path(run["path"]).name,
+                        f"{run['file_size'] / 1024 / 1024:.1f} MB"
+                        if run["file_size"]
+                        else "N/A",
+                        "✅" if run["uploaded"] else "❌",
+                    )
+                else:
+                    table.add_row(rc_name, "Not found", "-", "-", "-")
+
+            console.print(table)
+
+            # Show couple info for this verification type
+            if len(dates_for_couple) == 2:
+                days_diff = abs((dates_for_couple[0] - dates_for_couple[1]).days)
+                if days_diff <= 7:  # Same max_days_apart logic
+                    latest_dates = sorted(
+                        [d.strftime("%Y-%m-%d") for d in dates_for_couple], reverse=True
+                    )
+                    rprint(
+                        f"[dim]  → Release couple: {latest_dates[0]} and {latest_dates[1]}[/dim]"
+                    )
+
+            rprint()  # Empty line between verification types
+
+    except Exception as e:
+        rprint(f"[red]Command failed: {e}[/red]")
+        if verbose:
+            import traceback
+
+            rprint(f"[red]{traceback.format_exc()}[/red]")
+        sys.exit(1)
+
+
+# Also add this utility function that can be used in scripts
+def get_latest_topology_dates(db_path: str) -> Optional[Tuple[str, str]]:
+    """
+    Utility function to get latest topology verification dates.
+
+    Args:
+        db_path: Path to the DuckDB database
+
+    Returns:
+        Tuple of (RC1_date, RC2_date) as strings in YYYY-MM-DD format, or None
+
+    Example:
+        >>> dates = get_latest_topology_dates("gdb_metadata.duckdb")
+        >>> if dates:
+        >>>     print(f"Latest RC1: {dates[0]}, Latest RC2: {dates[1]}")
+    """
+    try:
+        with duckdb.connect(db_path) as conn:
+            query = """
+            WITH ranked_assets AS (
+                SELECT *,
+                       CASE 
+                           WHEN release_candidate = '2016-12-31' THEN 'RC1'
+                           WHEN release_candidate = '2030-12-31' THEN 'RC2'
+                           ELSE 'Unknown'
+                       END as rc_name,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY release_candidate 
+                           ORDER BY timestamp DESC
+                       ) as rn
+                FROM gdb_assets 
+                WHERE asset_type = 'verification_topology'
+            )
+            SELECT rc_name, timestamp::DATE as date_only
+            FROM ranked_assets 
+            WHERE rn = 1 AND rc_name IN ('RC1', 'RC2')
+            ORDER BY rc_name
+            """
+
+            results = conn.execute(query).fetchall()
+
+            if len(results) == 2:
+                return (str(results[0][1]), str(results[1][1]))  # RC1, RC2 dates
+            else:
+                return None
+
+    except Exception as e:
+        logger.error(f"Error getting latest topology dates: {e}")
+        return None
 
 
 if __name__ == "__main__":
