@@ -1083,6 +1083,310 @@ for file in $DATA_DIR/*.gpkg; do
 done
 ```
 
+#### Latest Asset Discovery
+
+Find the most recent QA tests, backups, and verification runs for each Release Candidate (RC1/RC2). Essential for monitoring daily QA processes and identifying release couples.
+
+##### Quick Discovery Commands
+
+```bash
+# Find latest topology verification tests for each RC
+gcover gdb latest-topology
+
+# Find latest assets of any type for each RC
+gcover gdb latest-by-rc --type verification_topology --show-couple
+
+# Show all latest verification runs
+gcover gdb latest-verifications
+```
+
+##### `gcover gdb latest-topology`
+
+Show the latest topology verification tests for RC1 and RC2, with release couple detection.
+
+```bash
+# Basic usage
+gcover gdb latest-topology
+
+# Example output:
+#                Latest Topology Verification Tests                     
+# ┏━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┓
+# ┃ RC     ┃ Test Date           ┃ File                                     ┃       Size ┃ Status ┃
+# ┡━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━┩
+# │ RC1    │ 2025-07-19 03:00:23 │ issue.gdb                                │     4.7 MB │ ✅     │
+# │ RC2    │ 2025-07-18 07:00:12 │ issue.gdb                                │    15.7 MB │ ✅     │
+# └────────┴─────────────────────┴──────────────────────────────────────────┴────────────┴────────┘
+# 
+# ✅ Latest Release Couple: 1 days apart
+# Latest tests: 2025-07-19 and 2025-07-18
+# 
+# Answer: The latest topology verification tests are:
+#   RC1: 2025-07-19
+#   RC2: 2025-07-18
+```
+
+##### `gcover gdb latest-by-rc`
+
+Flexible command to find latest assets for any type, with filtering and release couple detection.
+
+**Basic Usage:**
+```bash
+# Latest topology verification with couple check
+gcover gdb latest-by-rc --type verification_topology --show-couple
+
+# Latest backup assets
+gcover gdb latest-by-rc --type backup_daily
+
+# Latest assets from last 60 days only
+gcover gdb latest-by-rc --type verification_topology --days-back 60
+```
+
+**Available Asset Types:**
+- `backup_daily` - Daily backup files
+- `backup_weekly` - Weekly backup files  
+- `backup_monthly` - Monthly backup files
+- `verification_topology` - Topology verification tests
+- `verification_tqa` - Technical Quality Assurance tests
+- `increment` - Data increment files
+
+**Options:**
+- `--type`: Filter by specific asset type
+- `--days-back N`: Only consider assets from last N days (default: 30)
+- `--show-couple`: Check if RC1/RC2 form a release couple (within 7 days)
+
+##### `gcover gdb latest-verifications`
+
+Show latest verification runs for all verification types (topology, TQA, etc.).
+
+```bash
+# Show all verification types
+gcover gdb latest-verifications
+
+# Example output shows separate tables for each verification type:
+# - Latest Topology Verification
+# - Latest Technical Quality Assurance Verification  
+# Each with RC1/RC2 entries and release couple information
+```
+
+#### Release Couple Detection
+
+**Release Couples** are RC1/RC2 assets created close together (typically within 24-48 hours), indicating synchronized QA testing runs.
+
+**Detection Rules:**
+- Maximum 7 days apart (configurable)
+- Both RC1 and RC2 must have recent data
+- Useful for identifying complete QA cycles
+
+**Example Release Couple Output:**
+```bash
+✅ Latest Release Couple: 1 days apart
+Latest tests: 2025-07-19 and 2025-07-18
+
+# For assets more than 7 days apart:
+⚠️  RC1 and RC2 are 12 days apart (not a close couple)
+```
+
+#### Common Use Cases
+
+##### Daily QA Monitoring
+
+```bash
+#!/bin/bash
+# Check if QA tests are up to date
+echo "Checking latest QA test status..."
+
+# Get latest topology verification dates
+gcover gdb latest-topology > qa_status.txt
+
+# Check if tests are recent (last 2 days)
+LATEST_RC1=$(gcover gdb latest-by-rc --type verification_topology | grep "RC1" | awk '{print $3}')
+if [[ $(date -d "$LATEST_RC1" +%s) -gt $(date -d "2 days ago" +%s) ]]; then
+    echo "✅ QA tests are current"
+else
+    echo "⚠️  QA tests may be outdated"
+fi
+```
+
+##### Weekly QA Reports
+
+```bash
+# Generate weekly QA summary
+echo "# Weekly QA Report - $(date +%Y-%m-%d)" > weekly_qa.md
+echo "" >> weekly_qa.md
+
+# Latest test status
+echo "## Latest Test Status" >> weekly_qa.md
+gcover gdb latest-topology >> weekly_qa.md
+
+# All verification types
+echo "## All Verification Types" >> weekly_qa.md  
+gcover gdb latest-verifications >> weekly_qa.md
+
+# Historical data
+echo "## Recent Activity" >> weekly_qa.md
+gcover gdb list-assets --type verification_topology --limit 10 >> weekly_qa.md
+```
+
+##### Automated QA Gap Detection
+
+```bash
+#!/bin/bash
+# Alert if QA tests have gaps
+
+# Check each verification type
+for VERIFICATION_TYPE in "verification_topology" "verification_tqa"; do
+    echo "Checking $VERIFICATION_TYPE..."
+    
+    # Get latest for each RC
+    LATEST=$(gcover gdb latest-by-rc --type "$VERIFICATION_TYPE" --days-back 7)
+    
+    # Check if both RC1 and RC2 have recent data
+    if echo "$LATEST" | grep -q "RC1.*Not found\|RC2.*Not found"; then
+        echo "⚠️  Missing recent $VERIFICATION_TYPE data!"
+        echo "$LATEST"
+        
+        # Send alert (example with curl/Slack)
+        # curl -X POST -H 'Content-type: application/json' \
+        #     --data '{"text":"QA Alert: Missing '$VERIFICATION_TYPE' data"}' \
+        #     $SLACK_WEBHOOK_URL
+    fi
+done
+```
+
+##### Find Latest Assets for Scripts
+
+```python
+# Python API for getting latest dates
+import subprocess
+import json
+from datetime import datetime
+
+def get_latest_topology_dates():
+    """Get latest topology verification dates as dict"""
+    # Using the CLI utility function
+    result = subprocess.run([
+        'python', '-c', 
+        'from gcover.cli.gdb_cmd import get_latest_topology_dates; '
+        'import json; '
+        'dates = get_latest_topology_dates("gdb_metadata.duckdb"); '
+        'print(json.dumps({"rc1": dates[0], "rc2": dates[1]} if dates else {}))'
+    ], capture_output=True, text=True)
+    
+    return json.loads(result.stdout)
+
+# Usage
+dates = get_latest_topology_dates()
+if dates:
+    print(f"Latest RC1: {dates['rc1']}")
+    print(f"Latest RC2: {dates['rc2']}")
+```
+
+#### Integration with Automation
+
+##### Jenkins Pipeline Example
+
+```groovy
+pipeline {
+    agent any
+    triggers {
+        cron('0 9 * * 1')  // Weekly Monday 9 AM
+    }
+    stages {
+        stage('QA Status Check') {
+            steps {
+                script {
+                    // Check latest QA tests
+                    def qaStatus = sh(
+                        script: 'gcover --env production gdb latest-topology',
+                        returnStdout: true
+                    ).trim()
+                    
+                    // Generate report
+                    writeFile file: 'qa_status.txt', text: qaStatus
+                    archiveArtifacts artifacts: 'qa_status.txt'
+                    
+                    // Check for issues
+                    if (qaStatus.contains('Not found')) {
+                        currentBuild.result = 'UNSTABLE'
+                        echo 'Warning: Missing QA test data'
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+##### Database Query Integration
+
+For direct database access:
+
+```sql
+-- SQL query to get latest topology verification for each RC
+WITH ranked_assets AS (
+    SELECT *,
+           CASE 
+               WHEN release_candidate = '2016-12-31' THEN 'RC1'
+               WHEN release_candidate = '2030-12-31' THEN 'RC2'
+               ELSE 'Unknown'
+           END as rc_name,
+           ROW_NUMBER() OVER (
+               PARTITION BY release_candidate 
+               ORDER BY timestamp DESC
+           ) as rn
+    FROM gdb_assets 
+    WHERE asset_type = 'verification_topology'
+)
+SELECT rc_name, timestamp::DATE as test_date, path
+FROM ranked_assets 
+WHERE rn = 1 AND rc_name IN ('RC1', 'RC2')
+ORDER BY rc_name;
+```
+
+#### Troubleshooting
+
+##### No Data Found
+
+```bash
+# Check if scans have been run
+gcover gdb status
+
+# Verify asset types in database
+gcover gdb list-assets --limit 5
+
+# Check date ranges
+gcover gdb latest-by-rc --type verification_topology --days-back 90
+```
+
+##### Missing Release Couples
+
+```bash
+# Check larger time window
+gcover gdb latest-by-rc --type verification_topology --days-back 60
+
+# Examine historical data
+gcover gdb list-assets --type verification_topology --limit 20
+
+# Check both verification types
+gcover gdb latest-verifications
+```
+
+##### Performance with Large Databases
+
+The latest asset queries are optimized with:
+- Indexed timestamp columns for fast ordering
+- Partition by RC for efficient row numbering
+- Limited result sets (only latest per RC)
+- String interpolation to avoid parameter binding issues
+
+For very large databases (>100k assets), consider:
+```bash
+# Use shorter time windows
+gcover gdb latest-by-rc --days-back 30
+
+# Regular database maintenance
+duckdb data/gdb_metadata.duckdb 'VACUUM; ANALYZE;'
+```
 
 
 ### Schema Management  ###
