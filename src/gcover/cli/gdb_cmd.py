@@ -1313,10 +1313,9 @@ def latest_verifications(ctx):
         sys.exit(1)
 
 
-# Also add this utility function that can be used in scripts
 def get_latest_topology_dates(db_path: str) -> Optional[Tuple[str, str]]:
     """
-    Utility function to get latest topology verification dates.
+    Utility function to get latest topology verification dates (backwards compatibility).
 
     Args:
         db_path: Path to the DuckDB database
@@ -1328,6 +1327,42 @@ def get_latest_topology_dates(db_path: str) -> Optional[Tuple[str, str]]:
         >>> dates = get_latest_topology_dates("gdb_metadata.duckdb")
         >>> if dates:
         >>>     print(f"Latest RC1: {dates[0]}, Latest RC2: {dates[1]}")
+    """
+    data = get_latest_topology_verification_info(db_path)
+    if data and "RC1" in data and "RC2" in data:
+        return (data["RC1"]["date"], data["RC2"]["date"])
+    return None
+
+
+def get_latest_topology_verification_info(
+    db_path: str,
+) -> Optional[Dict[str, Dict[str, str]]]:
+    """
+    Enhanced utility function to get latest topology verification dates and file paths.
+
+    Args:
+        db_path: Path to the DuckDB database
+
+    Returns:
+        Dict with RC info containing dates and paths, or None if no data found:
+        {
+            'RC1': {'date': '2025-07-19', 'path': '/path/to/RC1/issue.gdb'},
+            'RC2': {'date': '2025-07-18', 'path': '/path/to/RC2/issue.gdb'}
+        }
+
+    Example:
+        >>> info = get_latest_topology_verification_info("gdb_metadata.duckdb")
+        >>> if info:
+        >>>     print(f"Latest RC1: {info['RC1']['date']} at {info['RC1']['path']}")
+        >>>     print(f"Latest RC2: {info['RC2']['date']} at {info['RC2']['path']}")
+        >>>
+        >>>     # Check if files still exist
+        >>>     from pathlib import Path
+        >>>     for rc, data in info.items():
+        >>>         if Path(data['path']).exists():
+        >>>             print(f"{rc} file exists: {data['path']}")
+        >>>         else:
+        >>>             print(f"⚠️  {rc} file missing: {data['path']}")
     """
     try:
         with duckdb.connect(db_path) as conn:
@@ -1346,7 +1381,7 @@ def get_latest_topology_dates(db_path: str) -> Optional[Tuple[str, str]]:
                 FROM gdb_assets 
                 WHERE asset_type = 'verification_topology'
             )
-            SELECT rc_name, timestamp::DATE as date_only
+            SELECT rc_name, timestamp::DATE as date_only, path
             FROM ranked_assets 
             WHERE rn = 1 AND rc_name IN ('RC1', 'RC2')
             ORDER BY rc_name
@@ -1354,14 +1389,45 @@ def get_latest_topology_dates(db_path: str) -> Optional[Tuple[str, str]]:
 
             results = conn.execute(query).fetchall()
 
-            if len(results) == 2:
-                return (str(results[0][1]), str(results[1][1]))  # RC1, RC2 dates
+            if len(results) >= 1:
+                info = {}
+                for rc_name, date_only, path in results:
+                    info[rc_name] = {"date": str(date_only), "path": path}
+                return info
             else:
                 return None
 
     except Exception as e:
-        logger.error(f"Error getting latest topology dates: {e}")
+        logger.error(f"Error getting latest topology verification info: {e}")
         return None
+
+
+def verify_topology_files_exist(db_path: str) -> Dict[str, bool]:
+    """
+    Check if the latest topology verification files still exist on filesystem.
+
+    Args:
+        db_path: Path to the DuckDB database
+
+    Returns:
+        Dict indicating which RC files exist: {'RC1': True, 'RC2': False, ...}
+
+    Example:
+        >>> status = verify_topology_files_exist("gdb_metadata.duckdb")
+        >>> for rc, exists in status.items():
+        >>>     print(f"{rc}: {'✅ exists' if exists else '❌ missing'}")
+    """
+    from pathlib import Path
+
+    info = get_latest_topology_verification_info(db_path)
+    if not info:
+        return {}
+
+    status = {}
+    for rc, data in info.items():
+        status[rc] = Path(data["path"]).exists()
+
+    return status
 
 
 if __name__ == "__main__":

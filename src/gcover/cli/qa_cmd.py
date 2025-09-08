@@ -15,6 +15,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
+from rich.logging import RichHandler
 from loguru import logger
 
 from gcover.config import load_config, AppConfig
@@ -22,17 +23,22 @@ from gcover.gdb.manager import GDBAssetManager
 from gcover.gdb.assets import AssetType
 from gcover.gdb.qa_converter import FileGDBConverter
 from gcover.qa.analyzer import QAAnalyzer
+from gcover.cli.gdb_cmd import get_latest_topology_verification_info
+
 
 OUTPUT_FORMATS = ["csv", "xlsx", "json"]
 GROUP_BY_CHOICES = ["mapsheets", "work_units", "lots"]
 
 console = Console()
 
-from rich.logging import RichHandler
-import logging
 
-logging.basicConfig(level="DEBUG", format="%(message)s", handlers=[RichHandler()])
-logger = logging.getLogger("rich")
+# Remove default loguru handler and add Rich-style handler
+logger.remove()  # Remove default handler
+logger.add(
+    sys.stderr,
+    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+    level="INFO",  # Default level
+)
 
 
 @click.group(name="qa")
@@ -91,8 +97,8 @@ def process_single(
         gcover qa process /path/to/issue.gdb --simplify-tolerance 1.0 --verbose
     """
     if verbose:
-        logger.remove()
-        logger.add(sys.stderr, level="DEBUG")
+        logger.remove()  # Remove all handlers
+        logger.add(sys.stderr, level="DEBUG")  # Add debug handler
         console.print("[dim]Verbose logging enabled[/dim]")
 
     qa_config, global_config = get_qa_config(ctx)
@@ -239,8 +245,8 @@ def process_all(
         gcover qa process-all /path/to/verifications --qa-type topology --dry-run
     """
     if verbose:
-        logger.remove()
-        logger.add(sys.stderr, level="DEBUG")
+        logger.remove()  # Remove all handlers
+        logger.add(sys.stderr, level="DEBUG")  # Add debug handler
         console.print("[dim]Verbose logging enabled[/dim]")
 
     qa_config, global_config = get_qa_config(ctx)
@@ -425,6 +431,11 @@ def diagnose_gdb(gdb_path: Path, layer: Optional[str], verbose: bool):
     """
     import fiona
 
+    if verbose:
+        logger.remove()  # Remove all handlers
+        logger.add(sys.stderr, level="DEBUG")  # Add debug handler
+        console.print("[dim]Verbose logging enabled[/dim]")
+
     console.print(f"[bold blue]🔍 Diagnosing FileGDB:[/bold blue] {gdb_path}")
 
     try:
@@ -606,8 +617,9 @@ def show_stats(
         gcover qa stats --rc-version 2030-12-31 --export-csv results.csv
     """
     if verbose:
-        logger.remove()
-        logger.add(sys.stderr, level="DEBUG")
+        logger.remove()  # Remove all handlers
+        logger.add(sys.stderr, level="DEBUG")  # Add debug handler
+        console.print("[dim]Verbose logging enabled[/dim]")
 
     qa_config, global_config = get_qa_config(ctx)
 
@@ -929,18 +941,136 @@ def _generate_dashboard_html(df, days_back: int) -> str:
 </html>"""
 
 
+def _auto_detect_qa_couple(
+    ctx, rc1_gdb: Optional[Path], rc2_gdb: Optional[Path]
+) -> tuple[Path, Path]:
+    """
+    Auto-detect latest QA couple if paths not provided manually.
+
+    Returns:
+        Tuple of (RC1_path, RC2_path)
+    """
+    # If both provided manually, use them
+    if rc1_gdb and rc2_gdb:
+        return rc1_gdb, rc2_gdb
+
+    # If only one provided, error
+    if rc1_gdb or rc2_gdb:
+        raise click.BadParameter(
+            "If specifying manual paths, both --rc1-gdb and --rc2-gdb must be provided. "
+            "Use neither for auto-detection or both for manual specification."
+        )
+
+    # Auto-detect from GDB asset database
+    console.print("[cyan]🔍 Auto-detecting latest QA couple...[/cyan]")
+
+    try:
+        # Try to get GDB config to find database path
+        qa_config, global_config = get_qa_config(ctx)
+        gdb_db_path = qa_config.db_path.parent / "gdb_metadata.duckdb"
+
+        # Fallback to common database paths if not found
+        possible_db_paths = [
+            gdb_db_path,
+            Path("gdb_metadata.duckdb"),
+            Path("data/gdb_metadata.duckdb"),
+            Path("data/dev_gdb_metadata.duckdb"),
+            Path("data/prod_gdb_metadata.duckdb"),
+        ]
+
+        db_path = None
+        for path in possible_db_paths:
+            if path.exists():
+                db_path = str(path)
+                break
+
+        if not db_path:
+            raise click.ClickException(
+                "❌ Cannot auto-detect QA couple: GDB metadata database not found.\n"
+                "   Expected locations:\n"
+                + "\n".join(f"     - {p}" for p in possible_db_paths)
+                + "\n\n   Solutions:\n"
+                "     1. Run 'gcover gdb scan' to create the database\n"
+                "     2. Specify paths manually with --rc1-gdb and --rc2-gdb"
+            )
+
+        console.print(f"[dim]Using database: {db_path}[/dim]")
+
+        # Get latest topology verification info
+        info = get_latest_topology_verification_info(db_path)
+
+        if not info:
+            raise click.ClickException(
+                "❌ No topology verification data found in database.\n"
+                "   Run 'gcover gdb scan' and 'gcover gdb sync' to populate the database."
+            )
+
+        if "RC1" not in info or "RC2" not in info:
+            available_rcs = list(info.keys())
+            raise click.ClickException(
+                f"❌ Incomplete QA couple found. Available: {available_rcs}\n"
+                "   Both RC1 and RC2 topology verification data required."
+            )
+
+        # Get file paths
+        rc1_path = Path(info["RC1"]["path"])
+        rc2_path = Path(info["RC2"]["path"])
+
+        # Verify files exist
+        missing_files = []
+        if not rc1_path.exists():
+            missing_files.append(f"RC1: {rc1_path}")
+        if not rc2_path.exists():
+            missing_files.append(f"RC2: {rc2_path}")
+
+        if missing_files:
+            raise click.ClickException(
+                "❌ QA files not found on filesystem:\n"
+                + "\n".join(f"     {f}" for f in missing_files)
+                + "\n\n   The database has records but files may have been moved/deleted."
+            )
+
+        # Success!
+        console.print(f"[green]✅ Found latest QA couple:[/green]")
+        console.print(f"   RC1 ({info['RC1']['date']}): {rc1_path.name}")
+        console.print(f"   RC2 ({info['RC2']['date']}): {rc2_path.name}")
+
+        # Check if it's a recent couple
+        from datetime import datetime
+
+        rc1_date = datetime.strptime(info["RC1"]["date"], "%Y-%m-%d")
+        rc2_date = datetime.strptime(info["RC2"]["date"], "%Y-%m-%d")
+        days_apart = abs((rc1_date - rc2_date).days)
+
+        if days_apart <= 7:
+            console.print(f"[dim]   ✅ Release couple ({days_apart} days apart)[/dim]")
+        else:
+            console.print(
+                f"[yellow]   ⚠️  Tests are {days_apart} days apart (not a close couple)[/yellow]"
+            )
+
+        return rc1_path, rc2_path
+
+    except Exception as e:
+        if isinstance(e, click.ClickException):
+            raise
+        else:
+            raise click.ClickException(
+                f"❌ Failed to auto-detect QA couple: {e}\n"
+                "   Use --rc1-gdb and --rc2-gdb to specify paths manually."
+            )
+
+
 @qa_commands.command("aggregate")
 @click.option(
     "--rc1-gdb",
-    required=True,
     type=click.Path(exists=True, dir_okay=True, file_okay=False, path_type=Path),
-    help="Path to RC1 QA FileGDB (issue.gdb)",
+    help="Path to RC1 QA FileGDB (issue.gdb). If not specified, auto-detects latest couple.",
 )
 @click.option(
     "--rc2-gdb",
-    required=True,
     type=click.Path(exists=True, dir_okay=True, file_okay=False, path_type=Path),
-    help="Path to RC2 QA FileGDB (issue.gdb)",
+    help="Path to RC2 QA FileGDB (issue.gdb). If not specified, auto-detects latest couple.",
 )
 @click.option(
     "--zones-file",
@@ -967,13 +1097,15 @@ def _generate_dashboard_html(df, days_back: int) -> str:
     help="Output file path (extension will be added based on format). If not specified, uses timestamp.",
 )
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
+@click.pass_context
 def aggregate(
-    rc1_gdb: Path,
-    rc2_gdb: Path,
+    ctx,
+    rc1_gdb: Optional[Path],
+    rc2_gdb: Optional[Path],
     zones_file: Path,
     group_by: str,
     output_format: str,
-    output: Path,
+    output: Optional[Path],
     verbose: bool,
 ):
     """
@@ -985,7 +1117,18 @@ def aggregate(
 
     Bronze → Silver data transformation.
 
-    Example:
+    AUTO-DETECTION:
+    If --rc1-gdb and --rc2-gdb are not specified, automatically uses the latest
+    QA topology verification couple from the GDB asset database.
+
+    MANUAL SPECIFICATION:
+    Use both --rc1-gdb and --rc2-gdb to specify exact file paths.
+
+    Examples:
+        # Auto-detect latest QA couple
+        gcover qa aggregate --group-by mapsheets --format xlsx
+
+        # Manual specification
         gcover qa aggregate \\
             --rc1-gdb /data/bronze/qa/RC1/issue.gdb \\
             --rc2-gdb /data/bronze/qa/RC2/issue.gdb \\
@@ -994,14 +1137,21 @@ def aggregate(
             --output /data/silver/qa/aggregated/weekly_stats
     """
     if verbose:
-        logger.add(lambda msg: click.echo(msg, err=True), level="DEBUG")
+        logger.remove()  # Remove all handlers
+        logger.add(sys.stderr, level="DEBUG")  # Add debug handler
+        console.print("[dim]Verbose logging enabled[/dim]")
 
-    # Generate output filename if not provided
-    if output is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output = Path(f"qa_stats_{group_by}_{timestamp}")
-    console.log("Starting....")
     try:
+        # Auto-detect QA couple if not provided
+        rc1_gdb, rc2_gdb = _auto_detect_qa_couple(ctx, rc1_gdb, rc2_gdb)
+
+        # Generate output filename if not provided
+        if output is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output = Path(f"qa_stats_{group_by}_{timestamp}")
+
+        console.log("Starting aggregation...")
+
         # Initialize analyzer
         logger.info(f"Initializing QA analyzer with zones from {zones_file}")
         analyzer = QAAnalyzer(zones_file)
@@ -1045,15 +1195,13 @@ def aggregate(
 @qa_commands.command("extract")
 @click.option(
     "--rc1-gdb",
-    required=True,
     type=click.Path(exists=True, dir_okay=True, path_type=Path),
-    help="Path to RC1 QA FileGDB (issue.gdb)",
+    help="Path to RC1 QA FileGDB (issue.gdb). If not specified, auto-detects latest couple.",
 )
 @click.option(
     "--rc2-gdb",
-    required=True,
     type=click.Path(exists=True, dir_okay=True, path_type=Path),
-    help="Path to RC2 QA FileGDB (issue.gdb)",
+    help="Path to RC2 QA FileGDB (issue.gdb). If not specified, auto-detects latest couple.",
 )
 @click.option(
     "--zones-file",
@@ -1080,9 +1228,11 @@ def aggregate(
     help="Filter issues by mapsheet source (RC1/RC2). Disable to extract all issues.",
 )
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
+@click.pass_context
 def extract(
-    rc1_gdb: Path,
-    rc2_gdb: Path,
+    ctx,
+    rc1_gdb: Optional[Path],
+    rc2_gdb: Optional[Path],
     zones_file: Path,
     output: Path,
     output_format: str,
@@ -1098,7 +1248,18 @@ def extract(
 
     Bronze → Silver data transformation.
 
-    Example:
+    AUTO-DETECTION:
+    If --rc1-gdb and --rc2-gdb are not specified, automatically uses the latest
+    QA topology verification couple from the GDB asset database.
+
+    MANUAL SPECIFICATION:
+    Use both --rc1-gdb and --rc2-gdb to specify exact file paths.
+
+    Examples:
+        # Auto-detect latest QA couple
+        gcover qa extract --output /data/silver/qa/filtered/relevant_issues
+
+        # Manual specification
         gcover qa extract \\
             --rc1-gdb /data/bronze/qa/RC1/issue.gdb \\
             --rc2-gdb /data/bronze/qa/RC2/issue.gdb \\
@@ -1107,10 +1268,14 @@ def extract(
             --filter-by-source
     """
     if verbose:
-        # logger.remove()  # Remove default sink
-        # logger.add(lambda msg: click.echo(msg, err=True), level="DEBUG")
-        pass
+        logger.remove()  # Remove all handlers
+        logger.add(sys.stderr, level="DEBUG")  # Add debug handler
+        console.print("[dim]Verbose logging enabled[/dim]")
+
     try:
+        # Auto-detect QA couple if not provided
+        rc1_gdb, rc2_gdb = _auto_detect_qa_couple(ctx, rc1_gdb, rc2_gdb)
+
         # Initialize analyzer
         logger.info(f"Initializing QA analyzer with zones from {zones_file}")
         analyzer = QAAnalyzer(zones_file)
@@ -1155,183 +1320,61 @@ def extract(
         raise click.Abort()
 
 
-@qa_commands.command("update_zones")
-@click.option(
-    "--zones-file",
-    default="gcover/data/administrative_zones.gpkg",
-    type=click.Path(path_type=Path),
-    help="Path where administrative zones GPKG will be created/updated",
-)
-@click.option(
-    "--source",
-    type=click.Choice(["webservice", "local"], case_sensitive=False),
-    default="local",
-    help="Source for zone data updates",
-)
-@click.option("--force", is_flag=True, help="Force update even if zones file exists")
-def update_zones(zones_file: Path, source: str, force: bool):
+# Additional helper command for QA couple status
+@qa_commands.command("latest-couple")
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
+@click.pass_context
+def show_latest_couple(ctx, verbose: bool):
     """
-    Update administrative zones data.
+    Show the latest QA topology verification couple.
 
-    Creates or updates the administrative_zones.gpkg file with the latest
-    mapsheets, work units, and lots data.
+    Displays information about the most recent RC1/RC2 QA test files
+    that would be used by extract and aggregate commands.
 
-    Example:
-        gcover qa update-zones --source local --force
+    Examples:
+        gcover qa latest-couple
+        gcover qa latest-couple --verbose
     """
-    if zones_file.exists() and not force:
-        click.echo(f"⚠️  Zones file already exists: {zones_file}")
-        click.echo("   Use --force to overwrite or specify a different path")
-        return
+    if verbose:
+        logger.remove()  # Remove all handlers
+        logger.add(sys.stderr, level="DEBUG")  # Add debug handler
+        console.print("[dim]Verbose logging enabled[/dim]")
 
     try:
-        # Create parent directory if needed
-        zones_file.parent.mkdir(parents=True, exist_ok=True)
+        # Use the same auto-detection logic but just display info
+        console.print("[cyan]🔍 Checking latest QA couple...[/cyan]")
 
-        if source == "webservice":
-            click.echo("🌐 Downloading zones from web service...")
-            # TODO: Implement web service download
-            click.echo("❌ Web service download not yet implemented")
-            click.echo("   Please use --source local for now")
-            return
-        else:
-            click.echo("📁 Using local zone data...")
-            # TODO: Implement local zone data processing
-            # This would use your existing script logic to create the zones GPKG
-            click.echo("❌ Local zone processing not yet implemented")
-            click.echo("   Please run your existing zone creation script manually")
-            return
+        # This will display the detection process and file info
+        rc1_gdb, rc2_gdb = _auto_detect_qa_couple(ctx, None, None)
 
-        click.echo(f"✅ Administrative zones updated: {zones_file}")
+        if verbose:
+            # Show additional file details
+            console.print("\n[bold]File Details:[/bold]")
+
+            for rc_name, gdb_path in [("RC1", rc1_gdb), ("RC2", rc2_gdb)]:
+                stat = gdb_path.stat()
+                size_mb = stat.st_size / (1024 * 1024)
+                modified = datetime.fromtimestamp(stat.st_mtime)
+
+                console.print(f"[cyan]{rc_name}:[/cyan]")
+                console.print(f"   Path: {gdb_path}")
+                console.print(f"   Size: {size_mb:.1f} MB")
+                console.print(f"   Modified: {modified.strftime('%Y-%m-%d %H:%M:%S')}")
+
+                # Check if it's a directory (FileGDB)
+                if gdb_path.is_dir():
+                    contents = list(gdb_path.iterdir())
+                    console.print(f"   Contents: {len(contents)} items")
+
+        console.print(f"\n[green]✅ Ready for QA processing![/green]")
+        console.print(
+            "[dim]Use 'gcover qa extract' or 'gcover qa aggregate' without --rc1-gdb/--rc2-gdb to use these files.[/dim]"
+        )
 
     except Exception as e:
-        logger.error(f"Zone update failed: {e}")
-        click.echo(f"❌ Error: {e}", err=True)
-        raise click.Abort()
+        console.print(f"[red]❌ {e}[/red]")
+        if verbose:
+            import traceback
 
-
-# Add these commands to your existing qa command group
-# In your existing qa_cmd.py file, add:
-#
-# qa.add_command(aggregate)
-# qa.add_command(extract)
-# qa.add_command(update_zones)
-
-
-# Example of complete workflow command
-@qa_commands.command()
-@click.option(
-    "--bronze-dir",
-    required=True,
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="Bronze data directory containing RC1 and RC2 subdirectories",
-)
-@click.option(
-    "--silver-dir",
-    required=True,
-    type=click.Path(path_type=Path),
-    help="Silver data output directory",
-)
-@click.option(
-    "--zones-file",
-    default="gcover/data/administrative_zones.gpkg",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Administrative zones GPKG file",
-)
-@click.option(
-    "--date-suffix", help="Date suffix for output files (default: current date)"
-)
-def process_weekly(
-    bronze_dir: Path, silver_dir: Path, zones_file: Path, date_suffix: str
-):
-    """
-    Process weekly QA data: Bronze → Silver transformation.
-
-    Runs the complete weekly QA processing pipeline:
-    1. Aggregate statistics by mapsheets, work units, and lots
-    2. Extract relevant issues for analysis and ESRI import
-
-    Example:
-        gcover qa process-weekly \\
-            --bronze-dir /data/bronze/qa/20250718 \\
-            --silver-dir /data/silver/qa \\
-            --date-suffix 20250718
-    """
-    if date_suffix is None:
-        date_suffix = datetime.now().strftime("%Y%m%d")
-
-    # Find RC1 and RC2 GDBs in bronze directory
-    rc1_gdb = bronze_dir / "RC1" / "issue.gdb"
-    rc2_gdb = bronze_dir / "RC2" / "issue.gdb"
-
-    if not rc1_gdb.exists():
-        click.echo(f"❌ RC1 GDB not found: {rc1_gdb}", err=True)
-        raise click.Abort()
-
-    if not rc2_gdb.exists():
-        click.echo(f"❌ RC2 GDB not found: {rc2_gdb}", err=True)
-        raise click.Abort()
-
-    # Create silver directories
-    silver_dir.mkdir(parents=True, exist_ok=True)
-    (silver_dir / "aggregated").mkdir(exist_ok=True)
-    (silver_dir / "filtered").mkdir(exist_ok=True)
-
-    try:
-        analyzer = QAAnalyzer(zones_file)
-
-        click.echo(f"🏃‍♂️ Processing weekly QA data for {date_suffix}")
-
-        # 1. Aggregate by all zone types
-        for zone_type in ["mapsheets", "work_units", "lots"]:
-            click.echo(f"   📊 Aggregating by {zone_type}...")
-
-            stats_df = analyzer.aggregate_by_zone(
-                rc1_gdb=rc1_gdb,
-                rc2_gdb=rc2_gdb,
-                zone_type=zone_type,
-                output_format="xlsx",
-            )
-
-            if not stats_df.empty:
-                output_path = (
-                    silver_dir / "aggregated" / f"{date_suffix}_{zone_type}_stats"
-                )
-                analyzer.write_aggregated_stats(stats_df, output_path, "xlsx")
-                click.echo(f"      ✓ {len(stats_df)} rows → {output_path}.xlsx")
-
-        # 2. Extract relevant issues
-        click.echo(f"   🎯 Extracting relevant issues...")
-
-        # For analysis (GPKG)
-        analysis_output = silver_dir / "filtered" / f"{date_suffix}_relevant_issues"
-        stats_gpkg = analyzer.extract_relevant_issues(
-            rc1_gdb=rc1_gdb,
-            rc2_gdb=rc2_gdb,
-            output_path=analysis_output,
-            output_format="gpkg",
-        )
-
-        # For ESRI import (FileGDB)
-        esri_output = silver_dir / "filtered" / f"{date_suffix}_relevant_issues_esri"
-        stats_gdb = analyzer.extract_relevant_issues(
-            rc1_gdb=rc1_gdb,
-            rc2_gdb=rc2_gdb,
-            output_path=esri_output,
-            output_format="filegdb",
-        )
-
-        click.echo(
-            f"      ✓ Analysis: {stats_gpkg['total_issues']} issues → {analysis_output}.gpkg"
-        )
-        click.echo(
-            f"      ✓ ESRI: {stats_gdb['total_issues']} issues → {esri_output}.gdb"
-        )
-
-        click.echo(f"✅ Weekly QA processing complete!")
-        click.echo(f"   📁 Silver data: {silver_dir}")
-
-    except Exception as e:
-        logger.error(f"Weekly processing failed: {e}")
-        click.echo(f"❌ Error: {e}", err=True)
+            console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise click.Abort()
