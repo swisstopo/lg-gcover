@@ -173,7 +173,10 @@ class GDBAssetManager:
             }
         """
         if asset_type and asset_type not in [t.value for t in AssetType]:
-            raise ValueError(f"Invalid asset_type: {asset_type}")
+            valid_types = [t.value for t in AssetType]
+            raise ValueError(
+                f"Invalid asset_type: '{asset_type}'. Valid types: {valid_types}"
+            )
 
         with duckdb.connect(str(self.metadata_db.db_path)) as conn:
             query = f"""
