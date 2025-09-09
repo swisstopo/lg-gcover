@@ -22,9 +22,9 @@ qa:
 
 gdb:
   base_paths:
-    backup: "\\v0t0020a.adr.admin.ch\iprod\backup\GCOVER"
-    verification: "\\v0t0020a\topgisprod\10_Production_GC\Administration\QA\Verifications"
-    increment: "\\v0t0020a.adr.admin.ch\iprod\backup\Increment\GCOVERP"
+    backup: "\\\\v0t0020a.adr.admin.ch/iprod/backup/GCOVER"
+    verification: "\\\\v0t0020a/topgisprod/10_Production_GC/Administration/QA/Verifications"
+    increment: "\\\\v0t0020a.adr.admin.ch/iprod/backup/Increment/GCOVERP"
   processing:
     max_workers: 8
   db_path: "data/prod_gdb_metadata.duckdb"
