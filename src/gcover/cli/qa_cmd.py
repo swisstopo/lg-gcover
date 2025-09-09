@@ -1136,10 +1136,11 @@ def aggregate(
             --format xlsx \\
             --output /data/silver/qa/aggregated/weekly_stats
     """
-    if verbose:
+    # TODO
+    """if verbose:
         logger.remove()  # Remove all handlers
         logger.add(sys.stderr, level="DEBUG")  # Add debug handler
-        console.print("[dim]Verbose logging enabled[/dim]")
+        console.print("[dim]Verbose logging enabled[/dim]")"""
 
     try:
         # Auto-detect QA couple if not provided
@@ -1270,10 +1271,12 @@ def extract(
             --format filegdb \\
             --filter-by-source
     """
-    if verbose:
+    # TODO
+
+    """if verbose:
         logger.remove()  # Remove all handlers
         logger.add(sys.stderr, level="DEBUG")  # Add debug handler
-        console.print("[dim]Verbose logging enabled[/dim]")
+        console.print("[dim]Verbose logging enabled[/dim]")"""
 
     try:
         # Auto-detect QA couple if not provided
@@ -1341,10 +1344,12 @@ def show_latest_couple(ctx, verbose: bool):
         gcover qa latest-couple
         gcover qa latest-couple --verbose
     """
-    if verbose:
+
+    # TODO
+    """if verbose:
         logger.remove()  # Remove all handlers
         logger.add(sys.stderr, level="DEBUG")  # Add debug handler
-        console.print("[dim]Verbose logging enabled[/dim]")
+        console.print("[dim]Verbose logging enabled[/dim]")"""
 
     try:
         # Use the same auto-detection logic but just display info
