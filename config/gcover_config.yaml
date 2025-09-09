@@ -8,11 +8,20 @@ global:
   max_workers: 4
   s3:
     bucket: "gcover-assets-dev"
-    profile: "default-aws-profile"  # AWS profile name
+    profile: "default-aws-profile" # AWS profile name
   default_crs: "EPSG:2056"
   chunk_size: 5000
-
-
+  logging:
+    file:
+      enabled: true
+      path: "logs/gcover_{environment}_{date}.log"
+      rotation: "10 MB" # Rotate when file reaches 10MB
+      retention: "30 days" # Keep logs for 30 days
+      compression: "gz" # Compress old logs
+    console:
+      format: "simple" # "simple" or "detailed"
+      show_time: true
+      show_level: true
 # GDB Asset Management configuration
 gdb:
   base_paths:
@@ -20,16 +29,12 @@ gdb:
     verification: "/media/marco/SANDISK/Verifications"
     increment: "/media/marco/SANDISK/Increment"
   db_path: "data/dev_gdb_metadata.duckdb"
-
   temp_dir: "/tmp/gcover/gdb"
-
   processing:
     compression_level: 6
     max_workers: 4
-
 qa:
   db_path: "data/prod_verification_stats.duckdb"
-
 # SDE Connection configuration
 sde:
   instances:
@@ -38,24 +43,21 @@ sde:
       port: 5151
       database: "GCOVERP"
       version: "SDE.DEFAULT"
-      user: null  # Use current user
-
+      user: null # Use current user
     GCOVERQ:
       host: "sde-server.example.com"
       port: 5151
       database: "GCOVERQ"
       version: "SDE.DEFAULT"
       user: null
-
   connection_timeout: 30
   temp_dir: "/tmp/gcover/sde"
   cleanup_on_exit: true
-
 # Schema management configuration
 schema:
   output_dir: "./schemas"
-  template_dir: "./templates/schema"  # Optional custom templates
+  template_dir: "./templates/schema" # Optional custom templates
   default_formats: ["json", "html"]
-  plantuml_path: "/usr/local/bin/plantuml"  # Optional PlantUML installation
+  plantuml_path: "/usr/local/bin/plantuml" # Optional PlantUML installation
   max_diagram_tables: 50
   include_system_tables: false
