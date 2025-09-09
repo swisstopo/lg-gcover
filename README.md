@@ -1589,6 +1589,174 @@ if diff.has_changes():
 - **pyyaml**: Configuration file support
 - **pandoc**: Optional, for PDF generation
 
+Here's the logging section to add to your README.md. Insert this **before** the "Global Configuration" section:
+
+
+## Centralized Logging
+
+GCover provides unified logging across all commands with automatic file rotation, Rich console output, and environment-specific configuration.
+
+### Basic Usage
+
+```bash
+# Logging is automatically configured for all commands
+gcover gdb scan                          # Standard logging
+gcover --verbose qa process issue.gdb    # Debug logging
+gcover --log-file custom.log sde export  # Custom log file
+```
+
+### Log Levels and Output
+
+| Level | Usage | Console Output | File Output |
+|-------|--------|---------------|------------|
+| `DEBUG` | `--verbose` flag | Detailed with timestamps | Full context with line numbers |
+| `INFO` | Default | Clean status messages | Standard operational logs |
+| `WARNING` | Issues | Yellow warnings | Warning context |
+| `ERROR` | Failures | Red error messages | Full error details |
+
+### Automatic Log Files
+
+Log files are automatically created with date-based naming:
+
+```bash
+# Development environment
+logs/gcover_development_20250726.log
+
+# Production environment  
+/var/log/gcover/gcover_production_20250726.log
+
+# Custom format with timestamp
+logs/gcover_testing_20250726_143022.log
+```
+
+**File Features:**
+- **Automatic rotation**: 10MB → compress to `.gz`
+- **Retention**: 30 days (configurable per environment)
+- **Thread-safe**: Multiple commands can log simultaneously
+
+### Configuration
+
+Add logging configuration to your `config/gcover_config.yaml`:
+
+```yaml
+global:
+  log_level: INFO
+  
+  logging:
+    file:
+      enabled: true
+      path: "logs/gcover_{environment}_{date}.log"  # Templates resolved automatically
+      rotation: "10 MB"
+      retention: "30 days"
+      compression: "gz"
+    
+    console:
+      format: "simple"          # "simple" or "detailed"
+      show_time: true
+      show_level: true
+    
+    modules:
+      modules:
+        "gcover.sde": "DEBUG"   # Verbose SDE operations
+        "urllib3": "WARNING"    # Quiet HTTP requests
+        "boto3": "WARNING"      # Quiet AWS SDK
+```
+
+### Environment-Specific Logging
+
+```yaml
+# config/environments/development.yaml
+global:
+  logging:
+    console:
+      format: "detailed"        # Show file paths and function names
+      show_path: true
+    modules:
+      modules:
+        "gcover": "DEBUG"       # All modules in debug mode
+
+# config/environments/production.yaml  
+global:
+  logging:
+    file:
+      path: "/var/log/gcover/prod_{date}.log"
+      retention: "90 days"      # Keep production logs longer
+    console:
+      format: "simple"          # Clean production output
+    modules:
+      modules:
+        "gcover": "INFO"        # Standard production logging
+```
+
+### Log Management Commands
+
+```bash
+# Show current logging configuration
+gcover logs show
+
+# View recent log entries  
+gcover logs tail
+gcover logs tail --lines 100
+
+# Enable debug logging dynamically
+gcover logs debug
+```
+
+### Practical Examples
+
+**Daily Processing with Logging:**
+```bash
+#!/bin/bash
+# Process with automatic logging
+gcover --env production gdb scan > processing.log 2>&1
+
+# Check for errors in log
+if grep -q "ERROR" logs/gcover_production_*.log; then
+    echo "⚠️  Errors found in processing"
+fi
+```
+
+**Development Debugging:**
+```bash
+# Enable detailed logging for troubleshooting
+gcover --verbose --env development qa process problematic.gdb
+
+# Check debug information
+tail -f logs/gcover_development_*.log
+```
+
+**Production Monitoring:**
+```bash
+# Monitor production logs
+tail -f /var/log/gcover/gcover_production_*.log
+
+# Archive old logs (automatic with retention settings)
+find /var/log/gcover/ -name "*.log.gz" -mtime +90 -delete
+```
+
+### Integration with External Tools
+
+**Log Analysis:**
+```bash
+# Search for specific operations
+grep "SDE export" logs/gcover_*.log
+
+# Count processing statistics  
+grep -c "✅.*processed" logs/gcover_*.log
+
+# Monitor error rates
+grep "ERROR" logs/gcover_*.log | wc -l
+```
+
+**Monitoring Integration:**
+```bash
+# Send alerts on errors (example with script)
+if tail -100 logs/gcover_production_*.log | grep -q "CRITICAL\|ERROR"; then
+    # Send notification to monitoring system
+    curl -X POST "$SLACK_WEBHOOK" -d '{"text":"GCover errors detected"}'
+fi
+```
+
 
 ## Global Configuration
 

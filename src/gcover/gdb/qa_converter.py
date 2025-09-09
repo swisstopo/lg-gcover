@@ -5,7 +5,6 @@ FileGDB conversion and statistics module for lg-gcover.
 Converts ESRI FileGDB verification results to web formats and generates statistics.
 """
 
-import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Union
 from dataclasses import dataclass

@@ -2,19 +2,27 @@
 
 global:
   log_level: WARNING
-
   s3:
     bucket: "lg-gcover-dev-d48b6c57"
     profile: "gcover_bucket"
-
+  logging:
+    file:
+      path: "/var/log/gcover/prod_{date}.log" # System log location
+      retention: "90 days" # Keep production logs longer
+    console:
+      format: "simple" # Clean console output
+      show_path: false # No file paths in production
+    modules:
+      modules:
+        "gcover": "INFO" # Standard logging
+        "urllib3": "ERROR" # Only HTTP errors
+        "boto3": "ERROR" # Only AWS errors
 qa:
   db_path: "data/prod_verification_stats.duckdb"
-
 gdb:
   processing:
     max_workers: 8
   db_path: "data/prod_gdb_metadata.duckdb"
-
   processing:
     compression_level: 9
     max_workers: 8

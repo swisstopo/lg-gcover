@@ -1141,10 +1141,11 @@ def aggregate(
             --format xlsx \\
             --output /data/silver/qa/aggregated/weekly_stats
     """
-    if verbose:
+    # TODO
+    """if verbose:
         logger.remove()  # Remove all handlers
         logger.add(sys.stderr, level="DEBUG")  # Add debug handler
-        console.print("[dim]Verbose logging enabled[/dim]")
+        console.print("[dim]Verbose logging enabled[/dim]")"""
 
     try:
         # Auto-detect QA couple if not provided
@@ -1157,6 +1158,10 @@ def aggregate(
         if output is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output = Path(f"qa_stats_{group_by}_{timestamp}")
+        else:
+            path = Path(output)
+            if path.parent != Path("."):  # Avoid creating '.' as a directory
+                path.parent.mkdir(parents=True, exist_ok=True)
 
         console.log("Starting aggregation...")
 
@@ -1275,10 +1280,12 @@ def extract(
             --format filegdb \\
             --filter-by-source
     """
-    if verbose:
+    # TODO
+
+    """if verbose:
         logger.remove()  # Remove all handlers
         logger.add(sys.stderr, level="DEBUG")  # Add debug handler
-        console.print("[dim]Verbose logging enabled[/dim]")
+        console.print("[dim]Verbose logging enabled[/dim]")"""
 
     try:
         # Auto-detect QA couple if not provided
@@ -1346,10 +1353,12 @@ def show_latest_couple(ctx, verbose: bool):
         gcover qa latest-couple
         gcover qa latest-couple --verbose
     """
-    if verbose:
+
+    # TODO
+    """if verbose:
         logger.remove()  # Remove all handlers
         logger.add(sys.stderr, level="DEBUG")  # Add debug handler
-        console.print("[dim]Verbose logging enabled[/dim]")
+        console.print("[dim]Verbose logging enabled[/dim]")"""
 
     try:
         # Use the same auto-detection logic but just display info

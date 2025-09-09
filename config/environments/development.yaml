@@ -5,22 +5,20 @@ global:
   log_level: DEBUG
   db_path: "data/dev_gdb_metadata.duckdb"
   qa_db_path: "data/dev_verification_stats.duckdb"
+  logging:
+    file:
+      path: "logs/test_{datetime}.log" # Include time for test isolation
+      retention: "7 days" # Clean up test logs quickly
+    console:
+      format: "detailed"
+      show_path: true
   s3:
     bucket: "lg-gcover-prod-d48b6c57"
-    profile: "gcover_bucket"  # AWS profile name
-
-
-
-
+    profile: "gcover_bucket" # AWS profile name
 gdb:
   base_paths:
     backup: "/home/marco/DATA/GCOVER"
     verification: "/home/marco/DATA/Verifications"
     increment: "/home/marco/DATA/Increment"
   db_path: "data/dev_gdb_metadata.duckdb"
-
-
-
-
-
 # Development-specific SDE instances could go here if different
