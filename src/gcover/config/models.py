@@ -8,6 +8,166 @@ from pydantic import BaseModel, Field, validator
 from pathlib import Path
 from typing import Dict, Optional, Any
 import os
+from datetime import datetime
+
+from datetime import datetime
+from typing import Dict, Optional, Any, Union
+import re
+
+
+class FileLoggingConfig(BaseModel):
+    """File logging configuration with template support"""
+
+    enabled: bool = True
+    path: str = "logs/gcover_{environment}_{date}.log"  # Keep as string template
+    rotation: str = "10 MB"
+    retention: str = "30 days"
+    compression: str = "gz"
+
+    @validator("path")
+    def validate_path_template(cls, v):
+        """Validate that path template has valid placeholders"""
+        if not isinstance(v, str):
+            raise ValueError("path must be a string template")
+
+        # Check for valid placeholder syntax
+        valid_placeholders = {"{environment}", "{date}", "{datetime}", "{timestamp}"}
+        found_placeholders = set(re.findall(r"\{[^}]+\}", v))
+
+        invalid_placeholders = found_placeholders - valid_placeholders
+        if invalid_placeholders:
+            raise ValueError(
+                f"Invalid placeholders in path: {invalid_placeholders}. "
+                f"Valid placeholders: {valid_placeholders}"
+            )
+        return v
+
+    def get_resolved_path(self, environment: str) -> Path:
+        """
+        Resolve template placeholders in the path.
+
+        Args:
+            environment: Environment name (e.g., 'development', 'production')
+
+        Returns:
+            Path with placeholders resolved
+        """
+        now = datetime.now()
+
+        resolved_path = self.path.format(
+            environment=environment,
+            date=now.strftime("%Y%m%d"),
+            datetime=now.strftime("%Y%m%d_%H%M%S"),
+            timestamp=now.strftime("%Y%m%d_%H%M%S"),
+        )
+
+        return Path(resolved_path)
+
+    @validator("rotation")
+    def validate_rotation(cls, v):
+        """Validate rotation format (e.g., '10 MB', '1 GB', '1 day')"""
+        if not re.match(r"^\d+\s*(MB|GB|KB|day|days|hour|hours)$", v, re.IGNORECASE):
+            raise ValueError(
+                "rotation must be in format like '10 MB', '1 GB', or '1 day'"
+            )
+        return v
+
+    @validator("retention")
+    def validate_retention(cls, v):
+        """Validate retention format (e.g., '30 days', '1 week')"""
+        if not re.match(
+            r"^\d+\s*(day|days|week|weeks|month|months)$", v, re.IGNORECASE
+        ):
+            raise ValueError(
+                "retention must be in format like '30 days', '1 week', '6 months'"
+            )
+        return v
+
+
+class ConsoleLoggingConfig(BaseModel):
+    """Console logging configuration"""
+
+    format: str = "simple"  # "simple" or "detailed"
+    show_time: bool = True
+    show_level: bool = True
+    show_path: bool = False
+
+    @validator("format")
+    def validate_format(cls, v):
+        """Validate console format"""
+        if v not in ["simple", "detailed"]:
+            raise ValueError("format must be 'simple' or 'detailed'")
+        return v
+
+
+class ModuleLoggingConfig(BaseModel):
+    """Module-specific logging configuration"""
+
+    modules: Dict[str, str] = {}
+
+    @validator("modules")
+    def validate_module_levels(cls, v):
+        """Validate that log levels are valid"""
+        valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+
+        for module, level in v.items():
+            if level.upper() not in valid_levels:
+                raise ValueError(
+                    f"Invalid log level '{level}' for module '{module}'. "
+                    f"Valid levels: {valid_levels}"
+                )
+            v[module] = level.upper()  # Normalize to uppercase
+        return v
+
+
+class LoggingConfig(BaseModel):
+    """Complete logging configuration"""
+
+    file: FileLoggingConfig = FileLoggingConfig()
+    console: ConsoleLoggingConfig = ConsoleLoggingConfig()
+    modules: ModuleLoggingConfig = ModuleLoggingConfig()
+
+    def get_file_path(self, environment: str) -> Optional[Path]:
+        """
+        Get resolved file path if file logging is enabled.
+
+        Args:
+            environment: Environment name
+
+        Returns:
+            Resolved Path if file logging enabled, None otherwise
+        """
+        if self.file.enabled:
+            return self.file.get_resolved_path(environment)
+        return None
+
+    def get_log_config_for_environment(self, environment: str) -> Dict[str, Any]:
+        """
+        Get complete logging configuration for a specific environment.
+
+        Args:
+            environment: Environment name
+
+        Returns:
+            Dict with resolved configuration for logging setup
+        """
+        config = {
+            "file": {
+                "enabled": self.file.enabled,
+                "path": self.get_file_path(environment),
+                "rotation": self.file.rotation,
+                "retention": self.file.retention,
+                "compression": self.file.compression,
+            },
+            "console": {
+                "format": self.console.format,
+                "show_time": self.console.show_time,
+                "show_level": self.console.show_level,
+                "show_path": self.console.show_path,
+            },
+            "modules": self.modules.modules,
+        }
+        return config
 
 
 class S3Config(BaseModel):
@@ -33,6 +193,7 @@ class GlobalConfig(BaseModel):
     s3: S3Config
     default_crs: str = "EPSG:2056"
     chunk_size: int = 1000
+    logging: LoggingConfig = LoggingConfig()
 
     @validator("temp_dir", pre=True)
     def parse_temp_dir(cls, v):
@@ -44,6 +205,30 @@ class GlobalConfig(BaseModel):
         if v.upper() not in valid_levels:
             raise ValueError(f"log_level must be one of {valid_levels}")
         return v.upper()
+
+    def get_logging_config(self, environment: str) -> Dict[str, Any]:
+        """
+        Get complete logging configuration for the current environment.
+
+        Args:
+            environment: Environment name (e.g., 'development', 'production')
+
+        Returns:
+            Dict with resolved logging configuration
+        """
+        return self.logging.get_log_config_for_environment(environment)
+
+    def get_log_file_path(self, environment: str) -> Optional[Path]:
+        """
+        Get the resolved log file path for the current environment.
+
+        Args:
+            environment: Environment name
+
+        Returns:
+            Resolved log file path if file logging is enabled
+        """
+        return self.logging.get_file_path(environment)
 
 
 class ProcessingConfig(BaseModel):

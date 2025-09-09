@@ -8,6 +8,7 @@ from pathlib import Path
 from rich import print as rprint
 
 import click
+from loguru import logger
 
 # Ajouter le dossier parent au path si nécessaire (pour le développement)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -22,6 +23,7 @@ except ImportError:
 # from ..config import load_config
 
 from gcover.config import load_config, AppConfig
+from gcover.utils.logging import setup_logging, gcover_logger
 
 env_map = {
     "prod": "production",
@@ -34,7 +36,7 @@ env_map = {
 }
 
 
-@click.group(context_settings={'show_default': True})
+@click.group(context_settings={"show_default": True})
 @click.version_option(version=__version__, prog_name="gcover")
 @click.option(
     "--config", "-c", type=click.Path(exists=True), help="Configuration file path"
@@ -46,9 +48,17 @@ env_map = {
     default="development",
     help="Environment (dev/prod)",
 )
-@click.option("--verbose", "-v", is_flag=True, help="Verbose output")
+@click.option(
+    "--verbose", "-v", is_flag=True, help="Enable verbose output and debug logging"
+)
+@click.option(
+    "--log-file",
+    type=click.Path(path_type=Path),
+    help="Custom log file path (default: auto-generated)",
+)
+@click.option("--log-info", is_flag=True, help="Show logging configuration and exit")
 @click.pass_context
-def cli(ctx, config, env, verbose):
+def cli(ctx, config, log_file, log_info, env, verbose):
     """gcover - Swiss GeoCover data processing toolkit"""
     ctx.ensure_object(dict)
     ctx.obj["has_arcpy"] = HAS_ARCPY
@@ -64,16 +74,32 @@ def cli(ctx, config, env, verbose):
         app_config: AppConfig = load_config(environment=environment)
 
         # ctx.obj["config_manager"] = config_manager
-        ctx.obj["environment"] = environment
+        ctx.obj["config_path"] = config
+        ctx.obj["environment"] = env
         ctx.obj["verbose"] = verbose
 
+        global_config = app_config.global_
+
+        print(global_config.logging)
+
         if verbose:
-            global_config = app_config.global_
             rprint(f"[cyan]Environment: {environment}[/cyan]")
             rprint(f"[cyan]Log Level: {global_config.log_level}[/cyan]")
             rprint(f"[cyan]Bucket name: {global_config.s3.bucket}[/cyan]")
             rprint(f"[cyan]Temp Dir: {global_config.temp_dir}[/cyan]")
             rprint(f"[cyan]Has arcpy: {HAS_ARCPY}[/cyan]")
+
+        # Setup centralized logging FIRST (before any other operations)
+        setup_logging(verbose=verbose, log_file=log_file, environment=env)
+
+        # Show logging info and exit if requested
+        if log_info:
+            gcover_logger.show_log_info()
+            ctx.exit()
+
+        # Log the startup
+        logger.info(f"GCover CLI started (environment: {env})")
+        logger.debug(f"Configuration: config={config}, verbose={verbose}")
 
     except Exception as e:
         rprint(f"[red]Configuration error: {e}[/red]")
@@ -138,6 +164,52 @@ def info() -> None:
 
     for module in modules:
         click.echo(f"  {module}")
+
+
+# Additional logging commands
+@cli.group()
+def logs():
+    """Logging and diagnostics commands."""
+    pass
+
+
+@logs.command("show")
+def show_logs():
+    """Show current logging configuration."""
+    gcover_logger.show_log_info()
+
+
+@logs.command("debug")
+@click.pass_context
+def enable_debug(ctx):
+    """Enable debug logging dynamically."""
+    gcover_logger.enable_debug_mode()
+    logger.debug("Debug logging enabled dynamically")
+    click.echo("✅ Debug logging enabled")
+
+
+@logs.command("tail")
+@click.option("--lines", "-n", default=50, help="Number of lines to show")
+def tail_logs(lines):
+    """Show recent log entries."""
+    log_file = gcover_logger.get_log_file_path()
+
+    if not log_file or not log_file.exists():
+        click.echo("❌ No log file found")
+        return
+
+    try:
+        with open(log_file, "r") as f:
+            all_lines = f.readlines()
+            recent_lines = all_lines[-lines:]
+
+        click.echo(f"📄 Last {len(recent_lines)} lines from {log_file}:")
+        click.echo("─" * 60)
+        for line in recent_lines:
+            click.echo(line.rstrip())
+
+    except Exception as e:
+        click.echo(f"❌ Error reading log file: {e}")
 
 
 # Import des sous-commandes si disponibles
