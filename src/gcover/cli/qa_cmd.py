@@ -1153,6 +1153,10 @@ def aggregate(
         if output is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output = Path(f"qa_stats_{group_by}_{timestamp}")
+        else:
+            path = Path(output)
+            if path.parent != Path("."):  # Avoid creating '.' as a directory
+                path.parent.mkdir(parents=True, exist_ok=True)
 
         console.log("Starting aggregation...")
 
