@@ -112,7 +112,7 @@ class GCoverLogger:
             # Use Rich for console output (no loguru colors)
             logger.add(
                 lambda msg: self.console.print(msg, end=""),
-                format="[bold {level_color}]{level}[/bold {level_color}]: {message}",
+                format=self._get_colored_format("{level}", "{message}"),
                 level=log_level,
                 colorize=False,  # Let Rich handle colors
             )
@@ -140,6 +140,17 @@ class GCoverLogger:
 
         self._log_file = fallback_log_file
         self._is_configured = True
+
+    def _get_colored_format(self, level_part: str, message_part: str) -> str:
+        """Get the colored format string with custom colors for different levels."""
+        return (
+            f"{{{{"
+            f"if level == 'ERROR': '[bold red]{level_part}[/bold red]'"
+            f"elif level == 'WARNING': '[bold orange1]{level_part}[/bold orange1]'"
+            f"elif level == 'SUCCESS': '[bold green]{level_part}[/bold green]'"
+            f"else: '[bold]{level_part}[/bold]'"
+            f"}}}} | {message_part}"
+        )
 
     def _setup_console_logging(
         self, log_level: str, verbose: bool, console_config: Dict
@@ -184,38 +195,66 @@ class GCoverLogger:
         if verbose or format_type == "detailed":
             # Detailed format for debugging - using Rich markup instead of loguru colors
             if show_path:
-                format_str = "[green]{time:HH:mm:ss}[/green] | [bold]{level: <8}[/bold] | [cyan]{name}:{function}:{line}[/cyan] - {message}"
+                format_str = "[green]{time:HH:mm:ss}[/green] | {level} | [cyan]{name}:{function}:{line}[/cyan] - {message}"
             else:
-                format_str = "[green]{time:HH:mm:ss}[/green] | [bold]{level: <8}[/bold] | [cyan]{name}:{function}[/cyan] - {message}"
+                format_str = "[green]{time:HH:mm:ss}[/green] | {level} | [cyan]{name}:{function}[/cyan] - {message}"
         else:
             # Simple format using Rich markup
             parts = []
             if show_time:
                 parts.append("[green]{time:HH:mm:ss}[/green]")
             if show_level:
-                parts.append("[bold]{level}[/bold]")
+                parts.append("{level}")  # Level will be colored by the custom function
             parts.append("{message}")
             format_str = " | ".join(parts)
 
-        # Custom function to handle Rich console output
+        # Custom function to handle Rich console output with colored levels
         def rich_sink(message):
-            # Strip any loguru ANSI codes that might have leaked through
-            clean_message = message.rstrip("\n")
+            # Process the message to apply custom level colors
+            record = message.record
+            level = record["level"].name
+
+            # Apply custom colors based on level
+            if level == "ERROR":
+                colored_level = f"[bold red]{level}[/bold red]"
+            elif level == "WARNING":
+                colored_level = f"[bold orange1]{level}[/bold orange1]"
+            elif level == "SUCCESS":
+                colored_level = f"[bold green]{level}[/bold green]"
+            else:
+                colored_level = f"[bold]{level}[/bold]"
+
+            # Format the message with colored level
+            if verbose or format_type == "detailed":
+                if show_path:
+                    formatted_msg = f"[green]{record['time'].strftime('%H:%M:%S')}[/green] | {colored_level} | [cyan]{record['name']}:{record['function']}:{record['line']}[/cyan] - {record['message']}"
+                else:
+                    formatted_msg = f"[green]{record['time'].strftime('%H:%M:%S')}[/green] | {colored_level} | [cyan]{record['name']}:{record['function']}[/cyan] - {record['message']}"
+            else:
+                msg_parts = []
+                if show_time:
+                    msg_parts.append(
+                        f"[green]{record['time'].strftime('%H:%M:%S')}[/green]"
+                    )
+                if show_level:
+                    msg_parts.append(colored_level)
+                msg_parts.append(record["message"])
+                formatted_msg = " | ".join(msg_parts)
+
             try:
                 self.console.print(
-                    clean_message, markup=True, highlight=False, end="\n"
+                    formatted_msg, markup=True, highlight=False, end="\n"
                 )
             except Exception:
                 # Fallback to plain text if Rich markup fails
-                self.console.print(
-                    clean_message, markup=False, highlight=False, end="\n"
-                )
+                plain_msg = f"{record['time'].strftime('%H:%M:%S')} | {level} | {record['message']}"
+                self.console.print(plain_msg, markup=False, highlight=False, end="\n")
 
         logger.add(
             rich_sink,
-            format=format_str,
+            format="{message}",  # We handle formatting in the sink function
             level=log_level,
-            colorize=False,  # IMPORTANT: Don't let loguru colorize, let Rich handle it
+            colorize=False,  # Don't let loguru colorize, let Rich handle it
             diagnose=verbose,
         )
 
