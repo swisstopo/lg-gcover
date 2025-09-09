@@ -8,7 +8,6 @@ store them in DuckDB, and query the results.
 
 import sys
 from pathlib import Path
-from pathlib import Path
 from datetime import datetime
 from typing import Optional, List
 import click
@@ -17,6 +16,7 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.logging import RichHandler
 from loguru import logger
+from importlib.resources import files
 
 from gcover.config import load_config, AppConfig
 from gcover.gdb.manager import GDBAssetManager
@@ -28,6 +28,11 @@ from gcover.cli.gdb_cmd import get_latest_topology_verification_info
 
 OUTPUT_FORMATS = ["csv", "xlsx", "json"]
 GROUP_BY_CHOICES = ["mapsheets", "work_units", "lots"]
+
+
+
+DEFAULT_ZONES_PATH = files("gcover.data").joinpath("administrative_zones.gpkg")
+
 
 console = Console()
 
@@ -1074,7 +1079,7 @@ def _auto_detect_qa_couple(
 )
 @click.option(
     "--zones-file",
-    default="gcover/data/administrative_zones.gpkg",
+    default=DEFAULT_ZONES_PATH,
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     help="Path to administrative zones GPKG file",
 )
@@ -1208,7 +1213,7 @@ def aggregate(
 )
 @click.option(
     "--zones-file",
-    default="gcover/data/administrative_zones.gpkg",
+    default=DEFAULT_ZONES_PATH,
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     help="Path to administrative zones GPKG file",
 )
