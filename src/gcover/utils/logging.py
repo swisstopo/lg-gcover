@@ -105,13 +105,25 @@ class GCoverLogger:
         log_level = "DEBUG" if verbose else "INFO"
         self._current_level = log_level
 
-        # Simple console logging
-        logger.add(
-            lambda msg: self.console.print(msg, end=""),
-            format="<level>{level}</level>: {message}",
-            level=log_level,
-            colorize=True,
-        )
+        # Check if we can use colors (terminal support)
+        supports_color = self.console.is_terminal and not self.console.legacy_windows
+
+        if supports_color:
+            # Use Rich for console output (no loguru colors)
+            logger.add(
+                lambda msg: self.console.print(msg, end=""),
+                format="[bold {level_color}]{level}[/bold {level_color}]: {message}",
+                level=log_level,
+                colorize=False,  # Let Rich handle colors
+            )
+        else:
+            # Simple console logging without colors
+            logger.add(
+                sys.stderr,
+                format="{level}: {message}",
+                level=log_level,
+                colorize=False,
+            )
 
         # Simple file logging
         fallback_log_file = Path(
@@ -138,28 +150,72 @@ class GCoverLogger:
         show_level = console_config.get("show_level", True)
         show_path = console_config.get("show_path", False)
 
-        if verbose or format_type == "detailed":
-            # Detailed format for debugging
-            if show_path:
-                format_str = "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}:{function}:{line}</cyan> - <level>{message}</level>"
+        # Check if terminal supports colors
+        supports_color = self.console.is_terminal and not self.console.legacy_windows
+
+        if not supports_color:
+            # Fallback to simple stderr logging without colors
+            if verbose or format_type == "detailed":
+                if show_path:
+                    format_str = "{time:HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}"
+                else:
+                    format_str = (
+                        "{time:HH:mm:ss} | {level: <8} | {name}:{function} - {message}"
+                    )
             else:
-                format_str = "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}:{function}</cyan> - <level>{message}</level>"
+                parts = []
+                if show_time:
+                    parts.append("{time:HH:mm:ss}")
+                if show_level:
+                    parts.append("{level}")
+                parts.append("{message}")
+                format_str = " | ".join(parts)
+
+            logger.add(
+                sys.stderr,
+                format=format_str,
+                level=log_level,
+                colorize=False,
+                diagnose=verbose,
+            )
+            return
+
+        # Use Rich Console for colored output
+        if verbose or format_type == "detailed":
+            # Detailed format for debugging - using Rich markup instead of loguru colors
+            if show_path:
+                format_str = "[green]{time:HH:mm:ss}[/green] | [bold]{level: <8}[/bold] | [cyan]{name}:{function}:{line}[/cyan] - {message}"
+            else:
+                format_str = "[green]{time:HH:mm:ss}[/green] | [bold]{level: <8}[/bold] | [cyan]{name}:{function}[/cyan] - {message}"
         else:
-            # Simple format
+            # Simple format using Rich markup
             parts = []
             if show_time:
-                parts.append("<green>{time:HH:mm:ss}</green>")
+                parts.append("[green]{time:HH:mm:ss}[/green]")
             if show_level:
-                parts.append("<level>{level}</level>")
+                parts.append("[bold]{level}[/bold]")
             parts.append("{message}")
-
             format_str = " | ".join(parts)
 
+        # Custom function to handle Rich console output
+        def rich_sink(message):
+            # Strip any loguru ANSI codes that might have leaked through
+            clean_message = message.rstrip("\n")
+            try:
+                self.console.print(
+                    clean_message, markup=True, highlight=False, end="\n"
+                )
+            except Exception:
+                # Fallback to plain text if Rich markup fails
+                self.console.print(
+                    clean_message, markup=False, highlight=False, end="\n"
+                )
+
         logger.add(
-            lambda msg: self.console.print(msg, end=""),
+            rich_sink,
             format=format_str,
             level=log_level,
-            colorize=True,
+            colorize=False,  # IMPORTANT: Don't let loguru colorize, let Rich handle it
             diagnose=verbose,
         )
 
