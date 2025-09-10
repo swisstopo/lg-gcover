@@ -2,12 +2,13 @@
 
 global:
   log_level: WARNING
+  proxy: proxy-bvcol.admin.ch:8080
   s3:
     bucket: "lg-gcover-prod-d48b6c57"
     profile: "gcover_bucket"
   logging:
     file:
-      path: "/var/log/gcover/prod_{date}.log" # System log location
+      path: r"X:\mom\prod_{date}.log" # System log location
       retention: "90 days" # Keep production logs longer
     console:
       format: "simple" # Clean console output
@@ -22,13 +23,12 @@ qa:
 
 gdb:
   base_paths:
-    backup: "\\v0t0020a.adr.admin.ch\iprod\backup\GCOVER"
-    verification: "\\v0t0020a\topgisprod\10_Production_GC\Administration\QA\Verifications"
-    increment: "\\v0t0020a.adr.admin.ch\iprod\backup\Increment\GCOVERP"
+    backup: "\\\\v0t0020a.adr.admin.ch/iprod/backup/GCOVER"
+    verification: "\\\\v0t0020a/topgisprod/10_Production_GC/Administration/QA/Verifications"
+    increment: "\\\\v0t0020a.adr.admin.ch/iprod/backup/Increment/GCOVERP"
   processing:
-    max_workers: 8
-  db_path: "data/prod_gdb_metadata.duckdb"
-  processing:
+    max_workers: 2
     compression_level: 9
-    max_workers: 8
+  db_path: "data/prod_gdb_metadata.duckdb"
+
 

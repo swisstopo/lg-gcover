@@ -194,6 +194,7 @@ class GlobalConfig(BaseModel):
     default_crs: str = "EPSG:2056"
     chunk_size: int = 1000
     logging: LoggingConfig = LoggingConfig()
+    proxy: Optional[str] = None
 
     @validator("temp_dir", pre=True)
     def parse_temp_dir(cls, v):
@@ -262,6 +263,7 @@ class GDBConfig(BaseModel):
     temp_dir: Path = Path("/tmp/gcover/gdb")
     processing: ProcessingConfig = ProcessingConfig()
     db_path: Path = Path("data/dev_gdb_metadata.duckdb")
+    proxy: Optional[str] = None
 
     @validator("base_paths", pre=True)
     def parse_base_paths(cls, v):

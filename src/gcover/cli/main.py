@@ -75,17 +75,18 @@ def cli(ctx, config, log_file, log_info, env, verbose):
 
         # ctx.obj["config_manager"] = config_manager
         ctx.obj["config_path"] = config
-        ctx.obj["environment"] = env
+        ctx.obj["environment"] = environment
         ctx.obj["verbose"] = verbose
 
         global_config = app_config.global_
 
-        print(global_config.logging)
+        # print(global_config.logging)
 
         if verbose:
             rprint(f"[cyan]Environment: {environment}[/cyan]")
             rprint(f"[cyan]Log Level: {global_config.log_level}[/cyan]")
             rprint(f"[cyan]Bucket name: {global_config.s3.bucket}[/cyan]")
+            rprint(f"[cyan]Proxy: {global_config.proxy}[/cyan]")
             rprint(f"[cyan]Temp Dir: {global_config.temp_dir}[/cyan]")
             rprint(f"[cyan]Has arcpy: {HAS_ARCPY}[/cyan]")
 

@@ -64,7 +64,7 @@ class GDBAssetManager:
 
     def create_asset(self, gdb_path: Path) -> GDBAsset:
         """Factory method to create appropriate asset type"""
-        path_str = str(gdb_path)
+        path_str = gdb_path.as_posix()
 
         if "/GCOVER/" in path_str and gdb_path.name.endswith(".gdb"):
             return BackupGDBAsset(gdb_path)

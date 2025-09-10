@@ -9,29 +9,49 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
+from botocore.config import Config
+
 
 import boto3
 import duckdb
 from botocore.exceptions import ClientError
+
 # Configure logging
 from loguru import logger
 
-from .assets import (AssetType, BackupGDBAsset, GDBAsset, GDBAssetInfo,
-                     IncrementGDBAsset, VerificationGDBAsset)
+from .assets import (
+    AssetType,
+    BackupGDBAsset,
+    GDBAsset,
+    GDBAssetInfo,
+    IncrementGDBAsset,
+    VerificationGDBAsset,
+)
 
 
 class S3Uploader:
     """Handle S3 operations"""
 
-    def __init__(self, bucket_name: str, aws_profile: Optional[str] = None):
+    def __init__(
+        self,
+        bucket_name: str,
+        aws_profile: Optional[str] = None,
+        proxy: Optional[str] = None,
+    ):
         self.bucket_name = bucket_name
         self.profile_name = aws_profile
 
+        # Build proxy config if provided
+        config = None
+        if proxy:
+            config = Config(proxies={"http": proxy, "https": proxy})
+
+        # Create session with or without profile
         if aws_profile:
             session = boto3.Session(profile_name=aws_profile)
-            self.s3_client = session.client('s3')
+            self.s3_client = session.client("s3", config=config)
         else:
-            self.s3_client = boto3.client('s3')
+            self.s3_client = boto3.client("s3", config=config)
 
     def upload_file(self, file_path: Path, s3_key: str) -> bool:
         """Upload file to S3"""
@@ -50,8 +70,10 @@ class S3Uploader:
             return True
         except ClientError:
             return False
+
     def __repr__(self):
         return f"<gcover.gdb.storage.S3Uploader: bucket: {self.bucket_name}, profile: {self.profile_name}>"
+
 
 class MetadataDB:
     """Handle DuckDB metadata operations"""
@@ -83,28 +105,30 @@ class MetadataDB:
     def insert_asset(self, asset_info: GDBAssetInfo):
         """Insert asset information"""
         with duckdb.connect(str(self.db_path)) as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO gdb_assets 
                 (path, asset_type, release_candidate, timestamp, file_size, 
                  hash_md5, s3_key, uploaded, metadata)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-            """, [
-                str(asset_info.path),
-                asset_info.asset_type.value,
-                asset_info.release_candidate.value,
-                asset_info.timestamp,
-                asset_info.file_size,
-                asset_info.hash_md5,
-                asset_info.s3_key,
-                asset_info.uploaded,
-                asset_info.metadata
-            ])
+            """,
+                [
+                    str(asset_info.path),
+                    asset_info.asset_type.value,
+                    asset_info.release_candidate.value,
+                    asset_info.timestamp,
+                    asset_info.file_size,
+                    asset_info.hash_md5,
+                    asset_info.s3_key,
+                    asset_info.uploaded,
+                    asset_info.metadata,
+                ],
+            )
 
     def asset_exists(self, path: Path) -> bool:
         """Check if asset already exists in database"""
         with duckdb.connect(str(self.db_path)) as conn:
             result = conn.execute(
-                "SELECT COUNT(*) FROM gdb_assets WHERE path = ?",
-                [str(path)]
+                "SELECT COUNT(*) FROM gdb_assets WHERE path = ?", [str(path)]
             ).fetchone()
             return result[0] > 0
