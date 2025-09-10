@@ -12,6 +12,8 @@ from datetime import datetime
 
 from datetime import datetime
 from typing import Dict, Optional, Any, Union
+from typing import Optional, Literal
+from pydantic import BaseModel, validator, Field
 import re
 
 
@@ -170,18 +172,189 @@ class LoggingConfig(BaseModel):
         return config
 
 
+class ProxyConfig(BaseModel):
+    """Proxy configuration for S3 uploads"""
+
+    http_proxy: Optional[str] = None
+    https_proxy: Optional[str] = None
+
+    @validator("http_proxy", "https_proxy")
+    def validate_proxy_url(cls, v):
+        if v is not None:
+            # Basic URL validation for proxy
+            if not re.match(r"^https?://[^\s/$.?#].[^\s]*$", v):
+                raise ValueError("Proxy URL must be a valid HTTP/HTTPS URL")
+        return v
+
+
 class S3Config(BaseModel):
-    """S3 configuration settings"""
+    """Enhanced S3 configuration settings"""
 
-    bucket: str
-    profile: Optional[str] = None
-    region: Optional[str] = None
+    # Core S3 settings
+    bucket: str = Field(..., description="S3 bucket name")
+    profile: Optional[str] = Field(None, description="AWS profile name")
+    region: Optional[str] = Field(None, description="AWS region")
 
+    # Upload method configuration
+    upload_method: Literal["auto", "direct", "presigned"] = Field(
+        "auto",
+        description="Upload method: auto (smart selection), direct (boto3), or presigned (Lambda)",
+    )
+
+    # Lambda presigned URL configuration
+    lambda_endpoint: Optional[str] = Field(
+        None, description="Lambda endpoint URL for presigned URL generation"
+    )
+
+    # TOTP authentication (choose one)
+    totp_secret: Optional[str] = Field(
+        None, description="Base32 encoded TOTP secret for generating tokens"
+    )
+    totp_token: Optional[str] = Field(
+        None, description="Pre-generated TOTP token (overrides secret)"
+    )
+
+    # Proxy configuration
+    proxy: ProxyConfig = Field(
+        default_factory=ProxyConfig, description="Proxy settings for direct uploads"
+    )
+
+    # Timeout and retry settings
+    upload_timeout: int = Field(
+        300,
+        description="Upload timeout in seconds",
+        ge=30,  # At least 30 seconds
+        le=3600,  # At most 1 hour
+    )
+    max_retries: int = Field(
+        3,
+        description="Maximum number of upload retries",
+        ge=0,  # At least 0 retries
+        le=10,  # At most 10 retries
+    )
+
+    # Validators
     @validator("bucket")
     def bucket_must_not_be_empty(cls, v):
         if not v or not v.strip():
             raise ValueError("S3 bucket cannot be empty")
+        return v.strip()
+
+    @validator("lambda_endpoint")
+    def validate_lambda_endpoint(cls, v):
+        if v is not None:
+            if not re.match(r"^https://[^\s/$.?#].[^\s]*$", v):
+                raise ValueError("Lambda endpoint must be a valid HTTPS URL")
         return v
+
+    @validator("totp_secret")
+    def validate_totp_secret(cls, v):
+        if v is not None:
+            # Basic validation for Base32 encoding
+            if not re.match(r"^[A-Z2-7]+=*$", v.upper()):
+                raise ValueError("TOTP secret must be Base32 encoded (A-Z, 2-7)")
+            # Ensure reasonable length (usually 16 or 32 characters)
+            if len(v) < 8 or len(v) > 64:
+                raise ValueError(
+                    "TOTP secret length should be between 8 and 64 characters"
+                )
+        return v.upper() if v else v
+
+    @validator("totp_token")
+    def validate_totp_token(cls, v):
+        if v is not None:
+            # TOTP tokens are typically 6 digits
+            if not re.match(r"^\d{6}$", v):
+                raise ValueError("TOTP token must be 6 digits")
+        return v
+
+    @validator("upload_method")
+    def validate_upload_method_consistency(cls, v, values):
+        """Validate that upload method is consistent with other settings"""
+        if v == "presigned":
+            # If presigned method is explicitly chosen, lambda_endpoint should be provided
+            # Note: This validator runs before lambda_endpoint, so we can't check it here
+            # We'll add a root validator for this
+            pass
+        return v
+
+    @validator("profile")
+    def validate_profile(cls, v):
+        if v is not None and not v.strip():
+            return None  # Convert empty string to None
+        return v.strip() if v else v
+
+    class Config:
+        # Allow extra fields for forward compatibility
+        extra = "forbid"
+        # Use enum values for serialization
+        use_enum_values = True
+        # Example for documentation
+        schema_extra = {
+            "example": {
+                "bucket": "gcover-assets-prod",
+                "profile": "gcover-aws-profile",
+                "upload_method": "auto",
+                "lambda_endpoint": "https://api.example.com/presigned-url",
+                "totp_secret": "JBSWY3DPEHPK3PXP",
+                "proxy": {"https_proxy": "http://proxy.company.com:8080"},
+                "upload_timeout": 300,
+                "max_retries": 3,
+            }
+        }
+
+    # Root validator for cross-field validation
+    @validator("totp_token", always=True)
+    def validate_totp_configuration(cls, v, values):
+        """Validate TOTP configuration consistency"""
+        upload_method = values.get("upload_method")
+        lambda_endpoint = values.get("lambda_endpoint")
+        totp_secret = values.get("totp_secret")
+
+        # If using presigned method, need Lambda endpoint
+        if upload_method == "presigned" and not lambda_endpoint:
+            raise ValueError(
+                "Lambda endpoint is required when upload_method is 'presigned'"
+            )
+
+        # If Lambda endpoint is provided, should have at least one TOTP method
+        if lambda_endpoint and not (totp_secret or v):
+            raise ValueError(
+                "Either totp_secret or totp_token is required when lambda_endpoint is provided"
+            )
+
+        # Can't have both TOTP secret and token (token overrides secret)
+        if totp_secret and v:
+            # This is actually OK - token overrides secret, just log a warning
+            pass
+
+        return v
+
+    # Convenience properties
+    @property
+    def has_proxy_config(self) -> bool:
+        """Check if proxy configuration is provided"""
+        return self.proxy.http_proxy is not None or self.proxy.https_proxy is not None
+
+    @property
+    def has_totp_auth(self) -> bool:
+        """Check if TOTP authentication is configured"""
+        return self.totp_secret is not None or self.totp_token is not None
+
+    @property
+    def can_use_presigned(self) -> bool:
+        """Check if presigned URL upload can be used"""
+        return self.lambda_endpoint is not None and self.has_totp_auth
+
+    @property
+    def proxy_dict(self) -> dict:
+        """Get proxy configuration as dictionary for boto3"""
+        proxy_config = {}
+        if self.proxy.http_proxy:
+            proxy_config["http"] = self.proxy.http_proxy
+        if self.proxy.https_proxy:
+            proxy_config["https"] = self.proxy.https_proxy
+        return proxy_config
 
 
 class GlobalConfig(BaseModel):
