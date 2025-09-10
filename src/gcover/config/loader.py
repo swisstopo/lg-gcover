@@ -2,11 +2,15 @@
 """
 Configuration loader supporting separate environment files
 """
+
 import os
 import yaml
 from pathlib import Path
 from typing import Optional
+from rich.console import Console
 from .models import AppConfig
+
+console = Console()
 
 
 class ConfigManager:
@@ -16,12 +20,11 @@ class ConfigManager:
         self._config: Optional[AppConfig] = None
 
     def load_config(
-        self,
-        config_path: Optional[Path] = None,
-        environment: str = "development"
+        self, config_path: Optional[Path] = None, environment: str = "development"
     ) -> AppConfig:
         """Load configuration with separate environment files"""
-        print(f"Environment: {environment}")
+        # print(f"Environment: {environment}")
+        console.print(f"[blue]Environment: {environment}[/blue]")
 
         # 1. Load base configuration
         base_config_data = self._load_base_config(config_path)
@@ -51,9 +54,9 @@ class ConfigManager:
         if config_path is None:
             config_path = self._find_base_config_file()
 
-        print(f"🔧 Loading base config: {config_path}")
+        console.log(f"🔧 Loading base config: {config_path}")
 
-        with open(config_path, 'r') as f:
+        with open(config_path, "r") as f:
             # Handle both single YAML and multi-document YAML
             configs = list(yaml.safe_load_all(f))
 
@@ -68,7 +71,9 @@ class ConfigManager:
 
         return base_config
 
-    def _load_environment_config(self, base_config_path: Optional[Path], environment: str) -> Optional[dict]:
+    def _load_environment_config(
+        self, base_config_path: Optional[Path], environment: str
+    ) -> Optional[dict]:
         """Load environment-specific configuration file"""
 
         # Try to find environment file in multiple locations
@@ -76,15 +81,17 @@ class ConfigManager:
 
         for env_path in env_paths:
             if env_path.exists():
-                print(f"🔧 Loading environment config: {env_path}")
+                console.log(f"🔧 Loading environment config: {env_path}")
 
-                with open(env_path, 'r') as f:
+                with open(env_path, "r") as f:
                     env_config = yaml.safe_load(f)
 
                 if env_config:
                     return env_config
                 else:
-                    print(f"⚠️  Environment config is empty: {env_path}")
+                    console.log(
+                        f"[yellow]⚠️  Environment config is empty: {env_path}[/yellow]"
+                    )
 
         print(f"⚠️  No environment config found for '{environment}'")
         return None
@@ -95,7 +102,7 @@ class ConfigManager:
             Path("config/gcover_config.yaml"),
             Path("config/config.yaml"),
             Path("~/.config/gcover/config.yaml").expanduser(),
-            Path("/etc/gcover/config.yaml")
+            Path("/etc/gcover/config.yaml"),
         ]
 
         for path in search_paths:
@@ -106,7 +113,9 @@ class ConfigManager:
             f"No base configuration file found. Searched: {[str(p) for p in search_paths]}"
         )
 
-    def _find_environment_config_paths(self, base_config_path: Optional[Path], environment: str) -> list[Path]:
+    def _find_environment_config_paths(
+        self, base_config_path: Optional[Path], environment: str
+    ) -> list[Path]:
         """Find possible environment configuration file paths"""
 
         if base_config_path:
@@ -119,11 +128,9 @@ class ConfigManager:
             # config/environments/development.yaml
             base_dir / "environments" / f"{environment}.yaml",
             base_dir / "environments" / f"{environment}.yml",
-
             # config/development.yaml
             base_dir / f"{environment}.yaml",
             base_dir / f"{environment}.yml",
-
             # config/env/development.yaml
             base_dir / "env" / f"{environment}.yaml",
             base_dir / "env" / f"{environment}.yml",
@@ -133,13 +140,13 @@ class ConfigManager:
 
     def _is_environment_section(self, config: dict) -> bool:
         """Check if a config section is an environment override"""
-        env_keys = ['environment', 'env', '_environment']
+        env_keys = ["environment", "env", "_environment"]
         return any(key in config for key in env_keys)
 
     def _merge_configs(self, base: dict, override: dict) -> None:
         """Recursively merge configuration dictionaries"""
         for key, value in override.items():
-            if key.startswith('_'):  # Skip meta keys like _environment
+            if key.startswith("_"):  # Skip meta keys like _environment
                 continue
 
             if key in base and isinstance(base[key], dict) and isinstance(value, dict):
@@ -153,19 +160,19 @@ class ConfigManager:
     def _apply_env_overrides(self, config: dict) -> None:
         """Apply environment variable overrides"""
         # Global overrides
-        self._apply_section_env_overrides(config.get('global', {}), 'GCOVER_GLOBAL_')
+        self._apply_section_env_overrides(config.get("global", {}), "GCOVER_GLOBAL_")
 
         # Module-specific overrides
-        for module in ['gdb', 'sde', 'schema', 'qa']:
+        for module in ["gdb", "sde", "schema", "qa"]:
             if module in config:
-                prefix = f'GCOVER_{module.upper()}_'
+                prefix = f"GCOVER_{module.upper()}_"
                 self._apply_section_env_overrides(config[module], prefix)
 
     def _apply_section_env_overrides(self, config_section: dict, prefix: str):
         """Apply environment overrides to a config section"""
         for env_var, value in os.environ.items():
             if env_var.startswith(prefix):
-                config_path = env_var[len(prefix):].lower().split('_')
+                config_path = env_var[len(prefix) :].lower().split("_")
                 self._set_nested_value(config_section, config_path, value)
                 print(f"🔧 Env override: {env_var} = {value}")
 
@@ -184,8 +191,7 @@ _config_manager = ConfigManager()
 
 
 def load_config(
-    config_path: Optional[Path] = None,
-    environment: str = "development"
+    config_path: Optional[Path] = None, environment: str = "development"
 ) -> AppConfig:
     """Load configuration with separate environment files"""
     return _config_manager.load_config(config_path, environment)
@@ -198,8 +204,7 @@ def get_config() -> AppConfig:
 
 # Debug helper function
 def debug_config_loading(
-    config_path: Optional[Path] = None,
-    environment: str = "development"
+    config_path: Optional[Path] = None, environment: str = "development"
 ) -> None:
     """Debug configuration loading process"""
     print(f"\n🔍 DEBUG: Loading config for environment '{environment}'")
@@ -209,12 +214,16 @@ def debug_config_loading(
     try:
         # Load base config
         base_config = manager._load_base_config(config_path)
-        print(f"📄 Base config log_level: {base_config.get('global', {}).get('log_level', 'NOT_SET')}")
+        print(
+            f"📄 Base config log_level: {base_config.get('global', {}).get('log_level', 'NOT_SET')}"
+        )
 
         # Load environment config
         env_config = manager._load_environment_config(config_path, environment)
         if env_config:
-            print(f"🌍 Environment config log_level: {env_config.get('global', {}).get('log_level', 'NOT_SET')}")
+            print(
+                f"🌍 Environment config log_level: {env_config.get('global', {}).get('log_level', 'NOT_SET')}"
+            )
         else:
             print("🌍 No environment config loaded")
 

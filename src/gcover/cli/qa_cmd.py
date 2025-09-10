@@ -30,7 +30,6 @@ OUTPUT_FORMATS = ["csv", "xlsx", "json"]
 GROUP_BY_CHOICES = ["mapsheets", "work_units", "lots"]
 
 
-
 DEFAULT_ZONES_PATH = files("gcover.data").joinpath("administrative_zones.gpkg")
 
 
@@ -764,7 +763,7 @@ def generate_dashboard(ctx, days_back: int, output: Path):
         temp_dir=qa_config.temp_dir,
         s3_bucket=s3_bucket,
         s3_profile=s3_profile,
-        max_workers=qa_config.max_workers,
+        max_workers=global_config.max_workers,
     )
 
     try:

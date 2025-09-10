@@ -43,7 +43,7 @@ def get_configs(ctx) -> tuple[GDBConfig, GlobalConfig, str, bool]:
     app_config: AppConfig = load_config(
         environment=ctx.obj["environment"]
     )  # ctx.obj["app_config"]
-    logger.info(f"env: {ctx.obj['environment']}")
+    logger.info(f"get_configs: env: {ctx.obj['environment']}")
     return (
         app_config.gdb,
         app_config.global_,
@@ -71,6 +71,7 @@ def gdb(ctx):
 def init(ctx):
     """Initialize GDB management system"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
+    http_proxy = None
 
     rprint(f"[cyan]Initializing GDB system ({environment})...[/cyan]")
 
@@ -82,6 +83,8 @@ def init(ctx):
         # Test S3 using global config
         s3_bucket = gdb_config.get_s3_bucket(global_config)
         s3_profile = gdb_config.get_s3_profile(global_config)
+        http_proxy = global_config.proxy
+        rprint(f"[green]✅ Proxy: {http_proxy}[/green]")
 
         s3 = S3Uploader(s3_bucket, s3_profile)
         rprint("[green]✅ S3 connection ready[/green]")
