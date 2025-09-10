@@ -19,6 +19,8 @@ from rich import print as rprint
 
 from gcover.gdb.manager import GDBAssetManager
 from gcover.gdb.storage import S3Uploader, MetadataDB
+from gcover.gdb.storage import S3Uploader, MetadataDB, TOTPGenerator
+
 
 # from gcover.gdb.config import  load_config TODO
 from gcover.config import load_config, AppConfig
@@ -64,6 +66,25 @@ def gdb(ctx):
     ctx.obj.setdefault("environment", "development")
     ctx.obj.setdefault("verbose", False)
     ctx.obj.setdefault("config_path", None)
+
+
+@gdb.command()
+@click.option("--secret", type=str, help="TOTP secret (base32 encoded)")
+@click.option("--time-step", type=int, default=30, help="Time step in seconds")
+@click.option("--digits", type=int, default=6, help="Number of digits in token")
+def generate_totp(secret, time_step, digits):
+    """Generate TOTP token for Lambda authentication"""
+    if not secret:
+        rprint("[red]TOTP secret is required[/red]")
+        sys.exit(1)
+
+    try:
+        token = TOTPGenerator.generate_totp(secret, time_step, digits)
+        rprint(f"[green]TOTP Token: {token}[/green]")
+        rprint(f"[cyan]Valid for ~{time_step} seconds[/cyan]")
+    except Exception as e:
+        rprint(f"[red]Error generating TOTP: {e}[/red]")
+        sys.exit(1)
 
 
 @gdb.command()
@@ -532,6 +553,10 @@ def process_all(
     """Process all GDB assets found by filesystem scan"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
 
+    s3_config = global_config.s3
+    console.log("=== config ===")
+    console.log(s3_config)
+
     try:
         # Get S3 settings from global config
         s3_bucket = gdb_config.get_s3_bucket(global_config)
@@ -539,10 +564,11 @@ def process_all(
 
         manager = GDBAssetManager(
             base_paths=gdb_config.base_paths,
-            s3_bucket=s3_bucket,
+            # s3_bucket=s3_bucket,
+            s3_config=s3_config,
             db_path=gdb_config.db_path,
             temp_dir=gdb_config.temp_dir,
-            aws_profile=s3_profile,
+            # aws_profile=s3_profile,
         )
 
         rprint("[cyan]Scanning filesystem for GDB assets...[/cyan]")
