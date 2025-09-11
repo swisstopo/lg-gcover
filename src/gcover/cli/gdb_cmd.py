@@ -465,7 +465,7 @@ def status(ctx):
                 rprint(f"  {asset_type}: {count}")
 
         if verbose:
-            rprint(f"\n[dim]Configuration Details:[/dim]")
+            rprint("\n[dim]Configuration Details:[/dim]")
             rprint(f"[dim]  Log Level: {global_config.log_level}[/dim]")
             rprint(f"[dim]  Max Workers: {gdb_config.processing.max_workers}[/dim]")
             rprint(
@@ -720,12 +720,12 @@ def process_all(
                     if success:
                         stats["processed"] += 1
                         if verbose:
-                            rprint(f"  [green]✅ Success[/green]")
+                            rprint("  [green]✅ Success[/green]")
                     else:
                         stats["failed"] += 1
                         failed_assets.append(asset.path.name)
                         if verbose:
-                            rprint(f"  [red]❌ Failed[/red]")
+                            rprint("  [red]❌ Failed[/red]")
 
                         if not continue_on_error:
                             rprint(
@@ -748,7 +748,7 @@ def process_all(
                         break
 
         # Final results
-        rprint(f"\n[cyan]Processing Complete![/cyan]")
+        rprint("\n[cyan]Processing Complete![/cyan]")
 
         results_table = Table(title="Processing Results")
         results_table.add_column("Metric", style="cyan")
@@ -770,7 +770,7 @@ def process_all(
         console.print(results_table)
 
         if failed_assets:
-            rprint(f"\n[red]Failed assets:[/red]")
+            rprint("\n[red]Failed assets:[/red]")
             for failed in failed_assets[:10]:  # Show first 10 failures
                 rprint(f"  - {failed}")
             if len(failed_assets) > 10:
@@ -1129,18 +1129,18 @@ def latest_by_rc(ctx, asset_type, days_back, show_couple):
                 else:
                     time_diff = f"{days_apart} days apart"
 
-                rprint(f"\n[green]✅ Release Couple Found:[/green]")
+                rprint("\n[green]✅ Release Couple Found:[/green]")
                 rprint(f"  RC1: {rc1_date.strftime('%Y-%m-%d %H:%M')}")
                 rprint(f"  RC2: {rc2_date.strftime('%Y-%m-%d %H:%M')}")
                 rprint(f"  Time difference: {time_diff}")
             else:
                 rprint(
-                    f"\n[yellow]⚠️  Latest RC1 and RC2 are not close enough to form a release couple[/yellow]"
+                    "\n[yellow]⚠️  Latest RC1 and RC2 are not close enough to form a release couple[/yellow]"
                 )
 
         # Summary for script usage
         if latest_assets:
-            rprint(f"\n[dim]Latest dates:[/dim]")
+            rprint("\n[dim]Latest dates:[/dim]")
             for rc_name, data in latest_assets.items():
                 rprint(
                     f"[dim]  {rc_name}: {data['timestamp'].strftime('%Y-%m-%d')}[/dim]"
@@ -1246,7 +1246,7 @@ def latest_topology(ctx, max_days_apart):
         # Answer the user's specific question
         if len(latest_assets) >= 1:
             rprint(
-                f"\n[cyan]Answer: The latest topology verification tests are:[/cyan]"
+                "\n[cyan]Answer: The latest topology verification tests are:[/cyan]"
             )
             for rc_name in ["RC1", "RC2"]:
                 if rc_name in latest_assets:

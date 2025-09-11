@@ -141,7 +141,7 @@ def process_single(
         )
 
         # Display summary
-        console.print(f"\n[green]✅ Processing complete![/green]")
+        console.print("\n[green]✅ Processing complete![/green]")
         console.print(f"Verification Type: {summary.verification_type}")
         console.print(f"RC Version: {summary.rc_version}")
         console.print(f"Timestamp: {summary.timestamp}")
@@ -184,7 +184,7 @@ def process_single(
             tips.append("Check 'gcover qa stats' for analysis")
 
             if tips:
-                console.print(f"\n[dim]💡 Tips:[/dim]")
+                console.print("\n[dim]💡 Tips:[/dim]")
                 for tip in tips:
                     console.print(f"[dim]  - {tip}[/dim]")
 
@@ -399,7 +399,7 @@ def process_all(
                     continue
 
             # Final summary
-            console.print(f"\n[bold]Batch processing complete![/bold]")
+            console.print("\n[bold]Batch processing complete![/bold]")
             console.print(f"✅ Processed: {processed}")
             console.print(f"⚠️  Skipped: {skipped}")
             console.print(f"❌ Failed: {failed}")
@@ -469,7 +469,7 @@ def diagnose_gdb(gdb_path: Path, layer: Optional[str], verbose: bool):
             except Exception as e:
                 console.print(f"[red]Error diagnosing layer {layer_name}: {e}[/red]")
 
-        console.print(f"\n[bold green]✅ Diagnosis complete[/bold green]")
+        console.print("\n[bold green]✅ Diagnosis complete[/bold green]")
         console.print(
             "[dim]Use 'gcover qa process --help' for processing options[/dim]"
         )
@@ -698,7 +698,7 @@ def show_stats(
         console.print(table)
 
         # Summary stats
-        console.print(f"\n[bold]Summary[/bold]")
+        console.print("\n[bold]Summary[/bold]")
         console.print(f"Total unique tests: {df['test_name'].nunique()}")
         console.print(f"Total issues: {df['total_count'].sum():,}")
         console.print(
@@ -1035,7 +1035,7 @@ def _auto_detect_qa_couple(
             )
 
         # Success!
-        console.print(f"[green]✅ Found latest QA couple:[/green]")
+        console.print("[green]✅ Found latest QA couple:[/green]")
         console.print(f"   RC1 ({info['RC1']['date']}): {rc1_path.name}")
         console.print(f"   RC2 ({info['RC2']['date']}): {rc2_path.name}")
 
@@ -1191,7 +1191,7 @@ def aggregate(
         )
         zones_count = stats_df[analyzer._get_zone_id_column(group_by.lower())].nunique()
 
-        click.echo(f"✅ Aggregation complete!")
+        click.echo("✅ Aggregation complete!")
         click.echo(
             f"   📊 {total_issues:,} total issues across {zones_count} {group_by}"
         )
@@ -1317,7 +1317,7 @@ def extract(
         output_file = output.with_suffix(ext)
 
         # Summary
-        click.echo(f"✅ Extraction complete!")
+        click.echo("✅ Extraction complete!")
         click.echo(f"   📊 {stats['total_issues']:,} total issues extracted")
         click.echo(f"   🔵 {stats['rc1_issues']:,} RC1 issues")
         click.echo(f"   🟢 {stats['rc2_issues']:,} RC2 issues")
@@ -1327,9 +1327,9 @@ def extract(
         )
 
         if filter_by_source:
-            click.echo(f"   🎯 Source filtering: enabled (mapsheet-specific)")
+            click.echo("   🎯 Source filtering: enabled (mapsheet-specific)")
         else:
-            click.echo(f"   🎯 Source filtering: disabled (all issues)")
+            click.echo("   🎯 Source filtering: disabled (all issues)")
 
     except Exception as e:
         logger.error(f"Extraction failed: {e}")
@@ -1385,7 +1385,7 @@ def show_latest_couple(ctx, verbose: bool):
                     contents = list(gdb_path.iterdir())
                     console.print(f"   Contents: {len(contents)} items")
 
-        console.print(f"\n[green]✅ Ready for QA processing![/green]")
+        console.print("\n[green]✅ Ready for QA processing![/green]")
         console.print(
             "[dim]Use 'gcover qa extract' or 'gcover qa aggregate' without --rc1-gdb/--rc2-gdb to use these files.[/dim]"
         )

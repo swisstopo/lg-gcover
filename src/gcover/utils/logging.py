@@ -305,7 +305,7 @@ class GCoverLogger:
 
     def show_log_info(self):
         """Display logging information."""
-        self.console.print(f"[bold]Logging Configuration:[/bold]")
+        self.console.print("[bold]Logging Configuration:[/bold]")
         self.console.print(f"  Environment: {self._environment}")
         self.console.print(f"  Level: {self._current_level}")
         self.console.print(f"  Log file: {self._log_file}")

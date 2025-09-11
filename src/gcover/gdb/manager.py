@@ -62,7 +62,7 @@ class GDBAssetManager:
         self.temp_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize S3 uploader with enhanced configuration
-        logger.debug(f"GDBAssetMananger: init()")
+        logger.debug("GDBAssetMananger: init()")
         self.s3_uploader = self._create_s3_uploader(s3_config)
         logger.debug(self.s3_uploader)
         self.metadata_db = MetadataDB(db_path)
