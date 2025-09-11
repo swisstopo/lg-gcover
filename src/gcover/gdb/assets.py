@@ -173,6 +173,10 @@ class BackupGDBAsset(GDBAsset):
 class VerificationGDBAsset(GDBAsset):
     """GDB asset for verifications (TQA, Topology)"""
 
+    # TODO
+    def __str__(self):
+        return f"<VerificationGDBAsset: {self.path} >"
+
     def _parse_path(self) -> GDBAssetInfo:
         """Parse verification path structure"""
         if self.path.name.lower() == "progress.gdb":
@@ -185,6 +189,8 @@ class VerificationGDBAsset(GDBAsset):
         test_type = None
         rc_str = None
         timestamp_dir = None
+
+        logger.info(f"Inside: {parts}")  # TODO
 
         for i, part in enumerate(parts):
             if part in ["TechnicalQualityAssurance", "Topology"]:

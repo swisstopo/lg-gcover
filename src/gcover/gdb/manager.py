@@ -151,13 +151,13 @@ class GDBAssetManager:
 
     def create_asset(self, gdb_path: Path) -> GDBAsset:
         """Factory method to create appropriate asset type"""
-        path_str = gdb_path.as_posix()
+        parts = [part.lower() for part in gdb_path.parts]
 
-        if "/GCOVER/" in path_str and gdb_path.name.endswith(".gdb"):
+        if "gcover" in parts and gdb_path.name.endswith(".gdb"):
             return BackupGDBAsset(gdb_path)
-        elif "/Verifications/" in path_str and gdb_path.name.endswith(".gdb"):
+        elif "verifications" in parts and gdb_path.name.endswith(".gdb"):
             return VerificationGDBAsset(gdb_path)
-        elif "/Increment/" in path_str and gdb_path.name.endswith(".gdb"):
+        elif "increment" in parts and gdb_path.name.endswith(".gdb"):
             return IncrementGDBAsset(gdb_path)
         else:
             raise ValueError(f"Cannot determine asset type for: {gdb_path}")

@@ -128,6 +128,7 @@ def init(ctx):
 def scan(ctx):
     """Scan filesystem for GDB assets"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
+    s3_config = global_config.s3
 
     try:
         # Get S3 settings from global config
@@ -136,10 +137,11 @@ def scan(ctx):
 
         manager = GDBAssetManager(
             base_paths=gdb_config.base_paths,
-            s3_bucket=s3_bucket,  # From global config
+            # s3_bucket=s3_bucket,
+            s3_config=s3_config,
             db_path=gdb_config.db_path,
             temp_dir=gdb_config.temp_dir,
-            aws_profile=s3_profile,  # From global config
+            # aws_profile=s3_profile,
         )
 
         rprint("[cyan]Scanning filesystem...[/cyan]")
@@ -199,10 +201,11 @@ def sync(ctx, dry_run):
 
         manager = GDBAssetManager(
             base_paths=gdb_config.base_paths,
-            s3_bucket=s3_bucket,
+            # s3_bucket=s3_bucket,
+            s3_config=s3_config,
             db_path=gdb_config.db_path,
             temp_dir=gdb_config.temp_dir,
-            aws_profile=s3_profile,
+            # aws_profile=s3_profile,
         )
 
         if dry_run:
@@ -1163,6 +1166,7 @@ def latest_by_rc(ctx, asset_type, days_back, show_couple):
 def latest_topology(ctx, max_days_apart):
     """Show the latest topology verification tests for each RC"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
+    s3_config = global_config.s3
 
     try:
         # Create manager instance
@@ -1263,6 +1267,7 @@ def latest_topology(ctx, max_days_apart):
 def latest_verifications(ctx):
     """Show latest verification runs for all verification types"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
+    s3_config = global_config.s3
 
     try:
         # Create manager instance
