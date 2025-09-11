@@ -35,7 +35,6 @@ from .assets import (
 )
 
 
-
 class TOTPGenerator:
     """Generate TOTP tokens for authentication"""
 
@@ -74,7 +73,6 @@ class TOTPGenerator:
         return str(token).zfill(digits)
 
 
-
 class S3Uploader:
     """Enhanced S3 uploader with presigned URL support"""
 
@@ -107,7 +105,6 @@ class S3Uploader:
         self.totp_token = totp_token
         self.proxy_settings = proxy_settings or {}
         self.upload_method = upload_method
-
 
         # Initialize S3 client for direct upload (when needed)
         self.s3_client = None
@@ -191,6 +188,7 @@ class S3Uploader:
             return None
 
         totp_token = self._get_totp_token()
+        logger.debug(f"TOKEN: {totp_token}")
         if not totp_token:
             logger.error("No TOTP token available for Lambda authentication")
             return None
@@ -200,6 +198,12 @@ class S3Uploader:
                 "bucket": self.bucket_name,
                 "key": s3_key,
                 "file_size": file_size,
+            }
+            payload = {
+                "object_key": s3_key,
+                "totp_code": totp_token,
+                "expiration_hours": 24,
+                "content_type": "application/octet-stream",
             }
 
             headers = {
@@ -214,7 +218,7 @@ class S3Uploader:
 
             if response.status_code == 200:
                 data = response.json()
-                logger.debug("Presigned URL obtained successfully")
+                logger.debug(f"Presigned URL obtained successfully: {data}")
                 return data
             else:
                 logger.error(
@@ -241,14 +245,20 @@ class S3Uploader:
             file_size = file_path.stat().st_size
             presigned_data = self._get_presigned_url(s3_key, file_size)
 
-            if not presigned_data:
+            presigned_url = (
+                presigned_data.get("presigned_url") if presigned_data else None
+            )
+
+            if not presigned_url:
                 logger.error("Could not obtain presigned URL")
                 return False
+
+            logger.debug(f"Uploading with {presigned_url}")
 
             # Upload using presigned URL
             with open(file_path, "rb") as file_obj:
                 response = requests.put(
-                    presigned_data["upload_url"],
+                    presigned_url,
                     data=file_obj,
                     headers=presigned_data.get("headers", {}),
                     timeout=300,  # 5 minutes timeout for upload
@@ -256,7 +266,7 @@ class S3Uploader:
 
             if response.status_code in [200, 204]:
                 logger.info(
-                    f"Successfully uploaded {file_path} to s3://{self.bucket_name}/{s3_key} via presigned URL"
+                    f"presigned URL - Successfully uploaded {file_path} to s3://{self.bucket_name}/{s3_key}"
                 )
                 return True
             else:
@@ -282,15 +292,14 @@ class S3Uploader:
             logger.error("S3 client not available for direct upload")
             return False
 
-
         try:
             self.s3_client.upload_file(str(file_path), self.bucket_name, s3_key)
             logger.info(
-                f"Successfully uploaded {file_path} to s3://{self.bucket_name}/{s3_key} via direct upload"
+                f"Direct upload (boto3) - Successfully uploaded {file_path} to s3://{self.bucket_name}/{s3_key}"
             )
             return True
         except ClientError as e:
-            logger.error(f"Direct upload failed: {e}")
+            logger.error(f"Direct upload (boto3) failed: {e}")
             return False
 
     def upload_file(self, file_path: Path, s3_key: str) -> bool:
@@ -341,7 +350,6 @@ class S3Uploader:
             logger.warning("Cannot check file existence without S3 client")
             return False
 
-
     def download_file(self, s3_key: str, local_path: Path) -> bool:
         """
         Download file from S3
@@ -365,11 +373,9 @@ class S3Uploader:
             logger.error(f"Download failed: {e}")
             return False
 
->>>>>>> 7926a08 (trying)
     def __repr__(self):
         method = "presigned" if self.use_presigned else "direct"
         return f"<gcover.gdb.storage.S3Uploader: bucket: {self.bucket_name}, profile: {self.profile_name}, method: {method}>"
-
 
 
 class MetadataDB:
