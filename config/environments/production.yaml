@@ -8,7 +8,8 @@ global:
     profile: "gcover_bucket"
   logging:
     file:
-      path: r"X:\mom\prod_{date}.log" # System log location
+      path: "\\\\v0t0020a.adr.admin.ch/prod/lgX/TOPGIS/gcover/logs/prod_{date}.log" # System log location
+
       retention: "90 days" # Keep production logs longer
     console:
       format: "simple" # Clean console output
