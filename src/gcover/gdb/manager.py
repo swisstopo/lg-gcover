@@ -255,6 +255,106 @@ class GDBAssetManager:
         """
         return self.s3_uploader.download_file(s3_key, local_path)
 
+    def get_latest_release_couple(
+        self, asset_type: Optional[str] = None, max_days_apart: int = 7
+    ) -> Optional[Tuple[datetime, datetime]]:
+        """
+        Get the latest RC1/RC2 release couple (assets created close to each other).
+
+        Args:
+            asset_type: Filter by specific asset type
+            max_days_apart: Maximum days between RC1 and RC2 releases to consider them a couple
+
+        Returns:
+            Tuple of (RC1_datetime, RC2_datetime) or None if no couple found
+        """
+        latest_assets = self.get_latest_assets_by_rc(asset_type=asset_type)
+
+        if "RC1" not in latest_assets or "RC2" not in latest_assets:
+            return None
+
+        rc1_date = latest_assets["RC1"]["timestamp"]
+        rc2_date = latest_assets["RC2"]["timestamp"]
+
+        # Check if they're within the specified days apart
+        days_diff = abs((rc1_date - rc2_date).days)
+
+        if days_diff <= max_days_apart:
+            return (rc1_date, rc2_date)
+        else:
+            logger.warning(
+                f"Latest RC1 ({rc1_date.date()}) and RC2 ({rc2_date.date()}) "
+                f"are {days_diff} days apart (max allowed: {max_days_apart})"
+            )
+            return None
+
+    def get_latest_assets_by_rc(
+        self, asset_type: Optional[str] = None, days_back: Optional[int] = 30
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Get the latest asset for each RC (RC1/RC2) for a given asset type.
+
+        Args:
+            asset_type: Filter by specific asset type (e.g., 'verification_topology')
+            days_back: Only consider assets from the last N days (None for all)
+
+        Returns:
+            Dict with RC names as keys and asset info as values:
+            {
+                'RC1': {'timestamp': datetime, 'path': str, 'size': int, ...},
+                'RC2': {'timestamp': datetime, 'path': str, 'size': int, ...}
+            }
+        """
+        if asset_type and asset_type not in [t.value for t in AssetType]:
+            valid_types = [t.value for t in AssetType]
+            raise ValueError(
+                f"Invalid asset_type: '{asset_type}'. Valid types: {valid_types}"
+            )
+
+        with duckdb.connect(str(self.metadata_db.db_path)) as conn:
+            query = f"""
+                WITH ranked_assets AS (
+                    SELECT *,
+                           CASE 
+                               WHEN release_candidate = '{ReleaseCandidate.RC1.value}' THEN 'RC1'
+                               WHEN release_candidate = '{ReleaseCandidate.RC2.value}' THEN 'RC2'
+                               ELSE 'Unknown'
+                           END as rc_name,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY release_candidate 
+                               ORDER BY timestamp DESC
+                           ) as rn
+                    FROM gdb_assets 
+                    WHERE 1=1
+                """
+
+            # Add asset type filter
+            if asset_type:
+                query += f" AND asset_type = '{asset_type}'"
+
+            # Add days filter
+            if days_back is not None:
+                query += f" AND timestamp >= CURRENT_DATE - INTERVAL {days_back} DAYS"
+
+            query += """
+                )
+                SELECT rc_name, timestamp, path, asset_type, file_size, uploaded, s3_key
+                FROM ranked_assets 
+                WHERE rn = 1 AND rc_name IN ('RC1', 'RC2')
+                ORDER BY rc_name
+                """
+
+            results = conn.execute(query).fetchall()
+            columns = [desc[0] for desc in conn.description]
+
+        latest_assets = {}
+        for row in results:
+            data = dict(zip(columns, row))
+            rc_name = data.pop("rc_name")
+            latest_assets[rc_name] = data
+
+        return latest_assets
+
 
 # Backward compatibility function for existing code
 def create_manager_from_legacy_params(
