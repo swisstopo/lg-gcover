@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Tuple
 
 import boto3
 import duckdb
@@ -24,6 +24,7 @@ from .assets import (
     GDBAssetInfo,
     IncrementGDBAsset,
     VerificationGDBAsset,
+    ReleaseCandidate,
 )
 
 from .storage import S3Uploader, MetadataDB
@@ -315,16 +316,16 @@ class GDBAssetManager:
             query = f"""
                 WITH ranked_assets AS (
                     SELECT *,
-                           CASE 
+                           CASE
                                WHEN release_candidate = '{ReleaseCandidate.RC1.value}' THEN 'RC1'
                                WHEN release_candidate = '{ReleaseCandidate.RC2.value}' THEN 'RC2'
                                ELSE 'Unknown'
                            END as rc_name,
                            ROW_NUMBER() OVER (
-                               PARTITION BY release_candidate 
+                               PARTITION BY release_candidate
                                ORDER BY timestamp DESC
                            ) as rn
-                    FROM gdb_assets 
+                    FROM gdb_assets
                     WHERE 1=1
                 """
 
@@ -339,7 +340,7 @@ class GDBAssetManager:
             query += """
                 )
                 SELECT rc_name, timestamp, path, asset_type, file_size, uploaded, s3_key
-                FROM ranked_assets 
+                FROM ranked_assets
                 WHERE rn = 1 AND rc_name IN ('RC1', 'RC2')
                 ORDER BY rc_name
                 """
@@ -354,6 +355,53 @@ class GDBAssetManager:
             latest_assets[rc_name] = data
 
         return latest_assets
+
+    def get_latest_verification_runs(self) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Get the latest verification runs grouped by verification type.
+
+        Returns:
+            Dict with verification types as keys and list of latest runs as values
+        """
+        with duckdb.connect(str(self.metadata_db.db_path)) as conn:
+            # Use the actual RC values
+            rc1_value = ReleaseCandidate.RC1.value  # "2016-12-31"
+            rc2_value = ReleaseCandidate.RC2.value  # "2030-12-31"
+
+            query = f"""
+                WITH latest_per_type_rc AS (
+                    SELECT *,
+                           CASE
+                               WHEN release_candidate = '{rc1_value}' THEN 'RC1'
+                               WHEN release_candidate = '{rc2_value}' THEN 'RC2'
+                               ELSE 'Unknown'
+                           END as rc_name,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY asset_type, release_candidate
+                               ORDER BY timestamp DESC
+                           ) as rn
+                    FROM gdb_assets
+                    WHERE asset_type LIKE 'verification_%'
+                )
+                SELECT asset_type, rc_name, timestamp, path, file_size, uploaded
+                FROM latest_per_type_rc
+                WHERE rn = 1 AND rc_name IN ('RC1', 'RC2')
+                ORDER BY asset_type, rc_name
+                """
+
+            results = conn.execute(query).fetchall()
+            columns = [desc[0] for desc in conn.description]
+
+        verification_runs = {}
+        for row in results:
+            data = dict(zip(columns, row))
+            asset_type = data["asset_type"]
+
+            if asset_type not in verification_runs:
+                verification_runs[asset_type] = []
+            verification_runs[asset_type].append(data)
+
+        return verification_runs
 
 
 # Backward compatibility function for existing code
