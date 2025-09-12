@@ -77,7 +77,7 @@ class FileGDBConverter:
             s3_prefix: S3 prefix for verification files
         """
         # TODO from .config import load_config
-        from gcover.config import load_config, AppConfig
+        # TODO no used from gcover.config import load_config, AppConfig
 
         self.s3_prefix = s3_prefix.rstrip("/") + "/"
         self.db_path = Path(db_path)
@@ -110,6 +110,7 @@ class FileGDBConverter:
 
     def _init_stats_tables(self):
         """Initialize DuckDB tables for statistics storage."""
+        logger.debug("Initializing table `gdb_summaries`")
         # Main summary table
         self.conn.execute("""
             CREATE SEQUENCE IF NOT EXISTS  gdb_summaries_id_seq START 1;
@@ -125,6 +126,7 @@ class FileGDBConverter:
         """)
 
         # Layer statistics table
+        logger.debug("Initializing table `layer_stats`")
         self.conn.execute("""
             CREATE SEQUENCE IF NOT EXISTS  layer_stats_id_seq START 1;
             CREATE TABLE IF NOT EXISTS layer_stats (
@@ -137,6 +139,7 @@ class FileGDBConverter:
         """)
 
         # Test statistics table
+        logger.debug("Initializing table `test_stats`")
         self.conn.execute("""
             CREATE SEQUENCE IF NOT EXISTS  test_stats_id_seq START 1;
             CREATE TABLE IF NOT EXISTS test_stats (

@@ -16,6 +16,24 @@ import warnings
 # Suppress shapely warnings for cleaner output
 warnings.filterwarnings("ignore", category=UserWarning, module="shapely")
 
+# Silence ogr warning
+def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
+    if category is RuntimeWarning and "organizePolygons()" in str(message):
+        logger.warning(f"{filename}:{lineno} - {message}")
+    else:
+        # fallback to default behavior
+        warnings._showwarnmsg_impl(warnings.WarningMessage(
+            message=message,
+            category=category,
+            filename=filename,
+            lineno=lineno,
+            file=file,
+            line=line
+        ))
+
+warnings.showwarning = custom_warning_handler
+
+
 
 class QAAnalyzer:
     """
@@ -352,8 +370,9 @@ class QAAnalyzer:
             None,
         )
 
+
         if not SOURCE_RC_COLUMN:
-            logger.warning(
+            logger.error(
                 f"No {','.join(SOURCE_COLUMN_NAMES)} (source RC) column found in mapsheets. Using all data."
             )
             # Fallback: combine all data without filtering
@@ -383,7 +402,9 @@ class QAAnalyzer:
         if not rc1_mapsheets.empty:
             rc1_data = self._read_qa_gdb(rc1_gdb)
             for layer_name, qa_gdf in rc1_data.items():
+                logger.info(f"Processing RC1 layer {layer_name}")
                 if qa_gdf.empty:
+
                     continue
 
                 filtered_gdf = self._spatial_join_with_zones(
@@ -393,6 +414,7 @@ class QAAnalyzer:
                     filtered_gdf["source_rc"] = "RC1"
                     all_filtered_data[f"{layer_name}_RC1"] = filtered_gdf
                     stats["rc1_issues"] += len(filtered_gdf)
+
 
         # Process RC2 issues with RC2 mapsheets
         if not rc2_mapsheets.empty:

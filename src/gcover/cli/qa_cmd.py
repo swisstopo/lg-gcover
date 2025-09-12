@@ -1307,7 +1307,7 @@ def extract(
                 output_format=output_format.lower(),
             )
         else:
-            logger.info("Extracting all issues (no source filtering)")
+            logger.warning("Extracting all issues (no source filtering)")
             stats = analyzer._extract_all_issues(
                 rc1_gdb, rc2_gdb, output, output_format.lower()
             )
