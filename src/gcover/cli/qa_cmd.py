@@ -107,9 +107,14 @@ def process_single(
 
     qa_config, global_config = get_qa_config(ctx)
 
+    console.log(qa_config)
+
     # Get S3 settings
     s3_bucket = qa_config.get_s3_bucket(global_config)
     s3_profile = qa_config.get_s3_profile(global_config)
+
+    if not output_dir:
+        output_dir = qa_config.output_dir
 
     if verbose:
         console.print(f"[dim]S3 Bucket: {s3_bucket}[/dim]")
@@ -127,6 +132,7 @@ def process_single(
         s3_bucket=s3_bucket,
         s3_profile=s3_profile,
         max_workers=global_config.max_workers,
+        s3_config=global_config.s3,
     )
 
     try:
@@ -345,6 +351,7 @@ def process_all(
             s3_bucket=s3_bucket,
             s3_profile=s3_profile,
             max_workers=global_config.max_workers,
+            s3_config=global_config,
         )
         console.print(
             f"\n[blue]Converted assets will be saved in: {qa_config.temp_dir}[/blue]"

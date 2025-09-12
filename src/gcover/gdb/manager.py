@@ -70,7 +70,7 @@ class GDBAssetManager:
 
         logger.info(f"Initialized {self.s3_uploader}")
 
-    def _create_s3_uploader(self, s3_config: Dict[str, Any]) -> S3Uploader:
+    def _create_s3_uploader(self, F) -> S3Uploader:
         """
         Create S3Uploader instance from configuration
 

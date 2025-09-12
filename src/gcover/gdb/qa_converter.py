@@ -21,6 +21,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from gcover.config import load_config, AppConfig
+from gcover.gdb.storage import S3Uploader
 
 console = Console()
 from loguru import logger
@@ -66,6 +67,7 @@ class FileGDBConverter:
         temp_dir: Union[str, Path],
         s3_bucket: str,
         s3_profile: str,
+        s3_config: Optional[Dict[str, Any]] = None,
         s3_prefix: str = "verifications/",
         max_workers: Optional[int] = None,
     ):
@@ -91,8 +93,16 @@ class FileGDBConverter:
         self.duckdb_path = db_path
 
         # Initialize S3 client with profile support
-        session = boto3.Session(profile_name=self.s3_profile)
-        self.s3_client = session.client("s3")
+        # session = boto3.Session(profile_name=self.s3_profile)
+        # self.s3_client = session.client("s3")
+
+        self.s3_uploader = S3Uploader(
+            bucket_name=s3_config.bucket,
+            aws_profile=s3_config.profile,
+            lambda_endpoint=s3_config.lambda_endpoint,
+            totp_secret=s3_config.lambda_endpoint,
+            proxy_settings=s3_config.proxy,
+        )
 
         # Initialize DuckDB connection
         console.print(f"DuckDB: {self.duckdb_path}")
@@ -404,8 +414,13 @@ class FileGDBConverter:
 
     def _upload_to_s3(self, local_path: Path, s3_key: str) -> bool:
         """Upload a file to S3."""
+        # Upload to S3
+
         try:
-            self.s3_client.upload_file(str(local_path), self.s3_bucket, s3_key)
+            if not self.s3_uploader.file_exists(s3_key):
+                uploaded = self.s3_uploader.upload_file(local_path, s3_key)
+            else:
+                logger.info(f"File already exists in S3: {s3_key}")
             logger.info(f"Uploaded to S3: s3://{self.s3_bucket}/{s3_key}")
             return True
 
