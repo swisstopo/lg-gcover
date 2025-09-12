@@ -653,6 +653,7 @@ def show_stats(
         s3_bucket=s3_bucket,
         s3_profile=s3_profile,
         max_workers=global_config.max_workers,
+        s3_config=global_config.s3,
     )
 
     try:
