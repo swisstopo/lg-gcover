@@ -7,24 +7,23 @@ store them in DuckDB, and query the results.
 """
 
 import sys
-from pathlib import Path
 from datetime import datetime
-from typing import Optional, List
-import click
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich.logging import RichHandler
-from loguru import logger
 from importlib.resources import files
+from pathlib import Path
+from typing import Optional
 
-from gcover.config import load_config, AppConfig
-from gcover.gdb.manager import GDBAssetManager
+import click
+from loguru import logger
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+
+from gcover.cli.gdb_cmd import get_latest_topology_verification_info
+from gcover.config import AppConfig, load_config
 from gcover.gdb.assets import AssetType
+from gcover.gdb.manager import GDBAssetManager
 from gcover.gdb.qa_converter import FileGDBConverter
 from gcover.qa.analyzer import QAAnalyzer
-from gcover.cli.gdb_cmd import get_latest_topology_verification_info
-
 
 OUTPUT_FORMATS = ["csv", "xlsx", "json"]
 GROUP_BY_CHOICES = ["mapsheets", "work_units", "lots"]
@@ -281,12 +280,14 @@ def process_all(
     }
 
     # Create asset manager
+    # TODO
     manager = GDBAssetManager(
         base_paths=base_paths,
-        s3_bucket=s3_bucket,
+        # s3_bucket=s3_bucket,
         db_path=qa_config.db_path,
         temp_dir=qa_config.temp_dir,
-        aws_profile=s3_profile,
+        # aws_profile=s3_profile,
+        s3_config=global_config.s3,
     )
 
     try:
@@ -351,7 +352,7 @@ def process_all(
             s3_bucket=s3_bucket,
             s3_profile=s3_profile,
             max_workers=global_config.max_workers,
-            s3_config=global_config,
+            s3_config=global_config.s3,
         )
         console.print(
             f"\n[blue]Converted assets will be saved in: {qa_config.temp_dir}[/blue]"
@@ -652,6 +653,7 @@ def show_stats(
         s3_bucket=s3_bucket,
         s3_profile=s3_profile,
         max_workers=global_config.max_workers,
+        s3_config=global_config.s3,
     )
 
     try:
@@ -771,6 +773,7 @@ def generate_dashboard(ctx, days_back: int, output: Path):
         s3_bucket=s3_bucket,
         s3_profile=s3_profile,
         max_workers=global_config.max_workers,
+        s3_config=global_config.s3,
     )
 
     try:
@@ -801,8 +804,8 @@ def generate_dashboard(ctx, days_back: int, output: Path):
 
 def _generate_dashboard_html(df, days_back: int) -> str:
     """Generate HTML dashboard content"""
-    import pandas as pd
     from datetime import datetime
+
 
     # Calculate metrics
     total_issues = df["total_count"].sum()
@@ -820,11 +823,11 @@ def _generate_dashboard_html(df, days_back: int) -> str:
     <title>GeoCover QA Dashboard</title>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                margin: 0; padding: 20px; background: #f8f9fa; }}
-        .header {{ background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; 
+        .header {{ background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;
                   box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
-        .metrics {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
+        .metrics {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
                    gap: 20px; margin-bottom: 30px; }}
         .metric {{ background: white; padding: 20px; border-radius: 8px; text-align: center;
                   box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
@@ -853,7 +856,7 @@ def _generate_dashboard_html(df, days_back: int) -> str:
         datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }</p>
     </div>
-    
+
     <div class="metrics">
         <div class="metric">
             <h3>Total Issues</h3>
@@ -872,10 +875,10 @@ def _generate_dashboard_html(df, days_back: int) -> str:
             <p class="value warning">{warning_issues:,}</p>
         </div>
     </div>
-    
+
     <div id="top-tests" class="chart"></div>
     <div id="issue-types" class="chart"></div>
-    
+
     <div class="table-container">
         <h2>📊 Recent Issues (Top 20)</h2>
         <table>
@@ -908,7 +911,7 @@ def _generate_dashboard_html(df, days_back: int) -> str:
             </tbody>
         </table>
     </div>
-    
+
     <script>
         // Top tests chart
         var topTests = {top_tests};
@@ -918,7 +921,7 @@ def _generate_dashboard_html(df, days_back: int) -> str:
             type: 'bar',
             marker: {{ color: '#0dcaf0' }}
         }}];
-        
+
         Plotly.newPlot('top-tests', topTestsData, {{
             title: {{
                 text: '📈 Top 10 Tests by Issue Count',
@@ -928,7 +931,7 @@ def _generate_dashboard_html(df, days_back: int) -> str:
             plot_bgcolor: 'white',
             paper_bgcolor: 'white'
         }});
-        
+
         // Issue types pie chart
         var issueTypes = {issue_types};
         var colors = ['#dc3545', '#fd7e14', '#198754', '#0dcaf0'];
@@ -938,7 +941,7 @@ def _generate_dashboard_html(df, days_back: int) -> str:
             type: 'pie',
             marker: {{ colors: colors }}
         }}];
-        
+
         Plotly.newPlot('issue-types', issueTypesData, {{
             title: {{
                 text: '🥧 Issues by Type',
