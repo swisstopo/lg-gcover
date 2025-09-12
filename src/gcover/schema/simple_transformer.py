@@ -332,7 +332,7 @@ def transform_esri_flat_json(input_data):
             }
 
         # Process domains
-        logger.info(f"Processing domains...")
+        logger.info("Processing domains...")
         if "domains" in input_data:
             domain_result = {}
             for domain in input_data["domains"]:
@@ -378,13 +378,13 @@ def transform_esri_flat_json(input_data):
         relationships_list = []
         subtypes_list = []
 
-        logger.info(f"Extracting datasets...")
+        logger.info("Extracting datasets...")
 
         extract_datasets(
             input_data, tables_list, featclasses_list, relationships_list, subtypes_list
         )
 
-        logger.info(f"processing tables...")
+        logger.info("processing tables...")
         processed_tables = {}
         for table_item in tables_list:
             if isinstance(table_item, dict):
@@ -407,7 +407,7 @@ def transform_esri_flat_json(input_data):
 
         # Process subtypes
         # Extract and process subtypes from any level of the JSON
-        logger.info(f"Extracting subtypes...")
+        logger.info("Extracting subtypes...")
         subtypes_dict = {}
         extract_subtypes(input_data, subtypes_dict)
 

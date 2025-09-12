@@ -628,15 +628,15 @@ def main():
         esri_json_data, target_prefix="GC_", exclude_metadata_fields=True
     )
 
-    print(f"Transformation completed!")
+    print("Transformation completed!")
     print(f"Summary: {schema.get_schema_summary()}")
 
     # List some results
-    print(f"\nTables found:")
+    print("\nTables found:")
     for name in list(schema.tables.keys())[:5]:
         print(f"  - {name}")
 
-    print(f"\nFeature classes found:")
+    print("\nFeature classes found:")
     for name in list(schema.feature_classes.keys())[:5]:
         print(f"  - {name}")
 

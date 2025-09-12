@@ -268,8 +268,8 @@ def export_tables(output_dir, workspace, all_tables, include_incremental, format
         # Create README
         readme_path = output_dir / "README.txt"
         with open(readme_path, 'w', encoding='utf-8') as f:
-            f.write(f"GeoCover Tables Export\n")
-            f.write(f"=====================\n\n")
+            f.write("GeoCover Tables Export\n")
+            f.write("=====================\n\n")
             f.write(f"Exported on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"Source workspace: {workspace}\n")
             f.write(f"Tables exported: {exported_count}\n")
@@ -278,7 +278,7 @@ def export_tables(output_dir, workspace, all_tables, include_incremental, format
             for table_name, short_name in tables_to_export:
                 f.write(f"  - {table_name}\n")
 
-        console.print(f"\n🎉 [bold green]Export completed![/bold green]")
+        console.print("\n🎉 [bold green]Export completed![/bold green]")
         console.print(f"📊 Exported {exported_count} tables")
         console.print(f"📁 Output directory: [bold green]{output_dir}[/bold green]")
 
@@ -477,19 +477,19 @@ def transform_simple_format(input_file, output, pretty, validate):
 
         # Show sample content
         if "tables" in result and result["tables"]:
-            console.print(f"\n📋 [bold]Sample Tables:[/bold]")
+            console.print("\n📋 [bold]Sample Tables:[/bold]")
             for i, table_name in enumerate(list(result["tables"].keys())[:3]):
                 field_count = len(result["tables"][table_name].get("fields", []))
                 console.print(f"  {i + 1}. {table_name} ({field_count} fields)")
 
         if "featclasses" in result and result["featclasses"]:
-            console.print(f"\n🗺️  [bold]Sample Feature Classes:[/bold]")
+            console.print("\n🗺️  [bold]Sample Feature Classes:[/bold]")
             for i, fc_name in enumerate(list(result["featclasses"].keys())[:3]):
                 field_count = len(result["featclasses"][fc_name].get("fields", []))
                 console.print(f"  {i + 1}. {fc_name} ({field_count} fields)")
 
         console.print(
-            f"\n🎉 [bold green]Simple format transformation completed![/bold green]"
+            "\n🎉 [bold green]Simple format transformation completed![/bold green]"
         )
 
     except FileNotFoundError:
@@ -624,7 +624,7 @@ def transform(
 
             # Show some examples of what was found
             if schema.tables:
-                console.print(f"\n📋 [bold]Sample Tables[/bold] (showing first 5):")
+                console.print("\n📋 [bold]Sample Tables[/bold] (showing first 5):")
                 for i, table_name in enumerate(list(schema.tables.keys())[:5]):
                     console.print(f"  {i + 1}. {table_name}")
                 if len(schema.tables) > 5:
@@ -632,7 +632,7 @@ def transform(
 
             if schema.feature_classes:
                 console.print(
-                    f"\n🗺️  [bold]Sample Feature Classes[/bold] (showing first 5):"
+                    "\n🗺️  [bold]Sample Feature Classes[/bold] (showing first 5):"
                 )
                 for i, fc_name in enumerate(list(schema.feature_classes.keys())[:5]):
                     console.print(f"  {i + 1}. {fc_name}")
@@ -640,7 +640,7 @@ def transform(
                     console.print(f"  ... and {len(schema.feature_classes) - 5} more")
 
         console.print(
-            f"\n🎉 [bold green]Transformation completed successfully![/bold green]"
+            "\n🎉 [bold green]Transformation completed successfully![/bold green]"
         )
 
     except FileNotFoundError:

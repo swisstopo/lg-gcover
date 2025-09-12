@@ -10,6 +10,24 @@ global:
   s3:
     bucket: "gcover-assets-dev"
     profile: "default-aws-profile" # AWS profile name
+    # Enhanced S3 upload configuration
+    upload_method: "auto" # Options: "auto", "direct", "presigned"
+
+    # Lambda presigned URL configuration (optional)
+    lambda_endpoint: null # e.g., "https://api.example.com/presigned-url"
+
+    # TOTP authentication for Lambda (choose one)
+    totp_secret: null    # Base32 encoded TOTP secret for generating tokens
+    totp_token: null     # Pre-generated TOTP token (overrides secret)
+
+    # Proxy configuration for direct upload (optional)
+    proxy:
+      http_proxy: null   # e.g., "http://proxy.company.com:8080"
+      https_proxy: null  # e.g., "http://proxy.company.com:8080"
+
+    # Upload timeouts and retries
+    upload_timeout: 300  # Upload timeout in seconds (5 minutes)
+    max_retries: 3       # Maximum number of upload retries
   default_crs: "EPSG:2056"
   chunk_size: 5000
   logging:

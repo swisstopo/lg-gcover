@@ -743,7 +743,7 @@ class SchemaDiff:
                             report.append(f"      {prop}: {old} -> {new}")
 
                     if change.coded_value_changes:
-                        report.append(f"      Coded values:")
+                        report.append("      Coded values:")
                         for cv_change in change.coded_value_changes:
                             if cv_change.change_type == ChangeType.ADDED:
                                 report.append(

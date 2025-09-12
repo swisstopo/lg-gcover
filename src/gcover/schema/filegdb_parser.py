@@ -1068,7 +1068,7 @@ class FileGDBParser:
     ) -> bool:
         """Check if a dataset should be imported."""
         if not name:
-            logger.debug(f"    Filtering: Empty name - SKIP")
+            logger.debug("    Filtering: Empty name - SKIP")
             return False
 
         # Get base name
@@ -1447,24 +1447,24 @@ def main():
         logger.info(f"Parsing FileGDB: {gdb_path}")
         schema = parse_filegdb_to_esri_schema(gdb_path)
 
-        print(f"Successfully parsed FileGDB!")
+        print("Successfully parsed FileGDB!")
         print(f"Summary: {schema.get_schema_summary()}")
 
         # Show some examples
         if schema.feature_classes:
-            print(f"\nFeature classes found:")
+            print("\nFeature classes found:")
             for name in list(schema.feature_classes.keys())[:5]:
                 fc = schema.feature_classes[name]
                 print(f"  - {name} ({fc.geometry_type}, {len(fc.fields)} fields)")
 
         if schema.coded_domains:
-            print(f"\nCoded domains found:")
+            print("\nCoded domains found:")
             for name in list(schema.coded_domains.keys())[:5]:
                 domain = schema.coded_domains[name]
                 print(f"  - {name} ({len(domain.coded_values)} values)")
 
         if schema.relationships:
-            print(f"\nRelationships found:")
+            print("\nRelationships found:")
             for name in list(schema.relationships.keys())[:5]:
                 rel = schema.relationships[name]
                 print(f"  - {name}: {rel.origin_table} → {rel.destination_table}")

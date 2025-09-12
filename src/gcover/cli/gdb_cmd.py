@@ -18,7 +18,8 @@ from rich import print as rprint
 # Import our GDB management classes (assuming they're in a module)
 
 from gcover.gdb.manager import GDBAssetManager
-from gcover.gdb.storage import S3Uploader, MetadataDB
+from gcover.gdb.storage import S3Uploader, MetadataDB, TOTPGenerator
+
 
 # from gcover.gdb.config import  load_config TODO
 from gcover.config import load_config, AppConfig
@@ -67,6 +68,25 @@ def gdb(ctx):
 
 
 @gdb.command()
+@click.option("--secret", type=str, help="TOTP secret (base32 encoded)")
+@click.option("--time-step", type=int, default=30, help="Time step in seconds")
+@click.option("--digits", type=int, default=6, help="Number of digits in token")
+def generate_totp(secret, time_step, digits):
+    """Generate TOTP token for Lambda authentication"""
+    if not secret:
+        rprint("[red]TOTP secret is required[/red]")
+        sys.exit(1)
+
+    try:
+        token = TOTPGenerator.generate_totp(secret, time_step, digits)
+        rprint(f"[green]TOTP Token: {token}[/green]")
+        rprint(f"[cyan]Valid for ~{time_step} seconds[/cyan]")
+    except Exception as e:
+        rprint(f"[red]Error generating TOTP: {e}[/red]")
+        sys.exit(1)
+
+
+@gdb.command()
 @click.pass_context
 def init(ctx):
     """Initialize GDB management system"""
@@ -86,7 +106,7 @@ def init(ctx):
         http_proxy = global_config.proxy
         rprint(f"[green]✅ Proxy: {http_proxy}[/green]")
 
-        s3 = S3Uploader(s3_bucket, s3_profile)
+        s3 = S3Uploader(s3_bucket, s3_profile)  # TODO
         rprint("[green]✅ S3 connection ready[/green]")
 
         if verbose:
@@ -107,6 +127,7 @@ def init(ctx):
 def scan(ctx):
     """Scan filesystem for GDB assets"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
+    s3_config = global_config.s3
 
     try:
         # Get S3 settings from global config
@@ -115,10 +136,11 @@ def scan(ctx):
 
         manager = GDBAssetManager(
             base_paths=gdb_config.base_paths,
-            s3_bucket=s3_bucket,  # From global config
+            # s3_bucket=s3_bucket,
+            s3_config=s3_config,
             db_path=gdb_config.db_path,
             temp_dir=gdb_config.temp_dir,
-            aws_profile=s3_profile,  # From global config
+            # aws_profile=s3_profile,
         )
 
         rprint("[cyan]Scanning filesystem...[/cyan]")
@@ -178,10 +200,11 @@ def sync(ctx, dry_run):
 
         manager = GDBAssetManager(
             base_paths=gdb_config.base_paths,
-            s3_bucket=s3_bucket,
+            # s3_bucket=s3_bucket,
+            s3_config=s3_config,
             db_path=gdb_config.db_path,
             temp_dir=gdb_config.temp_dir,
-            aws_profile=s3_profile,
+            # aws_profile=s3_profile,
         )
 
         if dry_run:
@@ -331,10 +354,13 @@ def search(ctx, search_term, download, output_dir):
     gdb_config, global_config, environment, verbose = get_config(ctx)
 
     try:
+        s3_bucket = gdb_config.get_s3_bucket(global_config)
+        s3_profile = gdb_config.get_s3_profile(global_config)
+
         db = MetadataDB(gdb_config.db_path)
 
         query = """
-        SELECT * FROM gdb_assets 
+        SELECT * FROM gdb_assets
         WHERE path ILIKE ? OR asset_type ILIKE ?
         ORDER BY timestamp DESC
       """
@@ -370,7 +396,7 @@ def search(ctx, search_term, download, output_dir):
                 output_path = Path(output_dir)
                 output_path.mkdir(parents=True, exist_ok=True)
 
-                s3_uploader = S3Uploader(config.s3_bucket)
+                s3_uploader = S3Uploader(s3_bucket, s3_profile)  # TODO
                 filename = Path(data["s3_key"]).name
                 local_path = output_path / filename
 
@@ -413,8 +439,8 @@ def status(ctx):
             total_size_gb = round(size_result / (1024**3), 2) if size_result else 0
 
             by_type = conn.execute("""
-                SELECT asset_type, COUNT(*) 
-                FROM gdb_assets 
+                SELECT asset_type, COUNT(*)
+                FROM gdb_assets
                 GROUP BY asset_type
             """).fetchall()
 
@@ -441,7 +467,7 @@ def status(ctx):
                 rprint(f"  {asset_type}: {count}")
 
         if verbose:
-            rprint(f"\n[dim]Configuration Details:[/dim]")
+            rprint("\n[dim]Configuration Details:[/dim]")
             rprint(f"[dim]  Log Level: {global_config.log_level}[/dim]")
             rprint(f"[dim]  Max Workers: {gdb_config.processing.max_workers}[/dim]")
             rprint(
@@ -461,6 +487,7 @@ def status(ctx):
 def process(ctx, gdb_path):
     """Process a single GDB asset"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
+    s3_config = global_config.s3
 
     try:
         # Get S3 settings from global config
@@ -469,10 +496,11 @@ def process(ctx, gdb_path):
 
         manager = GDBAssetManager(
             base_paths=gdb_config.base_paths,
-            s3_bucket=s3_bucket,
+            s3_config=s3_config,  # TODO
+            #  s3_bucket=s3_bucket,
             db_path=gdb_config.db_path,
             temp_dir=gdb_config.temp_dir,
-            aws_profile=s3_profile,
+            # aws_profile=s3_profile,
         )
 
         asset = manager.create_asset(Path(gdb_path))
@@ -532,6 +560,10 @@ def process_all(
     """Process all GDB assets found by filesystem scan"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
 
+    s3_config = global_config.s3
+    console.log("=== config ===")
+    console.log(s3_config)
+
     try:
         # Get S3 settings from global config
         s3_bucket = gdb_config.get_s3_bucket(global_config)
@@ -539,10 +571,11 @@ def process_all(
 
         manager = GDBAssetManager(
             base_paths=gdb_config.base_paths,
-            s3_bucket=s3_bucket,
+            # s3_bucket=s3_bucket,
+            s3_config=s3_config,
             db_path=gdb_config.db_path,
             temp_dir=gdb_config.temp_dir,
-            aws_profile=s3_profile,
+            # aws_profile=s3_profile,
         )
 
         rprint("[cyan]Scanning filesystem for GDB assets...[/cyan]")
@@ -613,8 +646,8 @@ def process_all(
                         f.stat().st_size for f in asset.path.rglob("*") if f.is_file()
                     )
                     sizes.append(size)
-                except:
-                    pass
+                except Exception as e:
+                    rprint(f"  [red]❌ Error calculating size: {e}[/red]")
 
             if sizes:
                 min_size = min(sizes) / (1024**2)  # MB
@@ -683,20 +716,20 @@ def process_all(
                             if f.is_file()
                         )
                         stats["total_size"] += size
-                    except:
-                        pass
+                    except Exception as e:
+                        rprint(f"  [red]❌ Error calculating size: {e}[/red]")
 
                     success = manager.process_asset(asset)
 
                     if success:
                         stats["processed"] += 1
                         if verbose:
-                            rprint(f"  [green]✅ Success[/green]")
+                            rprint("  [green]✅ Success[/green]")
                     else:
                         stats["failed"] += 1
                         failed_assets.append(asset.path.name)
                         if verbose:
-                            rprint(f"  [red]❌ Failed[/red]")
+                            rprint("  [red]❌ Failed[/red]")
 
                         if not continue_on_error:
                             rprint(
@@ -719,7 +752,7 @@ def process_all(
                         break
 
         # Final results
-        rprint(f"\n[cyan]Processing Complete![/cyan]")
+        rprint("\n[cyan]Processing Complete![/cyan]")
 
         results_table = Table(title="Processing Results")
         results_table.add_column("Metric", style="cyan")
@@ -741,7 +774,7 @@ def process_all(
         console.print(results_table)
 
         if failed_assets:
-            rprint(f"\n[red]Failed assets:[/red]")
+            rprint("\n[red]Failed assets:[/red]")
             for failed in failed_assets[:10]:  # Show first 10 failures
                 rprint(f"  - {failed}")
             if len(failed_assets) > 10:
@@ -803,14 +836,19 @@ def validate(ctx, check_s3, check_integrity):
     """Validate processed assets"""
 
     gdb_config, global_config, environment, verbose = get_configs(ctx)
+    s3_config = global_config.s3
 
     try:
+        # Get S3 settings from global config
+        s3_bucket = gdb_config.get_s3_bucket(global_config)
+        s3_profile = gdb_config.get_s3_profile(global_config)
+
         db = MetadataDB(gdb_config.db_path)
 
         with duckdb.connect(str(db.db_path)) as conn:
             results = conn.execute("""
-                SELECT path, s3_key, uploaded, file_hash 
-                FROM gdb_assets 
+                SELECT path, s3_key, uploaded, file_hash
+                FROM gdb_assets
                 WHERE uploaded = true
             """).fetchall()
 
@@ -837,7 +875,7 @@ def validate(ctx, check_s3, check_integrity):
                 # Check S3 if requested
                 if check_s3:
                     try:
-                        s3_uploader = S3Uploader(config.s3_bucket, config.s3_profile)
+                        s3_uploader = S3Uploader(s3_bucket, s3_profile)  # TODO
                         if not s3_uploader.file_exists(s3_key):
                             issues.append(f"S3 file missing: {s3_key}")
                     except Exception as e:
@@ -886,7 +924,7 @@ def stats(ctx, by_date, by_type, storage):
                            asset_type,
                            COUNT(*) as count,
                            SUM(file_size) as total_size
-                    FROM gdb_assets 
+                    FROM gdb_assets
                     GROUP BY month, asset_type
                     ORDER BY month DESC, asset_type
                 """).fetchall()
@@ -913,7 +951,7 @@ def stats(ctx, by_date, by_type, storage):
                            COUNT(*) as count,
                            AVG(file_size) as avg_size,
                            SUM(file_size) as total_size
-                    FROM gdb_assets 
+                    FROM gdb_assets
                     GROUP BY asset_type, release_candidate
                     ORDER BY asset_type, release_candidate
                 """).fetchall()
@@ -951,7 +989,7 @@ def stats(ctx, by_date, by_type, storage):
 
                 uploaded_results = conn.execute("""
                     SELECT COUNT(*) as uploaded_count
-                    FROM gdb_assets 
+                    FROM gdb_assets
                     WHERE uploaded = true
                 """).fetchone()
 
@@ -988,7 +1026,7 @@ def stats(ctx, by_date, by_type, storage):
                 )
                 # Show basic overview
                 basic_stats = conn.execute("""
-                    SELECT 
+                    SELECT
                         COUNT(*) as total,
                         COUNT(CASE WHEN uploaded THEN 1 END) as uploaded,
                         SUM(file_size) / (1024*1024*1024.0) as total_gb,
@@ -1033,6 +1071,8 @@ def latest_by_rc(ctx, asset_type, days_back, show_couple):
     """Show the latest asset for each RC (RC1/RC2)"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
 
+    s3_config = global_config.s3
+
     try:
         # Create manager instance (reusing existing logic)
         s3_bucket = gdb_config.get_s3_bucket(global_config)
@@ -1040,10 +1080,11 @@ def latest_by_rc(ctx, asset_type, days_back, show_couple):
 
         manager = GDBAssetManager(
             base_paths=gdb_config.base_paths,
-            s3_bucket=s3_bucket,
+            s3_config=s3_config,  # TODO
+            # s3_bucket=s3_bucket,
             db_path=gdb_config.db_path,
             temp_dir=gdb_config.temp_dir,
-            aws_profile=s3_profile,
+            # aws_profile=s3_profile,
         )
 
         # Get latest assets
@@ -1100,18 +1141,18 @@ def latest_by_rc(ctx, asset_type, days_back, show_couple):
                 else:
                     time_diff = f"{days_apart} days apart"
 
-                rprint(f"\n[green]✅ Release Couple Found:[/green]")
+                rprint("\n[green]✅ Release Couple Found:[/green]")
                 rprint(f"  RC1: {rc1_date.strftime('%Y-%m-%d %H:%M')}")
                 rprint(f"  RC2: {rc2_date.strftime('%Y-%m-%d %H:%M')}")
                 rprint(f"  Time difference: {time_diff}")
             else:
                 rprint(
-                    f"\n[yellow]⚠️  Latest RC1 and RC2 are not close enough to form a release couple[/yellow]"
+                    "\n[yellow]⚠️  Latest RC1 and RC2 are not close enough to form a release couple[/yellow]"
                 )
 
         # Summary for script usage
         if latest_assets:
-            rprint(f"\n[dim]Latest dates:[/dim]")
+            rprint("\n[dim]Latest dates:[/dim]")
             for rc_name, data in latest_assets.items():
                 rprint(
                     f"[dim]  {rc_name}: {data['timestamp'].strftime('%Y-%m-%d')}[/dim]"
@@ -1137,6 +1178,7 @@ def latest_by_rc(ctx, asset_type, days_back, show_couple):
 def latest_topology(ctx, max_days_apart):
     """Show the latest topology verification tests for each RC"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
+    s3_config = global_config.s3
 
     try:
         # Create manager instance
@@ -1145,10 +1187,11 @@ def latest_topology(ctx, max_days_apart):
 
         manager = GDBAssetManager(
             base_paths=gdb_config.base_paths,
-            s3_bucket=s3_bucket,
+            s3_config=s3_config,
+            # s3_bucket=s3_bucket,
             db_path=gdb_config.db_path,
             temp_dir=gdb_config.temp_dir,
-            aws_profile=s3_profile,
+            # aws_profile=s3_profile,
         )
 
         # Get latest topology verification for each RC
@@ -1215,9 +1258,7 @@ def latest_topology(ctx, max_days_apart):
 
         # Answer the user's specific question
         if len(latest_assets) >= 1:
-            rprint(
-                f"\n[cyan]Answer: The latest topology verification tests are:[/cyan]"
-            )
+            rprint("\n[cyan]Answer: The latest topology verification tests are:[/cyan]")
             for rc_name in ["RC1", "RC2"]:
                 if rc_name in latest_assets:
                     date_str = latest_assets[rc_name]["timestamp"].strftime("%Y-%m-%d")
@@ -1237,6 +1278,7 @@ def latest_topology(ctx, max_days_apart):
 def latest_verifications(ctx):
     """Show latest verification runs for all verification types"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
+    s3_config = global_config.s3
 
     try:
         # Create manager instance
@@ -1245,10 +1287,11 @@ def latest_verifications(ctx):
 
         manager = GDBAssetManager(
             base_paths=gdb_config.base_paths,
-            s3_bucket=s3_bucket,
+            s3_config=s3_config,  # TODO
+            # s3_bucket=s3_bucket,
             db_path=gdb_config.db_path,
             temp_dir=gdb_config.temp_dir,
-            aws_profile=s3_profile,
+            # aws_profile=s3_profile,
         )
 
         # Get all latest verification runs
@@ -1372,20 +1415,20 @@ def get_latest_topology_verification_info(
             query = """
             WITH ranked_assets AS (
                 SELECT *,
-                       CASE 
+                       CASE
                            WHEN release_candidate = '2016-12-31' THEN 'RC1'
                            WHEN release_candidate = '2030-12-31' THEN 'RC2'
                            ELSE 'Unknown'
                        END as rc_name,
                        ROW_NUMBER() OVER (
-                           PARTITION BY release_candidate 
+                           PARTITION BY release_candidate
                            ORDER BY timestamp DESC
                        ) as rn
-                FROM gdb_assets 
+                FROM gdb_assets
                 WHERE asset_type = 'verification_topology'
             )
             SELECT rc_name, timestamp::DATE as date_only, path
-            FROM ranked_assets 
+            FROM ranked_assets
             WHERE rn = 1 AND rc_name IN ('RC1', 'RC2')
             ORDER BY rc_name
             """
