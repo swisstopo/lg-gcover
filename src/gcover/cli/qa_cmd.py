@@ -20,7 +20,10 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from gcover.cli.gdb_cmd import get_latest_topology_verification_info
+from gcover.cli.gdb_cmd import (
+    get_latest_topology_verification_info,
+    get_latest_assets_info,
+)
 from gcover.config import AppConfig, load_config
 from gcover.gdb.assets import AssetType
 from gcover.gdb.manager import GDBAssetManager
@@ -54,6 +57,7 @@ def qa_commands():
     pass
 
 
+# TODO
 def get_qa_config(ctx):
     """Get QA configuration from context"""
     try:
@@ -960,7 +964,10 @@ def _generate_dashboard_html(df, days_back: int) -> str:
 
 
 def _auto_detect_qa_couple(
-    ctx, rc1_gdb: Optional[Path], rc2_gdb: Optional[Path]
+    ctx,
+    rc1_gdb: Optional[Path],
+    rc2_gdb: Optional[Path],
+    asset_type: Optional[str] = "verification_topology",
 ) -> tuple[Path, Path]:
     """
     Auto-detect latest QA couple if paths not provided manually.
@@ -968,6 +975,7 @@ def _auto_detect_qa_couple(
     Returns:
         Tuple of (RC1_path, RC2_path)
     """
+
     # If both provided manually, use them
     if rc1_gdb and rc2_gdb:
         return rc1_gdb, rc2_gdb
@@ -984,8 +992,13 @@ def _auto_detect_qa_couple(
 
     try:
         # Try to get GDB config to find database path
-        qa_config, global_config = get_qa_config(ctx)
-        gdb_db_path = qa_config.db_path.parent / "gdb_metadata.duckdb"
+        qa_config, global_config = get_qa_config(ctx)  # TODO: print a lot of noise
+        app_config: AppConfig = load_config(environment=ctx.obj["environment"])
+
+        gdb_config = app_config.gdb
+
+        # gdb_db_path = qa_config.db_path.parent / "gdb_metadata.duckdb"
+        gdb_db_path = gdb_config.db_path
 
         # Fallback to common database paths if not found
         possible_db_paths = [
@@ -1015,7 +1028,7 @@ def _auto_detect_qa_couple(
         console.print(f"[dim]Using database: {db_path}[/dim]")
 
         # Get latest topology verification info
-        info = get_latest_topology_verification_info(db_path)
+        info = get_latest_assets_info(db_path, asset_type=asset_type)
 
         if not info:
             raise click.ClickException(
@@ -1029,6 +1042,7 @@ def _auto_detect_qa_couple(
                 f"❌ Incomplete QA couple found. Available: {available_rcs}\n"
                 "   Both RC1 and RC2 topology verification data required."
             )
+        console.print(info)
 
         # Get file paths
         rc1_path = Path(info["RC1"]["path"])
@@ -1049,7 +1063,7 @@ def _auto_detect_qa_couple(
             )
 
         # Success!
-        console.print("[green]✅ Found latest QA couple:[/green]")
+        console.print(f"[green]✅ Found latest QA {asset_type} couple:[/green]")
         console.print(f"   RC1 ({info['RC1']['date']}): {rc1_path.name}")
         console.print(f"   RC2 ({info['RC2']['date']}): {rc2_path.name}")
 
@@ -1236,6 +1250,15 @@ def aggregate(
     help="Path to administrative zones GPKG file",
 )
 @click.option(
+    "--type",
+    "asset_type",
+    default=AssetType.VERIFICATION_TOPOLOGY.value,
+    type=click.Choice(
+        [t.value for t in [AssetType.VERIFICATION_TOPOLOGY, AssetType.VERIFICATION_TQA]]
+    ),
+    help=f"Filter by verification asset type.",
+)
+@click.option(
     "--output",
     "-o",
     required=True,
@@ -1270,6 +1293,7 @@ def extract(
     filter_by_source: bool,
     verbose: bool,
     yes: bool,
+    asset_type: str,
 ):
     """
     Extract relevant QA issues based on mapsheet source mapping.
@@ -1310,7 +1334,9 @@ def extract(
         qa_config, global_config = get_qa_config(ctx)
 
         # Auto-detect QA couple if not provided
-        rc1_gdb, rc2_gdb = _auto_detect_qa_couple(ctx, rc1_gdb, rc2_gdb)
+        rc1_gdb, rc2_gdb = _auto_detect_qa_couple(
+            ctx, rc1_gdb, rc2_gdb, asset_type=asset_type
+        )
 
         logger.info(f"Using for RC1: {rc1_gdb}")
         logger.info(f"Using for RC2: {rc2_gdb}")
@@ -1318,7 +1344,7 @@ def extract(
         if not yes:
             response = (
                 console.input(
-                    f"[bold yellow]Proceed with\nRC1: {rc1_gdb}and \nRC2: {rc2_gdb}?[/bold yellow] [green](y/n)[/green]: "
+                    f"[bold yellow]Proceed with\nRC1: {rc1_gdb} and \nRC2: {rc2_gdb}?[/bold yellow] [green](y/n)[/green]: "
                 )
                 .strip()
                 .lower()
@@ -1545,7 +1571,7 @@ def trend_analysis(
 
         # Build detailed trend query
         query = """
-                    SELECT 
+                    SELECT
                         s.verification_type,
                         s.rc_version,
                         ts.layer_name,
@@ -1577,9 +1603,9 @@ def trend_analysis(
             params.append(layer)
 
         query += """
-                    GROUP BY s.verification_type, s.rc_version, ts.layer_name, 
+                    GROUP BY s.verification_type, s.rc_version, ts.layer_name,
                              ts.test_name, ts.issue_type,  timestamp
-                    ORDER BY s.rc_version, ts.layer_name, ts.test_name, 
+                    ORDER BY s.rc_version, ts.layer_name, ts.test_name,
                              ts.issue_type, s.timestamp DESC
                 """
 
@@ -1903,8 +1929,8 @@ def enhanced_stats(
             df.to_csv(export_csv, index=False)
             console.print(f"[green]Enhanced results exported to: {export_csv}[/green]")
 
-    except IOError as rte:
-        console.print(f"[red]IOError error: {rte}[/red]")
+    except OSError as rte:
+        console.print(f"[red]OSError error: {rte}[/red]")
         exit(1)
 
     except Exception as e:
