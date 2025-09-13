@@ -5,25 +5,26 @@ FileGDB conversion and statistics module for lg-gcover.
 Converts ESRI FileGDB verification results to web formats and generates statistics.
 """
 
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any, Union
 from dataclasses import dataclass
 from datetime import datetime
-import json
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
+import warnings
 
-import geopandas as gpd
-import pandas as pd
+
 import duckdb
 import fiona
+import geopandas as gpd
+import pandas as pd
+from botocore.exceptions import ClientError
+from loguru import logger
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
-import boto3
-from botocore.exceptions import ClientError
 
-from gcover.config import load_config, AppConfig
+from gcover.config import load_config
+from gcover.gdb.storage import S3Uploader
 
 console = Console()
-from loguru import logger
 
 
 @dataclass
@@ -62,10 +63,11 @@ class FileGDBConverter:
 
     def __init__(
         self,
-        db_path: Union[str, Path],
-        temp_dir: Union[str, Path],
+        db_path: str | Path,
+        temp_dir: str | Path,
         s3_bucket: str,
         s3_profile: str,
+        s3_config: Optional[Dict[str, Any]] = None,
         s3_prefix: str = "verifications/",
         max_workers: Optional[int] = None,
     ):
@@ -77,7 +79,7 @@ class FileGDBConverter:
             s3_prefix: S3 prefix for verification files
         """
         # TODO from .config import load_config
-        from gcover.config import load_config, AppConfig
+        # TODO no used from gcover.config import load_config, AppConfig
 
         self.s3_prefix = s3_prefix.rstrip("/") + "/"
         self.db_path = Path(db_path)
@@ -85,19 +87,39 @@ class FileGDBConverter:
         self.s3_bucket = s3_bucket
         self.s3_profile = s3_profile
         self.max_workers = max_workers or 4
+        self.s3_config = s3_config
+
+        if s3_bucket or s3_profile:
+            warnings.warn(
+                "Passing s3_bucket and s3_profile directly is deprecated. Use s3_config instead.",
+                DeprecationWarning,
+            )
 
         # Use verification-specific database path
         # verification_db = self.config.db_path.parent / "verification_stats.duckdb"
         self.duckdb_path = db_path
 
         # Initialize S3 client with profile support
-        session = boto3.Session(profile_name=self.s3_profile)
-        self.s3_client = session.client("s3")
+        # session = boto3.Session(profile_name=self.s3_profile)
+        # self.s3_client = session.client("s3")
+
+        self.s3_uploader = S3Uploader(
+            bucket_name=s3_config.bucket,
+            aws_profile=s3_config.profile,
+            lambda_endpoint=s3_config.lambda_endpoint,
+            totp_secret=s3_config.lambda_endpoint,
+            proxy_settings=s3_config.proxy,
+        )
 
         # Initialize DuckDB connection
         console.print(f"DuckDB: {self.duckdb_path}")
-        self.conn = duckdb.connect(str(self.duckdb_path))
-        self._init_stats_tables()
+        try:
+            self.conn = duckdb.connect(str(self.duckdb_path))
+            self._init_stats_tables()
+        except duckdb.duckdb.IOException as e:
+            raise IOError(
+                f"Could not open/connect to DuckDB: {self.duckdb_path}: {str(e)}"
+            )
 
         # Setup logging
         # TODO configure logging
@@ -110,6 +132,7 @@ class FileGDBConverter:
 
     def _init_stats_tables(self):
         """Initialize DuckDB tables for statistics storage."""
+        logger.debug("Initializing table `gdb_summaries`")
         # Main summary table
         self.conn.execute("""
             CREATE SEQUENCE IF NOT EXISTS  gdb_summaries_id_seq START 1;
@@ -120,11 +143,14 @@ class FileGDBConverter:
                 rc_version VARCHAR,
                 verification_type VARCHAR,
                 total_features INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (timestamp, rc_version, verification_type, total_features)
             );
+
         """)
 
         # Layer statistics table
+        logger.debug("Initializing table `layer_stats`")
         self.conn.execute("""
             CREATE SEQUENCE IF NOT EXISTS  layer_stats_id_seq START 1;
             CREATE TABLE IF NOT EXISTS layer_stats (
@@ -137,6 +163,7 @@ class FileGDBConverter:
         """)
 
         # Test statistics table
+        logger.debug("Initializing table `test_stats`")
         self.conn.execute("""
             CREATE SEQUENCE IF NOT EXISTS  test_stats_id_seq START 1;
             CREATE TABLE IF NOT EXISTS test_stats (
@@ -281,8 +308,8 @@ class FileGDBConverter:
 
                 # Handle 3D geometries - convert to 2D for web compatibility
                 if hasattr(gdf, "geometry") and not gdf.empty:
+                    from shapely.geometry import LineString, Point, Polygon
                     from shapely.ops import transform
-                    from shapely.geometry import Point, LineString, Polygon
 
                     def force_2d(geom):
                         """Force geometry to 2D."""
@@ -401,8 +428,13 @@ class FileGDBConverter:
 
     def _upload_to_s3(self, local_path: Path, s3_key: str) -> bool:
         """Upload a file to S3."""
+        # Upload to S3
+
         try:
-            self.s3_client.upload_file(str(local_path), self.s3_bucket, s3_key)
+            if not self.s3_uploader.file_exists(s3_key):
+                uploaded = self.s3_uploader.upload_file(local_path, s3_key)
+            else:
+                logger.info(f"File already exists in S3: {s3_key}")
             logger.info(f"Uploaded to S3: s3://{self.s3_bucket}/{s3_key}")
             return True
 
@@ -410,16 +442,124 @@ class FileGDBConverter:
             logger.error(f"Failed to upload to S3: {e}")
             return False
 
+    def _normalize_gdb_path(self, gdb_path: str) -> str:
+        """
+        Normalize GDB path to extract only the relevant part for duplicate detection.
+
+        Examples:
+            /media/marco/SANDISK/Verifications/Topology/RC_2030-12-31/20250905_07-00-12/issue.gdb
+            -> Topology/RC_2030-12-31/20250905_07-00-12/issue.gdb
+
+            /some/other/path/Verifications/TechnicalQualityAssurance/RC_2016-12-31/20231203_22-00-09/issue.gdb
+            -> TechnicalQualityAssurance/RC_2016-12-31/20231203_22-00-09/issue.gdb
+        """
+        path_parts = Path(gdb_path).parts
+
+        # Find the index where "Verifications" appears, or specific verification types
+        start_idx = None
+        for i, part in enumerate(path_parts):
+            if part in ["Verifications", "Topology", "TechnicalQualityAssurance"]:
+                # If we find "Verifications", start from the next part
+                if part == "Verifications":
+                    start_idx = i + 1
+                else:
+                    # If we find verification type directly, start from there
+                    start_idx = i
+                break
+
+        if start_idx is not None and start_idx < len(path_parts):
+            # Join the relevant parts
+            relevant_parts = path_parts[start_idx:]
+            return "/".join(relevant_parts)
+        else:
+            # Fallback: return the last 4 parts (should cover most cases)
+            return "/".join(path_parts[-4:]) if len(path_parts) >= 4 else gdb_path
+
+    def _check_existing_summary(self, summary: GDBSummary) -> Optional[int]:
+        """
+        Check if a summary with the same key characteristics already exists.
+
+        Args:
+            summary: The GDBSummary to check
+
+        Returns:
+            The existing summary ID if found, None otherwise
+        """
+        normalized_path = self._normalize_gdb_path(summary.gdb_path)
+
+        # Check for exact match on key fields
+        result = self.conn.execute(
+            """
+            SELECT id, gdb_path
+            FROM gdb_summaries
+            WHERE timestamp = ?
+              AND rc_version = ?
+              AND verification_type = ?
+              AND total_features = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+        """,
+            [
+                summary.timestamp,
+                summary.rc_version,
+                summary.verification_type,
+                summary.total_features,
+            ],
+        ).fetchone()
+
+        if result:
+            existing_id, existing_path = result
+            existing_normalized = self._normalize_gdb_path(existing_path)
+
+            # Additional check: compare normalized paths
+            if existing_normalized == normalized_path:
+                logger.info(
+                    f"Found exact duplicate for {normalized_path} "
+                    f"(timestamp: {summary.timestamp}, rc: {summary.rc_version}, "
+                    f"type: {summary.verification_type}, features: {summary.total_features}) "
+                    f"- using existing ID {existing_id}"
+                )
+                return existing_id
+            else:
+                # Same metadata but different paths - log warning but allow insert
+                logger.warning(
+                    f"Found summary with same metadata but different path: "
+                    f"existing='{existing_normalized}' vs new='{normalized_path}' "
+                    f"- will insert as new record"
+                )
+
+        return None
+
     def _store_statistics(self, summary: GDBSummary) -> int:
-        """Store summary statistics in DuckDB."""
-        # Insert main summary
+        """
+        Store summary statistics in DuckDB, avoiding duplicates.
+
+        Args:
+            summary: The GDBSummary to store
+
+        Returns:
+            The summary ID (either existing or newly created)
+        """
+        # Check if this summary already exists
+        existing_id = self._check_existing_summary(summary)
+        if existing_id is not None:
+            logger.info(
+                f"Skipping duplicate summary, returning existing ID: {existing_id}"
+            )
+            return existing_id
+
+        # Insert new summary record
+        logger.info(
+            f"Inserting new summary for {self._normalize_gdb_path(summary.gdb_path)}"
+        )
+
         summary_id = self.conn.execute(
             """
-                    INSERT INTO gdb_summaries 
-                    (gdb_path, timestamp, rc_version, verification_type, total_features)
-                    VALUES (?, ?, ?, ?, ?)
-                    RETURNING id
-                """,
+            INSERT INTO gdb_summaries
+            (gdb_path, timestamp, rc_version, verification_type, total_features)
+            VALUES (?, ?, ?, ?, ?)
+            RETURNING id
+            """,
             [
                 summary.gdb_path,
                 summary.timestamp,
@@ -433,10 +573,10 @@ class FileGDBConverter:
         for layer_stats in summary.layers.values():
             self.conn.execute(
                 """
-                        INSERT INTO layer_stats 
-                        (gdb_summary_id, layer_name, feature_count)
-                        VALUES (?, ?, ?)
-                    """,
+                INSERT INTO layer_stats
+                (gdb_summary_id, layer_name, feature_count)
+                VALUES (?, ?, ?)
+                """,
                 [summary_id, layer_stats.layer_name, layer_stats.feature_count],
             )
 
@@ -444,14 +584,15 @@ class FileGDBConverter:
             for (test_name, issue_type), count in layer_stats.test_issue_matrix.items():
                 self.conn.execute(
                     """
-                            INSERT INTO test_stats 
-                            (gdb_summary_id, layer_name, test_name, issue_type, feature_count)
-                            VALUES (?, ?, ?, ?, ?)
-                        """,
+                    INSERT INTO test_stats
+                    (gdb_summary_id, layer_name, test_name, issue_type, feature_count)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
                     [summary_id, layer_stats.layer_name, test_name, issue_type, count],
                 )
 
         self.conn.commit()
+        logger.info(f"Successfully stored new summary with ID: {summary_id}")
         return summary_id
 
     def _read_with_fiona_fallback(
@@ -680,7 +821,7 @@ class FileGDBConverter:
         """
         # Build the base query with proper date handling
         query = f"""
-            SELECT 
+            SELECT
                 s.verification_type,
                 s.rc_version,
                 ts.test_name,
@@ -714,45 +855,39 @@ class FileGDBConverter:
         if hasattr(self, "conn"):
             self.conn.close()
 
-    def main():
-        """Example usage of the FileGDBConverter."""
-        # from .config import load_config TODO
-        from gcover.config import load_config, AppConfig
 
-        # Load configuration
-        config = load_config()
+def main():
+    """Example usage of the FileGDBConverter."""
+    # from .config import load_config TODO
 
-        # Initialize converter with config
-        converter = FileGDBConverter(config=config)
+    # Load configuration
+    config = load_config()
 
-        try:
-            # Process a single GDB (using configured base paths if available)
-            if "verifications" in config.base_paths:
-                base_path = config.base_paths["verifications"]
-                gdb_path = (
-                    base_path / "Topology/RC_2030-12-31/20250718_07-00-12/issue.gdb"
-                )
-            else:
-                gdb_path = Path(
-                    "/media/marco/SANDISK/Verifications/Topology/RC_2030-12-31/20250718_07-00-12/issue.gdb"
-                )
+    # Initialize converter with config
+    converter = FileGDBConverter(config=config)
 
-            if gdb_path.exists():
-                summary = converter.process_gdb(gdb_path)
-                console.print(
-                    f"[green]Processed {summary.total_features:,} total features[/green]"
-                )
+    try:
+        # Process a single GDB (using configured base paths if available)
+        if "verifications" in config.base_paths:
+            base_path = config.base_paths["verifications"]
+            gdb_path = base_path / "Topology/RC_2030-12-31/20250718_07-00-12/issue.gdb"
+        else:
+            gdb_path = Path(
+                "/media/marco/SANDISK/Verifications/Topology/RC_2030-12-31/20250718_07-00-12/issue.gdb"
+            )
 
-                # Get recent statistics
-                stats_df = converter.get_statistics_summary(days_back=7)
-                console.print(f"[blue]Found {len(stats_df)} recent test results[/blue]")
+        if gdb_path.exists():
+            summary = converter.process_gdb(gdb_path)
+            console.print(
+                f"[green]Processed {summary.total_features:,} total features[/green]"
+            )
 
-            else:
-                console.print(f"[red]GDB not found: {gdb_path}[/red]")
+            # Get recent statistics
+            stats_df = converter.get_statistics_summary(days_back=7)
+            console.print(f"[blue]Found {len(stats_df)} recent test results[/blue]")
 
-        finally:
-            converter.close()
+        else:
+            console.print(f"[red]GDB not found: {gdb_path}[/red]")
 
-
-if __name__ == "__main__":
-    main()
+    finally:
+        converter.close()

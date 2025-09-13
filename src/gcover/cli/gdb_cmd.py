@@ -1383,6 +1383,13 @@ def get_latest_topology_dates(db_path: str) -> Optional[Tuple[str, str]]:
 def get_latest_topology_verification_info(
     db_path: str,
 ) -> Optional[Dict[str, Dict[str, str]]]:
+    return get_latest_assets_info(db_path, asset_type="verification_topology")
+
+
+def get_latest_assets_info(
+    db_path: str,
+    asset_type: Optional[str] = "verification_topology",
+) -> Optional[Dict[str, Dict[str, str]]]:
     """
     Enhanced utility function to get latest topology verification dates and file paths.
 
@@ -1397,7 +1404,7 @@ def get_latest_topology_verification_info(
         }
 
     Example:
-        >>> info = get_latest_topology_verification_info("gdb_metadata.duckdb")
+        >>> info = get_latest_assets_info("gdb_metadata.duckdb")
         >>> if info:
         >>>     print(f"Latest RC1: {info['RC1']['date']} at {info['RC1']['path']}")
         >>>     print(f"Latest RC2: {info['RC2']['date']} at {info['RC2']['path']}")
@@ -1425,7 +1432,7 @@ def get_latest_topology_verification_info(
                            ORDER BY timestamp DESC
                        ) as rn
                 FROM gdb_assets
-                WHERE asset_type = 'verification_topology'
+                WHERE asset_type = ?
             )
             SELECT rc_name, timestamp::DATE as date_only, path
             FROM ranked_assets
@@ -1433,7 +1440,7 @@ def get_latest_topology_verification_info(
             ORDER BY rc_name
             """
 
-            results = conn.execute(query).fetchall()
+            results = conn.execute(query, [asset_type]).fetchall()
 
             if len(results) >= 1:
                 info = {}

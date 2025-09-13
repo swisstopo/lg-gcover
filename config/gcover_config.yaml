@@ -54,6 +54,7 @@ gdb:
     max_workers: 4
 qa:
   db_path: "data/prod_verification_stats.duckdb"
+  output_dir: "qa_output"
 # SDE Connection configuration
 sde:
   instances:
