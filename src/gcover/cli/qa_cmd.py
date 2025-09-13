@@ -27,6 +27,7 @@ from gcover.gdb.manager import GDBAssetManager
 from gcover.gdb.qa_converter import FileGDBConverter
 from gcover.qa.analyzer import QAAnalyzer
 from gcover.gdb.enhanced_qa_stats import EnhancedQAConverter
+from gcover.cli.main import confirm_extended
 
 OUTPUT_FORMATS = ["csv", "xlsx", "json"]
 GROUP_BY_CHOICES = ["mapsheets", "work_units", "lots"]
@@ -150,8 +151,9 @@ def process_single(
 
         # Display summary
         console.print("\n[green]✅ Processing complete![/green]")
-        console.print(f"Verification Type: {summary.verification_type}")
-        console.print(f"RC Version: {summary.rc_version}")
+        console.print(f"Inserted into: {qa_config.db_path}")
+        console.print(f"Verification Type: [blue]{summary.verification_type}[/blue]")
+        console.print(f"RC Version: [blue]{summary.rc_version}[/blue]")
         console.print(f"Timestamp: {summary.timestamp}")
         console.print(f"Total Features: {summary.total_features:,}")
 
@@ -1235,12 +1237,14 @@ def aggregate(
 )
 @click.option(
     "--output",
+    "-o",
     required=True,
     type=click.Path(path_type=Path),
     help="Output path (without extension)",
 )
 @click.option(
     "--format",
+    "-f",
     "output_format",
     type=click.Choice(["gpkg", "filegdb"], case_sensitive=False),
     default="gpkg",
@@ -1252,6 +1256,9 @@ def aggregate(
     help="Filter issues by mapsheet source (RC1/RC2). Disable to extract all issues.",
 )
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
+@click.option(
+    "--yes", is_flag=True, help="Automatically confirm prompts (for scripting)"
+)
 @click.pass_context
 def extract(
     ctx,
@@ -1262,6 +1269,7 @@ def extract(
     output_format: str,
     filter_by_source: bool,
     verbose: bool,
+    yes: bool,
 ):
     """
     Extract relevant QA issues based on mapsheet source mapping.
@@ -1299,15 +1307,58 @@ def extract(
         console.print("[dim]Verbose logging enabled[/dim]")"""
 
     try:
+        qa_config, global_config = get_qa_config(ctx)
+
         # Auto-detect QA couple if not provided
         rc1_gdb, rc2_gdb = _auto_detect_qa_couple(ctx, rc1_gdb, rc2_gdb)
 
         logger.info(f"Using for RC1: {rc1_gdb}")
         logger.info(f"Using for RC2: {rc2_gdb}")
 
+        if not yes:
+            response = (
+                console.input(
+                    f"[bold yellow]Proceed with\nRC1: {rc1_gdb}and \nRC2: {rc2_gdb}?[/bold yellow] [green](y/n)[/green]: "
+                )
+                .strip()
+                .lower()
+            )
+            if response not in {"y", "yes", "o", "oui"}:
+                console.print("[red]Aborted.[/red]")
+                ctx.exit(1)
+
+        # Get S3 settings
+        s3_bucket = qa_config.get_s3_bucket(global_config)
+        s3_profile = qa_config.get_s3_profile(global_config)
+
+        # Create converter
+        converter = FileGDBConverter(
+            db_path=qa_config.db_path,
+            temp_dir=qa_config.temp_dir,
+            s3_bucket=s3_bucket,
+            s3_profile=s3_profile,
+            max_workers=global_config.max_workers,
+            s3_config=global_config.s3,
+        )
+        verification_type, rc_version, timestamp = converter._parse_gdb_path(rc2_gdb)
+
+        converted_dir = (
+            Path(output)
+            / verification_type
+            / "RC_combined"
+            / timestamp.strftime("%Y%m%d_%H-%M-%S")
+        )
+        converted_dir.mkdir(parents=True, exist_ok=True)
+        console.print(f"\n[blue]Saving to {converted_dir}[/blue]")
+
         # Initialize analyzer
         logger.info(f"Initializing QA analyzer with zones from {zones_file}")
         analyzer = QAAnalyzer(zones_file)
+
+        # Determine output file extension
+        output = converted_dir / "issue"
+        ext = ".gdb" if output_format.lower() == "filegdb" else ".gpkg"
+        output_file = output.with_suffix(ext)
 
         # Extract relevant issues
         if filter_by_source:
@@ -1323,10 +1374,6 @@ def extract(
             stats = analyzer._extract_all_issues(
                 rc1_gdb, rc2_gdb, output, output_format.lower()
             )
-
-        # Determine output file extension
-        ext = ".gdb" if output_format.lower() == "filegdb" else ".gpkg"
-        output_file = output.with_suffix(ext)
 
         # Summary
         click.echo("✅ Extraction complete!")
