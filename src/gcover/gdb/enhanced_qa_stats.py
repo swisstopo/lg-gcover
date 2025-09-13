@@ -65,6 +65,7 @@ class QATestResult:
     qa_type: str
     rc_version: str
     rc_short: str  # RC1 or RC2
+    layer_name: str
     test_name: str
     issue_type: str
     trend_data: TrendData
@@ -124,7 +125,11 @@ class EnhancedQAConverter:
         Returns:
             Tuple of (test_results_list, raw_dataframe)
         """
-        
+
+        # TODO
+        console.print(f"Trend: {include_trends}")
+
+
         # Default to both RC versions if not specified
         if rc_versions is None:
             rc_versions = ["2016-12-31", "2030-12-31"]
@@ -161,6 +166,8 @@ class EnhancedQAConverter:
         test_results = []
         if include_trends:
             test_results = self._calculate_trends(current_results, qa_test_type, rc_versions)
+
+            console.print(test_results)  # TODO
         else:
             # Create results without trends
             for _, row in current_results.iterrows():
@@ -203,6 +210,7 @@ class EnhancedQAConverter:
                 s.rc_version,
                 ts.test_name,
                 ts.issue_type,
+                ts.layer_name, 
                 CAST(SUM(ts.feature_count) AS INTEGER) as total_count,
                 COUNT(DISTINCT s.id) as num_runs,
                 MAX(s.timestamp) as latest_run,
@@ -226,7 +234,7 @@ class EnhancedQAConverter:
             params.extend(rc_versions)
         
         query += """
-            GROUP BY s.verification_type, s.rc_version, ts.test_name, ts.issue_type
+            GROUP BY s.verification_type, s.rc_version, ts.test_name, ts.issue_type, ts.layer_name
             ORDER BY total_count DESC
         """
         
@@ -265,6 +273,7 @@ class EnhancedQAConverter:
                 qa_type=row["verification_type"],
                 rc_version=row["rc_version"],
                 rc_short=self.RC_VERSION_MAP.get(row["rc_version"], "RC?"),
+                layer_name=row["layer_name"],
                 test_name=row["test_name"],
                 issue_type=row["issue_type"],
                 trend_data=trend_data,

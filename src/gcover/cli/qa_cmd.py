@@ -1411,6 +1411,209 @@ def show_latest_couple(ctx, verbose: bool):
         raise click.Abort()
 
 
+@qa_commands.command("trend-analysis")
+@click.option(
+    "--qa-type",
+    type=click.Choice(["Topology", "TechnicalQualityAssurance", "TQA"]),
+    required=True,
+    help="QA test type to analyze",
+)
+@click.option(
+    "--test-name",
+    help="Specific test name to analyze (optional, shows all if not specified)",
+)
+@click.option(
+    "--rc-version",
+    type=click.Choice(["RC1", "RC2", "2016-12-31", "2030-12-31"]),
+    help="Specific RC version to analyze",
+)
+@click.option(
+    "--layer", help="Specific layer to analyze (e.g., IssuePolygons, IssueLines)"
+)
+@click.option(
+    "--weeks-back", type=int, default=8, help="Number of weeks to analyze (default: 8)"
+)
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
+@click.pass_context
+def trend_analysis(
+    ctx,
+    qa_type: str,
+    test_name: Optional[str],
+    rc_version: Optional[str],
+    layer: Optional[str],
+    weeks_back: int,
+    verbose: bool,
+):
+    """
+    Deep trend analysis for specific tests over time.
+
+    This command provides detailed trend analysis for specific tests,
+    showing how issue counts have changed over multiple weeks.
+
+    Examples:
+        # Analyze all Topology tests for RC2 over 8 weeks
+        gcover qa trend-analysis --qa-type Topology --rc-version RC2
+
+        # Analyze a specific test across all layers
+        gcover qa trend-analysis --qa-type Topology --test-name "IsCoveredByOther(0)"
+
+        # Analyze issues in IssuePolygons layer only
+        gcover qa trend-analysis --qa-type TQA --layer IssuePolygons --weeks-back 12
+    """
+    if verbose:
+        logger.remove()
+        logger.add(sys.stderr, level="DEBUG")
+
+    qa_config, global_config = get_qa_config(ctx)
+
+    # Check if database exists
+    if not qa_config.db_path.exists():
+        console.print(f"[red]Statistics database not found: {qa_config.db_path}[/red]")
+        console.print("Run 'gcover qa process' first to generate statistics.")
+        return
+
+    # Normalize inputs
+    if qa_type == "TQA":
+        qa_type = "TechnicalQualityAssurance"
+
+    if rc_version:
+        rc_map = {"RC1": "2016-12-31", "RC2": "2030-12-31"}
+        if rc_version.upper() in rc_map:
+            rc_version = rc_map[rc_version.upper()]
+
+    try:
+        # Get S3 settings
+        s3_bucket = qa_config.get_s3_bucket(global_config)
+        s3_profile = qa_config.get_s3_profile(global_config)
+
+        # Create converter
+        converter = FileGDBConverter(
+            db_path=qa_config.db_path,
+            temp_dir=qa_config.temp_dir,
+            s3_bucket=s3_bucket,
+            s3_profile=s3_profile,
+            max_workers=global_config.max_workers,
+            s3_config=global_config.s3,
+        )
+
+        # Build detailed trend query
+        query = """
+                    SELECT 
+                        s.verification_type,
+                        s.rc_version,
+                        ts.layer_name,
+                        ts.test_name,
+                        ts.issue_type,
+                        strftime(s.timestamp, '%Y-%W') as week_year,
+                        -- date_trunc('week', s.timestamp) as week_start,  -- Better for DuckDB
+                         s.timestamp,
+                        CAST(SUM(ts.feature_count) AS INTEGER) as issue_count
+                    FROM test_stats ts
+                    JOIN gdb_summaries s ON ts.gdb_summary_id = s.id
+                    WHERE s.verification_type = ?
+                        AND s.timestamp >= (now() - INTERVAL '{} days')
+                """.format(weeks_back * 7)
+
+        params = [qa_type]
+
+        # Add filters
+        if rc_version:
+            query += " AND s.rc_version = ?"
+            params.append(rc_version)
+
+        if test_name:
+            query += " AND ts.test_name = ?"
+            params.append(test_name)
+
+        if layer:
+            query += " AND ts.layer_name = ?"
+            params.append(layer)
+
+        query += """
+                    GROUP BY s.verification_type, s.rc_version, ts.layer_name, 
+                             ts.test_name, ts.issue_type,  timestamp
+                    ORDER BY s.rc_version, ts.layer_name, ts.test_name, 
+                             ts.issue_type, s.timestamp DESC
+                """
+
+        df = converter.conn.execute(query, params).df()
+
+        if df.empty:
+            console.print(
+                "[yellow]No trend data found for the specified criteria[/yellow]"
+            )
+            return
+
+        console.print(df.head())
+
+        # Display trend analysis
+        console.print(f"\n[bold blue]📈 Trend Analysis: {qa_type}[/bold blue]")
+        if test_name:
+            console.print(f"[dim]Test: {test_name}[/dim]")
+        if rc_version:
+            console.print(f"[dim]RC Version: {rc_version}[/dim]")
+        if layer:
+            console.print(f"[dim]Layer: {layer}[/dim]")
+        console.print(f"[dim]Period: {weeks_back} weeks[/dim]")
+
+        # Group by test for detailed analysis
+        grouped = df.groupby(["rc_version", "layer_name", "test_name", "issue_type"])
+
+        console.print(grouped.head())
+
+        for (rc_ver, layer_name, test_nm, issue_tp), group in grouped:
+            if len(group) < 2:  # Need at least 2 data points for trend
+                continue
+
+            rc_short = "RC2" if rc_ver == "2030-12-31" else "RC1"
+
+            # Calculate trend
+            latest = group.iloc[0]
+            oldest = group.iloc[-1]
+
+            trend_change = latest["issue_count"] - oldest["issue_count"]
+            trend_pct = (
+                (trend_change / oldest["issue_count"] * 100)
+                if oldest["issue_count"] > 0
+                else 0
+            )
+
+            # Style based on trend
+            if trend_change > 0:
+                trend_style = "red"
+                trend_icon = "📈"
+            elif trend_change < 0:
+                trend_style = "green"
+                trend_icon = "📉"
+            else:
+                trend_style = "dim"
+                trend_icon = "➡️"
+
+            console.print(f"\n[bold]{rc_short} | {layer_name} | {test_nm}[/bold]")
+            console.print(f"  Issue Type: {issue_tp}")
+            console.print(f"  Current: {latest['issue_count']:,} issues")
+            console.print(f"  {weeks_back} weeks ago: {oldest['issue_count']:,} issues")
+            console.print(
+                f"  Trend: [{trend_style}]{trend_change:+,} ({trend_pct:+.1f}%) {trend_icon}[/{trend_style}]"
+            )
+
+            # Show weekly progression
+            if verbose and len(group) > 2:
+                console.print(f"  Weekly progression:")
+                for _, row in group.head(weeks_back).iterrows():  # Show last 6 weeks
+                    week_date = pd.to_datetime(row["timestamp"]).strftime("%Y-%m-%d")
+                    console.print(f"    {week_date}: {row['issue_count']:,}")
+
+    except Exception as e:
+        console.print(f"[red]Failed to perform trend analysis: {e}[/red]")
+        if verbose:
+            logger.exception("Full error details:")
+        raise
+
+    finally:
+        converter.close()
+
+
 @qa_commands.command("enhanced-stats")
 @click.option(
     "--qa-type",
@@ -1479,6 +1682,7 @@ def enhanced_stats(
         # TQA results for a specific date without trends (faster)
         gcover qa enhanced-stats --qa-type TQA --target-date 2025-01-15 --no-trends
     """
+    converter = None
     if verbose:
         logger.remove()
         logger.add(sys.stderr, level="DEBUG")
@@ -1610,6 +1814,13 @@ def enhanced_stats(
             include_trends=not no_trends,
             top_n=top_n,
         )
+        # TODO
+        # console.print(df)
+        for q in qa_:
+            trend_data = q.trend_data
+            console.print(
+                f"{trend_data.change_percent}, {trend_data.change}, {trend_data.trend_indicator}"
+            )
 
         if df.empty:
             console.print(
@@ -1645,6 +1856,10 @@ def enhanced_stats(
             df.to_csv(export_csv, index=False)
             console.print(f"[green]Enhanced results exported to: {export_csv}[/green]")
 
+    except IOError as rte:
+        console.print(f"[red]IOError error: {rte}[/red]")
+        exit(1)
+
     except Exception as e:
         console.print(f"[red]Failed to get enhanced statistics: {e}[/red]")
         if verbose:
@@ -1652,7 +1867,8 @@ def enhanced_stats(
         raise
 
     finally:
-        converter.close()
+        if converter:
+            converter.close()
 
 
 def _display_test_schedule(qa_type: str):
