@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
+import warnings
+
 
 import duckdb
 import fiona
@@ -23,7 +25,6 @@ from gcover.config import load_config
 from gcover.gdb.storage import S3Uploader
 
 console = Console()
-
 
 
 @dataclass
@@ -86,6 +87,13 @@ class FileGDBConverter:
         self.s3_bucket = s3_bucket
         self.s3_profile = s3_profile
         self.max_workers = max_workers or 4
+        self.s3_config = s3_config
+
+        if s3_bucket or s3_profile:
+            warnings.warn(
+                "Passing s3_bucket and s3_profile directly is deprecated. Use s3_config instead.",
+                DeprecationWarning,
+            )
 
         # Use verification-specific database path
         # verification_db = self.config.db_path.parent / "verification_stats.duckdb"
@@ -105,8 +113,13 @@ class FileGDBConverter:
 
         # Initialize DuckDB connection
         console.print(f"DuckDB: {self.duckdb_path}")
-        self.conn = duckdb.connect(str(self.duckdb_path))
-        self._init_stats_tables()
+        try:
+            self.conn = duckdb.connect(str(self.duckdb_path))
+            self._init_stats_tables()
+        except duckdb.duckdb.IOException as e:
+            raise IOError(
+                f"Could not open/connect to DuckDB: {self.duckdb_path}: {str(e)}"
+            )
 
         # Setup logging
         # TODO configure logging
@@ -842,43 +855,39 @@ class FileGDBConverter:
         if hasattr(self, "conn"):
             self.conn.close()
 
-    def main():
-        """Example usage of the FileGDBConverter."""
-        # from .config import load_config TODO
 
-        # Load configuration
-        config = load_config()
+def main():
+    """Example usage of the FileGDBConverter."""
+    # from .config import load_config TODO
 
-        # Initialize converter with config
-        converter = FileGDBConverter(config=config)
+    # Load configuration
+    config = load_config()
 
-        try:
-            # Process a single GDB (using configured base paths if available)
-            if "verifications" in config.base_paths:
-                base_path = config.base_paths["verifications"]
-                gdb_path = (
-                    base_path / "Topology/RC_2030-12-31/20250718_07-00-12/issue.gdb"
-                )
-            else:
-                gdb_path = Path(
-                    "/media/marco/SANDISK/Verifications/Topology/RC_2030-12-31/20250718_07-00-12/issue.gdb"
-                )
+    # Initialize converter with config
+    converter = FileGDBConverter(config=config)
 
-            if gdb_path.exists():
-                summary = converter.process_gdb(gdb_path)
-                console.print(
-                    f"[green]Processed {summary.total_features:,} total features[/green]"
-                )
+    try:
+        # Process a single GDB (using configured base paths if available)
+        if "verifications" in config.base_paths:
+            base_path = config.base_paths["verifications"]
+            gdb_path = base_path / "Topology/RC_2030-12-31/20250718_07-00-12/issue.gdb"
+        else:
+            gdb_path = Path(
+                "/media/marco/SANDISK/Verifications/Topology/RC_2030-12-31/20250718_07-00-12/issue.gdb"
+            )
 
-                # Get recent statistics
-                stats_df = converter.get_statistics_summary(days_back=7)
-                console.print(f"[blue]Found {len(stats_df)} recent test results[/blue]")
+        if gdb_path.exists():
+            summary = converter.process_gdb(gdb_path)
+            console.print(
+                f"[green]Processed {summary.total_features:,} total features[/green]"
+            )
 
-            else:
-                console.print(f"[red]GDB not found: {gdb_path}[/red]")
+            # Get recent statistics
+            stats_df = converter.get_statistics_summary(days_back=7)
+            console.print(f"[blue]Found {len(stats_df)} recent test results[/blue]")
 
-        finally:
-            converter.close()
+        else:
+            console.print(f"[red]GDB not found: {gdb_path}[/red]")
 
-
-
+    finally:
+        converter.close()
