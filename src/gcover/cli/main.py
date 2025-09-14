@@ -36,6 +36,12 @@ env_map = {
 }
 
 
+def confirm_extended(prompt: str, default=True):
+    response = click.prompt(prompt + " [y/n]", default="y" if default else "n")
+    response = response.strip().lower()
+    return response in {"y", "yes", "o", "oui"}
+
+
 @click.group(context_settings={"show_default": True})
 @click.version_option(version=__version__, prog_name="gcover")
 @click.option(

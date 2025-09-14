@@ -290,7 +290,7 @@ class S3Config(BaseModel):
         # Use enum values for serialization
         use_enum_values = True
         # Example for documentation
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "bucket": "gcover-assets-prod",
                 "profile": "gcover-aws-profile",

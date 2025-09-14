@@ -1,18 +1,10 @@
 #!/usr/bin/env python3
 
-import hashlib
-import os
-import re
-import zipfile
-from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-import boto3
 import duckdb
-from botocore.exceptions import ClientError
 
 # Configure logging
 from loguru import logger
@@ -21,13 +13,11 @@ from .assets import (
     AssetType,
     BackupGDBAsset,
     GDBAsset,
-    GDBAssetInfo,
     IncrementGDBAsset,
-    VerificationGDBAsset,
     ReleaseCandidate,
+    VerificationGDBAsset,
 )
-
-from .storage import S3Uploader, MetadataDB
+from .storage import MetadataDB, S3Uploader
 
 GBD_TO_EXCLUDE = ["progress.gdb", "temp.gdb"]
 
@@ -39,8 +29,8 @@ class GDBAssetManager:
         self,
         base_paths: Dict[str, Path],
         s3_config: Dict[str, Any],
-        db_path: Union[str, Path],
-        temp_dir: Union[str, Path] = "/tmp/gdb_zips",
+        db_path: str | Path,
+        temp_dir: str | Path = "/tmp/gdb_zips",
     ):
         """
         Initialize GDB Asset Manager with enhanced configuration
@@ -103,7 +93,7 @@ class GDBAssetManager:
         )
 
     @classmethod
-    def from_config(cls, config_obj, temp_dir: Optional[Union[str, Path]] = None):
+    def from_config(cls, config_obj, temp_dir: Optional[str | Path] = None):
         """
         Create GDBAssetManager from configuration object
 
@@ -350,7 +340,7 @@ class GDBAssetManager:
 
         latest_assets = {}
         for row in results:
-            data = dict(zip(columns, row))
+            data = dict(zip(columns, row, strict=False))
             rc_name = data.pop("rc_name")
             latest_assets[rc_name] = data
 
@@ -394,7 +384,7 @@ class GDBAssetManager:
 
         verification_runs = {}
         for row in results:
-            data = dict(zip(columns, row))
+            data = dict(zip(columns, row, strict=False))
             asset_type = data["asset_type"]
 
             if asset_type not in verification_runs:
@@ -408,8 +398,8 @@ class GDBAssetManager:
 def create_manager_from_legacy_params(
     base_paths: Dict[str, Path],
     s3_bucket: str,
-    db_path: Union[str, Path],
-    temp_dir: Union[str, Path] = "/tmp/gdb_zips",
+    db_path: str | Path,
+    temp_dir: str | Path = "/tmp/gdb_zips",
     aws_profile: Optional[str] = None,
 ) -> GDBAssetManager:
     """
