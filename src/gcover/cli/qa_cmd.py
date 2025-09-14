@@ -1117,6 +1117,15 @@ def _auto_detect_qa_couple(
     help=f"Type of administrative zones to aggregate by. Choices: {', '.join(GROUP_BY_CHOICES)}",
 )
 @click.option(
+    "--type",
+    "asset_type",
+    default=AssetType.VERIFICATION_TOPOLOGY.value,
+    type=click.Choice(
+        [t.value for t in [AssetType.VERIFICATION_TOPOLOGY, AssetType.VERIFICATION_TQA]]
+    ),
+    help=f"Filter by verification asset type.",
+)
+@click.option(
     "--format",
     "output_format",
     type=click.Choice(OUTPUT_FORMATS, case_sensitive=False),
@@ -1127,6 +1136,9 @@ def _auto_detect_qa_couple(
     "--output",
     type=click.Path(path_type=Path),
     help="Output file path (extension will be added based on format). If not specified, uses timestamp.",
+)
+@click.option(
+    "--yes", is_flag=True, help="Automatically confirm prompts (for scripting)"
 )
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 @click.pass_context
@@ -1139,6 +1151,8 @@ def aggregate(
     output_format: str,
     output: Optional[Path],
     verbose: bool,
+    yes: bool,
+    asset_type,
 ):
     """
     Aggregate QA statistics by administrative zones.
@@ -1175,11 +1189,31 @@ def aggregate(
         console.print("[dim]Verbose logging enabled[/dim]")"""
 
     try:
+        qa_config, global_config = get_qa_config(ctx)
+
         # Auto-detect QA couple if not provided
-        rc1_gdb, rc2_gdb = _auto_detect_qa_couple(ctx, rc1_gdb, rc2_gdb)
+        rc1_gdb, rc2_gdb = _auto_detect_qa_couple(
+            ctx, rc1_gdb, rc2_gdb, asset_type=asset_type
+        )
 
         logger.info(f"Using for RC1: {rc1_gdb}")
         logger.info(f"Using for RC2: {rc2_gdb}")
+
+        if not yes:
+            response = (
+                console.input(
+                    f"[bold yellow]Proceed with\nRC1: {rc1_gdb} and \nRC2: {rc2_gdb}?[/bold yellow] [green](y/n)[/green]: "
+                )
+                .strip()
+                .lower()
+            )
+            if response not in {"y", "yes", "o", "oui"}:
+                console.print("[red]Aborted.[/red]")
+                ctx.exit(1)
+
+        # Get S3 settings
+        s3_bucket = qa_config.get_s3_bucket(global_config)
+        s3_profile = qa_config.get_s3_profile(global_config)
 
         # Generate output filename if not provided
         if output is None:
