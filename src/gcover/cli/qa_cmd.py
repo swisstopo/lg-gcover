@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Optional, List
 import pandas as pd
 from collections import defaultdict
+from datetime import datetime as dt
 
 import click
 from loguru import logger
@@ -374,8 +375,8 @@ def process_all(
 
             for i, asset in enumerate(filtered_assets, 1):
                 try:
-                    verification_type, rc_version, timestamp = (
-                        converter._parse_gdb_path(asset.path)
+                    verification_type, rc_version, timestamp = converter.parse_gdb_path(
+                        asset.path
                     )
 
                     converted_dir = (
@@ -1096,13 +1097,19 @@ def _auto_detect_qa_couple(
 @qa_commands.command("aggregate")
 @click.option(
     "--rc1-gdb",
-    type=click.Path(exists=True, dir_okay=True, file_okay=False, path_type=Path),
-    help="Path to RC1 QA FileGDB (issue.gdb). If not specified, auto-detects latest couple.",
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to RC1 QA FileGDB (for two-RC mode)",
 )
 @click.option(
     "--rc2-gdb",
-    type=click.Path(exists=True, dir_okay=True, file_okay=False, path_type=Path),
-    help="Path to RC2 QA FileGDB (issue.gdb). If not specified, auto-detects latest couple.",
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to RC2 QA FileGDB (for two-RC mode)",
+)
+@click.option(
+    "--input",
+    "-i",
+    type=click.Path(exists=True, path_type=Path),
+    help="Single input: RC1 GDB, RC2 GDB, or merged data (GPKG/FileGDB)",
 )
 @click.option(
     "--zones-file",
@@ -1111,10 +1118,10 @@ def _auto_detect_qa_couple(
     help="Path to administrative zones GPKG file",
 )
 @click.option(
-    "--group-by",
-    type=click.Choice(GROUP_BY_CHOICES, case_sensitive=False),
+    "--zone-type",
+    type=click.Choice(["mapsheets", "work_units", "lots"]),
     default="mapsheets",
-    help=f"Type of administrative zones to aggregate by. Choices: {', '.join(GROUP_BY_CHOICES)}",
+    help="Type of zones to aggregate by (default: mapsheets)",
 )
 @click.option(
     "--type",
@@ -1126,144 +1133,423 @@ def _auto_detect_qa_couple(
     help=f"Filter by verification asset type.",
 )
 @click.option(
-    "--format",
-    "output_format",
-    type=click.Choice(OUTPUT_FORMATS, case_sensitive=False),
-    default="csv",
-    help=f"Output format for aggregated statistics. Choices: {', '.join(OUTPUT_FORMATS)}",
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Output path for aggregated statistics (without extension)",
 )
 @click.option(
-    "--output",
-    type=click.Path(path_type=Path),
-    help="Output file path (extension will be added based on format). If not specified, uses timestamp.",
+    "--base-dir",
+    type=click.Path(),
+    default="static/output",
+    help="Base directory for structured output.",
+)
+@click.option(
+    "--output-format",
+    type=click.Choice(["csv", "xlsx", "json"]),
+    default="csv",
+    help="Output format for statistics (default: csv)",
+)
+@click.option(
+    "--extract-first",
+    is_flag=True,
+    help="Extract relevant issues first when using two-RC mode (recommended)",
+)
+@click.option(
+    "--auto-discover",
+    is_flag=True,
+    help="Auto-discover RC GDBs from base verification directory",
 )
 @click.option(
     "--yes", is_flag=True, help="Automatically confirm prompts (for scripting)"
 )
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 @click.pass_context
-def aggregate(
+def aggregate_qa_stats(
     ctx,
     rc1_gdb: Optional[Path],
     rc2_gdb: Optional[Path],
-    zones_file: Path,
-    group_by: str,
-    output_format: str,
+    input: Optional[Path],
+    zones_file: Optional[Path],
+    zone_type: str,
+    asset_type: str,
     output: Optional[Path],
+    base_dir: Optional[Path],
+    output_format: str,
+    extract_first: bool,
+    auto_discover: bool,
     verbose: bool,
     yes: bool,
-    asset_type,
 ):
     """
     Aggregate QA statistics by administrative zones.
 
-    This command processes QA test results from both RC1 and RC2 FileGDBs,
-    performs spatial joins with administrative zones, and outputs aggregated
-    statistics showing issue counts by zone, test type, and severity.
+    Multiple input modes supported:
 
-    Bronze → Silver data transformation.
+    \b
+    1. Two-RC mode: --rc1-gdb and --rc2-gdb
+       Processes both RCs and merges relevant issues based on mapsheet sources
 
-    AUTO-DETECTION:
-    If --rc1-gdb and --rc2-gdb are not specified, automatically uses the latest
-    QA topology verification couple from the GDB asset database.
+    \b
+    2. Single input mode: --input
+       Uses a single RC GDB or pre-merged data (from extract_relevant_issues)
 
-    MANUAL SPECIFICATION:
-    Use both --rc1-gdb and --rc2-gdb to specify exact file paths.
+    \b
+    3. Auto-discovery mode: --auto-discover --base-dir
+       Automatically finds latest RC GDBs in verification directory
 
     Examples:
-        # Auto-detect latest QA couple
-        gcover qa aggregate --group-by mapsheets --format xlsx
+        # Two-RC mode with extraction
+        gcover qa aggregate --rc1-gdb rc1.gdb --rc2-gdb rc2.gdb --extract-first
 
-        # Manual specification
-        gcover qa aggregate \\
-            --rc1-gdb /data/bronze/qa/RC1/issue.gdb \\
-            --rc2-gdb /data/bronze/qa/RC2/issue.gdb \\
-            --group-by mapsheets \\
-            --format xlsx \\
-            --output /data/silver/qa/aggregated/weekly_stats
+        # Single merged input
+        gcover qa aggregate --input merged_issues.gpkg --zone-type mapsheets
+
+        # Auto-discovery
+        gcover qa aggregate --auto-discover --base-dir /path/to/verifications
     """
+    final_path = None
+    if verbose:
+        logger.remove()
+        logger.add(sys.stderr, level="DEBUG")
+        console.print("[dim]Verbose logging enabled[/dim]")
+
+    qa_config, global_config = get_qa_config(ctx)
+
+    # Validate input combinations
+    input_modes = [
+        bool(rc1_gdb and rc2_gdb),  # Two-RC mode
+        bool(input),  # Single input mode
+        bool(auto_discover),  # Auto-discovery mode
+    ]
+
+    if sum(input_modes) != 1:
+        raise click.BadParameter(
+            "Exactly one input mode must be specified:\n"
+            "  - Two-RC mode: --rc1-gdb AND --rc2-gdb\n"
+            "  - Single input: --input\n"
+            "  - Auto-discovery: --auto-discover --base-dir"
+        )
+
+    # if auto_discover and not base_dir:
+    #    raise click.BadParameter("--base-dir is required with --auto-discover")
+
     # TODO
-    """if verbose:
-        logger.remove()  # Remove all handlers
-        logger.add(sys.stderr, level="DEBUG")  # Add debug handler
-        console.print("[dim]Verbose logging enabled[/dim]")"""
+    if output and base_dir != "static/output":
+        raise click.UsageError("Use either --output or --base-dir, not both.")
+    if output:
+        final_path = output
+        final_path.mkdir(parents=True, exist_ok=True)
 
-    try:
-        qa_config, global_config = get_qa_config(ctx)
-
-        # Auto-detect QA couple if not provided
-        rc1_gdb, rc2_gdb = _auto_detect_qa_couple(
-            ctx, rc1_gdb, rc2_gdb, asset_type=asset_type
-        )
-
-        logger.info(f"Using for RC1: {rc1_gdb}")
-        logger.info(f"Using for RC2: {rc2_gdb}")
-
-        if not yes:
-            response = (
-                console.input(
-                    f"[bold yellow]Proceed with\nRC1: {rc1_gdb} and \nRC2: {rc2_gdb}?[/bold yellow] [green](y/n)[/green]: "
-                )
-                .strip()
-                .lower()
+    # Set default zones file from config if available
+    if not zones_file:
+        # Try to get from config or use a default path
+        zones_file = getattr(qa_config, "zones_file", None)
+        if not zones_file:
+            console.print(
+                "[yellow]Warning: No zones file specified. Use --zones-file option.[/yellow]"
             )
-            if response not in {"y", "yes", "o", "oui"}:
-                console.print("[red]Aborted.[/red]")
-                ctx.exit(1)
-
-        # Get S3 settings
-        s3_bucket = qa_config.get_s3_bucket(global_config)
-        s3_profile = qa_config.get_s3_profile(global_config)
-
-        # Generate output filename if not provided
-        if output is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output = Path(f"qa_stats_{group_by}_{timestamp}")
-        else:
-            path = Path(output)
-            if path.parent != Path("."):  # Avoid creating '.' as a directory
-                path.parent.mkdir(parents=True, exist_ok=True)
-
-        console.log("Starting aggregation...")
-
-        # Initialize analyzer
-        logger.info(f"Initializing QA analyzer with zones from {zones_file}")
-        analyzer = QAAnalyzer(zones_file)
-
-        # Aggregate statistics
-        logger.info(f"Aggregating QA data by {group_by}")
-        stats_df = analyzer.aggregate_by_zone(
-            rc1_gdb=rc1_gdb,
-            rc2_gdb=rc2_gdb,
-            zone_type=group_by.lower(),
-            output_format=output_format,
-        )
-
-        if stats_df.empty:
-            click.echo("⚠️  No QA statistics could be aggregated", err=True)
             return
 
-        # Write output
-        analyzer.write_aggregated_stats(stats_df, output, output_format)
+    # Set default output path
+    # TODO
+    """if not output:
+        timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
+        output = Path(f"qa_aggregated_stats_{timestamp}")"""
 
-        # Summary
-        total_issues = stats_df["total_issues"].sum()
-        error_issues = (
-            stats_df["error_issues"].sum() if "error_issues" in stats_df.columns else 0
-        )
-        zones_count = stats_df[analyzer._get_zone_id_column(group_by.lower())].nunique()
+    console.print(f"[blue]Aggregating QA statistics by {zone_type}[/blue]")
 
-        click.echo("✅ Aggregation complete!")
-        click.echo(
-            f"   📊 {total_issues:,} total issues across {zones_count} {group_by}"
+    def get_structured_dir(base_dir: str | Path, gdb_path: str | Path) -> Path:
+        """
+        Construct the output directory path for converted data.
+
+        Args:
+            output: Base output directory.
+            verification_type: Type of verification (e.g., "Topology").
+            timestamp: Timestamp object to format.
+
+        Returns:
+            A Path object representing the full converted directory.
+        """
+        verification_type, rc_version, timestamp = FileGDBConverter.parse_gdb_path(
+            gdb_path
         )
-        click.echo(f"   🔴 {error_issues:,} error-level issues")
-        click.echo(f"   📁 Output: {output.with_suffix('.' + output_format)}")
+
+        return (
+            Path(base_dir)
+            / verification_type
+            / rc_version
+            / timestamp.strftime("%Y%m%d_%H-%M-%S")
+        )
+
+    try:
+        from gcover.qa.analyzer import QAAnalyzer
+
+        # Initialize analyzer
+        analyzer = QAAnalyzer(zones_file)
+        console.print(f"[dim]Loaded zones from: {zones_file}[/dim]")
+
+        # Handle different input modes
+        if rc1_gdb and rc2_gdb:
+            # Two-RC mode
+            console.print(
+                f"[dim]Two-RC mode: RC1={rc1_gdb.name}, RC2={rc2_gdb.name}[/dim]"
+            )
+            if not final_path:
+                final_path = get_structured_dir(base_dir, rc2_gdb)
+                final_path.mkdir(parents=True, exist_ok=True)
+            console.print(f"[dim]Output dir: {final_path}[/dim]")
+
+            if extract_first:
+                # Extract relevant issues first, then aggregate
+                console.print("[dim]Extracting relevant issues first...[/dim]")
+                temp_merged = final_path.parent / f"temp_merged_{final_path.stem}"
+
+                extraction_stats = analyzer.extract_relevant_issues(
+                    rc1_gdb, rc2_gdb, temp_merged, output_format="gpkg"
+                )
+
+                console.print(
+                    f"[green]Extracted {extraction_stats['total_issues']} relevant issues "
+                    f"({extraction_stats['rc1_issues']} RC1, {extraction_stats['rc2_issues']} RC2)[/green]"
+                )
+
+                # Aggregate from merged data
+                merged_path = temp_merged.with_suffix(".gpkg")
+                stats_df = analyzer.aggregate_by_zone(
+                    merged_path, zone_type, output_format
+                )
+
+                # Cleanup temp file
+                if merged_path.exists():
+                    merged_path.unlink()
+
+            else:
+                # Original two-RC aggregation method
+                console.print("[dim]Using original two-RC aggregation method[/dim]")
+                stats_df = analyzer.aggregate_by_zone(
+                    rc1_gdb, rc2_gdb, zone_type, output_format
+                )
+
+        elif input:
+            # Single input mode
+            console.print(f"[dim]Single input mode: {input.name}[/dim]")
+
+            if not final_path:
+                final_path = get_structured_dir(base_dir, input)
+                final_path.mkdir(parents=True, exist_ok=True)
+            console.print(f"[dim]Output dir: {final_path}[/dim]")
+
+            # Determine if input is merged data or single RC
+            if _is_merged_data(input):
+                console.print("[dim]Input appears to be merged data[/dim]")
+                stats_df = analyzer.aggregate_by_zone(input, zone_type, output_format)
+            else:
+                console.print("[dim]Input appears to be single RC GDB[/dim]")
+                # Treat as single RC - create empty second RC
+                empty_rc = Path("/dev/null")  # This will be handled gracefully
+                stats_df = analyzer.aggregate_by_zone(
+                    input, empty_rc, zone_type, output_format
+                )
+
+        elif auto_discover:
+            # Auto-discovery mode
+            qa_config, global_config = get_qa_config(ctx)
+
+            # Auto-detect QA couple if not provided
+            rc1_path, rc2_path = _auto_detect_qa_couple(
+                ctx, None, None, asset_type=asset_type
+            )
+            # console.print(f"[dim]Auto-discovery mode in: {base_dir}[/dim]")
+
+            # rc1_path, rc2_path = _auto_discover_rc_gdbs(base_dir)
+
+            console.print(
+                f"[dim]Discovered RC1: {rc1_path if rc1_path else 'None'}[/dim]"
+            )
+            console.print(
+                f"[dim]Discovered RC2: {rc2_path if rc2_path else 'None'}[/dim]"
+            )
+
+            if not final_path:
+                final_path = get_structured_dir(base_dir, rc2_path)
+                final_path.mkdir(parents=True, exist_ok=True)
+
+            console.print(f"[dim]Output dir: {final_path}[/dim]")
+
+            if not yes:
+                response = (
+                    console.input(
+                        f"[bold yellow]Proceed with\nRC1: {rc1_path} and \nRC2: {rc2_path}?[/bold yellow] [green](y/n)[/green]: "
+                    )
+                    .strip()
+                    .lower()
+                )
+                if response not in {"y", "yes", "o", "oui"}:
+                    console.print("[red]Aborted.[/red]")
+                    ctx.exit(1)
+
+            if rc1_path and rc2_path:
+                # Use two-RC mode with extraction by default
+                console.print(
+                    "[dim]Extracting relevant issues from discovered RCs...[/dim]"
+                )
+                temp_merged = final_path.parent / f"temp_merged_{final_path.stem}"
+                console.print(f"[dim]Zone type: {zone_type}[/dim]")  # TODO
+                extraction_stats = analyzer.extract_relevant_issues(
+                    rc1_path, rc2_path, temp_merged, output_format="gpkg"
+                )
+
+                console.print(
+                    f"[green]Extracted {extraction_stats['total_issues']} relevant issues[/green]"
+                )
+                # TODO
+                merged_path = temp_merged.with_suffix(".gpkg")
+                console.print(f"[dim]Zone type: {zone_type}[/dim]")  # TODO
+                stats_df = analyzer.aggregate_by_zone(
+                    merged_path, None, zone_type, output_format
+                )
+
+                # Cleanup
+                if merged_path.exists():
+                    merged_path.unlink()
+
+            elif rc1_path or rc2_path:
+                # Only one RC found
+                single_rc = rc1_path or rc2_path
+                console.print(
+                    f"[yellow]Only one RC found, processing: {single_rc.name}[/yellow]"
+                )
+                empty_rc = Path("/dev/null")
+                stats_df = analyzer.aggregate_by_zone(
+                    single_rc, empty_rc, zone_type, output_format
+                )
+            else:
+                console.print("[red]No RC GDBs found in base directory[/red]")
+                return
+
+        # Write results
+        if not stats_df.empty:
+            analyzer.write_aggregated_stats(
+                stats_df, final_path, zone_type, output_format
+            )
+
+            # Display summary
+            console.print(f"\n[green]✅ Aggregation complete![/green]")
+            console.print(f"Statistics: {len(stats_df)} rows")
+            console.print(f"Zone types: {', '.join(stats_df['zone_type'].unique())}")
+            console.print(f"Layer types: {', '.join(stats_df['layer_type'].unique())}")
+            if "source_rc" in stats_df.columns:
+                rc_counts = stats_df["source_rc"].value_counts()
+                console.print(f"RC sources: {dict(rc_counts)}")
+
+            # Show top issues by zone
+            if zone_type in stats_df.columns:
+                zone_id_col = analyzer._get_zone_id_column(zone_type)
+                if zone_id_col in stats_df.columns:
+                    top_zones = (
+                        stats_df.groupby(zone_id_col)["total_issues"]
+                        .sum()
+                        .sort_values(ascending=False)
+                        .head(5)
+                    )
+
+                    console.print(f"\n[bold]Top 5 {zone_type} by issue count:[/bold]")
+                    for zone_id, count in top_zones.items():
+                        console.print(f"  {zone_id}: {count:,} issues")
+
+        else:
+            console.print("[yellow]No aggregated statistics generated[/yellow]")
 
     except Exception as e:
-        logger.error(f"Aggregation failed: {e}")
-        click.echo(f"❌ Error: {e}", err=True)
-        raise click.Abort()
+        console.print(f"[red]❌ Aggregation failed: {e}[/red]")
+        if verbose:
+            logger.exception("Full error details:")
+        raise
+
+
+def _is_merged_data(file_path: Path) -> bool:
+    """
+    Determine if input file is merged data or single RC GDB.
+
+    Args:
+        file_path: Path to input file
+
+    Returns:
+        True if file appears to be merged data, False if single RC
+    """
+    # Simple heuristics based on file structure
+    if file_path.suffix.lower() == ".gpkg":
+        # GPKG is likely merged data
+        return True
+    elif file_path.suffix.lower() == ".gdb":
+        # Check if it has the typical QA issue layers
+        try:
+            import fiona
+
+            layers = fiona.listlayers(str(file_path))
+
+            # If it has source_rc info in layer data or specific naming pattern,
+            # it's likely merged data
+            qa_layers = ["IssuePolygons", "IssueLines", "IssuePoints"]
+            has_qa_layers = any(layer in layers for layer in qa_layers)
+
+            # Check for merged data indicators (this is heuristic)
+            merged_indicators = [
+                "_RC1" in str(file_path),
+                "_RC2" in str(file_path),
+                "merged" in str(file_path).lower(),
+                "combined" in str(file_path).lower(),
+                "relevant" in str(file_path).lower(),
+            ]
+
+            return has_qa_layers and any(merged_indicators)
+
+        except Exception:
+            # If we can't determine, assume it's a single RC
+            return False
+
+    return False
+
+
+def _auto_discover_rc_gdbs(base_dir: Path) -> tuple[Optional[Path], Optional[Path]]:
+    """
+    Auto-discover RC1 and RC2 GDBs in verification directory.
+
+    Args:
+        base_dir: Base verification directory
+
+    Returns:
+        Tuple of (rc1_path, rc2_path), either can be None if not found
+    """
+    rc1_path = None
+    rc2_path = None
+
+    # Look for typical verification directory structure
+    # /Verifications/TechnicalQualityAssurance/RC_*/timestamp/issue.gdb
+    # /Verifications/Topology/RC_*/timestamp/issue.gdb
+
+    patterns = [
+        "TechnicalQualityAssurance/RC_2016-12-31/*/issue.gdb",
+        "TechnicalQualityAssurance/RC_2030-12-31/*/issue.gdb",
+        "Topology/RC_2016-12-31/*/issue.gdb",
+        "Topology/RC_2030-12-31/*/issue.gdb",
+    ]
+
+    import glob
+
+    for pattern in patterns:
+        matches = list(base_dir.glob(pattern))
+        if matches:
+            # Take the most recent (sort by timestamp in path)
+            latest = max(matches, key=lambda p: p.parent.name)
+
+            if "2016-12-31" in pattern:
+                rc1_path = latest
+            elif "2030-12-31" in pattern:
+                rc2_path = latest
+
+    return rc1_path, rc2_path
 
 
 @qa_commands.command("extract")
@@ -1391,8 +1677,8 @@ def extract(
         s3_bucket = qa_config.get_s3_bucket(global_config)
         s3_profile = qa_config.get_s3_profile(global_config)
 
-        # Create converter
-        converter = FileGDBConverter(
+        # Create converter TODO
+        """converter = FileGDBConverter(
             db_path=qa_config.db_path,
             temp_dir=qa_config.temp_dir,
             s3_bucket=s3_bucket,
@@ -1400,7 +1686,8 @@ def extract(
             max_workers=global_config.max_workers,
             s3_config=global_config.s3,
         )
-        verification_type, rc_version, timestamp = converter._parse_gdb_path(rc2_gdb)
+        verification_type, rc_version, timestamp = converter.parse_gdb_path(rc2_gdb)"""
+        verification_type, rc_version, timestamp = FileGDBConverter.parse_gdb_path(path)
 
         converted_dir = (
             Path(output)
