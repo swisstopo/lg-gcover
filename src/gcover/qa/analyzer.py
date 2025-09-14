@@ -88,7 +88,7 @@ class QAAnalyzer:
                 try:
                     gdf = gpd.read_file(self.zones_file, layer=layer_name)
                     if not gdf.empty:
-                        if zone_type == "work_units":  # TODO remove
+                        if zone_type == "work_units":  # TODO huggly hack, to be removed
                             if "WU_NAME" not in gdf.columns and "NAME" in gdf.columns:
                                 gdf["WU_NAME"] = gdf["NAME"]
                                 logger.warning(f"Adding `WU_NAME` to work_units layer!")
@@ -267,7 +267,7 @@ class QAAnalyzer:
 
         mapsheets_gdf = self.zones_data["mapsheets"]
 
-        # TODO: decide how to call the column for rc sources
+        # TODO: decide how to name the column for rc sources
         SOURCE_RC_COLUMN = next(
             (item for item in SOURCE_COLUMN_NAMES if item in mapsheets_gdf.columns),
             None,

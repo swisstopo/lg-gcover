@@ -389,7 +389,7 @@ def process_all(
                     console.print(
                         f"\n[blue]Processing {i}/{len(filtered_assets)}: {asset.path.name}[/blue]"
                     )
-                    # TODO output_dir=output_dir,
+
                     summary = converter.process_gdb(
                         gdb_path=asset.path,
                         simplify_tolerance=simplify_tolerance,
@@ -993,7 +993,9 @@ def _auto_detect_qa_couple(
 
     try:
         # Try to get GDB config to find database path
-        qa_config, global_config = get_qa_config(ctx)  # TODO: print a lot of noise
+        qa_config, global_config = get_qa_config(
+            ctx
+        )  # TODO: cleanup, print a lot of noise
         app_config: AppConfig = load_config(environment=ctx.obj["environment"])
 
         gdb_config = app_config.gdb
@@ -1643,12 +1645,6 @@ def extract(
             --format filegdb \\
             --filter-by-source
     """
-    # TODO
-
-    """if verbose:
-        logger.remove()  # Remove all handlers
-        logger.add(sys.stderr, level="DEBUG")  # Add debug handler
-        console.print("[dim]Verbose logging enabled[/dim]")"""
 
     try:
         qa_config, global_config = get_qa_config(ctx)
@@ -1677,16 +1673,7 @@ def extract(
         s3_bucket = qa_config.get_s3_bucket(global_config)
         s3_profile = qa_config.get_s3_profile(global_config)
 
-        # Create converter TODO
-        """converter = FileGDBConverter(
-            db_path=qa_config.db_path,
-            temp_dir=qa_config.temp_dir,
-            s3_bucket=s3_bucket,
-            s3_profile=s3_profile,
-            max_workers=global_config.max_workers,
-            s3_config=global_config.s3,
-        )
-        verification_type, rc_version, timestamp = converter.parse_gdb_path(rc2_gdb)"""
+        # TODO use same function as `aggregate`
         verification_type, rc_version, timestamp = FileGDBConverter.parse_gdb_path(path)
 
         converted_dir = (
@@ -1758,12 +1745,6 @@ def show_latest_couple(ctx, verbose: bool):
         gcover qa latest-couple
         gcover qa latest-couple --verbose
     """
-
-    # TODO
-    """if verbose:
-        logger.remove()  # Remove all handlers
-        logger.add(sys.stderr, level="DEBUG")  # Add debug handler
-        console.print("[dim]Verbose logging enabled[/dim]")"""
 
     try:
         # Use the same auto-detection logic but just display info
@@ -2208,8 +2189,7 @@ def enhanced_stats(
             include_trends=not no_trends,
             top_n=top_n,
         )
-        # TODO
-        # console.print(df)
+
         for q in qa_:
             trend_data = q.trend_data
             console.print(
