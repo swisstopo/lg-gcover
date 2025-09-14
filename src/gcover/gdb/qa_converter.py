@@ -177,7 +177,8 @@ class FileGDBConverter:
             )
         """)
 
-    def _parse_gdb_path(self, gdb_path: Path) -> Tuple[str, str, datetime]:
+    @staticmethod
+    def parse_gdb_path(gdb_path: Path) -> Tuple[str, str, datetime]:
         """
         Parse GDB path to extract metadata.
 
@@ -689,7 +690,7 @@ class FileGDBConverter:
         console.print(f"[bold blue]Processing GDB:[/bold blue] {gdb_path}")
 
         # Parse metadata from path
-        verification_type, rc_version, timestamp = self._parse_gdb_path(gdb_path)
+        verification_type, rc_version, timestamp = self.parse_gdb_path(gdb_path)
 
         # Setup output directory
         if output_dir is None:
