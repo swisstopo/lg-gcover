@@ -514,6 +514,7 @@ The QA commands handle FileGDB files containing topology and technical quality v
 - **Upload** converted files to S3 with organized structure
 - **Generate** statistics and summaries for dashboard display
 - **Handle** complex geometries from topology validation
+- **Aggregate** and **extract** from RC1/RC2 release according to publication scheme
 
 #### Quick Start
 
@@ -522,13 +523,19 @@ The QA commands handle FileGDB files containing topology and technical quality v
 gcover qa process /path/to/issue.gdb
 
 # Batch process weekly verification results  
-gcover qa batch /media/marco/SANDISK/Verifications
+gcover qa process-all /media/marco/SANDISK/Verifications
 
 # View recent statistics
 gcover qa stats --days-back 7
 
 # Generate HTML dashboard
 gcover qa dashboard
+
+# Agregate QA issues from both RC
+gcover qa aggregate
+
+# Extract/generate a single issue database
+gcover qa extract
 ```
 
 #### Commands
@@ -545,10 +552,10 @@ gcover qa process /path/to/issue.gdb
 **Advanced Options:**
 ```bash
 # With geometry simplification for complex polygons
-gcover qa process /path/to/issue.gdb --simplify-tolerance 1.0
+gcover qa process-all /path/to/issue.gdb --simplify-tolerance 1.0
 
 # Output both GeoParquet and GeoJSON formats
-gcover qa process /path/to/issue.gdb --format both
+gcover qa process-all /path/to/issue.gdb --format both
 
 # Local processing only (no S3 upload)
 gcover qa process /path/to/issue.gdb --no-upload
@@ -626,6 +633,26 @@ gcover qa test-read /path/to/issue.gdb --layer IssuePolygons
 
 # Limit test to fewer features
 gcover qa test-read /path/to/issue.gdb --max-features 5
+```
+
+##### `gcover qa aggregate`
+
+```bash
+# Two-RC mode with extraction (recommended)
+gcover qa aggregate --rc1-gdb rc1.gdb --rc2-gdb rc2.gdb --extract-first --zones-file zones.gpkg
+
+# Single merged input
+gcover qa aggregate --input merged_issues.gpkg --zones-file zones.gpkg
+
+# Auto-discovery
+gcover --env production --verbose qa aggregate --zone-type  mapsheets  --auto-discover --base-dir ./test
+# 
+# Will write to test/Topology/2030-12-31/20250905_07-00-12
+
+# With custom output
+gcover qa aggregate --input data.gpkg --zones-file zones.gpkg --output my_stats --output-format xlsx
+
+
 ```
 
 #### Configuration
