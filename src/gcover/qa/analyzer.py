@@ -16,23 +16,26 @@ import warnings
 # Suppress shapely warnings for cleaner output
 warnings.filterwarnings("ignore", category=UserWarning, module="shapely")
 
+
 # Silence ogr warning
 def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
     if category is RuntimeWarning and "organizePolygons()" in str(message):
         logger.warning(f"{filename}:{lineno} - {message}")
     else:
         # fallback to default behavior
-        warnings._showwarnmsg_impl(warnings.WarningMessage(
-            message=message,
-            category=category,
-            filename=filename,
-            lineno=lineno,
-            file=file,
-            line=line
-        ))
+        warnings._showwarnmsg_impl(
+            warnings.WarningMessage(
+                message=message,
+                category=category,
+                filename=filename,
+                lineno=lineno,
+                file=file,
+                line=line,
+            )
+        )
+
 
 warnings.showwarning = custom_warning_handler
-
 
 
 class QAAnalyzer:
@@ -85,6 +88,10 @@ class QAAnalyzer:
                 try:
                     gdf = gpd.read_file(self.zones_file, layer=layer_name)
                     if not gdf.empty:
+                        if zone_type == "work_units":  # TODO huggly hack, to be removed
+                            if "WU_NAME" not in gdf.columns and "NAME" in gdf.columns:
+                                gdf["WU_NAME"] = gdf["NAME"]
+                                logger.warning(f"Adding `WU_NAME` to work_units layer!")
                         self.zones_data[zone_type] = gdf
                         logger.info(
                             f"Loaded {len(gdf)} {zone_type} from layer '{layer_name}'"
@@ -172,6 +179,9 @@ class QAAnalyzer:
 
         # TODO: reset index
         qa_gdf = qa_gdf.reset_index()
+        qa_gdf = qa_gdf.drop(columns=["level_0"], errors="ignore")
+        logger.debug(f"qa_gdf columns: {qa_gdf.columns}")
+        logger.debug(f"zone_gdf columns: {zone_gdf[join_cols].columns}")
 
         # Spatial join - issues may overlap multiple zones (important!)
         result = gpd.sjoin(
@@ -214,7 +224,7 @@ class QAAnalyzer:
         """Get the ID column name for a zone type."""
         zone_id_mapping = {
             "mapsheets": "MSH_TOPO_NR",  # Based on your script
-            "work_units": "WU_NAME",  # Adjust based on actual WU structure
+            "work_units": "WU_ID",  # TODO  WU_ID or NAME Adjust based on actual WU structure
             "lots": "LOT_NR",
         }
         return zone_id_mapping.get(zone_type, "id")
@@ -227,113 +237,6 @@ class QAAnalyzer:
             "lots": "LOT_NAME",
         }
         return zone_name_mapping.get(zone_type)
-
-    def aggregate_by_zone(
-        self,
-        rc1_gdb: Path,
-        rc2_gdb: Path,
-        zone_type: str = "mapsheets",
-        output_format: str = "csv",
-    ) -> pd.DataFrame:
-        """
-        Aggregate QA statistics by administrative zones.
-
-        Args:
-            rc1_gdb: Path to RC1 QA FileGDB
-            rc2_gdb: Path to RC2 QA FileGDB
-            zone_type: Type of zones to aggregate by
-            output_format: Output format ('csv', 'xlsx', 'json')
-
-        Returns:
-            DataFrame with aggregated statistics
-        """
-        if zone_type not in self.zones_data:
-            raise ValueError(
-                f"Zone type '{zone_type}' not available. "
-                f"Available: {list(self.zones_data.keys())}"
-            )
-
-        logger.info(f"Aggregating QA data by {zone_type}")
-        zone_gdf = self.zones_data[zone_type]
-        all_results = []
-        logger.debug(f"Zone {zone_gdf.columns}")
-        logger.debug(f"Zone {zone_gdf.head()}")
-
-        # Process both RC1 and RC2
-        for rc_name, gdb_path in [("RC1", rc1_gdb), ("RC2", rc2_gdb)]:
-            logger.info(f"Processing {rc_name}: {gdb_path}")
-            qa_data = self._read_qa_gdb(gdb_path)
-
-            for layer_name, qa_gdf in qa_data.items():
-                if qa_gdf.empty:
-                    continue
-
-                # Spatial join with zones
-                joined_gdf = self._spatial_join_with_zones(qa_gdf, zone_gdf, zone_type)
-
-                if joined_gdf.empty:
-                    logger.warning(
-                        f"No {layer_name} issues intersect {zone_type} zones"
-                    )
-                    continue
-
-                # Aggregate by zone and test type
-                zone_id_col = self._get_zone_id_column(zone_type)
-                zone_name_col = self._get_zone_name_column(zone_type)
-
-                # Group by zone and test characteristics
-                group_cols = [zone_id_col, "TestType", "TestName"]
-                if zone_name_col and zone_name_col in joined_gdf.columns:
-                    group_cols.insert(1, zone_name_col)
-
-                # Add source column for mapsheets
-                if zone_type == "mapsheets" and "BKP" in joined_gdf.columns:
-                    group_cols.append("BKP")
-
-                # Filter valid group columns
-                group_cols = [col for col in group_cols if col in joined_gdf.columns]
-
-                # Aggregation
-                agg_stats = (
-                    joined_gdf.groupby(group_cols)
-                    .agg(
-                        {
-                            "IssueType": ["count", lambda x: (x == "Error").sum()],
-                            "StopCondition": lambda x: (x == "Yes").sum(),
-                        }
-                    )
-                    .reset_index()
-                )
-
-                # Flatten column names
-                agg_stats.columns = [
-                    col[0] if col[1] == "" else f"{col[0]}_{col[1]}"
-                    for col in agg_stats.columns
-                ]
-                agg_stats = agg_stats.rename(
-                    columns={
-                        "IssueType_count": "total_issues",
-                        "IssueType_<lambda>": "error_issues",
-                        "StopCondition_<lambda>": "stop_condition_issues",
-                    }
-                )
-
-                # Add metadata
-                agg_stats["rc_version"] = rc_name
-                agg_stats["layer_type"] = layer_name
-                agg_stats["zone_type"] = zone_type
-
-                all_results.append(agg_stats)
-
-        if not all_results:
-            logger.warning("No QA data could be aggregated")
-            return pd.DataFrame()
-
-        # Combine all results
-        final_df = pd.concat(all_results, ignore_index=True)
-
-        logger.info(f"Aggregated {len(final_df)} rows of statistics")
-        return final_df
 
     def extract_relevant_issues(
         self,
@@ -364,12 +267,11 @@ class QAAnalyzer:
 
         mapsheets_gdf = self.zones_data["mapsheets"]
 
-        # TODO: decide how to call the column for rc sources
+        # TODO: decide how to name the column for rc sources
         SOURCE_RC_COLUMN = next(
             (item for item in SOURCE_COLUMN_NAMES if item in mapsheets_gdf.columns),
             None,
         )
-
 
         if not SOURCE_RC_COLUMN:
             logger.error(
@@ -404,7 +306,6 @@ class QAAnalyzer:
             for layer_name, qa_gdf in rc1_data.items():
                 logger.info(f"Processing RC1 layer {layer_name}")
                 if qa_gdf.empty:
-
                     continue
 
                 filtered_gdf = self._spatial_join_with_zones(
@@ -414,7 +315,6 @@ class QAAnalyzer:
                     filtered_gdf["source_rc"] = "RC1"
                     all_filtered_data[f"{layer_name}_RC1"] = filtered_gdf
                     stats["rc1_issues"] += len(filtered_gdf)
-
 
         # Process RC2 issues with RC2 mapsheets
         if not rc2_mapsheets.empty:
@@ -498,6 +398,341 @@ class QAAnalyzer:
 
         return stats
 
+    def aggregate_by_zone(
+        self,
+        input1: Path,
+        input2: Optional[Path] = None,
+        zone_type: str = "mapsheets",
+        output_format: str = "csv",
+    ) -> pd.DataFrame:
+        """
+        Aggregate QA statistics by administrative zones.
+
+        Supports two modes:
+        1. Two-RC mode: aggregate_by_zone(rc1_gdb, rc2_gdb, ...)
+        2. Single-input mode: aggregate_by_zone(merged_data_path, None, ...)
+
+        Args:
+            input1: Primary input - either RC1 GDB or merged data path
+            input2: Secondary input - RC2 GDB (None for single-input mode)
+            zone_type: Type of zones to aggregate by
+            output_format: Output format ('csv', 'xlsx', 'json')
+
+        Returns:
+            DataFrame with aggregated statistics
+        """
+        if zone_type not in self.zones_data:
+            raise ValueError(
+                f"Zone type '{zone_type}' not available. "
+                f"Available: {list(self.zones_data.keys())}"
+            )
+
+        # Determine mode based on inputs
+        if input2 is not None and input2.exists():
+            # Two-RC mode (backward compatibility)
+            return self._aggregate_by_zone_two_rc(
+                input1, input2, zone_type, output_format
+            )
+        else:
+            # Single-input mode (new merged data approach)
+            return self._aggregate_by_zone_single_input(
+                input1, zone_type, output_format
+            )
+
+    def _aggregate_by_zone_single_input(
+        self,
+        merged_data_path: Path,
+        zone_type: str,
+        output_format: str,
+    ) -> pd.DataFrame:
+        """
+        Aggregate QA statistics using pre-merged data.
+
+        Args:
+            merged_data_path: Path to merged QA data (GPKG or FileGDB)
+            zone_type: Type of zones to aggregate by
+            output_format: Output format
+
+        Returns:
+            DataFrame with aggregated statistics
+        """
+        logger.info(f"Aggregating merged QA data by {zone_type}")
+        zone_gdf = self.zones_data[zone_type]
+        all_results = []
+
+        # Read merged QA data
+        merged_qa_data = self._read_merged_qa_data(merged_data_path)
+
+        if not merged_qa_data:
+            logger.warning("No merged QA data found")
+            return pd.DataFrame()
+
+        # Process each layer type in the merged data
+        for layer_name, qa_gdf in merged_qa_data.items():
+            if qa_gdf.empty:
+                continue
+
+            logger.info(f"Processing merged {layer_name} ({len(qa_gdf)} features)")
+
+            # Check if data already has zone information
+            zone_id_col = self._get_zone_id_column(zone_type)
+
+            if zone_id_col in qa_gdf.columns:
+                # Data already has zone information, use it directly
+                joined_gdf = qa_gdf.copy()
+                logger.debug(f"Using existing zone information in {layer_name}")
+            else:
+                # Perform spatial join with zones (fallback if needed)
+                joined_gdf = self._spatial_join_with_zones(qa_gdf, zone_gdf, zone_type)
+
+            if joined_gdf.empty:
+                logger.warning(f"No {layer_name} issues intersect {zone_type} zones")
+                continue
+
+            # Aggregate by zone and test type
+            zone_name_col = self._get_zone_name_column(zone_type)
+
+            # Group by zone and test characteristics
+            group_cols = [zone_id_col, "TestType", "TestName"]
+            if zone_name_col and zone_name_col in joined_gdf.columns:
+                group_cols.insert(1, zone_name_col)
+
+            # Add source_rc column if available (to track RC1/RC2 origin)
+            if "source_rc" in joined_gdf.columns:
+                group_cols.append("source_rc")
+
+            # Add source column for mapsheets (legacy support)
+            source_column_names = ["BKP", "SOURCE_RC", "source_rc"]
+            source_col = next(
+                (col for col in source_column_names if col in joined_gdf.columns), None
+            )
+            if source_col and source_col not in group_cols:
+                group_cols.append(source_col)
+
+            # Filter valid group columns
+            group_cols = [col for col in group_cols if col in joined_gdf.columns]
+
+            logger.debug(f"Grouping by columns: {group_cols}")
+
+            # Aggregation
+            agg_stats = (
+                joined_gdf.groupby(group_cols)
+                .agg(
+                    {
+                        "IssueType": ["count", lambda x: (x == "Error").sum()],
+                        "StopCondition": lambda x: (x == "Yes").sum(),
+                    }
+                )
+                .reset_index()
+            )
+
+            # Flatten column names
+            agg_stats.columns = [
+                col[0] if col[1] == "" else f"{col[0]}_{col[1]}"
+                for col in agg_stats.columns
+            ]
+            agg_stats = agg_stats.rename(
+                columns={
+                    "IssueType_count": "total_issues",
+                    "IssueType_<lambda>": "error_issues",
+                    "StopCondition_<lambda>": "stop_condition_issues",
+                }
+            )
+
+            # Add metadata
+            agg_stats["layer_type"] = layer_name
+            agg_stats["zone_type"] = zone_type
+
+            all_results.append(agg_stats)
+
+        if not all_results:
+            logger.warning("No QA data could be aggregated")
+            return pd.DataFrame()
+
+        # Combine all results
+        final_df = pd.concat(all_results, ignore_index=True)
+
+        logger.info(f"Aggregated {len(final_df)} rows of statistics from merged data")
+        return final_df
+
+    def _aggregate_by_zone_two_rc(
+        self,
+        rc1_gdb: Path,
+        rc2_gdb: Path,
+        zone_type: str,
+        output_format: str,
+    ) -> pd.DataFrame:
+        """
+        Original two-RC aggregation method (for backward compatibility).
+
+        Args:
+            rc1_gdb: Path to RC1 QA FileGDB
+            rc2_gdb: Path to RC2 QA FileGDB
+            zone_type: Type of zones to aggregate by
+            output_format: Output format
+
+        Returns:
+            DataFrame with aggregated statistics
+        """
+        logger.info(f"Aggregating QA data by {zone_type} (two-RC mode)")
+        zone_gdf = self.zones_data[zone_type]
+        all_results = []
+
+        # Process both RC1 and RC2
+        for rc_name, gdb_path in [("RC1", rc1_gdb), ("RC2", rc2_gdb)]:
+            if not gdb_path.exists():
+                logger.warning(f"Skipping {rc_name}: {gdb_path} does not exist")
+                continue
+
+            logger.info(f"Processing {rc_name}: {gdb_path}")
+            qa_data = self._read_qa_gdb(gdb_path)
+
+            for layer_name, qa_gdf in qa_data.items():
+                if qa_gdf.empty:
+                    continue
+
+                # Spatial join with zones
+                joined_gdf = self._spatial_join_with_zones(qa_gdf, zone_gdf, zone_type)
+
+                if joined_gdf.empty:
+                    logger.warning(
+                        f"No {layer_name} issues intersect {zone_type} zones"
+                    )
+                    continue
+
+                # Aggregate by zone and test type
+                zone_id_col = self._get_zone_id_column(zone_type)
+                zone_name_col = self._get_zone_name_column(zone_type)
+
+                # Group by zone and test characteristics
+                group_cols = [zone_id_col, "TestType", "TestName"]
+                if zone_name_col and zone_name_col in joined_gdf.columns:
+                    group_cols.insert(1, zone_name_col)
+
+                # Add source column for mapsheets
+                if zone_type == "mapsheets" and "BKP" in joined_gdf.columns:
+                    group_cols.append("BKP")
+
+                # Filter valid group columns
+                group_cols = [col for col in group_cols if col in joined_gdf.columns]
+
+                # Aggregation
+                agg_stats = (
+                    joined_gdf.groupby(group_cols)
+                    .agg(
+                        {
+                            "IssueType": ["count", lambda x: (x == "Error").sum()],
+                            "StopCondition": lambda x: (x == "Yes").sum(),
+                        }
+                    )
+                    .reset_index()
+                )
+
+                # Flatten column names
+                agg_stats.columns = [
+                    col[0] if col[1] == "" else f"{col[0]}_{col[1]}"
+                    for col in agg_stats.columns
+                ]
+                agg_stats = agg_stats.rename(
+                    columns={
+                        "IssueType_count": "total_issues",
+                        "IssueType_<lambda>": "error_issues",
+                        "StopCondition_<lambda>": "stop_condition_issues",
+                    }
+                )
+
+                # Add metadata
+                agg_stats["rc_version"] = rc_name
+                agg_stats["layer_type"] = layer_name
+                agg_stats["zone_type"] = zone_type
+
+                all_results.append(agg_stats)
+
+        if not all_results:
+            logger.warning("No QA data could be aggregated")
+            return pd.DataFrame()
+
+        # Combine all results
+        final_df = pd.concat(all_results, ignore_index=True)
+
+        logger.info(f"Aggregated {len(final_df)} rows of statistics")
+        return final_df
+
+    def _read_merged_qa_data(
+        self, merged_data_path: Path
+    ) -> Dict[str, gpd.GeoDataFrame]:
+        """
+        Read merged QA data from file (GPKG or FileGDB output from extract_relevant_issues).
+
+        Args:
+            merged_data_path: Path to merged QA data file
+
+        Returns:
+            Dictionary with layer_name: GeoDataFrame
+        """
+        if not merged_data_path.exists():
+            raise FileNotFoundError(f"Merged QA data not found: {merged_data_path}")
+
+        qa_data = {}
+
+        # Determine file type and read accordingly
+        if merged_data_path.suffix.lower() == ".gpkg":
+            # Read from GPKG
+            try:
+                # List available layers
+                import fiona
+
+                layers = fiona.listlayers(str(merged_data_path))
+                logger.debug(f"Available layers in {merged_data_path}: {layers}")
+
+                for layer in layers:
+                    if any(
+                        spatial_layer in layer
+                        for spatial_layer in self.SPATIAL_QA_LAYERS
+                    ):
+                        try:
+                            gdf = gpd.read_file(merged_data_path, layer=layer)
+                            if not gdf.empty:
+                                # Normalize layer name (remove RC1/RC2 suffixes if present)
+                                clean_layer_name = self._normalize_layer_name(layer)
+                                qa_data[clean_layer_name] = gdf
+                                logger.debug(
+                                    f"Read {len(gdf)} features from layer {layer}"
+                                )
+                            else:
+                                logger.info(
+                                    f"Layer {layer} is empty in {merged_data_path}"
+                                )
+                        except Exception as e:
+                            logger.warning(f"Could not read layer {layer}: {e}")
+
+            except Exception as e:
+                logger.error(f"Error reading GPKG {merged_data_path}: {e}")
+
+        elif merged_data_path.suffix.lower() == ".gdb":
+            # Read from FileGDB (same as existing _read_qa_gdb method)
+            qa_data = self._read_qa_gdb(merged_data_path)
+
+        else:
+            raise ValueError(f"Unsupported file format: {merged_data_path.suffix}")
+
+        return qa_data
+
+    def _normalize_layer_name(self, layer_name: str) -> str:
+        """
+        Normalize layer name by removing RC suffixes.
+
+        Args:
+            layer_name: Original layer name (e.g., "IssuePolygons_RC1")
+
+        Returns:
+            Normalized layer name (e.g., "IssuePolygons")
+        """
+        for spatial_layer in self.SPATIAL_QA_LAYERS:
+            if spatial_layer in layer_name:
+                return spatial_layer
+        return layer_name
+
     def _write_spatial_output(
         self,
         layer_data: Dict[str, gpd.GeoDataFrame],
@@ -569,7 +804,11 @@ class QAAnalyzer:
         logger.success(f"Spatial data written to {output_file}")
 
     def write_aggregated_stats(
-        self, stats_df: pd.DataFrame, output_path: Path, output_format: str = "csv"
+        self,
+        stats_df: pd.DataFrame,
+        output_path: Path,
+        zone_type: str,
+        output_format: str = "csv",
     ) -> None:
         """
         Write aggregated statistics to file.
@@ -583,7 +822,7 @@ class QAAnalyzer:
             logger.warning("No statistics to write")
             return
 
-        output_path = Path(output_path)
+        output_path = Path(output_path) / f"aggregated_by_{zone_type}"
 
         try:
             if output_format == "csv":
