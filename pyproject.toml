@@ -55,7 +55,7 @@ dependencies = [
 [project.optional-dependencies]
 # For standalone installations (without ArcGIS Pro)
 standalone = [
-    "gdal>=3.11.0",  # Latest version for better FileGDB support
+    "gdal>=3.10.0",  # Latest version for better FileGDB support
 ]
 # arcpy ne peut pas être installé via pip, mais on documente la dépendance
 esri = []  # Les utilisateurs doivent installer ArcGIS Pro manuellement
