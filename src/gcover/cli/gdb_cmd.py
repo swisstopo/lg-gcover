@@ -189,8 +189,18 @@ def scan(
     create_manifest,
 ):
     """Scan filesystem for GDB assets and optionally copy them"""
-    config = ctx.obj["config"]
+
     verbose = ctx.obj["verbose"]
+
+    gdb_config, global_config, environment, verbose = get_configs(ctx)
+    s3_config = global_config.s3
+
+
+    # Get S3 settings from global config
+    s3_bucket = gdb_config.get_s3_bucket(global_config)
+    s3_profile = gdb_config.get_s3_profile(global_config)
+
+
 
     # Handle flat vs preserve_structure logic
     if flat:
@@ -198,11 +208,12 @@ def scan(
 
     try:
         manager = GDBAssetManager(
-            base_paths=config.base_paths,
-            s3_bucket=config.s3_bucket,
-            db_path=config.db_path,
-            temp_dir=config.temp_dir,
-            aws_profile=config.s3_profile,
+            base_paths=gdb_config.base_paths,
+            # s3_bucket=s3_bucket,
+            s3_config=s3_config,
+            db_path=gdb_config.db_path,
+            temp_dir=gdb_config.temp_dir,
+            # aws_profile=s3_profile,
         )
 
         rprint("[cyan]Scanning filesystem...[/cyan]")
@@ -497,6 +508,7 @@ def scan(
 def sync(ctx, dry_run):
     """Sync GDB assets to S3 and database"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
+    s3_config = global_config.s3
 
     try:
         # Get S3 settings from global config
