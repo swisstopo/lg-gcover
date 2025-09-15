@@ -32,6 +32,98 @@ except ImportError:
 console = Console()
 
 
+def is_windows() -> bool:
+    """Check if running on Windows."""
+    return platform.system().lower() == "windows"
+
+
+def normalize_windows_path(path_str: str) -> str:
+    """
+    Normalize Windows path string for consistent handling.
+
+    Args:
+        path_str: Windows path string (UNC or drive path)
+
+    Returns:
+        Normalized path string
+
+    Example:
+        >>> normalize_windows_path("\\\\server\\share\\path")
+        '\\\\server\\share\\path'
+        >>> normalize_windows_path("X:/data/file.gdb")
+        'X:\\data\\file.gdb'
+    """
+    if not path_str:
+        return path_str
+
+    # Handle UNC paths - preserve double backslashes at start
+    if path_str.startswith("\\\\"):
+        # UNC path - normalize separators but keep UNC prefix
+        normalized = path_str.replace("/", "\\")
+        # Ensure exactly two backslashes at start
+        while normalized.startswith("\\\\\\"):
+            normalized = normalized[1:]
+        return normalized
+
+    # Handle regular paths - convert forward slashes to backslashes on Windows
+    if is_windows():
+        return path_str.replace("/", "\\")
+
+    return path_str
+
+
+def validate_windows_path(path: Union[str, Path]) -> Tuple[bool, str]:
+    """
+    Validate Windows path and provide detailed error information.
+
+    Args:
+        path: Path to validate (UNC or drive path)
+
+    Returns:
+        Tuple of (is_valid, error_message)
+
+    Example:
+        >>> valid, error = validate_windows_path("\\\\server\\share")
+        >>> if not valid:
+        ...     print(f"Invalid path: {error}")
+    """
+    try:
+        if isinstance(path, str):
+            path_str = normalize_windows_path(path)
+            path_obj = Path(path_str)
+        else:
+            path_obj = path
+            path_str = str(path)
+
+        # Check for invalid characters (Windows specific)
+        if is_windows():
+            invalid_chars = '<>:"|?*'
+            for char in invalid_chars:
+                if char in path_str and not path_str.startswith("\\\\"):
+                    return False, f"Path contains invalid character: '{char}'"
+
+        # For UNC paths, check basic structure
+        if path_str.startswith("\\\\"):
+            parts = path_str.split("\\")
+            if len(parts) < 4:  # \\server\share at minimum
+                return False, "UNC path must have format \\\\server\\share"
+            if not parts[2]:  # server name empty
+                return False, "UNC path missing server name"
+            if not parts[3]:  # share name empty
+                return False, "UNC path missing share name"
+
+        # For drive paths, check drive letter format
+        elif is_windows() and len(path_str) > 1 and path_str[1] == ":":
+            drive_letter = path_str[0].upper()
+            if not drive_letter.isalpha():
+                return False, f"Invalid drive letter: '{drive_letter}'"
+
+        return True, ""
+
+    except Exception as e:
+        return False, f"Path validation error: {str(e)}"
+
+
 def check_gdb_integrity(gdb_path: Path, timeout: int = 300) -> Tuple[bool, List[str]]:
     """
     Check GDB integrity using GDAL/OGR tools
@@ -312,7 +404,9 @@ def copy_gdb_asset(
         return False
 
 
-def _map_asset_to_structure_windows(asset: GDBAsset, config_base_paths: Dict[str, str]) -> Path:
+def _map_asset_to_structure_windows(
+    asset: GDBAsset, config_base_paths: Dict[str, str]
+) -> Path:
     """
     Internal function to map asset to directory structure for Windows.
     This is now a fallback function - the main logic is in _find_relative_path_from_common_dir_windows.
@@ -333,9 +427,9 @@ def _map_asset_to_structure_windows(asset: GDBAsset, config_base_paths: Dict[str
     # Fallback: use asset type to determine structure
     asset_type = asset.info.asset_type.value
     fallback_mapping = {
-        'backup': Path("backup"),
-        'verification': Path("QA"),
-        'increment': Path("Increment"),
+        "backup": Path("backup"),
+        "verification": Path("QA"),
+        "increment": Path("Increment"),
     }
 
     return fallback_mapping.get(asset_type, Path("other"))
@@ -362,12 +456,13 @@ def _map_asset_to_structure(asset: GDBAsset, config_base_paths: Dict[str, str]) 
     # Fallback: use asset type to determine structure
     asset_type = asset.info.asset_type.value
     fallback_mapping = {
-        'backup': Path("backup"),
-        'verification': Path("QA"),
-        'increment': Path("Increment"),
+        "backup": Path("backup"),
+        "verification": Path("QA"),
+        "increment": Path("Increment"),
     }
 
     return fallback_mapping.get(asset_type, Path("other"))
+
 
 def filter_assets_by_criteria(
     assets: List[GDBAsset],
@@ -453,11 +548,11 @@ def filter_assets_by_criteria(
 
 
 def create_destination_path_windows(
-        asset: GDBAsset,
-        base_destination: Union[str, Path],
-        config_base_paths: Dict[str, str],
-        preserve_structure: bool = True,
-        custom_structure: Optional[Dict[str, str]] = None
+    asset: GDBAsset,
+    base_destination: Union[str, Path],
+    config_base_paths: Dict[str, str],
+    preserve_structure: bool = True,
+    custom_structure: Optional[Dict[str, str]] = None,
 ) -> Path:
     """
     Create appropriate destination path for Windows environments.
@@ -506,11 +601,11 @@ def create_destination_path_windows(
 
 
 def create_destination_path(
-        asset: GDBAsset,
-        base_destination: Path,
-        config_base_paths: Dict[str, str],
-        preserve_structure: bool = True,
-        custom_structure: Optional[Dict[str, str]] = None
+    asset: GDBAsset,
+    base_destination: Path,
+    config_base_paths: Dict[str, str],
+    preserve_structure: bool = True,
+    custom_structure: Optional[Dict[str, str]] = None,
 ) -> Path:
     """
     Create appropriate destination path with structure preservation.
@@ -571,18 +666,18 @@ def _find_relative_path_from_common_dir_windows(asset_path: Path) -> Optional[Pa
 
     # Common directory patterns to look for (case insensitive)
     common_patterns = [
-        'qa',  # For QA/Verifications
-        'backup',  # For backup/GCOVER
-        'increment'  # For Increment/GCOVERP
+        "qa",  # For QA/Verifications
+        "backup",  # For backup/GCOVER
+        "increment",  # For Increment/GCOVERP
     ]
 
     # Split path into parts
-    if path_str.startswith('\\\\'):
+    if path_str.startswith("\\\\"):
         # UNC path - split and handle appropriately
-        parts = path_str.split('\\')
+        parts = path_str.split("\\")
     else:
         # Regular path
-        parts = path_str.replace('/', '\\').split('\\')
+        parts = path_str.replace("/", "\\").split("\\")
 
     # Find the first occurrence of any common pattern
     for i, part in enumerate(parts):
@@ -591,18 +686,25 @@ def _find_relative_path_from_common_dir_windows(asset_path: Path) -> Optional[Pa
             relative_parts = parts[i:]
 
             # Reconstruct the original case from the original path
-            original_parts = str(asset_path).replace('/', '\\').split('\\')
+            original_parts = str(asset_path).replace("/", "\\").split("\\")
 
             # Find the corresponding parts in original path with correct case
             if len(original_parts) >= len(parts):
                 start_idx = len(original_parts) - len(parts) + i
                 if start_idx >= 0:
                     original_relative_parts = original_parts[start_idx:]
-                    return Path('\\'.join(original_relative_parts)) if is_windows() else Path(
-                        '/'.join(original_relative_parts))
+                    return (
+                        Path("\\".join(original_relative_parts))
+                        if is_windows()
+                        else Path("/".join(original_relative_parts))
+                    )
 
             # Fallback: use lowercase parts
-            return Path('\\'.join(relative_parts)) if is_windows() else Path('/'.join(relative_parts))
+            return (
+                Path("\\".join(relative_parts))
+                if is_windows()
+                else Path("/".join(relative_parts))
+            )
 
     return None
 
@@ -626,13 +728,13 @@ def _find_relative_path_from_common_dir(asset_path: Path) -> Optional[Path]:
 
     # Common directory patterns to look for (case insensitive)
     common_patterns = [
-        'qa',  # For QA/Verifications
-        'backup',  # For backup/GCOVER
-        'increment'  # For Increment/GCOVERP
+        "qa",  # For QA/Verifications
+        "backup",  # For backup/GCOVER
+        "increment",  # For Increment/GCOVERP
     ]
 
     # Split path into parts - handle both / and \ separators
-    parts = path_str.replace('\\', '/').split('/')
+    parts = path_str.replace("\\", "/").split("/")
 
     # Find the first occurrence of any common pattern
     for i, part in enumerate(parts):
@@ -640,7 +742,7 @@ def _find_relative_path_from_common_dir(asset_path: Path) -> Optional[Path]:
             # Found a common directory, construct relative path from here
 
             # Get the original parts with correct case
-            original_parts = str(asset_path).replace('\\', '/').split('/')
+            original_parts = str(asset_path).replace("\\", "/").split("/")
 
             # Make sure we have enough parts
             if len(original_parts) >= len(parts) and i < len(original_parts):
@@ -648,11 +750,11 @@ def _find_relative_path_from_common_dir(asset_path: Path) -> Optional[Path]:
                 start_idx = len(original_parts) - len(parts) + i
                 if start_idx >= 0 and start_idx < len(original_parts):
                     relative_parts = original_parts[start_idx:]
-                    return Path('/'.join(relative_parts))
+                    return Path("/".join(relative_parts))
 
             # Fallback: use the parts we found
             relative_parts = parts[i:]
-            return Path('/'.join(relative_parts))
+            return Path("/".join(relative_parts))
 
     return None
 
