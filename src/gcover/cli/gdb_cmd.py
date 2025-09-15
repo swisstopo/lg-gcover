@@ -291,15 +291,10 @@ def scan(
                 copy_to_path = Path(copy_to)
 
                 # Get base paths from config for structure mapping
-                base_paths_dict = {}
-                if hasattr(config, "gdb") and hasattr(config.gdb, "base_paths"):
-                    base_paths_dict = {
-                        "backup": getattr(config.gdb.base_paths, "backup", ""),
-                        "verification": getattr(
-                            config.gdb.base_paths, "verification", ""
-                        ),
-                        "increment": getattr(config.gdb.base_paths, "increment", ""),
-                    }
+                base_paths_dict = {
+                        "backup": gdb_config.base_paths.get("backup"),
+                        "verification": gdb_config.base_paths.get("verification"),
+                        "increment": gdb_config.base_paths.get("increment"),                }
 
                 if dry_run:
                     rprint(
@@ -719,7 +714,7 @@ def search(ctx, search_term, download, output_dir):
 
                 try:
                     s3_uploader.s3_client.download_file(
-                        config.s3_bucket, data["s3_key"], str(local_path)
+                        s3_bucket, data["s3_key"], str(local_path)
                     )
                     rprint(f"   [green]Downloaded to: {local_path}[/green]")
                 except Exception as e:

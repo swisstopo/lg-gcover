@@ -312,55 +312,10 @@ def copy_gdb_asset(
         return False
 
 
-def create_destination_path(
-    asset: GDBAsset,
-    base_destination: Path,
-    config_base_paths: Dict[str, str],
-    preserve_structure: bool = True,
-    custom_structure: Optional[Dict[str, str]] = None,
-) -> Path:
+def _map_asset_to_structure_windows(asset: GDBAsset, config_base_paths: Dict[str, str]) -> Path:
     """
-    Create appropriate destination path for an asset based on its source location.
-
-    Args:
-        asset: The GDB asset to copy
-        base_destination: Base destination directory (e.g., /media/usb-stick)
-        config_base_paths: Configuration paths from config (backup, verification, increment)
-        preserve_structure: Whether to preserve directory structure
-        custom_structure: Optional custom structure mapping {asset_type: subpath}
-
-    Returns:
-        Destination path for the asset
-
-    Example:
-        >>> config_paths = {
-        ...     'backup': '\\\\server\\iprod\\backup\\GCOVER',
-        ...     'verification': '\\\\server\\topgisprod\\10_Production_GC\\QA\\Verifications',
-        ...     'increment': '\\\\server\\iprod\\backup\\Increment\\GCOVERP'
-        ... }
-        >>> dest = create_destination_path(
-        ...     asset, Path("/media/usb"), config_paths, preserve_structure=True
-        ... )
-        >>> print(dest)  # /media/usb/GCOVER/backup/GCOVER/asset.gdb
-    """
-    if not preserve_structure:
-        return base_destination / asset.path.name
-
-    # Use custom structure if provided
-    if custom_structure:
-        asset_type = asset.info.asset_type.value
-        if asset_type in custom_structure:
-            subpath = Path(custom_structure[asset_type])
-            return base_destination / subpath / asset.path.name
-
-    # Default structure mapping
-    destination_subpath = _map_asset_to_structure(asset, config_base_paths)
-    return base_destination / destination_subpath / asset.path.name
-
-
-def _map_asset_to_structure(asset: GDBAsset, config_base_paths: Dict[str, str]) -> Path:
-    """
-    Internal function to map asset to directory structure.
+    Internal function to map asset to directory structure for Windows.
+    This is now a fallback function - the main logic is in _find_relative_path_from_common_dir_windows.
 
     Args:
         asset: GDB asset
@@ -369,58 +324,50 @@ def _map_asset_to_structure(asset: GDBAsset, config_base_paths: Dict[str, str]) 
     Returns:
         Relative path for asset structure
     """
+    # Try to find relative path from common directory first
+    relative_path = _find_relative_path_from_common_dir_windows(asset.path)
 
-    def normalize_path(path_str: str) -> str:
-        """Convert Windows UNC path to normalized form."""
-        return path_str.replace("\\\\", "//").replace("\\", "/").lower()
+    if relative_path:
+        return relative_path.parent  # Return parent because we'll add filename later
 
-    asset_path_str = str(asset.path).replace("\\", "/").lower()
-
-    # Check each configured base path to determine asset type and structure
-    for path_type, base_path_str in config_base_paths.items():
-        if not base_path_str:
-            continue
-
-        normalized_base = normalize_path(str(base_path_str))
-
-        # Handle Windows UNC paths
-        if normalized_base.startswith("//"):
-            if "backup/gcover" in normalized_base and "backup" in asset_path_str:
-                return Path("GCOVER/backup/GCOVER")
-            elif "qa/verifications" in normalized_base and (
-                "qa" in asset_path_str or "verification" in asset_path_str
-            ):
-                return Path("GCOVER/QA/Verifications")
-            elif (
-                "increment/gcoverp" in normalized_base and "increment" in asset_path_str
-            ):
-                return Path("GCOVER/Increment/GCOVERP")
-        else:
-            # Handle local paths
-            try:
-                base_path_obj = Path(base_path_str)
-                if asset.path.is_relative_to(base_path_obj):
-                    rel_path = asset.path.relative_to(base_path_obj)
-                    # Create logical structure based on path type
-                    if path_type == "backup":
-                        return Path("GCOVER/backup") / rel_path.parent
-                    elif path_type == "verification":
-                        return Path("GCOVER/QA") / rel_path.parent
-                    elif path_type == "increment":
-                        return Path("GCOVER/Increment") / rel_path.parent
-            except (ValueError, AttributeError):
-                continue
-
-    # Fallback: create structure based on asset type
+    # Fallback: use asset type to determine structure
     asset_type = asset.info.asset_type.value
     fallback_mapping = {
-        "backup": Path("GCOVER/backup/GCOVER"),
-        "verification": Path("GCOVER/QA/Verifications"),
-        "increment": Path("GCOVER/Increment/GCOVERP"),
+        'backup': Path("backup"),
+        'verification': Path("QA"),
+        'increment': Path("Increment"),
     }
 
-    return fallback_mapping.get(asset_type, Path("GCOVER/other"))
+    return fallback_mapping.get(asset_type, Path("other"))
 
+
+def _map_asset_to_structure(asset: GDBAsset, config_base_paths: Dict[str, str]) -> Path:
+    """
+    Internal function to map asset to directory structure.
+    This is now a fallback function - the main logic is in _find_relative_path_from_common_dir.
+
+    Args:
+        asset: GDB asset
+        config_base_paths: Configuration base paths
+
+    Returns:
+        Relative path for asset structure
+    """
+    # Try to find relative path from common directory first
+    relative_path = _find_relative_path_from_common_dir(asset.path)
+
+    if relative_path:
+        return relative_path.parent  # Return parent because we'll add filename later
+
+    # Fallback: use asset type to determine structure
+    asset_type = asset.info.asset_type.value
+    fallback_mapping = {
+        'backup': Path("backup"),
+        'verification': Path("QA"),
+        'increment': Path("Increment"),
+    }
+
+    return fallback_mapping.get(asset_type, Path("other"))
 
 def filter_assets_by_criteria(
     assets: List[GDBAsset],
@@ -503,6 +450,211 @@ def filter_assets_by_criteria(
             filtered.append(latest)
 
     return filtered
+
+
+def create_destination_path_windows(
+        asset: GDBAsset,
+        base_destination: Union[str, Path],
+        config_base_paths: Dict[str, str],
+        preserve_structure: bool = True,
+        custom_structure: Optional[Dict[str, str]] = None
+) -> Path:
+    """
+    Create appropriate destination path for Windows environments.
+
+    When preserve_structure=True, preserves the directory structure starting
+    from the common path element (QA, backup, Increment).
+
+    Args:
+        asset: The GDB asset to copy
+        base_destination: Base destination (UNC or drive path)
+        config_base_paths: Configuration paths
+        preserve_structure: Whether to preserve directory structure
+        custom_structure: Optional custom structure mapping
+
+    Returns:
+        Destination path optimized for Windows
+
+    Example:
+        Source: //server/random-path/QA/Verifications/Topology/RC_2030-12-31/20231216_03-00-12/issue.gdb
+        Destination: /media/usb-stick/QA/Verifications/Topology/RC_2030-12-31/20231216_03-00-12/issue.gdb
+    """
+    # Normalize the base destination
+    if isinstance(base_destination, str):
+        base_destination = normalize_windows_path(base_destination)
+
+    base_dest_path = Path(base_destination)
+
+    if not preserve_structure:
+        return base_dest_path / asset.path.name
+
+    # Use custom structure if provided
+    if custom_structure:
+        asset_type = asset.info.asset_type.value
+        if asset_type in custom_structure:
+            subpath = Path(custom_structure[asset_type])
+            return base_dest_path / subpath / asset.path.name
+
+    # Find the relative path starting from common directory
+    relative_path = _find_relative_path_from_common_dir_windows(asset.path)
+
+    if relative_path:
+        return base_dest_path / relative_path
+    else:
+        # Fallback to just the filename
+        return base_dest_path / asset.path.name
+
+
+def create_destination_path(
+        asset: GDBAsset,
+        base_destination: Path,
+        config_base_paths: Dict[str, str],
+        preserve_structure: bool = True,
+        custom_structure: Optional[Dict[str, str]] = None
+) -> Path:
+    """
+    Create appropriate destination path with structure preservation.
+
+    When preserve_structure=True, preserves the directory structure starting
+    from the common path element (QA, backup, Increment).
+
+    Args:
+        asset: The GDB asset to copy
+        base_destination: Base destination directory
+        config_base_paths: Configuration paths from config
+        preserve_structure: Whether to preserve directory structure
+        custom_structure: Optional custom structure mapping
+
+    Returns:
+        Destination path for the asset
+
+    Example:
+        Source: /server/random-path/backup/GCOVER/daily/20221130_2200_2030-12-31.gdb
+        Destination: /media/usb-stick/backup/GCOVER/daily/20221130_2200_2030-12-31.gdb
+    """
+    if not preserve_structure:
+        return base_destination / asset.path.name
+
+    # Use custom structure if provided
+    if custom_structure:
+        asset_type = asset.info.asset_type.value
+        if asset_type in custom_structure:
+            subpath = Path(custom_structure[asset_type])
+            return base_destination / subpath / asset.path.name
+
+    # Find the relative path starting from common directory
+    relative_path = _find_relative_path_from_common_dir(asset.path)
+
+    if relative_path:
+        return base_destination / relative_path
+    else:
+        # Fallback to just the filename
+        return base_destination / asset.path.name
+
+
+def _find_relative_path_from_common_dir_windows(asset_path: Path) -> Optional[Path]:
+    """
+    Find the relative path starting from the common directory (QA, backup, Increment).
+
+    Args:
+        asset_path: Full path to the asset
+
+    Returns:
+        Relative path starting from common directory, or None if not found
+
+    Example:
+        Input: //server/random-path/QA/Verifications/Topology/RC_2030-12-31/20231216_03-00-12/issue.gdb
+        Output: QA/Verifications/Topology/RC_2030-12-31/20231216_03-00-12/issue.gdb
+    """
+    # Convert to string and normalize for Windows
+    path_str = normalize_windows_path(str(asset_path)).lower()
+
+    # Common directory patterns to look for (case insensitive)
+    common_patterns = [
+        'qa',  # For QA/Verifications
+        'backup',  # For backup/GCOVER
+        'increment'  # For Increment/GCOVERP
+    ]
+
+    # Split path into parts
+    if path_str.startswith('\\\\'):
+        # UNC path - split and handle appropriately
+        parts = path_str.split('\\')
+    else:
+        # Regular path
+        parts = path_str.replace('/', '\\').split('\\')
+
+    # Find the first occurrence of any common pattern
+    for i, part in enumerate(parts):
+        if part.lower() in common_patterns:
+            # Found a common directory, construct relative path from here
+            relative_parts = parts[i:]
+
+            # Reconstruct the original case from the original path
+            original_parts = str(asset_path).replace('/', '\\').split('\\')
+
+            # Find the corresponding parts in original path with correct case
+            if len(original_parts) >= len(parts):
+                start_idx = len(original_parts) - len(parts) + i
+                if start_idx >= 0:
+                    original_relative_parts = original_parts[start_idx:]
+                    return Path('\\'.join(original_relative_parts)) if is_windows() else Path(
+                        '/'.join(original_relative_parts))
+
+            # Fallback: use lowercase parts
+            return Path('\\'.join(relative_parts)) if is_windows() else Path('/'.join(relative_parts))
+
+    return None
+
+
+def _find_relative_path_from_common_dir(asset_path: Path) -> Optional[Path]:
+    """
+    Find the relative path starting from the common directory (QA, backup, Increment).
+
+    Args:
+        asset_path: Full path to the asset
+
+    Returns:
+        Relative path starting from common directory, or None if not found
+
+    Example:
+        Input: /server/random-path/backup/GCOVER/daily/20221130_2200_2030-12-31.gdb
+        Output: backup/GCOVER/daily/20221130_2200_2030-12-31.gdb
+    """
+    # Convert to string for processing
+    path_str = str(asset_path).lower()
+
+    # Common directory patterns to look for (case insensitive)
+    common_patterns = [
+        'qa',  # For QA/Verifications
+        'backup',  # For backup/GCOVER
+        'increment'  # For Increment/GCOVERP
+    ]
+
+    # Split path into parts - handle both / and \ separators
+    parts = path_str.replace('\\', '/').split('/')
+
+    # Find the first occurrence of any common pattern
+    for i, part in enumerate(parts):
+        if part.lower() in common_patterns:
+            # Found a common directory, construct relative path from here
+
+            # Get the original parts with correct case
+            original_parts = str(asset_path).replace('\\', '/').split('/')
+
+            # Make sure we have enough parts
+            if len(original_parts) >= len(parts) and i < len(original_parts):
+                # Find the corresponding index in original parts
+                start_idx = len(original_parts) - len(parts) + i
+                if start_idx >= 0 and start_idx < len(original_parts):
+                    relative_parts = original_parts[start_idx:]
+                    return Path('/'.join(relative_parts))
+
+            # Fallback: use the parts we found
+            relative_parts = parts[i:]
+            return Path('/'.join(relative_parts))
+
+    return None
 
 
 def check_disk_space(path: Path, required_space: int) -> Dict[str, Union[int, bool]]:
