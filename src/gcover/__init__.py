@@ -14,20 +14,17 @@ from gcover._version import __version__
 
 # Import des modules principaux pour un accès facile
 #from .core.config import Config
-
-
 # TODO
-from .schema.models import ESRISchema
-from .utils.imports import HAS_ARCPY
+
+from gcover.utils.imports import HAS_ARCPY
 
 # Définir ce qui est exporté avec "from gcover import *"
 __all__ = [
     "__version__",
-   # TODO  "Config",
     "HAS_ARCPY",
 ]
 
 # Metadata
 __author__ = "Your Name"
-__email__ = "your.email@example.com"
-__license__ = "MIT"
+__email__ = "geocover@swisstopo.ch"
+__license__ = "BSD-3"
