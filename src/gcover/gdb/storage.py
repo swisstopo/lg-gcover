@@ -387,6 +387,8 @@ class MetadataDB:
 
     def init_db(self):
         """Initialize database schema"""
+
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with duckdb.connect(str(self.db_path)) as conn:
             conn.execute("""
             CREATE SEQUENCE IF NOT EXISTS  id_sequence START 1;

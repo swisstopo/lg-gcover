@@ -3,53 +3,35 @@
 CLI for GDB Asset Management System
 """
 
-import click
 import sys
-from pathlib import Path
-from typing import Optional, List, Tuple, Dict
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
+import click
 import duckdb
-from rich.console import Console
-from rich.table import Table
-from rich.progress import Progress
+from loguru import logger
 from rich import print as rprint
-
-# Import our GDB management classes (assuming they're in a module)
-
-from gcover.gdb.manager import GDBAssetManager
-from gcover.gdb.storage import S3Uploader, MetadataDB, TOTPGenerator
-
+from rich.console import Console
+from rich.progress import Progress
+from rich.table import Table
 
 # from gcover.gdb.config import  load_config TODO
-from gcover.config import load_config, AppConfig
+from gcover.config import AppConfig, load_config
 from gcover.config.models import GDBConfig, GlobalConfig
-from gcover.gdb.assets import (
-    GDBAsset,
-    BackupGDBAsset,
-    VerificationGDBAsset,
-    IncrementGDBAsset,
-    AssetType,
-    ReleaseCandidate,
-)
-
+from gcover.gdb.assets import (AssetType, BackupGDBAsset, GDBAsset,
+                               IncrementGDBAsset, ReleaseCandidate,
+                               VerificationGDBAsset, find_duplicate_groups,
+                               print_duplicate_report, remove_duplicate_assets)
+from gcover.gdb.manager import GDBAssetManager
+from gcover.gdb.storage import MetadataDB, S3Uploader, TOTPGenerator
 # Import utility functions
-from gcover.gdb.utils import (
-    get_directory_size,
-    format_size,
-    copy_gdb_asset,
-    create_destination_path,
-    filter_assets_by_criteria,
-    check_disk_space,
-    create_backup_manifest,
-    verify_backup_integrity,
-    quick_size_check,
-    find_largest_assets,
-    get_asset_age_distribution,
-)
-
-
-from loguru import logger
+from gcover.gdb.utils import (check_disk_space, copy_gdb_asset,
+                              create_backup_manifest, create_destination_path,
+                              filter_assets_by_criteria, find_largest_assets,
+                              format_size, get_asset_age_distribution,
+                              get_directory_size, quick_size_check,
+                              verify_backup_integrity)
 
 
 console = Console()
@@ -195,12 +177,9 @@ def scan(
     gdb_config, global_config, environment, verbose = get_configs(ctx)
     s3_config = global_config.s3
 
-
     # Get S3 settings from global config
     s3_bucket = gdb_config.get_s3_bucket(global_config)
     s3_profile = gdb_config.get_s3_profile(global_config)
-
-
 
     # Handle flat vs preserve_structure logic
     if flat:
@@ -233,9 +212,16 @@ def scan(
                 sys.exit(1)
 
         # Apply filters using utils function
-        assets = filter_assets_by_criteria(
+        filtered_assets = filter_assets_by_criteria(
             all_assets, asset_type, rc, since_date, latest_only=latest_only
         )
+
+        assets = remove_duplicate_assets(filtered_assets)
+
+        if len(filtered_assets) != len(assets):
+            rprint(
+                f"[red]Reduced from {len(filtered_assets)} to {len(assets)} unique assets[/red]"
+            )
 
         # Display scan results
         if assets:
@@ -292,9 +278,10 @@ def scan(
 
                 # Get base paths from config for structure mapping
                 base_paths_dict = {
-                        "backup": gdb_config.base_paths.get("backup"),
-                        "verification": gdb_config.base_paths.get("verification"),
-                        "increment": gdb_config.base_paths.get("increment"),                }
+                    "backup": gdb_config.base_paths.get("backup"),
+                    "verification": gdb_config.base_paths.get("verification"),
+                    "increment": gdb_config.base_paths.get("increment"),
+                }
 
                 if dry_run:
                     rprint(
@@ -487,6 +474,7 @@ def scan(
             rprint(
                 "[yellow]No GDB assets found matching the specified criteria[/yellow]"
             )
+            sys.exit(0)
 
     except Exception as e:
         rprint(f"[red]Scan failed: {e}[/red]")
