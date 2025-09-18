@@ -105,10 +105,16 @@ class S3Uploader:
         self.totp_token = totp_token
         self.proxy_settings = proxy_settings or {}
         self.upload_method = upload_method
+        self.proxies= {
+    "http": "http://prp04.admin.ch:8080",
+    "https": "http://prp04.admin.ch:8080"
+}
 
         # Initialize S3 client for direct upload (when needed)
         self.s3_client = None
-        self._init_s3_client()
+        if not self.upload_method == "presigned":
+
+          self._init_s3_client()
 
         # Determine upload strategy
         self._determine_upload_strategy()
@@ -213,7 +219,8 @@ class S3Uploader:
 
             logger.debug(f"Requesting presigned URL for {s3_key}")
             response = requests.post(
-                self.lambda_endpoint, json=payload, headers=headers, timeout=30
+                self.lambda_endpoint, json=payload, headers=headers, timeout=30,
+                proxies=self.proxies, verify=False  # TODO
             )
 
             if response.status_code == 200:
@@ -262,6 +269,8 @@ class S3Uploader:
                     data=file_obj,
                     headers=presigned_data.get("headers", {}),
                     timeout=300,  # 5 minutes timeout for upload
+                    proxies=self.proxies,
+                    verify=False,
                 )
 
             if response.status_code in [200, 204]:
