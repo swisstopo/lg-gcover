@@ -85,6 +85,7 @@ def get_qa_config(ctx):
     default="geoparquet",
     help="Output format",
 )
+@click.option("--no-convert", is_flag=True, help="Skip web format conversion")
 @click.option(
     "--simplify-tolerance", type=float, help="Tolerance for geometry simplification"
 )
@@ -98,6 +99,7 @@ def process_single(
     format: str,
     simplify_tolerance: Optional[float],
     verbose: bool,
+    no_convert: bool,
 ):
     """
     Process a single verification FileGDB.
@@ -108,6 +110,11 @@ def process_single(
         gcover qa process /path/to/issue.gdb
         gcover qa process /path/to/issue.gdb --simplify-tolerance 1.0 --verbose
     """
+    if not no_upload and no_convert:
+        raise click.BadParameter(
+            "Conversion to Web Format is obligatory before uploading to S3."
+        )
+
     if verbose:
         logger.remove()  # Remove all handlers
         logger.add(sys.stderr, level="DEBUG")  # Add debug handler
@@ -152,6 +159,7 @@ def process_single(
             upload_to_s3=not no_upload,
             output_format=format,
             simplify_tolerance=simplify_tolerance,
+            convert_to_web=not no_convert,
         )
 
         # Display summary
@@ -235,6 +243,7 @@ def process_single(
     help="Output format",
 )
 @click.option("--no-upload", is_flag=True, help="Skip S3 upload")
+@click.option("--no-convert", is_flag=True, help="Skip web format conversion")
 @click.option(
     "--simplify-tolerance",
     type=float,
@@ -253,6 +262,7 @@ def process_all(
     simplify_tolerance: Optional[float],
     max_workers: Optional[int],
     verbose: bool,
+    no_convert: bool,
 ):
     """
     Process multiple verification FileGDBs using the asset manager.
@@ -269,6 +279,11 @@ def process_all(
         console.print("[dim]Verbose logging enabled[/dim]")
 
     qa_config, global_config = get_qa_config(ctx)
+
+    if not no_upload and no_convert:
+        raise click.BadParameter(
+            "Conversion to Web Format is obligatory before uploading to S3."
+        )
 
     # Override max_workers if specified
     if max_workers:
@@ -396,6 +411,7 @@ def process_all(
                         output_format=format,
                         upload_to_s3=not no_upload,
                         output_dir=converted_dir,
+                        convert_to_web=not no_convert,
                     )
 
                     if summary.total_features > 0:
