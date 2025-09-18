@@ -31,6 +31,7 @@ class GDBAssetManager:
         s3_config: Dict[str, Any],
         db_path: str | Path,
         temp_dir: str | Path = "/tmp/gdb_zips",
+        upload_to_s3: Optional[bool] = True,
     ):
         """
         Initialize GDB Asset Manager with enhanced configuration
@@ -51,6 +52,7 @@ class GDBAssetManager:
         self.base_paths = {k: Path(v) for k, v in base_paths.items()}
         self.temp_dir = Path(temp_dir)
         self.temp_dir.mkdir(parents=True, exist_ok=True)
+        self.upload_to_s3 = upload_to_s3
 
         # Initialize S3 uploader with enhanced configuration
         logger.debug("GDBAssetMananger: init()")
@@ -187,27 +189,35 @@ class GDBAssetManager:
 
             # Create zip
             logger.info(f"Processing asset: {asset.path}")
+            logger.debug(f"Zipping asset...")
             zip_path = asset.create_zip(self.temp_dir)
 
             # Compute hash
+            logger.debug(f"Calculating md5 hash...")
             hash_md5 = asset.compute_hash()
 
-            # Generate S3 key
-            s3_key = f"gdb-assets/{asset.info.release_candidate.short_name}/{asset.info.asset_type.value}/{zip_path.name}"
-            asset.info.s3_key = s3_key
+            if self.upload_to_s3:
+              # Generate S3 key
+              s3_key = f"gdb-assets/{asset.info.release_candidate.short_name}/{asset.info.asset_type.value}/{zip_path.name}"
+              asset.info.s3_key = s3_key
 
-            # Upload to S3
-            if not self.s3_uploader.file_exists(s3_key):
+              # Upload to S3
+              logger.debug(f"Upload to AWS S3...")
+              if not self.s3_uploader.file_exists(s3_key):
                 uploaded = self.s3_uploader.upload_file(zip_path, s3_key)
                 asset.info.uploaded = uploaded
-            else:
+              else:
                 logger.info(f"File already exists in S3: {s3_key}")
                 asset.info.uploaded = True
+            else:
+                logger.warning("Skipping upload (parameter `--no-upload` set)")
 
             # Update database
+            logger.debug(f"Update database asset...")
             self.metadata_db.insert_asset(asset.info)
 
             # Cleanup temp file
+            logger.debug(f"Cleanup...")
             zip_path.unlink()
 
             logger.info(f"Successfully processed: {asset.path}")
