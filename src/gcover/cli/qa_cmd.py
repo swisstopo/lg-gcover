@@ -1690,7 +1690,7 @@ def extract(
         s3_profile = qa_config.get_s3_profile(global_config)
 
         # TODO use same function as `aggregate`
-        verification_type, rc_version, timestamp = FileGDBConverter.parse_gdb_path(path)
+        verification_type, rc_version, timestamp = FileGDBConverter.parse_gdb_path(rc2_gdb)
 
         converted_dir = (
             Path(output)
@@ -1698,6 +1698,7 @@ def extract(
             / "RC_combined"
             / timestamp.strftime("%Y%m%d_%H-%M-%S")
         )
+        logger.debug(f"Output dir: {converted_dir}")
         converted_dir.mkdir(parents=True, exist_ok=True)
         console.print(f"\n[blue]Saving to {converted_dir}[/blue]")
 

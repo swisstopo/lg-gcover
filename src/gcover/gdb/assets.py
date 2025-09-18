@@ -191,7 +191,7 @@ class VerificationGDBAsset(GDBAsset):
         rc_str = None
         timestamp_dir = None
 
-        logger.info(f"Inside: {parts}")  # TODO
+        logger.debug(f"Parts: {'|'.join(list(map(str, parts)))}")
 
         for i, part in enumerate(parts):
             if part in ["TechnicalQualityAssurance", "Topology"]:

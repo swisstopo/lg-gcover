@@ -108,7 +108,7 @@ class FileGDBConverter:
             aws_profile=s3_config.profile,
             lambda_endpoint=s3_config.lambda_endpoint,
             totp_secret=s3_config.lambda_endpoint,
-            proxy_settings=s3_config.proxy,
+            proxy_config=s3_config.proxy,
         )
 
         # Initialize DuckDB connection
