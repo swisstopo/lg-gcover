@@ -49,6 +49,7 @@ class GDBAssetManager:
             db_path: Path to DuckDB database
             temp_dir: Directory for temporary zip files
         """
+        self.bucket_name = s3_config.bucket
         self.base_paths = {k: Path(v) for k, v in base_paths.items()}
         self.temp_dir = Path(temp_dir)
         self.temp_dir.mkdir(parents=True, exist_ok=True)
@@ -197,18 +198,21 @@ class GDBAssetManager:
             hash_md5 = asset.compute_hash()
 
             if self.upload_to_s3:
-              # Generate S3 key
-              s3_key = f"gdb-assets/{asset.info.release_candidate.short_name}/{asset.info.asset_type.value}/{zip_path.name}"
-              asset.info.s3_key = s3_key
+                # Generate S3 key
+                s3_key = f"gdb-assets/{asset.info.release_candidate.short_name}/{asset.info.asset_type.value}/{zip_path.name}"
+                asset.info.s3_key = s3_key
 
-              # Upload to S3
-              logger.debug(f"Upload to AWS S3...")
-              if not self.s3_uploader.file_exists(s3_key):
-                uploaded = self.s3_uploader.upload_file(zip_path, s3_key)
-                asset.info.uploaded = uploaded
-              else:
-                logger.info(f"File already exists in S3: {s3_key}")
-                asset.info.uploaded = True
+                # Upload to S3
+                logger.debug(f"Upload to AWS S3...")
+                if not self.s3_uploader.file_exists(s3_key):
+                    uploaded = self.s3_uploader.upload_file(zip_path, s3_key)
+                    asset.info.uploaded = uploaded
+                    logger.debug(f"Uploaded to s3://{self.bucket_name}/{s3_key}")
+                else:
+                    logger.info(
+                        f"File {s3_key} already exists in S3: {self.bucket_name}"
+                    )
+                    asset.info.uploaded = True
             else:
                 logger.warning("Skipping upload (parameter `--no-upload` set)")
 

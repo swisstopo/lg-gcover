@@ -385,6 +385,9 @@ class MetadataDB:
         self.db_path = Path(db_path)
         self.init_db()
 
+    def __str__(self):
+        return f"<MetadataDB: db_path: {self.db_path}>"
+
     def init_db(self):
         """Initialize database schema"""
 
