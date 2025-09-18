@@ -783,8 +783,9 @@ def status(ctx):
 
 @gdb.command()
 @click.argument("gdb_path", type=click.Path(exists=True))
+@click.option("--no-upload", is_flag=True, help="Skip S3 upload")
 @click.pass_context
-def process(ctx, gdb_path):
+def process(ctx, gdb_path, no_upload):
     """Process a single GDB asset"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
     s3_config = global_config.s3
@@ -800,6 +801,7 @@ def process(ctx, gdb_path):
             #  s3_bucket=s3_bucket,
             db_path=gdb_config.db_path,
             temp_dir=gdb_config.temp_dir,
+            upload_to_s3= not no_upload,
             # aws_profile=s3_profile,
         )
 
@@ -853,9 +855,10 @@ def process(ctx, gdb_path):
     is_flag=True,
     help="Continue processing other assets if one fails",
 )
+@click.option("--no-upload", is_flag=True, help="Skip S3 upload")
 @click.pass_context
 def process_all(
-    ctx, dry_run, force, filter_type, filter_rc, since, max_workers, continue_on_error
+    ctx, dry_run, force, filter_type, filter_rc, since, max_workers, continue_on_error, no_upload
 ):
     """Process all GDB assets found by filesystem scan"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
@@ -875,6 +878,7 @@ def process_all(
             s3_config=s3_config,
             db_path=gdb_config.db_path,
             temp_dir=gdb_config.temp_dir,
+            upload_to_s3=not no_upload,
             # aws_profile=s3_profile,
         )
 
