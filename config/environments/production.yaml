@@ -6,6 +6,8 @@ global:
   s3:
     bucket: "lg-gcover-prod-d48b6c57"
     profile: "gcover_bucket"
+    upload_method: "auto"
+    upload_timeout: 30
   logging:
     file:
       path: "\\\\adb.intra.admin.ch/swisstopo$/Transfer/mom/gcover_prod_{date}.log" # System log location
