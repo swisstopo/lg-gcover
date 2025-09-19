@@ -19,19 +19,34 @@ from rich.table import Table
 # from gcover.gdb.config import  load_config TODO
 from gcover.config import AppConfig, load_config
 from gcover.config.models import GDBConfig, GlobalConfig
-from gcover.gdb.assets import (AssetType, BackupGDBAsset, GDBAsset,
-                               IncrementGDBAsset, ReleaseCandidate,
-                               VerificationGDBAsset, find_duplicate_groups,
-                               print_duplicate_report, remove_duplicate_assets)
+from gcover.gdb.assets import (
+    AssetType,
+    BackupGDBAsset,
+    GDBAsset,
+    IncrementGDBAsset,
+    ReleaseCandidate,
+    VerificationGDBAsset,
+    find_duplicate_groups,
+    print_duplicate_report,
+    remove_duplicate_assets,
+)
 from gcover.gdb.manager import GDBAssetManager
 from gcover.gdb.storage import MetadataDB, S3Uploader, TOTPGenerator
+
 # Import utility functions
-from gcover.gdb.utils import (check_disk_space, copy_gdb_asset,
-                              create_backup_manifest, create_destination_path,
-                              filter_assets_by_criteria, find_largest_assets,
-                              format_size, get_asset_age_distribution,
-                              get_directory_size, quick_size_check,
-                              verify_backup_integrity)
+from gcover.gdb.utils import (
+    check_disk_space,
+    copy_gdb_asset,
+    create_backup_manifest,
+    create_destination_path,
+    filter_assets_by_criteria,
+    find_largest_assets,
+    format_size,
+    get_asset_age_distribution,
+    get_directory_size,
+    quick_size_check,
+    verify_backup_integrity,
+)
 
 
 console = Console()
@@ -801,7 +816,7 @@ def process(ctx, gdb_path, no_upload):
             #  s3_bucket=s3_bucket,
             db_path=gdb_config.db_path,
             temp_dir=gdb_config.temp_dir,
-            upload_to_s3= not no_upload,
+            upload_to_s3=not no_upload,
             # aws_profile=s3_profile,
         )
 
@@ -851,6 +866,9 @@ def process(ctx, gdb_path, no_upload):
     help="Number of parallel workers (be careful with disk I/O)",
 )
 @click.option(
+    "--yes", is_flag=True, help="Automatically confirm prompts (for scripting)"
+)
+@click.option(
     "--continue-on-error",
     is_flag=True,
     help="Continue processing other assets if one fails",
@@ -858,7 +876,16 @@ def process(ctx, gdb_path, no_upload):
 @click.option("--no-upload", is_flag=True, help="Skip S3 upload")
 @click.pass_context
 def process_all(
-    ctx, dry_run, force, filter_type, filter_rc, since, max_workers, continue_on_error, no_upload
+    ctx,
+    dry_run,
+    force,
+    filter_type,
+    filter_rc,
+    since,
+    max_workers,
+    continue_on_error,
+    no_upload,
+    yes,
 ):
     """Process all GDB assets found by filesystem scan"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
@@ -973,9 +1000,17 @@ def process_all(
             return
 
         # Confirm before processing
-        if not click.confirm(f"\nProcess {len(filtered_assets)} assets?"):
-            rprint("[yellow]Cancelled[/yellow]")
-            return
+        if not yes:
+            response = (
+                console.input(
+                    f"[bold yellow]\nProcess {len(filtered_assets)} assets?[/bold yellow] [green](y/n)[/green]: "
+                )
+                .strip()
+                .lower()
+            )
+            if response not in {"y", "yes", "o", "oui"}:
+                console.print("[red]Cancelled.[/red]")
+                ctx.exit(1)
 
         # Process assets
         rprint(f"\n[cyan]Processing {len(filtered_assets)} assets...[/cyan]")
