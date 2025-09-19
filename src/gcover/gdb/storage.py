@@ -106,9 +106,9 @@ class S3Uploader:
         self.proxy_settings = proxy_settings or {}
         self.upload_method = upload_method
         self.proxies= {
-    "http": "http://prp04.admin.ch:8080",
-    "https": "http://prp04.admin.ch:8080"
-}
+           "http": "http://prp04.admin.ch:8080",
+           "https": "http://prp04.admin.ch:8080"
+        }
 
         # Initialize S3 client for direct upload (when needed)
         self.s3_client = None
@@ -118,6 +118,23 @@ class S3Uploader:
 
         # Determine upload strategy
         self._determine_upload_strategy()
+
+    def __repr__(self):
+        method = "presigned" if self.use_presigned else "direct"
+        return f"<gcover.gdb.storage.S3Uploader: bucket: {self.bucket_name}, self.proxies: {self.proxies}, profile: {self.profile_name}, method: {method}>"
+
+
+    def _init_proxies(self):
+      logger.info(f"proxy_settings: {self.proxy_settings}")
+      if self.proxy_settings:
+        proxy_config = {}
+        if "http_proxy" in self.proxy_settings:
+            proxy_config["http"] = self.proxy_settings.http_proxy
+        if "https_proxy" in self.proxy_settings:
+            proxy_config["https"] = self.proxy_settings.https_proxy
+
+        self.proxies = proxy_config
+        logger.info(f"Using proxy configuration: {proxy_config}")
 
     def _init_s3_client(self):
         """Initialize boto3 S3 client with proxy support"""
@@ -218,10 +235,18 @@ class S3Uploader:
             }
 
             logger.debug(f"Requesting presigned URL for {s3_key}")
-            response = requests.post(
-                self.lambda_endpoint, json=payload, headers=headers, timeout=30,
-                proxies=self.proxies, verify=False  # TODO
-            )
+            request_args = {
+                "json": payload,
+                "headers": headers,
+                "timeout": 30,
+                "verify": False  # TODO: consider using a CA bundle instead
+            }
+
+            # Only add proxies if the dictionary is not empty
+            if self.proxies:
+                request_args["proxies"] = self.proxies
+
+            response = requests.post(self.lambda_endpoint, **request_args)
 
             if response.status_code == 200:
                 data = response.json()
@@ -264,14 +289,18 @@ class S3Uploader:
 
             # Upload using presigned URL
             with open(file_path, "rb") as file_obj:
-                response = requests.put(
-                    presigned_url,
-                    data=file_obj,
-                    headers=presigned_data.get("headers", {}),
-                    timeout=300,  # 5 minutes timeout for upload
-                    proxies=self.proxies,
-                    verify=False,
-                )
+                request_args = {
+                    "data": file_obj,
+                    "headers": presigned_data.get("headers", {}),
+                    "timeout": 300,
+                    "verify": False  # TODO: consider using a CA bundle instead
+                }
+
+                # Only use proxy if self.proxies is not empty
+                if self.proxies:
+                    request_args["proxies"] = self.proxies
+
+                response = requests.put(presigned_url, **request_args)
 
             if response.status_code in [200, 204]:
                 logger.info(
@@ -382,9 +411,6 @@ class S3Uploader:
             logger.error(f"Download failed: {e}")
             return False
 
-    def __repr__(self):
-        method = "presigned" if self.use_presigned else "direct"
-        return f"<gcover.gdb.storage.S3Uploader: bucket: {self.bucket_name}, profile: {self.profile_name}, method: {method}>"
 
 
 class MetadataDB:
