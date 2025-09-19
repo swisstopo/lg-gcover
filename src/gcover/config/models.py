@@ -5,6 +5,7 @@ This replaces ALL other config classes
 """
 
 from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, field_validator
 from pathlib import Path
 from typing import Dict, Optional, Any
 import os
@@ -15,6 +16,8 @@ from typing import Dict, Optional, Any, Union
 from typing import Optional, Literal
 from pydantic import BaseModel, validator, Field
 import re
+
+from loguru import logger
 
 
 class FileLoggingConfig(BaseModel):
@@ -178,13 +181,28 @@ class ProxyConfig(BaseModel):
     http_proxy: Optional[str] = None
     https_proxy: Optional[str] = None
 
-    @validator("http_proxy", "https_proxy")
-    def validate_proxy_url(cls, v):
+    @field_validator("http_proxy", "https_proxy")
+    @classmethod
+    def validate_proxy_url(cls, v: Optional[str]) -> Optional[str]:
         if v is not None:
             # Basic URL validation for proxy
             if not re.match(r"^https?://[^\s/$.?#].[^\s]*$", v):
                 raise ValueError("Proxy URL must be a valid HTTP/HTTPS URL")
         return v
+
+    def to_requests_format(self) -> Dict[str, str]:
+        """Convert to format expected by requests library"""
+        proxies = {}
+        if self.http_proxy:
+            proxies["http"] = self.http_proxy
+        if self.https_proxy:
+            proxies["https"] = self.https_proxy
+        return proxies
+
+    def to_boto3_format(self) -> Dict[str, str]:
+        """Convert to format expected by boto3 Config"""
+        # boto3 uses the same format as requests
+        return self.to_requests_format()
 
 
 class S3Config(BaseModel):

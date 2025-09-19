@@ -82,7 +82,7 @@ class GDBAssetManager:
         lambda_endpoint = s3_config.lambda_endpoint  # .get('lambda_endpoint')
         totp_secret = s3_config.totp_secret  # .get('totp_secret')
         totp_token = s3_config.totp_token  # .get('totp_token')
-        proxy_settings = s3_config.proxy  # .get('proxy', {})
+        proxy_config = s3_config.proxy  # .get('proxy', {})
         upload_method = s3_config.upload_method  # .get('upload_method', 'auto')
 
         return S3Uploader(
@@ -91,7 +91,7 @@ class GDBAssetManager:
             lambda_endpoint=lambda_endpoint,
             totp_secret=totp_secret,
             totp_token=totp_token,
-            proxy_settings=proxy_settings,
+            proxy_config=proxy_config,
             upload_method=upload_method,
         )
 
