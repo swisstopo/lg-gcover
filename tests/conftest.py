@@ -3,11 +3,24 @@
 import pytest
 import os
 import sys
+from loguru import logger
+import io
 from pathlib import Path
 
 # Add src to Python path for testing
 src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))
+
+
+
+
+@pytest.fixture(autouse=True)
+def loguru_capture():
+    stream = io.StringIO()
+    logger.remove()
+    logger.add(stream, level="INFO")
+    yield stream
+    logger.remove()
 
 
 @pytest.fixture(scope="session")

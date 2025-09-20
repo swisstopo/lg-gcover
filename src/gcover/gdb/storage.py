@@ -22,6 +22,8 @@ import duckdb
 from botocore.exceptions import ClientError
 from botocore.config import Config
 
+from gcover.config.models import ProxyConfig
+
 # Configure logging
 from loguru import logger
 
@@ -83,7 +85,7 @@ class S3Uploader:
         lambda_endpoint: Optional[str] = None,
         totp_secret: Optional[str] = None,
         totp_token: Optional[str] = None,
-        proxy_settings: Optional[Dict[str, str]] = None,
+        proxy_config: Optional[ProxyConfig] = None,
         upload_method: str = "auto",
     ):
         """
@@ -95,7 +97,7 @@ class S3Uploader:
             lambda_endpoint: Lambda endpoint URL for presigned URLs
             totp_secret: TOTP secret for Lambda authentication (alternative to token)
             totp_token: Pre-generated TOTP token for Lambda authentication
-            proxy_settings: Proxy configuration for direct upload
+            proxy_config: ProxyConfig instance for proxy settings (optional)
             upload_method: 'auto', 'direct', or 'presigned'
         """
         self.bucket_name = bucket_name
@@ -103,31 +105,49 @@ class S3Uploader:
         self.lambda_endpoint = lambda_endpoint
         self.totp_secret = totp_secret
         self.totp_token = totp_token
-        self.proxy_settings = proxy_settings or {}
+        self.proxy_config = proxy_config
         self.upload_method = upload_method
+
+        # Setup proxies from config
+        self.proxies = self._init_proxies()
 
         # Initialize S3 client for direct upload (when needed)
         self.s3_client = None
-        self._init_s3_client()
+        if not self.upload_method == "presigned":
+            self._init_s3_client()
 
         # Determine upload strategy
         self._determine_upload_strategy()
 
+    def __repr__(self):
+        method = "presigned" if self.use_presigned else "direct"
+        proxy_info = "with_proxy" if self.proxies else "no_proxy"
+        return f"<gcover.gdb.storage.S3Uploader: bucket={self.bucket_name}, profile={self.profile_name}, method={method}, {proxy_info}>"
+
+    def _init_proxies(self) -> Dict[str, str]:
+        """Initialize proxy settings from ProxyConfig"""
+        if self.proxy_config is None:
+            logger.info("No proxy configuration provided")
+            return {}
+
+        proxies = self.proxy_config.to_requests_format()
+        if proxies:
+            logger.info(f"Using proxy configuration: {proxies}")
+        else:
+            logger.info("Proxy config provided but no proxies configured")
+
+        return proxies
+
     def _init_s3_client(self):
         """Initialize boto3 S3 client with proxy support"""
         try:
-            # Configure proxy if provided
             config = None
-            if self.proxy_settings:
-                proxy_config = {}
-                if "http_proxy" in self.proxy_settings:
-                    proxy_config["http"] = self.proxy_settings["http_proxy"]
-                if "https_proxy" in self.proxy_settings:
-                    proxy_config["https"] = self.proxy_settings["https_proxy"]
 
-                if proxy_config:
-                    config = Config(proxies=proxy_config)
-                    logger.info(f"Using proxy configuration: {proxy_config}")
+            # Configure proxy if provided
+            if self.proxies:
+                boto3_proxies = self.proxy_config.to_boto3_format()
+                config = Config(proxies=boto3_proxies)
+                logger.info(f"Boto3 using proxy configuration: {boto3_proxies}")
 
             if self.profile_name:
                 session = boto3.Session(profile_name=self.profile_name)
@@ -195,11 +215,6 @@ class S3Uploader:
 
         try:
             payload = {
-                "bucket": self.bucket_name,
-                "key": s3_key,
-                "file_size": file_size,
-            }
-            payload = {
                 "object_key": s3_key,
                 "totp_code": totp_token,
                 "expiration_hours": 24,
@@ -212,13 +227,23 @@ class S3Uploader:
             }
 
             logger.debug(f"Requesting presigned URL for {s3_key}")
-            response = requests.post(
-                self.lambda_endpoint, json=payload, headers=headers, timeout=30
-            )
+            request_args = {
+                "json": payload,
+                "headers": headers,
+                "timeout": 30,
+                "verify": False,  # TODO: consider using a CA bundle instead
+            }
+
+            # Only add proxies if configured
+            if self.proxies:
+                request_args["proxies"] = self.proxies
+                logger.debug(f"Using proxies for Lambda request: {self.proxies}")
+
+            response = requests.post(self.lambda_endpoint, **request_args)
 
             if response.status_code == 200:
                 data = response.json()
-                logger.debug(f"Presigned URL obtained successfully: {data}")
+                logger.debug(f"Presigned URL obtained successfully")
                 return data
             else:
                 logger.error(
@@ -253,16 +278,23 @@ class S3Uploader:
                 logger.error("Could not obtain presigned URL")
                 return False
 
-            logger.debug(f"Uploading with {presigned_url}")
+            logger.debug(f"Uploading with presigned URL")
 
             # Upload using presigned URL
             with open(file_path, "rb") as file_obj:
-                response = requests.put(
-                    presigned_url,
-                    data=file_obj,
-                    headers=presigned_data.get("headers", {}),
-                    timeout=300,  # 5 minutes timeout for upload
-                )
+                request_args = {
+                    "data": file_obj,
+                    "headers": presigned_data.get("headers", {}),
+                    "timeout": 300,
+                    "verify": False,  # TODO: consider using a CA bundle instead
+                }
+
+                # Only add proxies if configured
+                if self.proxies:
+                    request_args["proxies"] = self.proxies
+                    logger.debug(f"Using proxies for presigned upload: {self.proxies}")
+
+                response = requests.put(presigned_url, **request_args)
 
             if response.status_code in [200, 204]:
                 logger.info(
@@ -373,9 +405,30 @@ class S3Uploader:
             logger.error(f"Download failed: {e}")
             return False
 
-    def __repr__(self):
-        method = "presigned" if self.use_presigned else "direct"
-        return f"<gcover.gdb.storage.S3Uploader: bucket: {self.bucket_name}, profile: {self.profile_name}, method: {method}>"
+
+def create_s3_uploader_with_proxy(
+    bucket_name: str,
+    proxy_http: Optional[str] = None,
+    proxy_https: Optional[str] = None,
+    **kwargs,
+) -> S3Uploader:
+    """
+    Convenience function to create S3Uploader with proxy configuration
+
+    Args:
+        bucket_name: S3 bucket name
+        proxy_http: HTTP proxy URL (optional)
+        proxy_https: HTTPS proxy URL (optional)
+        **kwargs: Additional arguments for S3Uploader
+
+    Returns:
+        Configured S3Uploader instance
+    """
+    proxy_config = None
+    if proxy_http or proxy_https:
+        proxy_config = ProxyConfig(http_proxy=proxy_http, https_proxy=proxy_https)
+
+    return S3Uploader(bucket_name=bucket_name, proxy_config=proxy_config, **kwargs)
 
 
 class MetadataDB:
@@ -385,8 +438,13 @@ class MetadataDB:
         self.db_path = Path(db_path)
         self.init_db()
 
+    def __str__(self):
+        return f"<MetadataDB: db_path: {self.db_path}>"
+
     def init_db(self):
         """Initialize database schema"""
+
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with duckdb.connect(str(self.db_path)) as conn:
             conn.execute("""
             CREATE SEQUENCE IF NOT EXISTS  id_sequence START 1;

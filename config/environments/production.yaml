@@ -6,9 +6,11 @@ global:
   s3:
     bucket: "lg-gcover-prod-d48b6c57"
     profile: "gcover_bucket"
+    upload_method: "auto"
+    upload_timeout: 30
   logging:
     file:
-      path: r"X:\mom\prod_{date}.log" # System log location
+      path: "\\\\adb.intra.admin.ch/swisstopo$/Transfer/mom/gcover_prod_{date}.log" # System log location
       retention: "90 days" # Keep production logs longer
     console:
       format: "simple" # Clean console output

@@ -5,10 +5,10 @@ Main CLI entry point for gcover.
 
 import sys
 from pathlib import Path
-from rich import print as rprint
 
 import click
 from loguru import logger
+from rich import print as rprint
 
 # Ajouter le dossier parent au path si nécessaire (pour le développement)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -22,8 +22,8 @@ except ImportError:
 
 # from ..config import load_config
 
-from gcover.config import load_config, AppConfig
-from gcover.utils.logging import setup_logging, gcover_logger
+from gcover.config import AppConfig, load_config
+from gcover.utils.logging import gcover_logger, setup_logging
 
 env_map = {
     "prod": "production",
@@ -33,6 +33,7 @@ env_map = {
     "sandisk": "sandisk",
     "integration": "integration",
     "int": "integration",
+    "test": "test",
 }
 
 

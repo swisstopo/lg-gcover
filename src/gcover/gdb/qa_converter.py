@@ -108,7 +108,7 @@ class FileGDBConverter:
             aws_profile=s3_config.profile,
             lambda_endpoint=s3_config.lambda_endpoint,
             totp_secret=s3_config.lambda_endpoint,
-            proxy_settings=s3_config.proxy,
+            proxy_config=s3_config.proxy,
         )
 
         # Initialize DuckDB connection
@@ -674,6 +674,7 @@ class FileGDBConverter:
         output_dir: Optional[Path] = None,
         upload_to_s3: bool = True,
         output_format: str = "geoparquet",
+        convert_to_web: bool = True,
         simplify_tolerance: Optional[float] = None,  # Add this line
     ) -> GDBSummary:
         """
@@ -688,6 +689,9 @@ class FileGDBConverter:
             GDBSummary object with statistics
         """
         console.print(f"[bold blue]Processing GDB:[/bold blue] {gdb_path}")
+
+        if upload_to_s3 and not convert_to_web:
+            raise ValueError("Must convert to Web format prior to S3 Upload")
 
         # Parse metadata from path
         verification_type, rc_version, timestamp = self.parse_gdb_path(gdb_path)
@@ -731,43 +735,46 @@ class FileGDBConverter:
 
                 # Convert to web format
                 if layer_name != "IssueRows" and hasattr(gdf, "geometry"):
-                    # Determine file extension based on format
-                    if output_format == "geoparquet":
-                        file_path = output_dir / f"{layer_name}.parquet"
-                    elif output_format == "geojson":
-                        file_path = output_dir / f"{layer_name}.geojson"
-                    elif output_format == "flatgeobuf":
-                        file_path = output_dir / f"{layer_name}.fgb"
-                    else:  # all
-                        # Create all formats
-                        parquet_path = output_dir / f"{layer_name}.parquet"
-                        geojson_path = output_dir / f"{layer_name}.geojson"
-                        flatgeobuf_path = output_dir / f"{layer_name}.fgb"
+                    if convert_to_web:
+                        # Determine file extension based on format
+                        if output_format == "geoparquet":
+                            file_path = output_dir / f"{layer_name}.parquet"
+                        elif output_format == "geojson":
+                            file_path = output_dir / f"{layer_name}.geojson"
+                        elif output_format == "flatgeobuf":
+                            file_path = output_dir / f"{layer_name}.fgb"
+                        else:  # all
+                            # Create all formats
+                            parquet_path = output_dir / f"{layer_name}.parquet"
+                            geojson_path = output_dir / f"{layer_name}.geojson"
+                            flatgeobuf_path = output_dir / f"{layer_name}.fgb"
 
-                        self._convert_to_web_format(gdf, parquet_path, "geoparquet")
-                        self._convert_to_web_format(gdf, geojson_path, "geojson")
-                        self._convert_to_web_format(gdf, flatgeobuf_path, "flatgeobuf")
+                            self._convert_to_web_format(gdf, parquet_path, "geoparquet")
+                            self._convert_to_web_format(gdf, geojson_path, "geojson")
+                            self._convert_to_web_format(
+                                gdf, flatgeobuf_path, "flatgeobuf"
+                            )
 
+                            if upload_to_s3:
+                                s3_key_parquet = f"{self.s3_prefix}{verification_type}/{rc_version}/{timestamp.strftime('%Y%m%d_%H%M%S')}/{layer_name}.parquet"
+                                s3_key_geojson = f"{self.s3_prefix}{verification_type}/{rc_version}/{timestamp.strftime('%Y%m%d_%H%M%S')}/{layer_name}.geojson"
+                                s3_key_fgb = f"{self.s3_prefix}{verification_type}/{rc_version}/{timestamp.strftime('%Y%m%d_%H%M%S')}/{layer_name}.fgb"
+                                self._upload_to_s3(parquet_path, s3_key_parquet)
+                                self._upload_to_s3(geojson_path, s3_key_geojson)
+                                self._upload_to_s3(flatgeobuf_path, s3_key_fgb)
+
+                            progress.update(
+                                task,
+                                description=f"✅ Processed {layer_name} ({layer_stats.feature_count:,} features) - all formats",
+                            )
+                            continue
+
+                        self._convert_to_web_format(gdf, file_path, output_format)
+
+                        # Upload to S3
                         if upload_to_s3:
-                            s3_key_parquet = f"{self.s3_prefix}{verification_type}/{rc_version}/{timestamp.strftime('%Y%m%d_%H%M%S')}/{layer_name}.parquet"
-                            s3_key_geojson = f"{self.s3_prefix}{verification_type}/{rc_version}/{timestamp.strftime('%Y%m%d_%H%M%S')}/{layer_name}.geojson"
-                            s3_key_fgb = f"{self.s3_prefix}{verification_type}/{rc_version}/{timestamp.strftime('%Y%m%d_%H%M%S')}/{layer_name}.fgb"
-                            self._upload_to_s3(parquet_path, s3_key_parquet)
-                            self._upload_to_s3(geojson_path, s3_key_geojson)
-                            self._upload_to_s3(flatgeobuf_path, s3_key_fgb)
-
-                        progress.update(
-                            task,
-                            description=f"✅ Processed {layer_name} ({layer_stats.feature_count:,} features) - all formats",
-                        )
-                        continue
-
-                    self._convert_to_web_format(gdf, file_path, output_format)
-
-                    # Upload to S3
-                    if upload_to_s3:
-                        s3_key = f"{self.s3_prefix}{verification_type}/{rc_version}/{timestamp.strftime('%Y%m%d_%H%M%S')}/{file_path.name}"
-                        self._upload_to_s3(file_path, s3_key)
+                            s3_key = f"{self.s3_prefix}{verification_type}/{rc_version}/{timestamp.strftime('%Y%m%d_%H%M%S')}/{file_path.name}"
+                            self._upload_to_s3(file_path, s3_key)
 
                 # Save non-spatial data as JSON/Parquet
                 else:

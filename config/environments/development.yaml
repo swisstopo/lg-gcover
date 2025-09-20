@@ -13,7 +13,7 @@ global:
       format: "detailed"
       show_path: true
   s3:
-    bucket: "lg-gcover-prod-d48b6c57"
+    bucket: "lg-gcover-dev-abc12345"
     profile: "gcover_bucket" # AWS profile name
 gdb:
   base_paths:
