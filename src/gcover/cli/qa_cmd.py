@@ -232,6 +232,9 @@ def process_single(
     help="Type of QA tests to process (default: all)",
 )
 @click.option(
+    "--yes", is_flag=True, help="Automatically confirm prompts (for scripting)"
+)
+@click.option(
     "--dry-run",
     is_flag=True,
     help="Show what would be processed without actually processing",
@@ -241,6 +244,9 @@ def process_single(
     type=click.Choice(["geoparquet", "geojson", "flatgeobuf", "all"]),
     default="geoparquet",
     help="Output format",
+)
+@click.option(
+    "--since", type=str, help="Only process assets modified since date (YYYY-MM-DD)"
 )
 @click.option("--no-upload", is_flag=True, help="Skip S3 upload")
 @click.option("--no-convert", is_flag=True, help="Skip web format conversion")
@@ -263,6 +269,8 @@ def process_all(
     max_workers: Optional[int],
     verbose: bool,
     no_convert: bool,
+    yes: bool,
+    since: str,
 ):
     """
     Process multiple verification FileGDBs using the asset manager.
@@ -288,6 +296,14 @@ def process_all(
     # Override max_workers if specified
     if max_workers:
         global_config.max_workers = max_workers
+
+    since_date = None
+    if since:
+        try:
+            since_date = datetime.strptime(since, "%Y-%m-%d")
+        except ValueError:
+            console.print(f"[red]Invalid date format: {since}. Use YYYY-MM-DD[/red]")
+            sys.exit(1)
 
     # Get S3 settings
     s3_bucket = qa_config.get_s3_bucket(global_config)
@@ -318,7 +334,11 @@ def process_all(
     try:
         # Scan filesystem using the manager
         console.print("[dim]Scanning filesystem...[/dim]")
-        all_assets = manager.scan_filesystem()
+        all_assets = []
+        for asset in manager.scan_filesystem():
+            if since_date and asset.info.timestamp < since_date:
+                continue
+            all_assets.append(asset)
 
         # Filter by asset type if specified
         if qa_type != "all":
