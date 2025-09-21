@@ -187,7 +187,6 @@ def scan(
 ):
     """Scan filesystem for GDB assets and optionally copy them"""
 
-    verbose = ctx.obj["verbose"]
 
     gdb_config, global_config, environment, verbose = get_configs(ctx)
     s3_config = global_config.s3
