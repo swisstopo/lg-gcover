@@ -2,10 +2,10 @@
 
 global:
   log_level: WARNING
-  proxy: proxy-bvcol.admin.ch:8080
+  proxy: ${GCOVER_PROXY_URL}
   s3:
-    bucket: "lg-gcover-prod-d48b6c57"
-    profile: "gcover_bucket"
+    bucket: ${GCOVER_S3_BUCKET_PROD}
+    profile: ${GCOVER_AWS_PROFILE}
     upload_method: "auto"
     upload_timeout: 30
   logging:
