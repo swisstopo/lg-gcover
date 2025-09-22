@@ -13,6 +13,11 @@ sys.path.insert(0, str(src_path))
 
 
 
+def pytest_configure(config):
+    """Force test environment for all pytest runs"""
+    os.environ["GCOVER_ENVIRONMENT"] = "test"
+    print("🧪 FORCED: GCOVER_ENVIRONMENT=test for pytest")
+
 
 @pytest.fixture(autouse=True)
 def loguru_capture():
