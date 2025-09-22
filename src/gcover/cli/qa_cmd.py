@@ -89,7 +89,6 @@ def get_qa_config(ctx):
 @click.option(
     "--simplify-tolerance", type=float, help="Tolerance for geometry simplification"
 )
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 @click.pass_context
 def process_single(
     ctx,
@@ -98,7 +97,6 @@ def process_single(
     no_upload: bool,
     format: str,
     simplify_tolerance: Optional[float],
-    verbose: bool,
     no_convert: bool,
 ):
     """
@@ -110,6 +108,8 @@ def process_single(
         gcover qa process /path/to/issue.gdb
         gcover qa process /path/to/issue.gdb --simplify-tolerance 1.0 --verbose
     """
+    verbose = ctx.obj.get("verbose", False)
+
     if not no_upload and no_convert:
         raise click.BadParameter(
             "Conversion to Web Format is obligatory before uploading to S3."
@@ -256,7 +256,6 @@ def process_single(
     help="Tolerance for geometry simplification (applies to all GDBs)",
 )
 @click.option("--max-workers", type=int, help="Maximum number of parallel workers")
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 @click.pass_context
 def process_all(
     ctx,
@@ -267,7 +266,6 @@ def process_all(
     no_upload: bool,
     simplify_tolerance: Optional[float],
     max_workers: Optional[int],
-    verbose: bool,
     no_convert: bool,
     yes: bool,
     since: str,
@@ -281,6 +279,8 @@ def process_all(
         gcover qa process-all /media/marco/SANDISK/Verifications
         gcover qa process-all /path/to/verifications --qa-type topology --dry-run
     """
+    verbose = ctx.obj.get("verbose", False)
+
     if verbose:
         logger.remove()  # Remove all handlers
         logger.add(sys.stderr, level="DEBUG")  # Add debug handler
@@ -476,7 +476,7 @@ def process_all(
 @qa_commands.command("diagnose")
 @click.argument("gdb_path", type=click.Path(exists=True, path_type=Path))
 @click.option("--layer", help="Specific layer to diagnose (default: all layers)")
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
+@click.pass_context
 def diagnose_gdb(gdb_path: Path, layer: Optional[str], verbose: bool):
     """
     Diagnose FileGDB structure and identify potential issues.
@@ -488,6 +488,8 @@ def diagnose_gdb(gdb_path: Path, layer: Optional[str], verbose: bool):
         gcover qa diagnose /path/to/issue.gdb --layer IssuePolygons
     """
     import fiona
+
+    verbose = ctx.obj.get("verbose", False)
 
     if verbose:
         logger.remove()  # Remove all handlers
@@ -657,7 +659,6 @@ def _analyze_geometries(src, verbose: bool):
 @click.option(
     "--export-csv", type=click.Path(path_type=Path), help="Export results to CSV file"
 )
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 @click.pass_context
 def show_stats(
     ctx,
@@ -665,7 +666,6 @@ def show_stats(
     rc_version: Optional[str],
     days_back: int,
     export_csv: Optional[Path],
-    verbose: bool,
 ):
     """
     Display QA statistics from the database.
@@ -674,6 +674,8 @@ def show_stats(
         gcover qa stats --qa-type Topology --days-back 7
         gcover qa stats --rc-version 2030-12-31 --export-csv results.csv
     """
+    verbose = ctx.obj.get("verbose", False)
+
     if verbose:
         logger.remove()  # Remove all handlers
         logger.add(sys.stderr, level="DEBUG")  # Add debug handler
@@ -1201,7 +1203,6 @@ def _auto_detect_qa_couple(
 @click.option(
     "--yes", is_flag=True, help="Automatically confirm prompts (for scripting)"
 )
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 @click.pass_context
 def aggregate_qa_stats(
     ctx,
@@ -1216,7 +1217,6 @@ def aggregate_qa_stats(
     output_format: str,
     extract_first: bool,
     auto_discover: bool,
-    verbose: bool,
     yes: bool,
 ):
     """
@@ -1247,6 +1247,8 @@ def aggregate_qa_stats(
         gcover qa aggregate --auto-discover --base-dir /path/to/verifications
     """
     final_path = None
+    verbose = ctx.obj.get("verbose", False)
+
     if verbose:
         logger.remove()
         logger.add(sys.stderr, level="DEBUG")
@@ -1636,7 +1638,6 @@ def _auto_discover_rc_gdbs(base_dir: Path) -> tuple[Optional[Path], Optional[Pat
     default=True,
     help="Filter issues by mapsheet source (RC1/RC2). Disable to extract all issues.",
 )
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 @click.option(
     "--yes", is_flag=True, help="Automatically confirm prompts (for scripting)"
 )
@@ -1649,7 +1650,6 @@ def extract(
     output: Path,
     output_format: str,
     filter_by_source: bool,
-    verbose: bool,
     yes: bool,
     asset_type: str,
 ):
@@ -1681,6 +1681,7 @@ def extract(
             --format filegdb \\
             --filter-by-source
     """
+    verbose = ctx.obj.get("verbose", False)
 
     try:
         qa_config, global_config = get_qa_config(ctx)
@@ -1845,7 +1846,6 @@ def show_latest_couple(ctx, verbose: bool):
 @click.option(
     "--weeks-back", type=int, default=8, help="Number of weeks to analyze (default: 8)"
 )
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 @click.pass_context
 def trend_analysis(
     ctx,
@@ -1854,7 +1854,6 @@ def trend_analysis(
     rc_version: Optional[str],
     layer: Optional[str],
     weeks_back: int,
-    verbose: bool,
 ):
     """
     Deep trend analysis for specific tests over time.
@@ -1872,9 +1871,11 @@ def trend_analysis(
         # Analyze issues in IssuePolygons layer only
         gcover qa trend-analysis --qa-type TQA --layer IssuePolygons --weeks-back 12
     """
+    verbose = ctx.obj.get("verbose", False)
     if verbose:
         logger.remove()
         logger.add(sys.stderr, level="DEBUG")
+
 
     qa_config, global_config = get_qa_config(ctx)
 
@@ -2072,7 +2073,6 @@ def enhanced_stats(
     weekly_summary: bool,
     top_n: int,
     export_csv: Optional[Path],
-    verbose: bool,
 ):
     """
     Enhanced QA statistics with trend analysis and scheduling awareness.
@@ -2095,6 +2095,8 @@ def enhanced_stats(
         gcover qa enhanced-stats --qa-type TQA --target-date 2025-01-15 --no-trends
     """
     converter = None
+
+    verbose = ctx.obj.get("verbose", False)
     if verbose:
         logger.remove()
         logger.add(sys.stderr, level="DEBUG")
@@ -2472,7 +2474,6 @@ def _display_weekly_summary(
 @click.option(
     "--export-csv", type=click.Path(path_type=Path), help="Export results to CSV file"
 )
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 @click.pass_context
 def stats_v2(
     ctx,
@@ -2482,7 +2483,6 @@ def stats_v2(
     group_by_rc: bool,
     show_empty_rc: bool,
     export_csv: Optional[Path],
-    verbose: bool,
 ):
     """
     Enhanced statistics display with RC grouping and scheduling awareness.
@@ -2490,6 +2490,9 @@ def stats_v2(
     This is an enhanced version of the basic 'stats' command that provides
     better organization and understanding of the test schedule.
     """
+
+    verbose = ctx.obj.get("verbose", False)
+
     if verbose:
         logger.remove()
         logger.add(sys.stderr, level="DEBUG")
