@@ -232,3 +232,10 @@ terraform.rc
 # AWS credentials (just in case)
 .aws/credentials
 .aws/config
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+src/gcover/_version.py

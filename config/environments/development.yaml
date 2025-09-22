@@ -3,6 +3,7 @@
 
 global:
   log_level: DEBUG
+  proxy: ${GCOVER_PROXY_URL}
   db_path: "data/dev_gdb_metadata.duckdb"
   qa_db_path: "data/dev_verification_stats.duckdb"
   logging:
@@ -13,8 +14,13 @@ global:
       format: "detailed"
       show_path: true
   s3:
-    bucket: "lg-gcover-dev-abc12345"
-    profile: "gcover_bucket" # AWS profile name
+    bucket: ${GCOVER_S3_BUCKET_DEV}
+    profile: ${GCOVER_AWS_PROFILE} # AWS profile name
+    totp_secret: ${GCOVER_TOTP_SECRET}
+    lambda_endpoint: ${GCOVER_LAMBDA_ENDPOINT}
+    proxy:
+      http_proxy: ${GCOVER_PROXY_URL}
+      https_proxy: ${GCOVER_PROXY_URL}
 gdb:
   base_paths:
     backup: "/home/marco/DATA/GCOVER"

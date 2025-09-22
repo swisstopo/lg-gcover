@@ -221,6 +221,14 @@ addopts = [
     "--cov-report=html",
     "--cov-report=xml",
 ]
+# Environment variable handling
+env = [
+    "GCOVER_ENVIRONMENT=test"
+]
+env_override_existing_values = 0
+
+
+
 
 [tool.coverage.run]
 source = ["gcover"]

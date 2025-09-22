@@ -87,12 +87,12 @@ jobs:
       - name: Run smoke tests
         shell: bash -l {0}
         run: |
-          pytest tests/test_imports.py tests/test_cli_smoke.py -v --no-cov
+          GCOVER_ENVIRONMENT=test  pytest tests/test_imports.py tests/test_cli_smoke.py -v --no-cov  
 
       - name: Run all tests (allow failures for now)
         shell: bash -l {0}
         run: |
-          pytest tests/ -v --tb=short || echo "Some tests failed - expected during cleanup"
+          GCOVER_ENVIRONMENT=test  pytest tests/ -v --tb=short || echo "Some tests failed - expected during cleanup"
   build:
     runs-on: ubuntu-latest
 
