@@ -16,6 +16,11 @@ global:
   s3:
     bucket: ${GCOVER_S3_BUCKET_DEV}
     profile: ${GCOVER_AWS_PROFILE} # AWS profile name
+    totp_secret: ${GCOVER_TOTP_SECRET}
+    lambda_endpoint: ${GCOVER_LAMBDA_ENDPOINT}
+    proxy:
+      http_proxy: ${GCOVER_PROXY_URL}
+      https_proxy: ${GCOVER_PROXY_URL}
 gdb:
   base_paths:
     backup: "/home/marco/DATA/GCOVER"
