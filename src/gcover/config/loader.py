@@ -48,7 +48,6 @@ class ConfigManager:
         self._apply_env_overrides(base_config_data)
 
         # 6. Substitute secrets in configuration
-        console.print(f"[blue]Load secret: {load_secrets}[/blue]")
         if load_secrets:
             self._substitute_secrets(base_config_data)
 
@@ -74,6 +73,7 @@ class ConfigManager:
             for env_file in env_files:
                 if env_file.exists():
                     console.log(f"🔐 Loading secrets from: [blue]{env_file}[/blue]")
+
                     load_dotenv(
                         env_file, override=False
                     )  # Don't override existing env vars
@@ -81,7 +81,7 @@ class ConfigManager:
             # Always try to load from default .env
             default_env = Path(".env")
             if default_env.exists():
-                console.log(f"🔐 Loading secrets from: [blue]{default_env}[/blue]")
+                console.log(f"🔐 Loading secrets from: {default_env}")
                 load_dotenv(default_env, override=False)
 
         except ImportError:
@@ -126,7 +126,7 @@ class ConfigManager:
                 if isinstance(item, (dict, list, str)):
                     self._process_config_secrets(item, prefix)
 
-    def _substitute_secret_value(self, value: str, key: str, prefix: str) -> str:
+    def _substitute_secret_value(self, value: str, key: str, prefix: str) -> str | None:
         """Substitute a single secret value"""
         # Pattern 1: Explicit env var syntax ${ENV_VAR}
         env_var_pattern = r"\$\{([^}]+)\}"
@@ -135,12 +135,23 @@ class ConfigManager:
         for env_var in matches:
             env_value = os.getenv(env_var)
             if env_value is not None:
-                value = value.replace(f"${{{env_var}}}", env_value)
-                console.log(
-                    f"🔐 Secret substituted: {env_var} (from explicit reference)"
+                # Handle special values for optional fields
+                processed_value = self._process_optional_value(env_value, key)
+                value = value.replace(
+                    f"${{{env_var}}}",
+                    str(processed_value) if processed_value is not None else "",
                 )
+                console.log(
+                    f"🔐 Secret substituted: {env_var} -> {self._safe_log_value(key, processed_value)}"
+                )
+                return processed_value
             else:
-                console.log(f"[yellow]⚠️  Secret not found: {env_var}[/yellow]")
+                console.log(
+                    f"[yellow]⚠️  Environment variable not set: {env_var}[/yellow]"
+                )
+                # For optional fields, return None if env var not set
+                if self._is_optional_field(key):
+                    return None
 
         # Pattern 2: Auto-detect secret fields and substitute from env vars
         if self._is_secret_field(key) and not re.search(env_var_pattern, value):
@@ -156,10 +167,47 @@ class ConfigManager:
             for env_var in possible_env_vars:
                 env_value = os.getenv(env_var)
                 if env_value is not None:
+                    processed_value = self._process_optional_value(env_value, key)
                     console.log(f"🔐 Secret auto-substituted: {key} -> {env_var}")
-                    return env_value
+                    return processed_value
 
         return value
+
+    def _process_optional_value(self, env_value: str, key: str) -> str | None:
+        """Process environment variable value, handling special cases for optional fields"""
+        # Empty string means None for optional fields
+        if env_value == "":
+            if self._is_optional_field(key):
+                return None
+            return env_value
+
+        # Handle explicit None strings
+        if env_value.lower() in ("none", "null", "nil"):
+            return None
+
+        # Handle boolean-like strings for optional fields
+        if env_value.lower() in ("false", "0", "no", "off", "disabled"):
+            if self._is_optional_field(key):
+                return None
+            return env_value
+
+        return env_value
+
+    def _is_optional_field(self, field_name: str) -> bool:
+        """Detect if a field is optional (can be None)"""
+        optional_keywords = [
+            "proxy",
+            "http_proxy",
+            "https_proxy",
+            "url",
+            "endpoint",
+            "webhook",
+            "callback",
+            "notification",
+            "alert",
+        ]
+        field_lower = field_name.lower()
+        return any(keyword in field_lower for keyword in optional_keywords)
 
     def _is_secret_field(self, field_name: str) -> bool:
         """Detect if a field contains sensitive information"""
