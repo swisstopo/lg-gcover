@@ -4,6 +4,8 @@ import arcpy
 import os
 import json
 from pathlib import Path
+import traceback
+import sys
 
 from loguru import logger
 
@@ -15,7 +17,7 @@ lyrx_files = [
     r"\\v0t0020a.adr.admin.ch\lg\01_PRODUKTION\GIS\TOPGIS\NEPRO\GoTOP\Lyrx_P\GC_Pro_4.1@Default.lyrx"
 ]  # Layer files to load
 
-output_dir = Path(r"X:\mom\Lyrx")
+output_dir = Path(r"X:mom\\mapserver_style\export_json")
 output_dir.mkdir(parents=True, exist_ok=True)
 
 # Remove default sink
@@ -68,8 +70,9 @@ def merge_headings(headings, headings_alias):
 
 
 def process_layers(layer):
-    print(f"==={layer.name}===")
+
     if layer.isGroupLayer:
+        logger.info(f"===Processing group: {layer.name}===")
         for sublayer in layer.listLayers():
             process_layers(sublayer)
 
@@ -80,7 +83,7 @@ def process_layers(layer):
         renderer = sym.renderer
         result["renderer"]["type"] = renderer.type
 
-        logger.info(f"========= {layer.name} - {renderer.type} ===================")
+        logger.info(f"------ Processing layer {layer.name} - {renderer.type} ------")
 
         if layer.supports("dataSource"):
             result["dataSource"] = layer.dataSource
@@ -114,7 +117,7 @@ def process_layers(layer):
                 "symbol": symbol_info,
             }
 
-            logger.info(renderer_dict)
+            logger.debug(renderer_dict)
 
         elif hasattr(renderer, "groups"):
             renderer_dict = {"fields": renderer.fields, "groups": []}
@@ -127,7 +130,7 @@ def process_layers(layer):
                 group_dict = {"headings": headings, "labels": [], "values": []}
 
                 for item in group.items:
-                    logger.info(f"New item")
+                    logger.debug(f"New item")
                     logger.info(f"   label={item.label}")
                     logger.debug(f"   values={item.values}")
                     group_dict["labels"].append(item.label)
@@ -137,9 +140,9 @@ def process_layers(layer):
                     ]
                     # Extract symbol info
                     symbol = item.symbol
+                    color = None
                     symbol_dict = {
                         "type": type(symbol).__name__,
-                        "color": symbol.color,
                         "size": getattr(symbol, "size", None),
                         "style": getattr(symbol, "styleName", None),
                         "name": getattr(symbol, "name", None),
@@ -147,6 +150,17 @@ def process_layers(layer):
                         "width": getattr(symbol, "width", None),
                         "outline": getattr(symbol, "outline", None)
                     }
+                    try:
+                        color = symbol.color
+                    except RuntimeError as e:
+                        tb = sys.exc_info()[2]
+                        tbinfo = traceback.format_tb(tb)[0]
+                        pymsg = "PYTHON ERRORS:\nTraceback info:\n" + tbinfo + "\nError Info:\n" + str( sys.exc_info()[1])
+                        msgs = "ArcPy ERRORS:\n" + arcpy.GetMessages(2) + "\n"
+                        logger.error(f"Error with color: {msgs}")
+
+                    symbol_dict['color'] = color
+
 
                     # Add symbol to item
                     group_dict.setdefault("symbols", []).append(symbol_dict)
@@ -159,14 +173,15 @@ def process_layers(layer):
 
         try:
             result["renderer"] = renderer_dict
-            logger.info(f"--{layer.name}--")
+
             output_path = os.path.join(
                 output_dir, sanitize_filename(f"{layer.name}.json")
             )
             with open(output_path, "w") as f:
                 json.dump(renderer_dict, f, indent=4)
+                logger.info(f"Written {layer.name} to {output_path}")
         except Exception as e:
-            logger.error(f"Cannot add symbology: {layer.name}: {e}")
+            logger.error(f"Cannot write symbology: {layer.name}: {e}")
 
     return result
 
@@ -202,6 +217,7 @@ def main():
                 logger.info(f"Layer file not found: {lyrx_path}")
 
     export_map_symbology(my_map)
+    logger.info(f"All symbols exported to {output_dir}")
 
     # --- Save the project ---
     aprx.save()
