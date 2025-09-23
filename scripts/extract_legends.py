@@ -158,6 +158,7 @@ def process_layers(layer):
                         pymsg = "PYTHON ERRORS:\nTraceback info:\n" + tbinfo + "\nError Info:\n" + str( sys.exc_info()[1])
                         msgs = "ArcPy ERRORS:\n" + arcpy.GetMessages(2) + "\n"
                         logger.error(f"Error with color: {msgs}")
+                        logger.error(f"Error with color: {pymsg}")
 
                     symbol_dict['color'] = color
 
