@@ -79,7 +79,7 @@ class QAAnalyzer:
         try:
             # Load different zone types based on created GPKG structure
             zone_layers = {
-                "mapsheets": "mapsheets_with_sources",  # Main layer with source mapping (RC1/RC2)  mapsheets_sources_only
+                "mapsheets": "mapsheets_sources_only",  # Main layer with source mapping (RC1/RC2)    Nota:  mapsheets_with_sources has many dupplicates
                 "work_units": "work_units",  # Work units layer
                 "lots": "lots",  # Lots layer
             }
@@ -92,6 +92,16 @@ class QAAnalyzer:
                             if "WU_NAME" not in gdf.columns and "NAME" in gdf.columns:
                                 gdf["WU_NAME"] = gdf["NAME"]
                                 logger.warning(f"Adding `WU_NAME` to work_units layer!")
+                        if zone_type == "lots":  # TODO huggly hack, to be removed
+                            if (
+                                "LOT_NAME" not in gdf.columns
+                                and "LOT_NR" in gdf.columns
+                            ):
+                                gdf["LOT_NAME"] = gdf["LOT_NR"].apply(
+                                    lambda x: f"Lot{x}"
+                                )
+                                logger.warning(f"Adding `LOT_NAME` to lots layer!")
+
                         self.zones_data[zone_type] = gdf
                         logger.info(
                             f"Loaded {len(gdf)} {zone_type} from layer '{layer_name}'"
@@ -513,35 +523,145 @@ class QAAnalyzer:
             group_cols = [col for col in group_cols if col in joined_gdf.columns]
 
             logger.debug(f"Grouping by columns: {group_cols}")
+            logger.debug(
+                f"Before grouping: {joined_gdf.loc[:, ['MSH_TOPO_NR', 'MSH_MAP_TITLE', 'source_rc', 'TestType', 'TestName', 'IssueType', 'StopCondition']].head(20)}"
+            )
 
-            # Aggregation
-            agg_stats = (
-                joined_gdf.groupby(group_cols)
-                .agg(
-                    {
-                        "IssueType": ["count", lambda x: (x == "Error").sum()],
-                        "StopCondition": lambda x: (x == "Yes").sum(),
+            # =============================================================================
+            # Count TestName occurrences by MSH_TOPO_NR
+            # =============================================================================
+
+            # Check if required columns exist
+            required_cols = [zone_id_col, "TestName"]
+            if all(col in joined_gdf.columns for col in required_cols):
+                logger.info(f"Creating TestName count summary by {zone_id_col}")
+
+                # Group by MSH_TOPO_NR and TestName, count occurrences and preserve other fields
+                agg_stats = (
+                    joined_gdf.groupby(required_cols)
+                    .agg(
+                        {
+                            zone_name_col: "first",  # Take first occurrence
+                            "source_rc": "first",  # Take first occurrence
+                            "TestType": "first",  # Take first occurrence
+                            "IssueType": "first",  # Take first occurrence (could be mixed, so first is representative)
+                            "StopCondition": "first",  # Take first occurrence (could be mixed, so first is representative)
+                        }
+                    )
+                    .reset_index()
+                )
+
+                # Add issue count using size() which counts the group size
+                issue_counts = (
+                    joined_gdf.groupby(required_cols)
+                    .size()
+                    .reset_index(name="issue_count")
+                )
+
+                # Merge the counts with the aggregated data
+                agg_stats = agg_stats.merge(
+                    issue_counts, on=[zone_id_col, "TestName"], how="left"
+                )
+
+                # Reorder columns to match desired format
+                column_order = [
+                    zone_id_col,
+                    zone_name_col,
+                    "source_rc",
+                    "TestName",
+                    "TestType",
+                    "issue_count",
+                    "IssueType",
+                    "StopCondition",
+                ]
+
+                # Only include columns that exist
+                available_columns = [
+                    col for col in column_order if col in agg_stats.columns
+                ]
+                agg_stats = agg_stats[available_columns]
+
+                # Add LayerName column with the layer_name variable value
+                agg_stats["layer_name"] = layer_name
+
+                logger.info(f"TestName summary completed. Shape: {agg_stats.shape}")
+                logger.debug(f"Sample results:\n{agg_stats.head()}")
+
+                # Optional: Display summary statistics
+                logger.info("TestName Count Statistics:")
+                logger.info(
+                    f"- Total unique {zone_id_col}/TestName combinations: {len(agg_stats)}"
+                )
+                logger.info(
+                    f"- Issue count range: {agg_stats['issue_count'].min()} - {agg_stats['issue_count'].max()}"
+                )
+                logger.info(
+                    f"- Average issues per TestName/Map combination: {agg_stats['issue_count'].mean():.2f}"
+                )
+
+                # Show top combinations by issue count
+                if len(agg_stats) > 0:
+                    top_combinations = agg_stats.nlargest(5, "issue_count")[
+                        [zone_id_col, zone_name_col, "TestName", "issue_count"]
+                    ]
+                    logger.info(
+                        f"Top 5 TestName combinations by issue count:\n{top_combinations.to_string(index=False)}"
+                    )
+
+            else:
+                logger.warning(
+                    f"Cannot create TestName summary. Missing required columns: {set(required_cols) - set(joined_gdf.columns)}"
+                )
+
+                # Fall back to original aggregation approach
+                agg_stats = (
+                    joined_gdf.groupby(group_cols)
+                    .agg(
+                        {
+                            "IssueType": ["count", lambda x: (x == "Error").sum()],
+                            "StopCondition": lambda x: (x == "Yes").sum(),
+                        }
+                    )
+                    .reset_index()
+                )
+
+                # Flatten column names
+                agg_stats.columns = [
+                    col[0] if col[1] == "" else f"{col[0]}_{col[1]}"
+                    for col in agg_stats.columns
+                ]
+                agg_stats = agg_stats.rename(
+                    columns={
+                        "IssueType_count": "total_issues",
+                        "IssueType_<lambda>": "error_issues",
+                        "StopCondition_<lambda>": "stop_condition_issues",
                     }
                 )
-                .reset_index()
-            )
-
-            # Flatten column names
-            agg_stats.columns = [
-                col[0] if col[1] == "" else f"{col[0]}_{col[1]}"
-                for col in agg_stats.columns
-            ]
-            agg_stats = agg_stats.rename(
-                columns={
-                    "IssueType_count": "total_issues",
-                    "IssueType_<lambda>": "error_issues",
-                    "StopCondition_<lambda>": "stop_condition_issues",
-                }
-            )
 
             # Add metadata
             agg_stats["layer_type"] = layer_name
             agg_stats["zone_type"] = zone_type
+
+            # Optional: Display summary statistics
+            if "TestName_Count" in agg_stats.columns:
+                logger.info("TestName Count Statistics:")
+                logger.info(
+                    f"- Total unique {zone_id_col}/TestName combinations: {len(agg_stats)}"
+                )
+                logger.info(
+                    f"- TestName count range: {agg_stats['TestName_Count'].min()} - {agg_stats['TestName_Count'].max()}"
+                )
+                logger.info(
+                    f"- Average TestName occurrences per combination: {agg_stats['TestName_Count'].mean():.2f}"
+                )
+
+                # Show top TestName combinations by count
+                top_combinations = agg_stats.nlargest(5, "TestName_Count")[
+                    [zone_id_col, zone_name_col, "TestName", "TestName_Count"]
+                ]
+                logger.info(
+                    f"Top 5 TestName combinations by count:\n{top_combinations.to_string(index=False)}"
+                )
 
             all_results.append(agg_stats)
 
