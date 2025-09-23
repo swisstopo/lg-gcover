@@ -19,9 +19,14 @@ class SDEConnectionManager:
 
     def __enter__(self):
         users_version = self.find_user_versions(instances=["GCOVERP"])
-        if users_version and len(users_version) > 0:
-            user_version = users_version[0]
-            self.create_connection(instance="GCOVERP", version=user_version)
+
+        if users_version and "GCOVERP" in users_version:
+            version_list = users_version["GCOVERP"]
+
+            if version_list:
+                user_version = version_list[0]
+                self.create_connection(instance="GCOVERP", version=user_version)
+
 
         return self
 
@@ -135,6 +140,7 @@ class SDEConnectionManager:
         for instance in instances:
             try:
                 versions = self.get_versions(instance)
+                logger.debug(versions)
                 user_versions[instance] = [
                     v
                     for v in versions
