@@ -254,6 +254,7 @@ class QAAnalyzer:
         rc2_gdb: Path,
         output_path: Path,
         output_format: str = "gpkg",
+        deduplicate_cross_zone: bool = True,  # NEW parameter
     ) -> Dict[str, int]:
         """
         Extract only relevant QA issues based on mapsheet source mapping.
@@ -267,6 +268,7 @@ class QAAnalyzer:
             rc2_gdb: Path to RC2 QA FileGDB
             output_path: Output path (without extension)
             output_format: 'gpkg' or 'filegdb'
+            deduplicate_cross_zone: Whether to deduplicate features crossing multiple zones
 
         Returns:
             Dictionary with extraction statistics
@@ -289,7 +291,7 @@ class QAAnalyzer:
             )
             # Fallback: combine all data without filtering
             return self._extract_all_issues(
-                rc1_gdb, rc2_gdb, output_path, output_format
+                rc1_gdb, rc2_gdb, output_path, output_format, deduplicate_cross_zone
             )
         else:
             if SOURCE_RC_COLUMN == "SOURCE_RC":
@@ -308,7 +310,17 @@ class QAAnalyzer:
         )
 
         all_filtered_data = {}
-        stats = {"total_issues": 0, "rc1_issues": 0, "rc2_issues": 0}
+        stats = {
+            "total_issues": 0,
+            "rc1_issues": 0,
+            "rc2_issues": 0,
+            "before_dedup": 0,
+            "after_dedup": 0,
+        }  # NEW stats
+
+        # Get zone column info for deduplication
+        zone_id_col = self._get_zone_id_column("mapsheets")
+        zone_name_col = self._get_zone_name_column("mapsheets")
 
         # Process RC1 issues with RC1 mapsheets
         if not rc1_mapsheets.empty:
@@ -323,13 +335,38 @@ class QAAnalyzer:
                 )
                 if not filtered_gdf.empty:
                     filtered_gdf["source_rc"] = "RC1"
+
+                    # Track stats before deduplication
+                    before_dedup_count = len(filtered_gdf)
+                    stats["before_dedup"] += before_dedup_count
+
+                    # Apply deduplication if requested
+                    if deduplicate_cross_zone:
+                        logger.info(
+                            f"Deduplicating cross-zone features in RC1 {layer_name}"
+                        )
+                        filtered_gdf = self._deduplicate_cross_zone_features(
+                            filtered_gdf, zone_id_col, zone_name_col
+                        )
+
+                    # Track stats after deduplication
+                    after_dedup_count = len(filtered_gdf)
+                    stats["after_dedup"] += after_dedup_count
+
                     all_filtered_data[f"{layer_name}_RC1"] = filtered_gdf
-                    stats["rc1_issues"] += len(filtered_gdf)
+                    stats["rc1_issues"] += after_dedup_count
+
+                    if deduplicate_cross_zone:
+                        logger.info(
+                            f"RC1 {layer_name}: {before_dedup_count} → {after_dedup_count} "
+                            f"({before_dedup_count - after_dedup_count} cross-zone duplicates merged)"
+                        )
 
         # Process RC2 issues with RC2 mapsheets
         if not rc2_mapsheets.empty:
             rc2_data = self._read_qa_gdb(rc2_gdb)
             for layer_name, qa_gdf in rc2_data.items():
+                logger.info(f"Processing RC2 layer {layer_name}")
                 if qa_gdf.empty:
                     continue
 
@@ -338,10 +375,42 @@ class QAAnalyzer:
                 )
                 if not filtered_gdf.empty:
                     filtered_gdf["source_rc"] = "RC2"
-                    all_filtered_data[f"{layer_name}_RC2"] = filtered_gdf
-                    stats["rc2_issues"] += len(filtered_gdf)
 
-        stats["total_issues"] = stats["rc1_issues"] + stats["rc2_issues"]
+                    # Track stats before deduplication
+                    before_dedup_count = len(filtered_gdf)
+                    stats["before_dedup"] += before_dedup_count
+
+                    # Apply deduplication if requested
+                    if deduplicate_cross_zone:
+                        logger.info(
+                            f"Deduplicating cross-zone features in RC2 {layer_name}"
+                        )
+                        filtered_gdf = self._deduplicate_cross_zone_features(
+                            filtered_gdf, zone_id_col, zone_name_col
+                        )
+
+                    # Track stats after deduplication
+                    after_dedup_count = len(filtered_gdf)
+                    stats["after_dedup"] += after_dedup_count
+
+                    all_filtered_data[f"{layer_name}_RC2"] = filtered_gdf
+                    stats["rc2_issues"] += after_dedup_count
+
+                    if deduplicate_cross_zone:
+                        logger.info(
+                            f"RC2 {layer_name}: {before_dedup_count} → {after_dedup_count} "
+                            f"({before_dedup_count - after_dedup_count} cross-zone duplicates merged)"
+                        )
+
+        # Calculate final stats
+        if deduplicate_cross_zone:
+            stats["total_issues"] = stats["after_dedup"]
+            total_duplicates_merged = stats["before_dedup"] - stats["after_dedup"]
+            logger.info(
+                f"Total cross-zone duplicates merged: {total_duplicates_merged}"
+            )
+        else:
+            stats["total_issues"] = stats["rc1_issues"] + stats["rc2_issues"]
 
         if not all_filtered_data:
             logger.warning("No relevant issues found for extraction")
@@ -361,30 +430,89 @@ class QAAnalyzer:
         # Write output
         self._write_spatial_output(combined_layers, output_path, output_format)
 
-        logger.info(
-            f"Extracted {stats['total_issues']} relevant issues "
-            f"({stats['rc1_issues']} RC1, {stats['rc2_issues']} RC2)"
-        )
+        if deduplicate_cross_zone:
+            logger.success(
+                f"Extracted {stats['total_issues']} unique relevant issues "
+                f"({stats['rc1_issues']} RC1, {stats['rc2_issues']} RC2) "
+                f"with cross-zone deduplication applied"
+            )
+        else:
+            logger.success(
+                f"Extracted {stats['total_issues']} relevant issues "
+                f"({stats['rc1_issues']} RC1, {stats['rc2_issues']} RC2) "
+                f"without deduplication"
+            )
 
         return stats
 
     def _extract_all_issues(
-        self, rc1_gdb: Path, rc2_gdb: Path, output_path: Path, output_format: str
+        self,
+        rc1_gdb: Path,
+        rc2_gdb: Path,
+        output_path: Path,
+        output_format: str,
+        deduplicate_cross_zone: bool = True,  # NEW parameter
     ) -> Dict[str, int]:
         """Fallback: extract all issues without filtering."""
         logger.info("Extracting all QA issues (no source filtering)")
 
         all_data = {}
-        stats = {"total_issues": 0, "rc1_issues": 0, "rc2_issues": 0}
+        stats = {
+            "total_issues": 0,
+            "rc1_issues": 0,
+            "rc2_issues": 0,
+            "before_dedup": 0,
+            "after_dedup": 0,
+        }
+
+        # Get zone column info for potential deduplication
+        zone_id_col = (
+            self._get_zone_id_column("mapsheets")
+            if "mapsheets" in self.zones_data
+            else "MSH_TOPO_NR"
+        )
+        zone_name_col = (
+            self._get_zone_name_column("mapsheets")
+            if "mapsheets" in self.zones_data
+            else "MSH_MAP_TITLE"
+        )
 
         # Read and combine all data
         for rc_name, gdb_path in [("RC1", rc1_gdb), ("RC2", rc2_gdb)]:
+            if not gdb_path.exists():
+                logger.warning(f"Skipping {rc_name}: {gdb_path} does not exist")
+                continue
+
             qa_data = self._read_qa_gdb(gdb_path)
             for layer_name, qa_gdf in qa_data.items():
                 if qa_gdf.empty:
                     continue
 
                 qa_gdf["source_rc"] = rc_name
+
+                # Apply spatial join with mapsheets if available and deduplication requested
+                if deduplicate_cross_zone and "mapsheets" in self.zones_data:
+                    # Perform spatial join first
+                    joined_gdf = self._spatial_join_with_zones(
+                        qa_gdf, self.zones_data["mapsheets"], "mapsheets"
+                    )
+                    if not joined_gdf.empty:
+                        before_count = len(joined_gdf)
+                        stats["before_dedup"] += before_count
+
+                        # Apply deduplication
+                        joined_gdf = self._deduplicate_cross_zone_features(
+                            joined_gdf, zone_id_col, zone_name_col
+                        )
+
+                        after_count = len(joined_gdf)
+                        stats["after_dedup"] += after_count
+                        qa_gdf = joined_gdf
+
+                        logger.info(
+                            f"{rc_name} {layer_name}: {before_count} → {after_count} "
+                            f"({before_count - after_count} cross-zone duplicates merged)"
+                        )
 
                 if layer_name not in all_data:
                     all_data[layer_name] = []
@@ -401,7 +529,14 @@ class QAAnalyzer:
             if gdf_list:
                 combined_layers[layer_name] = pd.concat(gdf_list, ignore_index=True)
 
-        stats["total_issues"] = stats["rc1_issues"] + stats["rc2_issues"]
+        if deduplicate_cross_zone:
+            stats["total_issues"] = (
+                stats["after_dedup"]
+                if stats["after_dedup"] > 0
+                else stats["rc1_issues"] + stats["rc2_issues"]
+            )
+        else:
+            stats["total_issues"] = stats["rc1_issues"] + stats["rc2_issues"]
 
         # Write output
         self._write_spatial_output(combined_layers, output_path, output_format)
@@ -414,6 +549,7 @@ class QAAnalyzer:
         input2: Optional[Path] = None,
         zone_type: str = "mapsheets",
         output_format: str = "csv",
+        deduplicate_for_aggregation: bool = False,  # NEW parameter - False by default for zone analysis
     ) -> pd.DataFrame:
         """
         Aggregate QA statistics by administrative zones.
@@ -427,6 +563,9 @@ class QAAnalyzer:
             input2: Secondary input - RC2 GDB (None for single-input mode)
             zone_type: Type of zones to aggregate by
             output_format: Output format ('csv', 'xlsx', 'json')
+            deduplicate_for_aggregation: Whether to deduplicate cross-zone features for aggregation.
+                                       False = count features in each zone they affect (zone-centric view)
+                                       True = count each unique feature only once (feature-centric view)
 
         Returns:
             DataFrame with aggregated statistics
@@ -441,12 +580,12 @@ class QAAnalyzer:
         if input2 is not None and input2.exists():
             # Two-RC mode (backward compatibility)
             return self._aggregate_by_zone_two_rc(
-                input1, input2, zone_type, output_format
+                input1, input2, zone_type, output_format, deduplicate_for_aggregation
             )
         else:
             # Single-input mode (new merged data approach)
             return self._aggregate_by_zone_single_input(
-                input1, zone_type, output_format
+                input1, zone_type, output_format, deduplicate_for_aggregation
             )
 
     def _aggregate_by_zone_single_input(
@@ -454,6 +593,7 @@ class QAAnalyzer:
         merged_data_path: Path,
         zone_type: str,
         output_format: str,
+        deduplicate_for_aggregation: bool = False,  # NEW parameter
     ) -> pd.DataFrame:
         """
         Aggregate QA statistics using pre-merged data.
@@ -462,11 +602,15 @@ class QAAnalyzer:
             merged_data_path: Path to merged QA data (GPKG or FileGDB)
             zone_type: Type of zones to aggregate by
             output_format: Output format
+            deduplicate_for_aggregation: Whether to deduplicate cross-zone features
 
         Returns:
             DataFrame with aggregated statistics
         """
-        logger.info(f"Aggregating merged QA data by {zone_type}")
+        logger.info(
+            f"Aggregating merged QA data by {zone_type} "
+            f"(deduplication: {'ON' if deduplicate_for_aggregation else 'OFF'})"
+        )
         zone_gdf = self.zones_data[zone_type]
         all_results = []
 
@@ -499,58 +643,37 @@ class QAAnalyzer:
                 logger.warning(f"No {layer_name} issues intersect {zone_type} zones")
                 continue
 
-            # Aggregate by zone and test type
+            # Get zone column info
             zone_name_col = self._get_zone_name_column(zone_type)
-
-            # Group by zone and test characteristics
-            group_cols = [zone_id_col, "TestType", "TestName"]
-            if zone_name_col and zone_name_col in joined_gdf.columns:
-                group_cols.insert(1, zone_name_col)
-
-            # Add source_rc column if available (to track RC1/RC2 origin)
-            if "source_rc" in joined_gdf.columns:
-                group_cols.append("source_rc")
-
-            # Add source column for mapsheets (legacy support)
-            source_column_names = ["BKP", "SOURCE_RC", "source_rc"]
-            source_col = next(
-                (col for col in source_column_names if col in joined_gdf.columns), None
-            )
-            if source_col and source_col not in group_cols:
-                group_cols.append(source_col)
-
-            # Filter valid group columns
-            group_cols = [col for col in group_cols if col in joined_gdf.columns]
-
-            logger.debug(f"Grouping by columns: {group_cols}")
-            logger.debug(
-                f"Before grouping: {joined_gdf.loc[:, ['MSH_TOPO_NR', 'MSH_MAP_TITLE', 'source_rc', 'TestType', 'TestName', 'IssueType', 'StopCondition']].head(20)}"
-            )
-
-            # =============================================================================
-            # Count TestName occurrences by MSH_TOPO_NR
-            # =============================================================================
 
             # Check if required columns exist
             required_cols = [zone_id_col, "TestName"]
             if all(col in joined_gdf.columns for col in required_cols):
                 logger.info(f"Creating TestName count summary by {zone_id_col}")
 
-                # *** NEW: Handle cross-zone features before aggregation ***
-                joined_gdf = self._deduplicate_cross_zone_features(
-                    joined_gdf, zone_id_col, zone_name_col
-                )
+                # Apply deduplication if requested for aggregation
+                if deduplicate_for_aggregation:
+                    logger.info(
+                        f"Applying cross-zone deduplication for aggregation in {layer_name}"
+                    )
+                    joined_gdf = self._deduplicate_cross_zone_features(
+                        joined_gdf, zone_id_col, zone_name_col
+                    )
+                else:
+                    logger.info(
+                        f"Keeping cross-zone duplicates for zone-centric analysis in {layer_name}"
+                    )
 
                 # Group by zone and TestName, count occurrences and preserve other fields
                 agg_stats = (
                     joined_gdf.groupby([zone_id_col, "TestName"])
                     .agg(
                         {
-                            zone_name_col: "first",  # Take first occurrence (now concatenated for multi-zone)
-                            "source_rc": "first",  # Take first occurrence (now concatenated for multi-zone)
+                            zone_name_col: "first",  # Take first occurrence (concatenated if deduplicated)
+                            "source_rc": "first",  # Take first occurrence (concatenated if deduplicated)
                             "TestType": "first",  # Take first occurrence
-                            "IssueType": "first",  # Take first occurrence (could be mixed, so first is representative)
-                            "StopCondition": "first",  # Take first occurrence (could be mixed, so first is representative)
+                            "IssueType": "first",  # Take first occurrence
+                            "StopCondition": "first",  # Take first occurrence
                         }
                     )
                     .reset_index()
@@ -586,22 +709,30 @@ class QAAnalyzer:
                 ]
                 agg_stats = agg_stats[available_columns]
 
-                # Add LayerName column with the layer_name variable value
+                # Add LayerName column
                 agg_stats["LayerName"] = layer_name
 
                 logger.info(f"TestName summary completed. Shape: {agg_stats.shape}")
                 logger.debug(f"Sample results:\n{agg_stats.head()}")
 
-                # Optional: Display summary statistics
-                logger.info("TestName Count Statistics:")
+                # Display appropriate statistics based on deduplication mode
+                if deduplicate_for_aggregation:
+                    logger.info(
+                        "TestName Count Statistics (Feature-centric - deduplicated):"
+                    )
+                else:
+                    logger.info(
+                        "TestName Count Statistics (Zone-centric - includes cross-zone duplicates):"
+                    )
+
                 logger.info(
-                    f"- Total unique {zone_id_col}/TestName combinations: {len(agg_stats)}"
+                    f"- Total {zone_id_col}/TestName combinations: {len(agg_stats)}"
                 )
                 logger.info(
                     f"- Issue count range: {agg_stats['issue_count'].min()} - {agg_stats['issue_count'].max()}"
                 )
                 logger.info(
-                    f"- Average issues per TestName/Map combination: {agg_stats['issue_count'].mean():.2f}"
+                    f"- Average issues per TestName/Zone combination: {agg_stats['issue_count'].mean():.2f}"
                 )
 
                 # Show top combinations by issue count
@@ -613,6 +744,18 @@ class QAAnalyzer:
                         f"Top 5 TestName combinations by issue count:\n{top_combinations.to_string(index=False)}"
                     )
 
+            else:
+                logger.warning(
+                    f"Cannot create TestName summary. Missing required columns: {set(required_cols) - set(joined_gdf.columns)}"
+                )
+
+                # Fall back to original aggregation approach
+                # ... (keep your existing fallback code)
+
+            # Add metadata
+            agg_stats["layer_type"] = layer_name
+            agg_stats["zone_type"] = zone_type
+
             all_results.append(agg_stats)
 
         if not all_results:
@@ -622,7 +765,15 @@ class QAAnalyzer:
         # Combine all results
         final_df = pd.concat(all_results, ignore_index=True)
 
-        logger.info(f"Aggregated {len(final_df)} rows of statistics from merged data")
+        if deduplicate_for_aggregation:
+            logger.info(
+                f"Aggregated {len(final_df)} rows (feature-centric view with deduplication)"
+            )
+        else:
+            logger.info(
+                f"Aggregated {len(final_df)} rows (zone-centric view with cross-zone counting)"
+            )
+
         return final_df
 
     def _aggregate_by_zone_two_rc(
