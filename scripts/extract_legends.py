@@ -80,6 +80,11 @@ def process_layers(layer):
 
     if layer.isFeatureLayer:
         sym = layer.symbology
+
+        lyr_cim = layer.getDefinition("V3")
+
+        ## access symbolLayers property following the trail lyr_cim -> renderer -> symbol -> symbol -> symbolLayers
+        #symbology = lyr_cim.renderer.symbol.symbol.symbolLayers
         renderer = sym.renderer
         result["renderer"]["type"] = renderer.type
 
@@ -110,6 +115,8 @@ def process_layers(layer):
                 "outline": getattr(symbol, "outline", None),
             }
 
+
+
             renderer_dict = {
                 "type": renderer.type,
                 "label": renderer.label,
@@ -119,6 +126,7 @@ def process_layers(layer):
 
             logger.debug(renderer_dict)
 
+        # UniqeValueRenderer
         elif hasattr(renderer, "groups"):
             renderer_dict = {"fields": renderer.fields, "groups": []}
 
@@ -141,6 +149,19 @@ def process_layers(layer):
                     # Extract symbol info
                     symbol = item.symbol
                     color = None
+                    font_name = None
+                    character_index = None
+                    character = None
+                    # Check if it's a character-based symbol
+                    if type(symbol).__name__ == "CharacterMarkerSymbol":
+                        font_name = symbol.fontFamily
+                        character_index = symbol.characterIndex
+                        character = chr(character_index)
+
+                        logger.info(f"Font: {font_name}, Character index: {character_index}, Character: {character}")
+                    else:
+                        logger.info(f"Symbol type: {type(symbol).__name__} — not font-based")
+
                     symbol_dict = {
                         "type": type(symbol).__name__,
                         "size": getattr(symbol, "size", None),
@@ -148,7 +169,10 @@ def process_layers(layer):
                         "name": getattr(symbol, "name", None),
                         "angle": getattr(symbol, "angle", None),
                         "width": getattr(symbol, "width", None),
-                        "outline": getattr(symbol, "outline", None)
+                        "outline": getattr(symbol, "outline", None),
+                        "font_name": font_name,
+                        "character_index": character_index,
+                        "character": character,
                     }
                     try:
                         color = symbol.color
@@ -174,12 +198,13 @@ def process_layers(layer):
 
         try:
             result["renderer"] = renderer_dict
+            result["renderer"]["type"] = renderer.type
 
             output_path = os.path.join(
                 output_dir, sanitize_filename(f"{layer.name}.json")
             )
             with open(output_path, "w") as f:
-                json.dump(renderer_dict, f, indent=4)
+                json.dump(result, f, indent=4)
                 logger.info(f"Written {layer.name} to {output_path}")
         except Exception as e:
             logger.error(f"Cannot write symbology: {layer.name}: {e}")
@@ -194,7 +219,7 @@ def export_map_symbology(mp):
 
 def main():
     # --- Create new project from template ---
-    if not os.path.exists(new_aprx_path):
+    if  os.path.exists(new_aprx_path):
         os.remove(new_aprx_path)
 
     arcpy.mp.ArcGISProject(template_path).saveACopy(new_aprx_path)
