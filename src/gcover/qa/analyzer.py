@@ -536,13 +536,18 @@ class QAAnalyzer:
             if all(col in joined_gdf.columns for col in required_cols):
                 logger.info(f"Creating TestName count summary by {zone_id_col}")
 
-                # Group by MSH_TOPO_NR and TestName, count occurrences and preserve other fields
+                # *** NEW: Handle cross-zone features before aggregation ***
+                joined_gdf = self._deduplicate_cross_zone_features(
+                    joined_gdf, zone_id_col, zone_name_col
+                )
+
+                # Group by zone and TestName, count occurrences and preserve other fields
                 agg_stats = (
-                    joined_gdf.groupby(required_cols)
+                    joined_gdf.groupby([zone_id_col, "TestName"])
                     .agg(
                         {
-                            zone_name_col: "first",  # Take first occurrence
-                            "source_rc": "first",  # Take first occurrence
+                            zone_name_col: "first",  # Take first occurrence (now concatenated for multi-zone)
+                            "source_rc": "first",  # Take first occurrence (now concatenated for multi-zone)
                             "TestType": "first",  # Take first occurrence
                             "IssueType": "first",  # Take first occurrence (could be mixed, so first is representative)
                             "StopCondition": "first",  # Take first occurrence (could be mixed, so first is representative)
@@ -553,7 +558,7 @@ class QAAnalyzer:
 
                 # Add issue count using size() which counts the group size
                 issue_counts = (
-                    joined_gdf.groupby(required_cols)
+                    joined_gdf.groupby([zone_id_col, "TestName"])
                     .size()
                     .reset_index(name="issue_count")
                 )
@@ -566,9 +571,9 @@ class QAAnalyzer:
                 # Reorder columns to match desired format
                 column_order = [
                     zone_id_col,
+                    "TestName",
                     zone_name_col,
                     "source_rc",
-                    "TestName",
                     "TestType",
                     "issue_count",
                     "IssueType",
@@ -582,7 +587,7 @@ class QAAnalyzer:
                 agg_stats = agg_stats[available_columns]
 
                 # Add LayerName column with the layer_name variable value
-                agg_stats["layer_name"] = layer_name
+                agg_stats["LayerName"] = layer_name
 
                 logger.info(f"TestName summary completed. Shape: {agg_stats.shape}")
                 logger.debug(f"Sample results:\n{agg_stats.head()}")
@@ -607,61 +612,6 @@ class QAAnalyzer:
                     logger.info(
                         f"Top 5 TestName combinations by issue count:\n{top_combinations.to_string(index=False)}"
                     )
-
-            else:
-                logger.warning(
-                    f"Cannot create TestName summary. Missing required columns: {set(required_cols) - set(joined_gdf.columns)}"
-                )
-
-                # Fall back to original aggregation approach
-                agg_stats = (
-                    joined_gdf.groupby(group_cols)
-                    .agg(
-                        {
-                            "IssueType": ["count", lambda x: (x == "Error").sum()],
-                            "StopCondition": lambda x: (x == "Yes").sum(),
-                        }
-                    )
-                    .reset_index()
-                )
-
-                # Flatten column names
-                agg_stats.columns = [
-                    col[0] if col[1] == "" else f"{col[0]}_{col[1]}"
-                    for col in agg_stats.columns
-                ]
-                agg_stats = agg_stats.rename(
-                    columns={
-                        "IssueType_count": "total_issues",
-                        "IssueType_<lambda>": "error_issues",
-                        "StopCondition_<lambda>": "stop_condition_issues",
-                    }
-                )
-
-            # Add metadata
-            agg_stats["layer_type"] = layer_name
-            agg_stats["zone_type"] = zone_type
-
-            # Optional: Display summary statistics
-            if "TestName_Count" in agg_stats.columns:
-                logger.info("TestName Count Statistics:")
-                logger.info(
-                    f"- Total unique {zone_id_col}/TestName combinations: {len(agg_stats)}"
-                )
-                logger.info(
-                    f"- TestName count range: {agg_stats['TestName_Count'].min()} - {agg_stats['TestName_Count'].max()}"
-                )
-                logger.info(
-                    f"- Average TestName occurrences per combination: {agg_stats['TestName_Count'].mean():.2f}"
-                )
-
-                # Show top TestName combinations by count
-                top_combinations = agg_stats.nlargest(5, "TestName_Count")[
-                    [zone_id_col, zone_name_col, "TestName", "TestName_Count"]
-                ]
-                logger.info(
-                    f"Top 5 TestName combinations by count:\n{top_combinations.to_string(index=False)}"
-                )
 
             all_results.append(agg_stats)
 
@@ -852,6 +802,134 @@ class QAAnalyzer:
             if spatial_layer in layer_name:
                 return spatial_layer
         return layer_name
+
+    def _deduplicate_cross_zone_features(
+        self, joined_gdf: gpd.GeoDataFrame, zone_id_col: str, zone_name_col: str
+    ) -> gpd.GeoDataFrame:
+        """
+        Deduplicate features that cross multiple zones by grouping identical features
+        and concatenating zone information.
+
+        Args:
+            joined_gdf: GeoDataFrame after spatial join with zones
+            zone_id_col: Zone ID column (e.g., 'MSH_TOPO_NR')
+            zone_name_col: Zone name column (e.g., 'MSH_MAP_TITLE')
+
+        Returns:
+            GeoDataFrame with cross-zone features deduplicated
+        """
+        if joined_gdf.empty:
+            return joined_gdf
+
+        logger.info("Deduplicating cross-zone features...")
+
+        # Zone columns that should be concatenated for multi-zone features
+        zone_columns = [zone_id_col, zone_name_col, "source_rc"]
+        zone_columns = [col for col in zone_columns if col in joined_gdf.columns]
+
+        # All other columns (non-zone columns) that should remain identical
+        non_zone_columns = [
+            col for col in joined_gdf.columns if col not in zone_columns + ["geometry"]
+        ]
+
+        # Check if we have an index column from the original features
+        index_col = None
+        if "index" in joined_gdf.columns:
+            index_col = "index"
+        elif joined_gdf.index.name and joined_gdf.index.name != "index":
+            index_col = joined_gdf.index.name
+            joined_gdf = joined_gdf.reset_index()
+
+        logger.debug(f"Zone columns: {zone_columns}")
+        logger.debug(f"Non-zone columns: {non_zone_columns[:10]}...")  # Show first 10
+        logger.debug(f"Index column: {index_col}")
+
+        # Group by non-zone columns to identify duplicate features
+        if index_col and index_col in joined_gdf.columns:
+            # Use original index as primary grouping key
+            group_columns = [index_col]
+            logger.debug(f"Grouping by index column: {index_col}")
+        else:
+            # Use all non-zone columns except geometry for grouping
+            group_columns = [
+                col
+                for col in non_zone_columns
+                if col not in ["geometry"] and joined_gdf[col].dtype != "geometry"
+            ]
+            logger.debug(f"Grouping by feature attributes (no index available)")
+
+        if not group_columns:
+            logger.warning("No suitable columns found for deduplication grouping")
+            return joined_gdf
+
+        original_count = len(joined_gdf)
+
+        # Group features and concatenate zone information
+        def concatenate_zone_info(group):
+            """Concatenate zone information for features crossing multiple zones."""
+            if len(group) == 1:
+                # Feature only in one zone, return as-is
+                return group.iloc[0]
+
+            # Take first row as base (all non-zone columns should be identical)
+            result = group.iloc[0].copy()
+
+            # Concatenate zone columns with separator
+            separator = " | "
+            for zone_col in zone_columns:
+                if zone_col in group.columns:
+                    unique_values = group[zone_col].dropna().unique()
+                    if len(unique_values) > 1:
+                        result[zone_col] = separator.join(
+                            map(str, sorted(unique_values))
+                        )
+                    else:
+                        result[zone_col] = (
+                            unique_values[0] if len(unique_values) > 0 else None
+                        )
+
+            return result
+
+        # Apply deduplication
+        try:
+            deduplicated = (
+                joined_gdf.groupby(group_columns, as_index=False)
+                .apply(concatenate_zone_info, include_groups=False)
+                .reset_index(drop=True)
+            )
+
+            # Convert back to GeoDataFrame if geometry was preserved
+            if "geometry" in deduplicated.columns:
+                deduplicated = gpd.GeoDataFrame(
+                    deduplicated, geometry="geometry", crs=joined_gdf.crs
+                )
+
+            deduplicated_count = len(deduplicated)
+            logger.info(
+                f"Deduplication: {original_count} → {deduplicated_count} features "
+                f"({original_count - deduplicated_count} cross-zone duplicates merged)"
+            )
+
+            # Log some examples of concatenated features
+            concatenated_features = deduplicated[
+                deduplicated[zone_columns]
+                .astype(str)
+                .apply(lambda x: x.str.contains(" \| ", na=False, regex=True))
+                .any(axis=1)
+            ]
+
+            if not concatenated_features.empty:
+                logger.debug(f"Example concatenated features:")
+                for _, row in concatenated_features.head(3).iterrows():
+                    zone_info = {col: row[col] for col in zone_columns if col in row}
+                    logger.debug(f"  {zone_info}")
+
+            return deduplicated
+
+        except Exception as e:
+            logger.error(f"Error during deduplication: {e}")
+            logger.warning("Falling back to original data without deduplication")
+            return joined_gdf
 
     def _write_spatial_output(
         self,
