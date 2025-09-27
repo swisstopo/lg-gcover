@@ -170,6 +170,13 @@ def info() -> None:
     except ImportError:
         modules.append("✗ sde (not available)")
 
+    try:
+        from gcover import publish
+
+        modules.append("✓ publish (publication management)")
+    except ImportError:
+        modules.append("✗ publish (not available)")
+
     for module in modules:
         click.echo(f"  {module}")
 
@@ -260,6 +267,13 @@ try:
     from .sde_cmd import sde_commands
 
     cli.add_command(sde_commands)
+except ImportError:
+    pass
+
+try:
+    from .publish_cmd import publish_commands
+
+    cli.add_command(publish_commands)
 except ImportError:
     pass
 
