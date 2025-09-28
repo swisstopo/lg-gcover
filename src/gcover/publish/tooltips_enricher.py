@@ -788,15 +788,6 @@ class TooltipsEnricher:
                             layer=layer,
                             driver="GPKG",
                         )
-                    """for layername, gdf in rc_source.items():
-                        layer = layername.split('/')[-1].lower()
-                        gdf.to_file(
-                            Path(f"/home/marco/DATA/Derivations/output/R14/source_rc_{mapsheet_nbr}.gpkg"),
-                            layer=layer, driver='GPKG')
-                        gdf.to_file(
-                            Path(f"/home/marco/DATA/Derivations/output/R14/source_rc_{mapsheet_nbr}.gpkg"),
-                            layer=layer,
-                            driver='GPKG')"""
 
                 # Get mapsheet boundary for filtering tooltips
                 logger.info("Get mapsheet boundary for filtering tooltips...")
