@@ -18,6 +18,23 @@ import pandas as pd
 from shapely.geometry import box
 import numpy as np
 from loguru import logger
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    BarColumn,
+    TaskProgressColumn,
+)
+from rich.console import Console
+from rich.table import Table
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    BarColumn,
+    TaskProgressColumn,
+)
+from rich.panel import Panel
 
 try:
     import arcpy
@@ -286,132 +303,146 @@ class TooltipsEnricher:
 
         matches = []
 
-        for idx, tooltip_feat in tooltips_features.iterrows():
-            tooltip_geom = tooltip_feat.geometry
-            tooltip_area = tooltip_geom.area
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            transient=True,
+        ) as progress:
+            task = progress.add_task(
+                "Spatial matching feature...", total=len(tooltips_features)
+            )
 
-            # Use spatial index for faster querying
-            if source_sindex:
-                possible_matches_idx = list(
-                    source_sindex.intersection(tooltip_geom.bounds)
-                )
-                intersecting = source_features.iloc[possible_matches_idx]
-                intersecting = intersecting[
-                    intersecting.geometry.intersects(tooltip_geom)
-                ]
-            else:
-                intersecting = source_features[
-                    source_features.geometry.intersects(tooltip_geom)
-                ]
+            for idx, tooltip_feat in tooltips_features.iterrows():
+                tooltip_geom = tooltip_feat.geometry
+                tooltip_area = tooltip_geom.area
+                progress.update(task, advance=1)
 
-            best_match = None
-            best_confidence = 0
-            match_method = "none"
+                # Use spatial index for faster querying
+                if source_sindex:
+                    possible_matches_idx = list(
+                        source_sindex.intersection(tooltip_geom.bounds)
+                    )
+                    intersecting = source_features.iloc[possible_matches_idx]
+                    intersecting = intersecting[
+                        intersecting.geometry.intersects(tooltip_geom)
+                    ]
+                else:
+                    intersecting = source_features[
+                        source_features.geometry.intersects(tooltip_geom)
+                    ]
 
-            for src_idx, src_feat in intersecting.iterrows():
-                src_geom = src_feat.geometry
+                best_match = None
+                best_confidence = 0
+                match_method = "none"
 
-                # Method 1: Intersection over Union (more robust than simple overlap)
-                try:
-                    intersection = tooltip_geom.intersection(src_geom)
-                    if intersection.is_empty:
-                        continue
+                for src_idx, src_feat in intersecting.iterrows():
+                    src_geom = src_feat.geometry
 
-                    union = tooltip_geom.union(src_geom)
-                    iou = intersection.area / union.area
+                    # Method 1: Intersection over Union (more robust than simple overlap)
+                    try:
+                        intersection = tooltip_geom.intersection(src_geom)
+                        if intersection.is_empty:
+                            continue
 
-                    if iou > area_threshold and iou > best_confidence:
-                        best_match = src_feat["UUID"]
-                        best_confidence = iou
-                        match_method = "iou"
-                        continue  # High confidence match found
+                        union = tooltip_geom.union(src_geom)
+                        iou = intersection.area / union.area
 
-                except Exception as e:
-                    logger.debug(f"Error calculating IoU: {e}")
+                        if iou > area_threshold and iou > best_confidence:
+                            best_match = src_feat["UUID"]
+                            best_confidence = iou
+                            match_method = "iou"
+                            continue  # High confidence match found
 
-                # Method 2: Boundary similarity (your original requirement)
-                try:
-                    if tooltip_geom.geom_type in [
-                        "Polygon",
-                        "MultiPolygon",
-                    ] and src_geom.geom_type in ["Polygon", "MultiPolygon"]:
-                        # Compare boundaries with buffer tolerance
-                        tooltip_boundary = tooltip_geom.boundary
-                        src_boundary = src_geom.boundary
+                    except Exception as e:
+                        logger.debug(f"Error calculating IoU: {e}")
 
-                        # Buffer boundaries for tolerance
-                        buffered_tooltip_boundary = tooltip_boundary.buffer(
-                            buffer_distance
-                        )
-                        buffered_src_boundary = src_boundary.buffer(buffer_distance)
+                    # Method 2: Boundary similarity (your original requirement)
+                    try:
+                        if tooltip_geom.geom_type in [
+                            "Polygon",
+                            "MultiPolygon",
+                        ] and src_geom.geom_type in ["Polygon", "MultiPolygon"]:
+                            # Compare boundaries with buffer tolerance
+                            tooltip_boundary = tooltip_geom.boundary
+                            src_boundary = src_geom.boundary
 
-                        # Calculate boundary overlap
-                        boundary_intersection = buffered_tooltip_boundary.intersection(
-                            buffered_src_boundary
-                        )
-                        boundary_union = buffered_tooltip_boundary.union(
-                            buffered_src_boundary
-                        )
+                            # Buffer boundaries for tolerance
+                            buffered_tooltip_boundary = tooltip_boundary.buffer(
+                                buffer_distance
+                            )
+                            buffered_src_boundary = src_boundary.buffer(buffer_distance)
 
-                        if boundary_union.length > 0:
-                            boundary_similarity = (
-                                boundary_intersection.length / boundary_union.length
+                            # Calculate boundary overlap
+                            boundary_intersection = (
+                                buffered_tooltip_boundary.intersection(
+                                    buffered_src_boundary
+                                )
+                            )
+                            boundary_union = buffered_tooltip_boundary.union(
+                                buffered_src_boundary
                             )
 
+                            if boundary_union.length > 0:
+                                boundary_similarity = (
+                                    boundary_intersection.length / boundary_union.length
+                                )
+
+                                if (
+                                    boundary_similarity > boundary_threshold
+                                    and boundary_similarity > best_confidence
+                                ):
+                                    best_match = src_feat["UUID"]
+                                    best_confidence = boundary_similarity
+                                    match_method = "boundary_similarity"
+                                    continue
+
+                    except Exception as e:
+                        logger.debug(f"Error calculating boundary similarity: {e}")
+
+                    # Method 3: Hausdorff distance (shape similarity)
+                    try:
+                        hausdorff_dist = tooltip_geom.hausdorff_distance(src_geom)
+                        # Normalize by feature size
+                        max_dimension = max(tooltip_geom.length, src_geom.length)
+                        if max_dimension > 0:
+                            hausdorff_similarity = 1 - (hausdorff_dist / max_dimension)
+
                             if (
-                                boundary_similarity > boundary_threshold
-                                and boundary_similarity > best_confidence
+                                hausdorff_similarity > 0.8
+                                and hausdorff_similarity > best_confidence
                             ):
                                 best_match = src_feat["UUID"]
-                                best_confidence = boundary_similarity
-                                match_method = "boundary_similarity"
-                                continue
+                                best_confidence = hausdorff_similarity
+                                match_method = "hausdorff"
 
-                except Exception as e:
-                    logger.debug(f"Error calculating boundary similarity: {e}")
+                    except Exception as e:
+                        logger.debug(f"Error calculating Hausdorff distance: {e}")
 
-                # Method 3: Hausdorff distance (shape similarity)
-                try:
-                    hausdorff_dist = tooltip_geom.hausdorff_distance(src_geom)
-                    # Normalize by feature size
-                    max_dimension = max(tooltip_geom.length, src_geom.length)
-                    if max_dimension > 0:
-                        hausdorff_similarity = 1 - (hausdorff_dist / max_dimension)
+                # Method 4: Centroid proximity (fallback)
+                if best_match is None:
+                    tooltip_centroid = tooltip_geom.centroid
+                    for src_idx, src_feat in intersecting.iterrows():
+                        src_centroid = src_feat.geometry.centroid
+                        distance = tooltip_centroid.distance(src_centroid)
 
-                        if (
-                            hausdorff_similarity > 0.8
-                            and hausdorff_similarity > best_confidence
-                        ):
-                            best_match = src_feat["UUID"]
-                            best_confidence = hausdorff_similarity
-                            match_method = "hausdorff"
+                        if distance <= centroid_tolerance:
+                            confidence = 1 - (distance / centroid_tolerance)
+                            if confidence > best_confidence:
+                                best_match = src_feat["UUID"]
+                                best_confidence = confidence
+                                match_method = "centroid_proximity"
 
-                except Exception as e:
-                    logger.debug(f"Error calculating Hausdorff distance: {e}")
-
-            # Method 4: Centroid proximity (fallback)
-            if best_match is None:
-                tooltip_centroid = tooltip_geom.centroid
-                for src_idx, src_feat in intersecting.iterrows():
-                    src_centroid = src_feat.geometry.centroid
-                    distance = tooltip_centroid.distance(src_centroid)
-
-                    if distance <= centroid_tolerance:
-                        confidence = 1 - (distance / centroid_tolerance)
-                        if confidence > best_confidence:
-                            best_match = src_feat["UUID"]
-                            best_confidence = confidence
-                            match_method = "centroid_proximity"
-
-            if best_match:
-                matches.append(
-                    {
-                        "OBJECTID": tooltip_feat["OBJECTID"],
-                        "UUID": best_match,
-                        "match_method": match_method,
-                        "confidence": round(best_confidence, 3),
-                    }
-                )
+                if best_match:
+                    matches.append(
+                        {
+                            "OBJECTID": tooltip_feat["OBJECTID"],
+                            "UUID": best_match,
+                            "match_method": match_method,
+                            "confidence": round(best_confidence, 3),
+                        }
+                    )
 
         return pd.DataFrame(matches)
 
