@@ -127,51 +127,70 @@ class ConfigManager:
                     self._process_config_secrets(item, prefix)
 
     def _substitute_secret_value(self, value: str, key: str, prefix: str) -> str | None:
-        """Substitute a single secret value"""
-        # Pattern 1: Explicit env var syntax ${ENV_VAR}
+        """Substitute secret values with support for partial replacement"""
+
+        # Si la valeur ne contient pas de variables d'environnement, retourner telle quelle
+        if "${" not in value:
+            return value
+
+        # Pattern pour les variables d'environnement ${ENV_VAR}
         env_var_pattern = r"\$\{([^}]+)\}"
         matches = re.findall(env_var_pattern, value)
 
+        if not matches:
+            return value
+
+        # Garder une copie de la valeur originale pour les remplacements
+        result_value = value
+        substitution_made = False
+        missing_vars = []
+
         for env_var in matches:
             env_value = os.getenv(env_var)
+
             if env_value is not None:
-                # Handle special values for optional fields
+                # Traiter la valeur (gestion des valeurs optionnelles, etc.)
                 processed_value = self._process_optional_value(env_value, key)
-                value = value.replace(
-                    f"${{{env_var}}}",
-                    str(processed_value) if processed_value is not None else "",
-                )
-                console.log(
-                    f"🔐 Secret substituted: {env_var} -> {self._safe_log_value(key, processed_value)}"
-                )
-                return processed_value
+
+                if processed_value is not None:
+                    # Remplacer dans la chaîne résultante
+                    result_value = result_value.replace(
+                        f"${{{env_var}}}", str(processed_value)
+                    )
+                    substitution_made = True
+                    console.log(
+                        f"🔐 Secret substituted: {env_var} -> {self._safe_log_value(key, processed_value)}"
+                    )
+                else:
+                    # Si processed_value est None, garder la variable non remplacée
+                    missing_vars.append(env_var)
             else:
                 console.log(
                     f"[yellow]⚠️  Environment variable not set: {env_var}[/yellow]"
                 )
-                # For optional fields, return None if env var not set
-                if self._is_optional_field(key):
-                    return None
+                missing_vars.append(env_var)
 
-        # Pattern 2: Auto-detect secret fields and substitute from env vars
-        if self._is_secret_field(key) and not re.search(env_var_pattern, value):
-            # Try multiple environment variable naming conventions
-            possible_env_vars = [
-                f"{prefix}_{key.upper()}",
-                f"GCOVER_{key.upper()}",
-                key.upper(),
-                f"{prefix}_{key.lower()}",
-                f"GCOVER_{key.lower()}",
-            ]
+        # Gestion des cas d'erreur
+        if missing_vars:
+            # Pour les champs optionnels, retourner None si des variables sont manquantes
+            if self._is_optional_field(key):
+                return None
 
-            for env_var in possible_env_vars:
-                env_value = os.getenv(env_var)
-                if env_value is not None:
-                    processed_value = self._process_optional_value(env_value, key)
-                    console.log(f"🔐 Secret auto-substituted: {key} -> {env_var}")
-                    return processed_value
+            # Pour les champs obligatoires, vous pouvez choisir de :
+            # 1. Lever une exception
+            # 2. Retourner la valeur partiellement substituée
+            # 3. Retourner None
 
-        return value
+            # Option 1: Lever une exception (recommandé pour les champs obligatoires)
+            raise ValueError(
+                f"Missing environment variables for field '{key}': {', '.join(missing_vars)}"
+            )
+
+            # Option 2: Retourner la valeur partiellement substituée (décommenter si préféré)
+            # console.log(f"[yellow]⚠️  Partial substitution for '{key}': missing {missing_vars}[/yellow]")
+            # return result_value if substitution_made else None
+
+        return result_value
 
     def _process_optional_value(self, env_value: str, key: str) -> str | None:
         """Process environment variable value, handling special cases for optional fields"""
