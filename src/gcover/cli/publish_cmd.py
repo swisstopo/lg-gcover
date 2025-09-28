@@ -20,6 +20,18 @@ from gcover.publish.tooltips_enricher import TooltipsEnricher
 console = Console()
 
 
+# Import the helper function from the original qa_cmd.py
+def get_publish_config(ctx):
+    """Get QA configuration from context (reuse existing function)"""
+    try:
+        app_config: AppConfig = load_config(environment=ctx.obj["environment"])
+        return app_config.publish, app_config.global_
+    except Exception as e:
+        console.print(f"[red]Configuration error: {e}[/red]")
+        console.print("Make sure your configuration includes QA and global S3 settings")
+        raise click.Abort()
+
+
 @click.group(name="publish")
 @click.pass_context
 def publish_commands(ctx):
@@ -49,12 +61,17 @@ def enrich(ctx, tooltip_path, rc1_gdb, rc2_gdb, output, target_fields):
 
     verbose = ctx.obj.get("verbose", False)
 
+    publish_config, global_config = get_publish_config(ctx)
+
     enricher = None
 
     if verbose:
         logger.remove()  # Remove all handlers
         logger.add(sys.stderr, level="DEBUG")  # Add debug handler
         console.print("[dim]Verbose logging enabled[/dim]")
+        console.log(publish_config)
+
+
 
     data_sources = {"RC1": rc1_gdb, "RC2": rc2_gdb}
 

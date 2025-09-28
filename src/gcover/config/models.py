@@ -446,6 +446,22 @@ class DatabaseConfig(BaseModel):
         return Path(v) if not isinstance(v, Path) else v
 
 
+class PublishConfig(BaseModel):
+    """GDB Asset Management configuration"""
+
+    source_paths: Dict[str, Path]
+    tooltip_db_path: Optional[Path] = None
+
+    @validator("source_paths", pre=True)
+    def parse_source_paths(cls, v):
+        if isinstance(v, dict):
+            return {
+                k: Path(path) if not isinstance(path, Path) else path
+                for k, path in v.items()
+            }
+        return v
+
+
 class GDBConfig(BaseModel):
     """GDB Asset Management configuration"""
 
@@ -575,6 +591,7 @@ class AppConfig(BaseModel):
     global_: GlobalConfig = Field(alias="global")
     gdb: GDBConfig
     sde: Optional[SDEConfig] = None
+    publish: Optional[PublishConfig] = None
     schema_config: Optional[SchemaConfig] = Field(
         None, alias="schema"
     )  # 🔧 FIX: Use alias
