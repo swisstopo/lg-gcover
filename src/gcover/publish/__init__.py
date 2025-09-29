@@ -8,11 +8,13 @@ through intelligent spatial matching.
 """
 
 from .tooltips_enricher import (
-    TooltipsEnricher,
-    enrich_tooltips_from_config
+    EnhancedTooltipsEnricher,
+    EnrichmentConfig,
+    create_enrichment_config,
 )
 
 __all__ = [
-    'TooltipsEnricher',
-    'enrich_tooltips_from_config'
+    "EnhancedTooltipsEnricher",
+    "EnrichmentConfig",
+    "create_enrichment_config",
 ]

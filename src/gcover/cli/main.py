@@ -257,6 +257,13 @@ except ImportError:
     pass
 
 try:
+    from .publish_cmd import publish_commands
+
+    cli.add_command(publish_commands)
+except ImportError:
+    pass
+
+try:
     from .manage_cmd import manage
 
     cli.add_command(manage)
@@ -267,13 +274,6 @@ try:
     from .sde_cmd import sde_commands
 
     cli.add_command(sde_commands)
-except ImportError:
-    pass
-
-try:
-    from .publish_cmd import publish_commands
-
-    cli.add_command(publish_commands)
 except ImportError:
     pass
 
