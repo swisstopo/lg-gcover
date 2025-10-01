@@ -52,6 +52,16 @@ gdb:
   processing:
     compression_level: 6
     max_workers: 4
+
+publish:
+  tooltip_db_path: ${GCOVER_DATA_DIR}/products/R14/bgdi/geocover_tooltips.gdb
+  source_paths:
+    rc1: ${GCOVER_DATA_DIR}/Derivations/delivery/R14/RC1.gdb
+    rc2: ${GCOVER_DATA_DIR}/Derivations/delivery/R14/RC2.gdb
+    saas: ${GCOVER_DATA_DIR}/Derivations/delivery/R14/20300501_Saas.gdb
+    bkp_2026: ${GCOVER_DATA_DIR}/Derivations/delivery/R14/BKP_2016.gdb
+
+# QA quality test management
 qa:
   db_path: "data/prod_verification_stats.duckdb"
   output_dir: "qa_output"

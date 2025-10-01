@@ -51,6 +51,7 @@ dependencies = [
     "jinja2>=3.0.0",
     "pyarrow>=17.0.0",
     "fastparquet",
+    "requests",
 ]
 
 
@@ -97,7 +98,7 @@ full = [
     "gcover[standalone,dev,docs,cloud,viz]",
 ]
 
-# Install for ESRI environments  
+# Install for ESRI environments
 esri-dev = [
     "gcover[esri,dev,docs,cloud,viz]",
 ]
