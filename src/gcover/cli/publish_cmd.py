@@ -252,14 +252,14 @@ def enrich(
                 enriched_data = enricher.enrich_layer(
                     layer_name=layer_name, mapsheet_numbers=config.mapsheet_numbers
                 )
-
+                result = {layer_name: enriched_data}
                 # Save results
                 if config.output_path:
-                    output_path = enricher.save_enriched_data(enriched_data)
+                    output_path = enricher.save_enriched_data(result)
                     console.print(f"💾 Saved enriched {layer_name} to: {output_path}")
 
                 # Show results summary
-                show_enrichment_summary({layer_name: enriched_data})
+                show_enrichment_summary(result)
 
             else:
                 # Multi-layer enrichment
@@ -658,7 +658,7 @@ def show_enrichment_summary(results: Dict[str, gpd.GeoDataFrame]):
         if not gdf.empty and "SOURCE_UUID" in gdf.columns:
             enriched_sample = gdf[gdf["SOURCE_UUID"].notna()]
             if not enriched_sample.empty:
-                show_sample_data(layer_name, enriched_sample.head(3))
+                show_sample_data(layer_name, enriched_sample.head(10))
                 break
 
 
@@ -671,11 +671,12 @@ def show_sample_data(layer_name: str, sample_gdf: gpd.GeoDataFrame):
     display_columns = []
     for col in [
         "OBJECTID",
-        "GEOLCODE",
+        "DESCRIPT_DE",
         "gmu_code",
         "tecto",
         "SOURCE_UUID",
         "MATCH_METHOD",
+        "MATCH_LAYER",
         "MATCH_CONFIDENCE",
         "MAPSHEET_NBR",
     ]:

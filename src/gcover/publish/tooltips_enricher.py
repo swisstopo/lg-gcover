@@ -30,6 +30,8 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 
+from pyogrio.errors import DataLayerError
+
 try:
     import arcpy
 
@@ -40,6 +42,9 @@ except ImportError:
 
 from ..sde.bridge import GCoverSDEBridge, create_bridge
 from gcover.core.geometry import load_gpkg_with_validation, safe_read_filegdb
+
+
+console = Console()
 
 
 class LayerType(Enum):
@@ -443,6 +448,10 @@ class EnhancedTooltipsEnricher:
                 clipped_data[source_layer] = gdf
                 logger.info(f"Clipped {len(gdf)} features from {source_layer}")
 
+            except DataLayerError as de:
+                logger.error(f"Error clipping {source_layer}: {de}")
+                raise DataLayerError(f"Cannot load {source_layer}: {de}")
+
             except Exception as e:
                 logger.error(f"Error clipping {source_layer}: {e}")
                 logger.debug(f"Full traceback: {traceback.format_exc()}")
@@ -495,12 +504,139 @@ class EnhancedTooltipsEnricher:
         source_features: gpd.GeoDataFrame,
         layer_mapping: LayerMapping,
     ) -> pd.DataFrame:
+            """Fast polygon matching for nearly-identical geometries (Shapely 2.x compatible)."""
+
+            # Ensure CRS compatibility
+            if tooltip_features.crs != source_features.crs:
+                source_features = source_features.to_crs(tooltip_features.crs)
+
+            matches = []
+
+            # Build spatial index
+            source_sindex = source_features.sindex
+
+            # Create lookup dict for faster access
+            source_dict = {idx: row for idx, row in source_features.iterrows()}
+
+            # Helper function to compare geometries with tolerance (Shapely 2.x compatible)
+            def geometries_almost_equal(geom1, geom2, tolerance=1e-6):
+                """Check if two geometries are almost equal within tolerance."""
+                try:
+                    # Method 1: Use equals_exact (Shapely 2.x)
+                    if hasattr(geom1, 'equals_exact'):
+                        return geom1.equals_exact(geom2, tolerance)
+                    # Method 2: Fallback for Shapely 1.x
+                    elif hasattr(geom1, 'almost_equals'):
+                        return geom1.almost_equals(geom2, decimal=6)
+                    # Method 3: Manual check using symmetric difference
+                    else:
+                        sym_diff = geom1.symmetric_difference(geom2)
+                        return sym_diff.area < tolerance
+                except Exception:
+                    return False
+
+            with Progress() as progress:
+                task = progress.add_task(
+                    f"Matching {layer_mapping.tooltip_layer} polygons...",
+                    total=len(tooltip_features)
+                )
+
+                for idx, tooltip_feat in tooltip_features.iterrows():
+                    tooltip_geom = tooltip_feat.geometry
+                    progress.update(task, advance=1)
+
+                    # Validate geometry
+                    if tooltip_geom is None or tooltip_geom.is_empty:
+                        logger.warning(f"Skipping empty geometry at index {idx}")
+                        continue
+
+                    # Quick spatial index query
+                    possible_matches_idx = list(source_sindex.intersection(tooltip_geom.bounds))
+
+                    if not possible_matches_idx:
+                        continue
+
+                    best_match = None
+                    best_score = 0
+                    match_method = "none"
+
+                    for src_idx in possible_matches_idx:
+                        src_feat = source_dict[src_idx]
+                        src_geom = src_feat.geometry
+
+                        # Validate source geometry
+                        if src_geom is None or src_geom.is_empty:
+                            continue
+
+                        # Test 1: Exact equality (fastest)
+                        if tooltip_geom.equals(src_geom):
+                            best_match = src_feat["UUID"]
+                            best_score = 1.0
+                            match_method = "exact"
+                            break
+
+                        # Test 2: Almost equals with tolerance (handles rounding)
+                        if geometries_almost_equal(tooltip_geom, src_geom, tolerance=1e-6):
+                            best_match = src_feat["UUID"]
+                            best_score = 0.95
+                            match_method = "almost_exact"
+                            break
+
+                        # Test 3: High overlap for slightly different geometries
+                        if tooltip_geom.intersects(src_geom):
+                            try:
+                                intersection = tooltip_geom.intersection(src_geom)
+                                # Use Jaccard index (IoU)
+                                union = tooltip_geom.union(src_geom)
+                                iou = intersection.area / union.area if union.area > 0 else 0
+
+                                if iou > best_score and iou > layer_mapping.area_threshold:
+                                    best_match = src_feat["UUID"]
+                                    best_score = iou
+                                    match_method = "iou"
+                            except Exception as e:
+                                logger.debug(f"Error calculating overlap for idx {idx}: {e}")
+                                continue
+
+                    if best_match:
+                        matches.append({
+                            "OBJECTID": tooltip_feat["OBJECTID"],
+                            "UUID": best_match,
+                            "match_method": match_method,
+                            "confidence": round(best_score, 3),
+                        })
+                    else:
+                        logger.debug(f"No match found for OBJECTID {tooltip_feat.get('OBJECTID')}")
+
+            matches_df = pd.DataFrame(matches)
+            logger.info(f"Found {len(matches_df)} polygon matches out of {len(tooltip_features)} features")
+            return matches_df
+
+    def _match_polygons_ori(
+        self,
+        tooltip_features: gpd.GeoDataFrame,
+        source_features: gpd.GeoDataFrame,
+        layer_mapping: LayerMapping,
+    ) -> pd.DataFrame:
         """Polygon-specific spatial matching using IoU and boundary similarity."""
         matches = []
+
+        logger.add(self.debug_output_dir / "_match_polygons.log")
 
         # Ensure CRS compatibility
         if tooltip_features.crs != source_features.crs:
             source_features = source_features.to_crs(tooltip_features.crs)
+
+        # Sort tooltips ascending
+        tooltip_features = tooltip_features.assign(_area=tooltip_features.geometry.area)
+        tooltip_features = tooltip_features.sort_values(
+            by="_area", ascending=True
+        ).drop(columns="_area")
+
+        source_features = source_features.assign(_area=source_features.geometry.area)
+        source_features = source_features.sort_values(by="_area", ascending=True).drop(
+            columns="_area"
+        )
 
         # Pre-calculate spatial index for performance
         source_sindex = (
@@ -523,6 +659,10 @@ class EnhancedTooltipsEnricher:
                 tooltip_geom = tooltip_feat.geometry
                 progress.update(task, advance=1)
 
+                logger.info(
+                    f"Feat: {idx}, ID={tooltip_feat.get('OBJECTID')}, DESC={tooltip_feat.get('DESCRIPT_D')}"
+                )
+
                 # Use spatial index for faster querying
                 if source_sindex:
                     possible_matches_idx = list(
@@ -540,12 +680,18 @@ class EnhancedTooltipsEnricher:
                 if intersecting.empty:
                     continue
 
+                logger.info(f"Found {len(intersecting)} intersections")
+
                 best_match = None
                 best_confidence = 0
                 match_method = "none"
 
                 for src_idx, src_feat in intersecting.iterrows():
                     src_geom = src_feat.geometry
+
+                    logger.info(
+                        f"   Trying match on  {src_idx} {src_feat.get('UUID')} KIND:{src_feat.get('KIND')}"
+                    )
 
                     # Method 1: Intersection over Union (IoU)
                     try:
@@ -561,6 +707,7 @@ class EnhancedTooltipsEnricher:
                                 best_match = src_feat["UUID"]
                                 best_confidence = iou
                                 match_method = "iou"
+                                logger.info(f"   Matching")
                                 continue
                     except Exception as e:
                         logger.debug(f"Error calculating IoU: {e}")
@@ -857,6 +1004,9 @@ class EnhancedTooltipsEnricher:
 
         for mapsheet_nbr in unique_mapsheets:
             logger.info(f"Processing mapsheet {mapsheet_nbr} for {layer_name}")
+            console.print(
+                f"[blue]Processing mapsheet {mapsheet_nbr} for {layer_name}[/blue]"
+            )
 
             try:
                 # Get source for this mapsheet
@@ -878,6 +1028,8 @@ class EnhancedTooltipsEnricher:
                 if all(gdf.empty for gdf in clipped_sources.values()):
                     logger.warning(f"No source data for mapsheet {mapsheet_nbr}")
                     continue
+
+                # TODO logger.debug(f"Source columns: {clipped_sources['bedrock'].columns}")
 
                 # Get mapsheet boundary for filtering tooltips
                 mapsheet_boundary = mapsheets[
@@ -901,7 +1053,9 @@ class EnhancedTooltipsEnricher:
                 for source_layer, source_gdf in clipped_sources.items():
                     if source_gdf.empty:
                         continue
-
+                    logger.info(
+                        f"[blue]==== Matching against {source_layer} ====[/blue]"
+                    )
                     matches = self.spatial_match_features(
                         tooltip_subset, source_gdf, layer_mapping
                     )
@@ -937,6 +1091,8 @@ class EnhancedTooltipsEnricher:
                 enriched_subset["SOURCE_KEY"] = source_key
 
                 all_enriched.append(enriched_subset)
+
+                # TODO logger.debug(f"Enriched columns: {enriched_subset.columns}")
 
                 # Save intermediate results if requested
                 if self.config.save_intermediate and self.debug_output_dir:

@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Tuple, Any
 import re
-
+import numpy as np
 import click
 import geopandas as gpd
 import pandas as pd
@@ -454,11 +454,117 @@ class ClassificationApplicator:
 
         return symbol_map
 
+    def apply_v2(self, gdf: gpd.GeoDataFrame,
+              additional_filter: Optional[str] = None,
+              overwrite: bool = False,
+              preserve_existing: bool = True) -> gpd.GeoDataFrame:  # NEW PARAMETER
+        """
+        Apply classification to GeoDataFrame.
+
+        Args:
+            preserve_existing: If True and SYMBOL field exists, only update NULL/empty values
+                              If False, update all matching features (overwrite mode)
+        """
+        # Check if fields exist
+        symbol_exists = self.symbol_field in gdf.columns
+        label_exists = self.label_field and self.label_field in gdf.columns
+
+        if symbol_exists and not overwrite and not preserve_existing:
+            logger.warning(f"Field '{self.symbol_field}' exists. Use overwrite=True or preserve_existing=True")
+            return gdf
+
+        # Initialize fields if they don't exist
+        if not symbol_exists or overwrite:  # TODO erase everything
+            gdf[self.symbol_field] = None
+            # TODO
+            gdf[self.symbol_field] = np.nan  # or pd.NA
+            gdf[col] = gdf[col].astype('Int64')
+
+            logger.info(f"Created new field: {self.symbol_field}")
+
+        if self.label_field and not label_exists:
+            gdf[self.label_field] = None
+            logger.info(f"Created new field: {self.label_field}")
+
+        # Apply filter
+        if additional_filter:
+            gdf_filtered = gdf.query(additional_filter).copy()
+        else:
+            gdf_filtered = gdf.copy()
+
+        # Classify features
+        symbols = []
+        labels = []
+        matched_count = 0
+        unmatched_count = 0
+        preserved_count = 0
+
+        for idx, feature in gdf_filtered.iterrows():
+            # Check if we should preserve existing value
+            # CORRECT - explicitly check for NULL
+            if preserve_existing and symbol_exists:
+                existing_symbol = gdf.loc[idx, self.symbol_field]
+
+                # DEBUG
+                if idx in list(gdf_filtered.index)[:20]:  # First 5 features
+                    logger.info(
+                        f"Feature {idx}: existing_symbol={existing_symbol}, type={type(existing_symbol)}, notna={pd.notna(existing_symbol)}")
+
+
+                # Check for both Python None and string "None"
+                if (pd.notna(existing_symbol) and
+                            existing_symbol is not None and
+                            existing_symbol != "None" and
+                            existing_symbol != ""):  # Also check empty string
+                        symbols.append(existing_symbol)
+                        if self.label_field:
+                            labels.append(gdf.loc[idx, self.label_field])
+                        preserved_count += 1
+                        continue
+
+
+
+            # Match feature
+            match_result = self.matcher.match_feature(feature)
+
+            if match_result:
+                matched_label, all_matches = match_result
+                symbol_id = self.symbol_map[matched_label]
+                symbols.append(symbol_id)
+                labels.append(matched_label)
+                matched_count += 1
+            else:
+                # Leave as NULL (or keep existing if preserve_existing)
+                if preserve_existing and symbol_exists:
+                    symbols.append(gdf.loc[idx, self.symbol_field])
+                    if self.label_field:
+                        labels.append(gdf.loc[idx, self.label_field])
+                else:
+                    symbols.append(None)
+                    labels.append(None)
+                unmatched_count += 1
+
+        # Update the dataframe
+        #gdf.loc[gdf_filtered.index, self.symbol_field] = symbols
+        # cast to int TODO
+        gdf.loc[gdf_filtered.index, self.symbol_field] = pd.Series(symbols, index=gdf_filtered.index).astype("str")
+
+        if self.label_field:
+            gdf.loc[gdf_filtered.index, self.label_field] = labels
+
+        logger.info(f"Classification complete:")
+        logger.info(f"  • Newly matched: {matched_count} features")
+        logger.info(f"  • Preserved existing: {preserved_count} features")
+        logger.info(f"  • Unmatched: {unmatched_count} features")
+
+        return gdf
+
     def apply(
         self,
         gdf: gpd.GeoDataFrame,
         additional_filter: Optional[str] = None,
         overwrite: bool = False,
+         preserve_existing: Optional[bool]= True,   # TODO, not used
     ) -> gpd.GeoDataFrame:
         """
         Apply classification to GeoDataFrame.

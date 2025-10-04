@@ -8,10 +8,20 @@ import geopandas as gpd
 import pandas as pd
 from pathlib import Path
 from typing import Optional, Dict, List, Union, Tuple
+import fiona
 import warnings
 import sys
 from datetime import datetime
 import xml.etree.ElementTree as ET
+from shapely.ops import split as shapely_split, unary_union
+from shapely.prepared import prep
+from pathlib import Path
+import geopandas as gpd
+import fiona
+from shapely.ops import unary_union, split as shapely_split
+from shapely.geometry import LineString, MultiLineString, Polygon, MultiPolygon
+from shapely.prepared import prep
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
 import click
 from rich.console import Console
@@ -77,115 +87,291 @@ LOOKUP_TABLE_MAPPING = {
 }
 
 
-# From deepseee_denormalize_both
+
+
+def extend_line_to_cross_polygon(line, polygon, extension_factor=1.5):
+    """
+    Extend a line segment to ensure it fully crosses a polygon.
+    This helps shapely's split function work properly.
+    """
+    if line.geom_type == 'MultiLineString':
+        # For MultiLineString, process each part
+        extended_parts = []
+        for part in line.geoms:
+            extended_parts.append(extend_line_to_cross_polygon(part, polygon, extension_factor))
+        return unary_union(extended_parts)
+
+    if line.geom_type != 'LineString':
+        return line
+
+    # Get the line's bounding box
+    line_bounds = line.bounds
+    poly_bounds = polygon.bounds
+
+    # Calculate extension distance based on polygon size
+    poly_width = poly_bounds[2] - poly_bounds[0]
+    poly_height = poly_bounds[3] - poly_bounds[1]
+    extension_dist = max(poly_width, poly_height) * extension_factor
+
+    # Get line coordinates
+    coords = list(line.coords)
+    if len(coords) < 2:
+        return line
+
+    # Extend first point
+    start = coords[0]
+    second = coords[1]
+    dx = start[0] - second[0]
+    dy = start[1] - second[1]
+    length = (dx ** 2 + dy ** 2) ** 0.5
+    if length > 0:
+        dx, dy = dx / length, dy / length
+        new_start = (start[0] + dx * extension_dist, start[1] + dy * extension_dist)
+    else:
+        new_start = start
+
+    # Extend last point
+    end = coords[-1]
+    second_last = coords[-2]
+    dx = end[0] - second_last[0]
+    dy = end[1] - second_last[1]
+    length = (dx ** 2 + dy ** 2) ** 0.5
+    if length > 0:
+        dx, dy = dx / length, dy / length
+        new_end = (end[0] + dx * extension_dist, end[1] + dy * extension_dist)
+    else:
+        new_end = end
+
+    # Create extended line
+    extended_coords = [new_start] + coords[1:-1] + [new_end]
+    return LineString(extended_coords)
+
+
+def split_polygon_with_line(polygon, line):
+    """
+    Split a polygon using a line, handling edge cases properly.
+    Returns a list of polygon parts.
+    """
+    if not polygon.intersects(line):
+        return [polygon]
+
+    # Try direct split first
+    try:
+        result = shapely_split(polygon, line)
+
+        # Extract polygon parts only
+        parts = []
+        if hasattr(result, 'geoms'):
+            for geom in result.geoms:
+                if geom.geom_type == 'Polygon':
+                    parts.append(geom)
+                elif geom.geom_type == 'MultiPolygon':
+                    parts.extend(list(geom.geoms))
+        elif result.geom_type == 'Polygon':
+            parts = [result]
+        elif result.geom_type == 'MultiPolygon':
+            parts = list(result.geoms)
+        else:
+            parts = [polygon]  # Fallback
+
+        # If we got more than one part, split succeeded
+        if len(parts) > 1:
+            return parts
+    except Exception as e:
+        pass
+
+    # If direct split didn't work, try with extended line
+    try:
+        extended_line = extend_line_to_cross_polygon(line, polygon)
+        result = shapely_split(polygon, extended_line)
+
+        parts = []
+        if hasattr(result, 'geoms'):
+            for geom in result.geoms:
+                if geom.geom_type == 'Polygon':
+                    # Check if this part actually intersects the original polygon
+                    if polygon.intersects(geom) and geom.area > 1e-6:
+                        parts.append(geom)
+                elif geom.geom_type == 'MultiPolygon':
+                    for subgeom in geom.geoms:
+                        if polygon.intersects(subgeom) and subgeom.area > 1e-6:
+                            parts.append(subgeom)
+        elif result.geom_type == 'Polygon':
+            parts = [result]
+        elif result.geom_type == 'MultiPolygon':
+            parts = [p for p in result.geoms if p.area > 1e-6]
+
+        if len(parts) > 1:
+            return parts
+    except Exception as e:
+        pass
+
+    # Last resort: use difference with buffered line
+    try:
+        buffered_line = line.buffer(0.001)
+        diff_result = polygon.difference(buffered_line)
+
+        parts = []
+        if diff_result.geom_type == 'Polygon':
+            parts = [diff_result]
+        elif diff_result.geom_type == 'MultiPolygon':
+            parts = [p for p in diff_result.geoms if p.area > 1e-6]
+        elif diff_result.geom_type == 'GeometryCollection':
+            for geom in diff_result.geoms:
+                if geom.geom_type == 'Polygon' and geom.area > 1e-6:
+                    parts.append(geom)
+                elif geom.geom_type == 'MultiPolygon':
+                    parts.extend([p for p in geom.geoms if p.area > 1e-6])
+
+        if len(parts) > 1:
+            return parts
+    except Exception:
+        pass
+
+    # No split occurred, return original
+    return [polygon]
+
+
 def split_polygons_with_layer(
-    gdf, split_layer_path, split_layer_name=None, split_tolerance=0.001
+        gdf,
+        split_layer_path,
+        split_layer_name=None,
+        split_tolerance=0.001
 ):
     """
     Split polygons using a line or polygon layer.
 
     Parameters:
     - gdf: GeoDataFrame with polygons to split
-    - split_layer_path: Path to FileGDB containing split layer (or any datasource supported by geopandas)
-    - split_layer_name: Name of the layer to use for splitting (optional, will use first layer if not specified)
-    - split_tolerance: Tolerance for geometric operations (buffering)
+    - split_layer_path: Path to FileGDB containing split layer
+    - split_layer_name: Name of the layer to use for splitting
+    - split_tolerance: Tolerance for geometric operations
 
     Returns:
     - GeoDataFrame with split polygons, all attributes retained
     """
     split_layer_path = Path(split_layer_path)
 
-    # --- Load split layer
+    # Load split layer
     layers = fiona.listlayers(str(split_layer_path))
     if split_layer_name is None:
         split_layer_name = layers[0]
 
     splitter = gpd.read_file(split_layer_path, layer=split_layer_name)
 
-    # --- CRS alignment
+    # CRS alignment
     if gdf.crs != splitter.crs:
         splitter = splitter.to_crs(gdf.crs)
 
-    # --- Prepare splitter geometry (single geometry for faster ops)
+    # Prepare splitter geometry
     splitter_geom = unary_union(splitter.geometry)
 
-    # If splitter is polygonal, use its boundary (we want a line-like splitter)
+    console.print(splitter.sample(5))
+
+    # Convert to lines if needed
     if splitter_geom.geom_type in ("Polygon", "MultiPolygon"):
         splitter_geom = splitter_geom.boundary
 
-    # Optionally apply a small buffer to avoid tiny gaps, then take boundary again
-    try:
-        if split_tolerance:
-            splitter_geom = splitter_geom.buffer(split_tolerance).boundary
-    except Exception:
-        # if buffering fails for some reason, proceed with original splitter_geom
-        pass
-
-    # If there's nothing to split with, return the original gdf
-    if splitter_geom is None or getattr(splitter_geom, "is_empty", False):
+    if splitter_geom is None or splitter_geom.is_empty:
         return gdf.copy().reset_index(drop=True)
 
+    # Merge line segments for better splitting
+    if splitter_geom.geom_type == 'MultiLineString':
+        try:
+            splitter_geom = linemerge(splitter_geom)
+        except:
+            pass
+
+    # Prepare spatial index
     splitter_prep = prep(splitter_geom)
 
     out_records = []
+    split_count = 0
+    no_split_count = 0
+    total_parts = 0
 
-    # --- Progress bar
     with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        transient=True,
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            transient=True,
     ) as progress:
         task = progress.add_task("Splitting polygons...", total=len(gdf))
 
         for idx, row in gdf.iterrows():
             geom = row.geometry
 
-            # trivial cases
-            if geom is None or getattr(geom, "is_empty", False):
+            # Handle trivial cases
+            if geom is None or geom.is_empty:
                 out_records.append(row)
                 progress.update(task, advance=1)
                 continue
 
+            # Fix invalid geometries
             if not geom.is_valid:
                 geom = geom.buffer(0)
 
-            # skip if no intersection
+            # Skip if no intersection
             if not splitter_prep.intersects(geom):
                 out_records.append(row)
+                no_split_count += 1
                 progress.update(task, advance=1)
                 continue
 
-            # try splitting
+            # Get the part of the splitter that intersects this polygon
             try:
-                res = split(geom, splitter_geom)
-            except Exception:
-                # fallback: keep original geometry if split fails
-                res = geom
+                local_splitter = splitter_geom.intersection(geom.buffer(split_tolerance))
 
-            # Normalize result into an iterable of geometries
-            if hasattr(res, "geoms"):
-                parts = list(res.geoms)
-            elif isinstance(res, (list, tuple)):
-                parts = list(res)
-            else:
-                parts = [res]
+                # Convert to line if needed
+                if local_splitter.geom_type in ("Polygon", "MultiPolygon"):
+                    local_splitter = local_splitter.boundary
+                elif local_splitter.geom_type == "GeometryCollection":
+                    # Extract lines from collection
+                    lines = []
+                    for g in local_splitter.geoms:
+                        if g.geom_type in ("LineString", "MultiLineString"):
+                            lines.append(g)
+                        elif g.geom_type in ("Polygon", "MultiPolygon"):
+                            lines.append(g.boundary)
+                    if lines:
+                        local_splitter = unary_union(lines)
+                    else:
+                        local_splitter = None
 
-            # append non-empty parts, fix invalid pieces
-            for part in parts:
-                if part is None or getattr(part, "is_empty", False):
+                if local_splitter is None or local_splitter.is_empty:
+                    out_records.append(row)
+                    no_split_count += 1
+                    progress.update(task, advance=1)
                     continue
-                if not getattr(part, "is_valid", True):
-                    part = part.buffer(0)
-                    if getattr(part, "is_empty", False):
-                        continue
 
-                new_row = row.copy()
-                new_row["geometry"] = part
-                out_records.append(new_row)
+                # Perform the split
+                parts = split_polygon_with_line(geom, local_splitter)
+
+                if len(parts) > 1:
+                    split_count += 1
+                    total_parts += len(parts)
+                    # Add all parts with original attributes
+                    for part in parts:
+                        if part.area > 1e-6:  # Skip tiny slivers
+                            new_row = row.copy()
+                            new_row['geometry'] = part
+                            out_records.append(new_row)
+                else:
+                    out_records.append(row)
+                    no_split_count += 1
+
+            except Exception as e:
+                print(f"Warning: Failed to split geometry at index {idx}: {e}")
+                out_records.append(row)
+                no_split_count += 1
 
             progress.update(task, advance=1)
+
+    print(f"\nResults:")
+    print(f"  - {split_count} polygons split into {total_parts} parts")
+    print(f"  - {no_split_count} polygons unchanged")
+    print(f"  - Total output features: {len(out_records)}")
 
     result = gpd.GeoDataFrame(out_records, crs=gdf.crs)
     return result.reset_index(drop=True)
@@ -791,7 +977,7 @@ class GeoCoverDenormalizer:
         return result_gdf
 
     def denormalize_all(
-        self, remove_metadata: bool = False
+        self, remove_metadata: bool = False, split_layer: bool = True, tables: List[str]= []
     ) -> Dict[str, gpd.GeoDataFrame]:
         """Denormalize all GeoCover tables with progress tracking."""
 
@@ -837,7 +1023,13 @@ class GeoCoverDenormalizer:
                 "Denormalizing GeoCover tables...", total=len(tables_config)
             )
 
-            for table_name, config in tables_config.items():
+            filtered_config = {
+                k: v for k, v in tables_config.items()
+                if tables is None or not tables or k in tables
+            }
+
+            for table_name, config in filtered_config.items():
+
                 task_id = progress.add_task(f"Processing {table_name}...", total=100)
 
                 try:
@@ -1009,6 +1201,16 @@ def create_summary_table(results: Dict[str, gpd.GeoDataFrame]) -> Table:
     help="Remove metadata columns (dates, origins, revisions, etc.)",
 )
 @click.option(
+    "--split-layer",
+    is_flag=True,
+    help="Split layers on mapsheet border",
+)
+@click.option(
+    "--overwrite",
+    is_flag=True,
+    help="Overwrite",
+)
+@click.option(
     "--dry-run",
     is_flag=True,
     help="Show what would be processed without writing output",
@@ -1019,6 +1221,8 @@ def denormalize_geocover(
     verbose: bool,
     tables: Tuple[str],
     remove_metadata: bool,
+    split_layer: bool,
+        overwrite: bool,
     dry_run: bool,
 ):
     """
@@ -1068,7 +1272,7 @@ def denormalize_geocover(
             console.print(
                 f"[yellow]Processing selected tables:[/yellow] {', '.join(tables)}"
             )
-            results = denormalizer.denormalize_all(remove_metadata=remove_metadata)
+            results = denormalizer.denormalize_all(remove_metadata=remove_metadata, tables= tables)
             # Filter results to selected tables
             results = {k: v for k, v in results.items() if k in tables}
         else:
@@ -1081,6 +1285,34 @@ def denormalize_geocover(
         if not results:
             console.print("[red]No tables were successfully processed![/red]")
             raise click.Abort()
+
+        if split_layer:
+            console.print("[blue]🧹 Polygons will be split along mapsheets[/blue]")
+            for name, gdf in results.items():
+                console.print(
+                    f"[dim]  {name}: {len(gdf)} features[/dim]"
+               )
+
+
+            try:
+                if not (gdf.geom_type == "Point").all():
+                    split_layer_path = "/home/marco/code/github.com/lg-gcover/src/gcover/data/administrative_zones.gpkg"
+
+                    splitted_gdf = split_polygons_with_layer(
+                        gdf,
+                        split_layer_path,
+                        split_layer_name="mapsheets_sources_only",
+                        split_tolerance=0.001,
+                    )
+                    splitted_gdf.to_file('splitted.gpkg')
+                    results[name] = splitted_gdf
+
+                    console.print(
+                        f"[dim]  After split: {len(splitted_gdf)} features[/dim]"
+                    )
+            except Exception as e:
+                logger.error(e)
+
 
         # Debug: Show what we actually got
         if verbose:
@@ -1107,6 +1339,14 @@ def denormalize_geocover(
 
         # Write results to single GPKG
         console.print(f"\n[green]💾 Writing results to:[/green] {output}")
+        kwargs = {}
+        mode = 'a'
+        if overwrite:
+            kwargs["OVERWRITE"] = "YES"
+            mode = 'w'
+
+
+
 
         with Progress(
             SpinnerColumn(),
@@ -1122,9 +1362,16 @@ def denormalize_geocover(
 
                 try:
                     # Use table_name as layer name in GPKG
-                    if output.exists() and table_name != list(results.keys())[0]:
+                    if output.exists(): #and table_name != list(results.keys())[0]:
                         # Append to existing GPKG
-                        gdf.to_file(output, layer=table_name, driver="GPKG", mode="a")
+                        #gdf.to_file(output, layer=table_name, driver="GPKG", mode="a")
+                        gdf.to_file(
+                            output,
+                            layer=table_name,
+                            driver="GPKG",
+                            engine="fiona",
+                            mode=mode,
+                            **kwargs)
                     else:
                         # Create new GPKG or write first layer
                         gdf.to_file(output, layer=table_name, driver="GPKG")

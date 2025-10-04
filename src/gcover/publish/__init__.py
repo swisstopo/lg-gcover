@@ -11,6 +11,8 @@ from .tooltips_enricher import (
     EnhancedTooltipsEnricher,
     EnrichmentConfig,
     create_enrichment_config,
+LayerMapping,
+
 )
 
 __all__ = [
