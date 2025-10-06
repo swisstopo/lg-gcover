@@ -9,35 +9,27 @@ Adds a SYMBOL field with generated class identifiers based on classification rul
 Author: Generated for lg-gcover project
 """
 
+import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Tuple, Any
-import re
-import numpy as np
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import click
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 import yaml
+# Import classification extractor
+from esri_classification_extractor import (ClassificationClass,
+                                           ESRIClassificationExtractor,
+                                           LayerClassification, extract_lyrx)
 from loguru import logger
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
-from rich.progress import (
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    BarColumn,
-    TaskProgressColumn,
-)
+from rich.progress import (BarColumn, Progress, SpinnerColumn,
+                           TaskProgressColumn, TextColumn)
 from rich.prompt import Confirm
-
-# Import classification extractor
-from esri_classification_extractor import (
-    LayerClassification,
-    ClassificationClass,
-    extract_lyrx,
-    ESRIClassificationExtractor,
-)
+from rich.table import Table
 
 console = Console()
 
@@ -48,6 +40,17 @@ logger.add(
     format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
     level="INFO",
 )
+
+
+def float_to_int_string(val):
+    try:
+        f = float(val)
+        if f.is_integer():
+            return str(int(f))
+        else:
+            return str(f)
+    except (ValueError, TypeError):
+        return val  # leave unchanged if not a number
 
 
 class LayerMapping:
@@ -83,6 +86,7 @@ class LayerMapping:
                 "field_mapping": mapping.get("fields", {}),
                 "filter": mapping.get("filter"),
                 "symbol_prefix": mapping.get("symbol_prefix"),
+                "field_types": mapping.get("field_types", {}),
             }
 
         logger.info(f"Loaded {len(self.mappings)} layer mappings from {config_path}")
@@ -92,6 +96,17 @@ class LayerMapping:
         if gpkg_layer in self.mappings:
             return self.mappings[gpkg_layer]["classification_layer"]
         return None
+
+    def get_field_types(self, gpkg_layer: str) -> Dict[str, str]:
+        """
+        Get field types for a GPKG layer.
+
+        Returns:
+            Dictionary mapping GPKG field types
+        """
+        if gpkg_layer in self.mappings:
+            return self.mappings[gpkg_layer].get("field_types", {})
+        return {}
 
     def get_field_mapping(self, gpkg_layer: str) -> Dict[str, str]:
         """
@@ -454,10 +469,14 @@ class ClassificationApplicator:
 
         return symbol_map
 
-    def apply_v2(self, gdf: gpd.GeoDataFrame,
-              additional_filter: Optional[str] = None,
-              overwrite: bool = False,
-              preserve_existing: bool = True) -> gpd.GeoDataFrame:  # NEW PARAMETER
+    # Used by batch
+    def apply_v2(
+        self,
+        gdf: gpd.GeoDataFrame,
+        additional_filter: Optional[str] = None,
+        overwrite: bool = False,
+        preserve_existing: bool = True,
+    ) -> gpd.GeoDataFrame:  # NEW PARAMETER
         """
         Apply classification to GeoDataFrame.
 
@@ -470,7 +489,9 @@ class ClassificationApplicator:
         label_exists = self.label_field and self.label_field in gdf.columns
 
         if symbol_exists and not overwrite and not preserve_existing:
-            logger.warning(f"Field '{self.symbol_field}' exists. Use overwrite=True or preserve_existing=True")
+            logger.warning(
+                f"Field '{self.symbol_field}' exists. Use overwrite=True or preserve_existing=True"
+            )
             return gdf
 
         # Initialize fields if they don't exist
@@ -478,7 +499,7 @@ class ClassificationApplicator:
             gdf[self.symbol_field] = None
             # TODO
             gdf[self.symbol_field] = np.nan  # or pd.NA
-            gdf[col] = gdf[col].astype('Int64')
+            gdf[col] = gdf[col].astype("Int64")
 
             logger.info(f"Created new field: {self.symbol_field}")
 
@@ -508,21 +529,21 @@ class ClassificationApplicator:
                 # DEBUG
                 if idx in list(gdf_filtered.index)[:20]:  # First 5 features
                     logger.info(
-                        f"Feature {idx}: existing_symbol={existing_symbol}, type={type(existing_symbol)}, notna={pd.notna(existing_symbol)}")
-
+                        f"Feature {idx}: existing_symbol={existing_symbol}, type={type(existing_symbol)}, notna={pd.notna(existing_symbol)}"
+                    )
 
                 # Check for both Python None and string "None"
-                if (pd.notna(existing_symbol) and
-                            existing_symbol is not None and
-                            existing_symbol != "None" and
-                            existing_symbol != ""):  # Also check empty string
-                        symbols.append(existing_symbol)
-                        if self.label_field:
-                            labels.append(gdf.loc[idx, self.label_field])
-                        preserved_count += 1
-                        continue
-
-
+                if (
+                    pd.notna(existing_symbol)
+                    and existing_symbol is not None
+                    and existing_symbol != "None"
+                    and existing_symbol != ""
+                ):  # Also check empty string
+                    symbols.append(existing_symbol)
+                    if self.label_field:
+                        labels.append(gdf.loc[idx, self.label_field])
+                    preserved_count += 1
+                    continue
 
             # Match feature
             match_result = self.matcher.match_feature(feature)
@@ -545,9 +566,19 @@ class ClassificationApplicator:
                 unmatched_count += 1
 
         # Update the dataframe
-        #gdf.loc[gdf_filtered.index, self.symbol_field] = symbols
+        # gdf.loc[gdf_filtered.index, self.symbol_field] = symbols
         # cast to int TODO
-        gdf.loc[gdf_filtered.index, self.symbol_field] = pd.Series(symbols, index=gdf_filtered.index).astype("str")
+        gdf.loc[gdf_filtered.index, self.symbol_field] = pd.Series(
+            symbols, index=gdf_filtered.index
+        ).astype("str")
+        # TODO
+        gdf.loc[gdf_filtered.index, self.symbol_field] = pd.Series(
+            symbols, index=gdf_filtered.index
+        ).apply(
+            lambda val: str(int(float(val)))
+            if str(val).replace(".", "", 1).isdigit() and float(val).is_integer()
+            else str(val)
+        )
 
         if self.label_field:
             gdf.loc[gdf_filtered.index, self.label_field] = labels
@@ -564,7 +595,7 @@ class ClassificationApplicator:
         gdf: gpd.GeoDataFrame,
         additional_filter: Optional[str] = None,
         overwrite: bool = False,
-         preserve_existing: Optional[bool]= True,   # TODO, not used
+        preserve_existing: Optional[bool] = True,  # TODO, not used
     ) -> gpd.GeoDataFrame:
         """
         Apply classification to GeoDataFrame.
@@ -1236,6 +1267,16 @@ def apply(
         console.print(
             f"[green]✅ All required fields present: {matcher.required_gpkg_fields}[/green]"
         )
+        if layer_mapping:
+            field_types = layer_mapping.get_field_types(target_layer)
+        for field, dtype in field_types.items():
+            if field in gdf.columns:
+                try:
+                    gdf[field] = gdf[field].astype(dtype)
+                    console.print(f"[green]Casted {field} to {dtype}: {e}[/green]")
+                except Exception as e:
+                    console.print(f"[red]Failed to cast {field} to {dtype}: {e}[/red]")
+
         if field_mapping:
             console.print(f"[dim]Field mapping: {field_mapping}[/dim]")
         if treat_zero_as_null:
@@ -1331,7 +1372,7 @@ def apply(
             missing_output = output.parent / f"{output.stem}.missing.gpkg"
 
             # Save them to a file (e.g., GeoPackage or Shapefile)
-            gdf_missing.to_file(missing_output, target_layer, driver="GPKG")
+            gdf_missing.to_file(missing_output, layer=target_layer)
 
             # Keep only rows with valid SYMBOL
             gdf_classified = gdf_classified.dropna(subset=[symbol_field])
@@ -1339,30 +1380,31 @@ def apply(
                 f"Dropped {len(gdf_missing)} features with missing symbol from result "
             )
 
-        target_layers = fiona.listlayers(str(output))
-        if output.exists() and target_layer in target_layers:
-            overwritten = True
-            if not overwrite:
-                if not Confirm.ask(
-                    f"Output file '{output}' and layer '{target_layer}' exist. Overwrite?"
-                ):
-                    raise click.Abort()
+        kwargs = {
+            "driver": "GPKG",
+            "layer": target_layer,
+            "engine": "fiona",
+        }
 
-        kwargs = {}
-        mode='a'
-        if overwrite:
-            kwargs["OVERWRITE"] = "YES"
-            mode='w'
+        if output.exists():
+            target_layers = fiona.listlayers(str(output))
+            if target_layer in target_layers:
+                overwritten = True
+                kwargs["OVERWRITE"] = "YES"
+                mode = "w"
+                if not overwrite:
+                    if not Confirm.ask(
+                        f"Output file '{output}' and layer '{target_layer}' exist. Overwrite?"
+                    ):
+                        raise click.Abort()
+        else:
+            mode = "w"
 
+        kwargs["mode"] = mode
+
+        # Save the file
         with console.status(f"[cyan]Saving to {output}...", spinner="dots"):
-            gdf_classified.to_file(
-                output,
-                layer=target_layer,
-                driver="GPKG",
-                engine="fiona",
-                mode=mode,
-                **kwargs,
-            )
+            gdf_classified.to_file(output, **kwargs)
 
         console.print(
             Panel.fit(
@@ -1381,6 +1423,9 @@ def apply(
     except Exception as e:
         logger.error(f"Style application failed: {e}")
         import traceback
+
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        console.print(kwargs)
 
         logger.debug(traceback.format_exc())
         return
