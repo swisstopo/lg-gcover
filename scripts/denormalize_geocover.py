@@ -4,39 +4,30 @@ GeoCover Denormalization Tool
 A professional CLI tool to denormalize GeoCover geodatabase tables with their lookup relationships.
 """
 
-import geopandas as gpd
-import pandas as pd
-from pathlib import Path
-from typing import Optional, Dict, List, Union, Tuple
-import fiona
-import warnings
 import sys
-from datetime import datetime
+import warnings
 import xml.etree.ElementTree as ET
-from shapely.ops import split as shapely_split, unary_union
-from shapely.prepared import prep
+from datetime import datetime
+from importlib.resources import files
 from pathlib import Path
-import geopandas as gpd
-import fiona
-from shapely.ops import unary_union, split as shapely_split
-from shapely.geometry import LineString, MultiLineString, Polygon, MultiPolygon
-from shapely.prepared import prep
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+from typing import Dict, List, Optional, Tuple, Union
 
 import click
-from rich.console import Console
-from rich.progress import (
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    BarColumn,
-    TaskProgressColumn,
-)
-from rich.table import Table
-from rich.panel import Panel
-from rich.tree import Tree
-from rich import print as rprint
+import fiona
+import geopandas as gpd
+import pandas as pd
 from loguru import logger
+from rich import print as rprint
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import (BarColumn, Progress, SpinnerColumn,
+                           TaskProgressColumn, TextColumn)
+from rich.table import Table
+from rich.tree import Tree
+from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon
+from shapely.ops import split as shapely_split
+from shapely.ops import unary_union
+from shapely.prepared import prep
 
 try:
     from osgeo import ogr
@@ -45,7 +36,8 @@ except ImportError:
     ogr = None
 
 try:
-    from gcover.core.geometry import load_gpkg_with_validation
+    from gcover.core.geometry import (load_gpkg_with_validation,
+                                      split_features_by_mapsheets)
 except ImportError:
     logger.warning("Not validation function")
     load_gpkg_with_validation = None
@@ -87,21 +79,21 @@ LOOKUP_TABLE_MAPPING = {
 }
 
 
-
-
 def extend_line_to_cross_polygon(line, polygon, extension_factor=1.5):
     """
     Extend a line segment to ensure it fully crosses a polygon.
     This helps shapely's split function work properly.
     """
-    if line.geom_type == 'MultiLineString':
+    if line.geom_type == "MultiLineString":
         # For MultiLineString, process each part
         extended_parts = []
         for part in line.geoms:
-            extended_parts.append(extend_line_to_cross_polygon(part, polygon, extension_factor))
+            extended_parts.append(
+                extend_line_to_cross_polygon(part, polygon, extension_factor)
+            )
         return unary_union(extended_parts)
 
-    if line.geom_type != 'LineString':
+    if line.geom_type != "LineString":
         return line
 
     # Get the line's bounding box
@@ -123,7 +115,7 @@ def extend_line_to_cross_polygon(line, polygon, extension_factor=1.5):
     second = coords[1]
     dx = start[0] - second[0]
     dy = start[1] - second[1]
-    length = (dx ** 2 + dy ** 2) ** 0.5
+    length = (dx**2 + dy**2) ** 0.5
     if length > 0:
         dx, dy = dx / length, dy / length
         new_start = (start[0] + dx * extension_dist, start[1] + dy * extension_dist)
@@ -135,7 +127,7 @@ def extend_line_to_cross_polygon(line, polygon, extension_factor=1.5):
     second_last = coords[-2]
     dx = end[0] - second_last[0]
     dy = end[1] - second_last[1]
-    length = (dx ** 2 + dy ** 2) ** 0.5
+    length = (dx**2 + dy**2) ** 0.5
     if length > 0:
         dx, dy = dx / length, dy / length
         new_end = (end[0] + dx * extension_dist, end[1] + dy * extension_dist)
@@ -161,15 +153,15 @@ def split_polygon_with_line(polygon, line):
 
         # Extract polygon parts only
         parts = []
-        if hasattr(result, 'geoms'):
+        if hasattr(result, "geoms"):
             for geom in result.geoms:
-                if geom.geom_type == 'Polygon':
+                if geom.geom_type == "Polygon":
                     parts.append(geom)
-                elif geom.geom_type == 'MultiPolygon':
+                elif geom.geom_type == "MultiPolygon":
                     parts.extend(list(geom.geoms))
-        elif result.geom_type == 'Polygon':
+        elif result.geom_type == "Polygon":
             parts = [result]
-        elif result.geom_type == 'MultiPolygon':
+        elif result.geom_type == "MultiPolygon":
             parts = list(result.geoms)
         else:
             parts = [polygon]  # Fallback
@@ -186,19 +178,19 @@ def split_polygon_with_line(polygon, line):
         result = shapely_split(polygon, extended_line)
 
         parts = []
-        if hasattr(result, 'geoms'):
+        if hasattr(result, "geoms"):
             for geom in result.geoms:
-                if geom.geom_type == 'Polygon':
+                if geom.geom_type == "Polygon":
                     # Check if this part actually intersects the original polygon
                     if polygon.intersects(geom) and geom.area > 1e-6:
                         parts.append(geom)
-                elif geom.geom_type == 'MultiPolygon':
+                elif geom.geom_type == "MultiPolygon":
                     for subgeom in geom.geoms:
                         if polygon.intersects(subgeom) and subgeom.area > 1e-6:
                             parts.append(subgeom)
-        elif result.geom_type == 'Polygon':
+        elif result.geom_type == "Polygon":
             parts = [result]
-        elif result.geom_type == 'MultiPolygon':
+        elif result.geom_type == "MultiPolygon":
             parts = [p for p in result.geoms if p.area > 1e-6]
 
         if len(parts) > 1:
@@ -212,15 +204,15 @@ def split_polygon_with_line(polygon, line):
         diff_result = polygon.difference(buffered_line)
 
         parts = []
-        if diff_result.geom_type == 'Polygon':
+        if diff_result.geom_type == "Polygon":
             parts = [diff_result]
-        elif diff_result.geom_type == 'MultiPolygon':
+        elif diff_result.geom_type == "MultiPolygon":
             parts = [p for p in diff_result.geoms if p.area > 1e-6]
-        elif diff_result.geom_type == 'GeometryCollection':
+        elif diff_result.geom_type == "GeometryCollection":
             for geom in diff_result.geoms:
-                if geom.geom_type == 'Polygon' and geom.area > 1e-6:
+                if geom.geom_type == "Polygon" and geom.area > 1e-6:
                     parts.append(geom)
-                elif geom.geom_type == 'MultiPolygon':
+                elif geom.geom_type == "MultiPolygon":
                     parts.extend([p for p in geom.geoms if p.area > 1e-6])
 
         if len(parts) > 1:
@@ -233,10 +225,7 @@ def split_polygon_with_line(polygon, line):
 
 
 def split_polygons_with_layer(
-        gdf,
-        split_layer_path,
-        split_layer_name=None,
-        split_tolerance=0.001
+    gdf, split_layer_path, split_layer_name=None, split_tolerance=0.001
 ):
     """
     Split polygons using a line or polygon layer.
@@ -276,7 +265,7 @@ def split_polygons_with_layer(
         return gdf.copy().reset_index(drop=True)
 
     # Merge line segments for better splitting
-    if splitter_geom.geom_type == 'MultiLineString':
+    if splitter_geom.geom_type == "MultiLineString":
         try:
             splitter_geom = linemerge(splitter_geom)
         except:
@@ -291,11 +280,11 @@ def split_polygons_with_layer(
     total_parts = 0
 
     with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            transient=True,
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        transient=True,
     ) as progress:
         task = progress.add_task("Splitting polygons...", total=len(gdf))
 
@@ -321,7 +310,9 @@ def split_polygons_with_layer(
 
             # Get the part of the splitter that intersects this polygon
             try:
-                local_splitter = splitter_geom.intersection(geom.buffer(split_tolerance))
+                local_splitter = splitter_geom.intersection(
+                    geom.buffer(split_tolerance)
+                )
 
                 # Convert to line if needed
                 if local_splitter.geom_type in ("Polygon", "MultiPolygon"):
@@ -355,7 +346,7 @@ def split_polygons_with_layer(
                     for part in parts:
                         if part.area > 1e-6:  # Skip tiny slivers
                             new_row = row.copy()
-                            new_row['geometry'] = part
+                            new_row["geometry"] = part
                             out_records.append(new_row)
                 else:
                     out_records.append(row)
@@ -977,7 +968,10 @@ class GeoCoverDenormalizer:
         return result_gdf
 
     def denormalize_all(
-        self, remove_metadata: bool = False, split_layer: bool = True, tables: List[str]= []
+        self,
+        remove_metadata: bool = False,
+        split_layer: bool = True,
+        tables: List[str] = [],
     ) -> Dict[str, gpd.GeoDataFrame]:
         """Denormalize all GeoCover tables with progress tracking."""
 
@@ -1024,12 +1018,12 @@ class GeoCoverDenormalizer:
             )
 
             filtered_config = {
-                k: v for k, v in tables_config.items()
+                k: v
+                for k, v in tables_config.items()
                 if tables is None or not tables or k in tables
             }
 
             for table_name, config in filtered_config.items():
-
                 task_id = progress.add_task(f"Processing {table_name}...", total=100)
 
                 try:
@@ -1222,7 +1216,7 @@ def denormalize_geocover(
     tables: Tuple[str],
     remove_metadata: bool,
     split_layer: bool,
-        overwrite: bool,
+    overwrite: bool,
     dry_run: bool,
 ):
     """
@@ -1272,7 +1266,9 @@ def denormalize_geocover(
             console.print(
                 f"[yellow]Processing selected tables:[/yellow] {', '.join(tables)}"
             )
-            results = denormalizer.denormalize_all(remove_metadata=remove_metadata, tables= tables)
+            results = denormalizer.denormalize_all(
+                remove_metadata=remove_metadata, tables=tables
+            )
             # Filter results to selected tables
             results = {k: v for k, v in results.items() if k in tables}
         else:
@@ -1287,32 +1283,60 @@ def denormalize_geocover(
             raise click.Abort()
 
         if split_layer:
-            console.print("[blue]🧹 Polygons will be split along mapsheets[/blue]")
-            for name, gdf in results.items():
-                console.print(
-                    f"[dim]  {name}: {len(gdf)} features[/dim]"
-               )
+            split_layer_path = files("gcover.data").joinpath(
+                "administrative_zones.gpkg"
+            )
+            if not split_layer_path or not Path(split_layer_path).exists():
+                raise FileNotFoundError(
+                    f"[ERROR] GeoPackage not found: {split_layer_path}"
+                )
 
+            split_layer_name = "mapsheets_sources_only"
 
             try:
-                if not (gdf.geom_type == "Point").all():
-                    split_layer_path = "/home/marco/code/github.com/lg-gcover/src/gcover/data/administrative_zones.gpkg"
-
-                    splitted_gdf = split_polygons_with_layer(
-                        gdf,
-                        split_layer_path,
-                        split_layer_name="mapsheets_sources_only",
-                        split_tolerance=0.001,
-                    )
-                    splitted_gdf.to_file('splitted.gpkg')
-                    results[name] = splitted_gdf
-
-                    console.print(
-                        f"[dim]  After split: {len(splitted_gdf)} features[/dim]"
-                    )
+                mapsheets_gdf = gpd.read_file(split_layer_path, layer=split_layer_name)
+            except ValueError as ve:
+                raise ValueError(
+                    f"[ERROR] Layer '{split_layer_name}' not found in {split_layer_path}: {ve}"
+                )
             except Exception as e:
-                logger.error(e)
+                raise RuntimeError(
+                    f"[ERROR] Failed to read GeoPackage '{split_layer_path}': {e}"
+                )
 
+            for name, input_gdf in results.items():
+                console.print(
+                    f"[blue]🧹 Table {name} will be split along mapsheets[/blue]"
+                )
+                original_feat_nb = len(input_gdf)
+
+                console.print(f"   Input : {original_feat_nb} features")
+                console.print(f"   Mapsheets: {len(mapsheets_gdf)}")
+
+                try:
+                    if not (input_gdf.geom_type == "Point").all():
+                        splitted_gdf = split_features_by_mapsheets(
+                            input_gdf=input_gdf,
+                            mapsheets_gdf=mapsheets_gdf,
+                            keep_attributes=True,
+                            progress_bar=True,
+                            area_threshold=0.1,
+                        )
+                        splitted_gdf.to_file("splitted.gpkg")
+                        results[name] = splitted_gdf
+                        splitted_feat_nb = len(splitted_gdf)
+
+                        diff = splitted_feat_nb - original_feat_nb
+                        sign = "+" if diff > 0 else ""
+                        console.print(
+                            f"[dim]  After split: {splitted_feat_nb} features ([bold]{sign}{diff}[/bold])[/dim]"
+                        )
+
+                    else:
+                        console.print("    Ignoring POINT geometries")
+
+                except Exception as e:
+                    logger.error(e)
 
         # Debug: Show what we actually got
         if verbose:
@@ -1340,13 +1364,10 @@ def denormalize_geocover(
         # Write results to single GPKG
         console.print(f"\n[green]💾 Writing results to:[/green] {output}")
         kwargs = {}
-        mode = 'a'
+        mode = "a"
         if overwrite:
             kwargs["OVERWRITE"] = "YES"
-            mode = 'w'
-
-
-
+            mode = "w"
 
         with Progress(
             SpinnerColumn(),
@@ -1362,16 +1383,17 @@ def denormalize_geocover(
 
                 try:
                     # Use table_name as layer name in GPKG
-                    if output.exists(): #and table_name != list(results.keys())[0]:
+                    if output.exists():  # and table_name != list(results.keys())[0]:
                         # Append to existing GPKG
-                        #gdf.to_file(output, layer=table_name, driver="GPKG", mode="a")
+                        # gdf.to_file(output, layer=table_name, driver="GPKG", mode="a")
                         gdf.to_file(
                             output,
                             layer=table_name,
                             driver="GPKG",
                             engine="fiona",
                             mode=mode,
-                            **kwargs)
+                            **kwargs,
+                        )
                     else:
                         # Create new GPKG or write first layer
                         gdf.to_file(output, layer=table_name, driver="GPKG")
