@@ -1,17 +1,21 @@
-import geopandas as gpd
-from shapely import make_valid, is_valid, is_empty
-from shapely.validation import explain_validity
-
-import geopandas as gpd
-import numpy as np
-from shapely import make_valid, is_valid, is_empty
-from shapely.validation import explain_validity
-from shapely.geometry import Polygon, MultiPolygon, GeometryCollection
-from loguru import logger
-from typing import Tuple, Optional, Union
+import os
+import warnings
 from pathlib import Path
+from typing import List, Optional, Tuple, Union
 
 import fiona
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+from loguru import logger
+from rich.console import Console
+from rich.logging import RichHandler
+from rich.progress import (BarColumn, Progress, SpinnerColumn, TextColumn,
+                           TimeRemainingColumn)
+from shapely import is_empty, is_valid, make_valid
+from shapely.geometry import (GeometryCollection, LineString, MultiPolygon,
+                              Point, Polygon)
+from shapely.validation import explain_validity
 
 
 def safe_read_filegdb(
@@ -602,3 +606,246 @@ def load_gpkg_with_validation(
     except Exception as e:
         logger.error(f"Error loading GeoPackage {gpkg_path}: {e}")
         raise
+
+
+def extract_valid_geometries(geometry, target_types=None, min_area=1e-10):
+    """
+    Extract valid geometries from any geometry type including GeometryCollection.
+
+    Parameters
+    ----------
+    geometry : shapely.geometry
+        Input geometry (any type)
+    target_types : list, optional
+        List of geometry types to extract
+    min_area : float
+        Minimum area for polygon geometries
+
+    Returns
+    -------
+    list
+        List of extracted geometries
+    """
+    if target_types is None:
+        target_types = ["Polygon", "MultiPolygon"]
+
+    valid_geoms = []
+
+    if geometry.is_empty:
+        return valid_geoms
+
+    # Handle GeometryCollection
+    if geometry.geom_type == "GeometryCollection":
+        for geom in geometry.geoms:
+            if geom.is_empty:
+                continue
+            if geom.geom_type in target_types:
+                if geom.geom_type == "MultiPolygon":
+                    for poly in geom.geoms:
+                        if not poly.is_empty and poly.area > min_area:
+                            valid_geoms.append(poly)
+                elif geom.geom_type == "Polygon":
+                    if geom.area > min_area:
+                        valid_geoms.append(geom)
+                else:
+                    valid_geoms.append(geom)
+
+    # Handle MultiPolygon
+    elif geometry.geom_type == "MultiPolygon":
+        for poly in geometry.geoms:
+            if not poly.is_empty and poly.area > min_area:
+                valid_geoms.append(poly)
+
+    # Handle simple Polygon
+    elif geometry.geom_type == "Polygon":
+        if geometry.area > min_area:
+            valid_geoms.append(geometry)
+
+    # Handle other geometry types if included in target_types
+    elif geometry.geom_type in target_types:
+        valid_geoms.append(geometry)
+
+    return valid_geoms
+
+
+def split_features_by_mapsheets(
+    input_gdf: gpd.GeoDataFrame,
+    mapsheets_gdf: gpd.GeoDataFrame,
+    output_crs: Optional[str] = None,
+    keep_attributes: bool = True,
+    progress_bar: bool = True,
+    area_threshold: float = 1e-10,
+) -> gpd.GeoDataFrame:
+    """
+    Split features from a GeoDataFrame along mapsheet boundaries.
+
+    Parameters
+    ----------
+    input_gdf : gpd.GeoDataFrame
+        Input features to split (points, lines, polygons)
+    mapsheets_gdf : gpd.GeoDataFrame
+        Mapsheets GeoDataFrame
+    output_crs : str, optional
+        CRS to use for output (will reproject if different from input)
+    keep_attributes : bool
+        Whether to keep original attributes on split features
+    progress_bar : bool
+        Whether to show progress bar
+    area_threshold : float
+        Minimum area for polygon features to be kept
+
+    Returns
+    -------
+    gpd.GeoDataFrame
+        GeoDataFrame with features split along mapsheet boundaries
+    """
+
+    console = Console()
+
+    # Suppress warnings during processing
+    warnings.filterwarnings("ignore", category=UserWarning)
+
+    logger.debug("Starting feature splitting process...")
+    logger.debug(f"Input features: {len(input_gdf)}")
+    logger.debug(f"Mapsheets: {len(mapsheets_gdf)}")
+
+    # Ensure CRS compatibility
+    if input_gdf.crs != mapsheets_gdf.crs:
+        logger.warning("Reprojecting input features to match mapsheets CRS")
+        input_gdf = input_gdf.to_crs(mapsheets_gdf.crs)
+
+    if output_crs and output_crs != mapsheets_gdf.crs:
+        logger.warning(f"Output will be reprojected to: {output_crs}")
+
+    # Prepare result container
+    result_features = []
+    result_attributes = []
+
+    # Get geometry type information
+    if len(input_gdf) > 0:
+        input_type = input_gdf.geometry.type.iloc[0]
+        logger.debug(f"Input geometry type: {input_type}")
+
+    if len(mapsheets_gdf) > 0:
+        mapsheet_type = mapsheets_gdf.geometry.type.iloc[0]
+        logger.debug(f"Mapsheet geometry type: {mapsheet_type}")
+
+    # Create progress bar
+    total_features = len(input_gdf)
+
+    def process_feature(feature_idx, feature_row):
+        """Process a single feature and split it across mapsheets"""
+        geometry = feature_row.geometry
+        attributes = feature_row.drop("geometry").to_dict() if keep_attributes else {}
+
+        # Skip null geometries
+        if geometry is None or geometry.is_empty:
+            return
+
+        # Find mapsheets that intersect with this feature
+        intersecting_mapsheets = mapsheets_gdf[mapsheets_gdf.intersects(geometry)]
+
+        if len(intersecting_mapsheets) == 0:
+            # Feature doesn't intersect any mapsheet - keep original
+            result_features.append(geometry)
+            if keep_attributes:
+                result_attributes.append(attributes)
+            return
+
+        # Check if feature is entirely within one mapsheet
+        entirely_contained = False
+
+        for _, mapsheet_row in intersecting_mapsheets.iterrows():
+            if mapsheet_row.geometry.contains(geometry):
+                entirely_contained = True
+                break
+
+        if entirely_contained:
+            # Add the entire feature once
+            result_features.append(geometry)
+            if keep_attributes:
+                result_attributes.append(attributes)
+        else:
+            # Feature spans multiple mapsheets - split it
+            for _, mapsheet_row in intersecting_mapsheets.iterrows():
+                mapsheet_geom = mapsheet_row.geometry
+
+                try:
+                    intersection = geometry.intersection(mapsheet_geom)
+
+                    if not intersection.is_empty:
+                        # Extract valid geometries based on input type
+                        if geometry.geom_type in ["Point", "MultiPoint"]:
+                            valid_parts = extract_valid_geometries(
+                                intersection, target_types=["Point", "MultiPoint"]
+                            )
+                        elif geometry.geom_type in ["LineString", "MultiLineString"]:
+                            valid_parts = extract_valid_geometries(
+                                intersection,
+                                target_types=["LineString", "MultiLineString"],
+                            )
+                        else:  # Polygons
+                            valid_parts = extract_valid_geometries(
+                                intersection,
+                                target_types=["Polygon", "MultiPolygon"],
+                                min_area=area_threshold,
+                            )
+
+                        # Add the valid parts
+                        for part in valid_parts:
+                            result_features.append(part)
+                            if keep_attributes:
+                                result_attributes.append(attributes.copy())
+
+                except Exception as e:
+                    logger.warning(f"Error processing feature {feature_idx}: {e}")
+                    continue
+
+    # Process features with progress bar
+    if progress_bar and total_features > 0:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("({task.completed}/{task.total})"),
+            TimeRemainingColumn(),
+            console=console,
+            transient=True,
+        ) as progress:
+            task = progress.add_task("Splitting features...", total=total_features)
+
+            for idx, row in input_gdf.iterrows():
+                process_feature(idx, row)
+                progress.update(task, advance=1)
+    else:
+        # Process without progress bar
+        for idx, row in input_gdf.iterrows():
+            process_feature(idx, row)
+
+    # Create result GeoDataFrame
+    logger.debug(f"Processed {len(result_features)} output features")
+
+    if len(result_features) == 0:
+        logger.warning("No features were generated")
+        return gpd.GeoDataFrame(geometry=[], crs=mapsheets_gdf.crs)
+
+    # Create result DataFrame
+    if keep_attributes and result_attributes:
+        result_gdf = gpd.GeoDataFrame(
+            result_attributes, geometry=result_features, crs=mapsheets_gdf.crs
+        )
+    else:
+        result_gdf = gpd.GeoDataFrame(geometry=result_features, crs=mapsheets_gdf.crs)
+
+    # Reproject if requested
+    if output_crs and output_crs != result_gdf.crs:
+        logger.debug("Reprojecting result to output CRS")
+        result_gdf = result_gdf.to_crs(output_crs)
+
+    # Reset index
+    result_gdf = result_gdf.reset_index(drop=True)
+
+    logger.debug("Feature splitting completed successfully!")
+
+    return result_gdf
