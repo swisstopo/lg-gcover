@@ -19,15 +19,24 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import yaml
+
 # Import classification extractor
-from esri_classification_extractor import (ClassificationClass,
-                                           ESRIClassificationExtractor,
-                                           LayerClassification, extract_lyrx)
+from esri_classification_extractor import (
+    ClassificationClass,
+    ESRIClassificationExtractor,
+    LayerClassification,
+    extract_lyrx,
+)
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import (BarColumn, Progress, SpinnerColumn,
-                           TaskProgressColumn, TextColumn)
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+)
 from rich.prompt import Confirm
 from rich.table import Table
 
@@ -51,6 +60,65 @@ def float_to_int_string(val):
             return str(f)
     except (ValueError, TypeError):
         return val  # leave unchanged if not a number
+
+
+def get_numeric_field_names(field_types):
+    """
+    Extract field names that have numerical dtypes.
+
+    Args:
+        field_types: Dict of {field_name: dtype_string}
+
+    Returns:
+        List of field names with numeric types
+    """
+    numeric_dtypes = {
+        "int64",
+        "int32",
+        "int16",
+        "int8",
+        "Int64",
+        "Int32",
+        "Int16",
+        "Int8",  # Nullable integers
+        "uint64",
+        "uint32",
+        "uint16",
+        "uint8",
+        "float64",
+        "float32",
+        "float16",
+        "number",
+        "numeric",
+    }
+
+    numeric_fields = [
+        field
+        for field, dtype in field_types.items()
+        if dtype.lower() in {dt.lower() for dt in numeric_dtypes}
+    ]
+
+    return numeric_fields
+
+
+def get_numeric_fields_from_dataframe(gdf):
+    """
+    Extract numeric field names directly from GeoDataFrame.
+    More reliable than string matching.
+    """
+    import numpy as np
+    import pandas as pd
+
+    numeric_fields = []
+    for col in gdf.columns:
+        if col == "geometry":  # Skip geometry column
+            continue
+
+        # Check if dtype is numeric
+        if pd.api.types.is_numeric_dtype(gdf[col]):
+            numeric_fields.append(col)
+
+    return numeric_fields
 
 
 def cast_geodataframe_fields(gdf, field_types, strict=False):
@@ -197,6 +265,77 @@ def validate_field_types(gdf, field_types):
             console.print(f"    Examples: {issue['samples']}")
 
     return issues
+
+
+def apply_robust_filter(gdf, additional_filter=None, numeric_columns=None):
+    """
+    Apply filter with robust type handling.
+
+    Args:
+        gdf: GeoDataFrame to filter
+        additional_filter: Query string like 'KIND == 14334001'
+        numeric_columns: List of columns to ensure are numeric (e.g., ['KIND'])
+
+    Returns:
+        Filtered GeoDataFrame
+    """
+    if not additional_filter:
+        return gdf.copy()
+
+    # Create working copy
+    gdf_work = gdf.copy()
+
+    # Convert specified columns to numeric types
+    if numeric_columns:
+        for col in numeric_columns:
+            if col in gdf_work.columns:
+                original_count = len(gdf_work)
+
+                # Convert to numeric, handling errors
+                gdf_work[col] = pd.to_numeric(gdf_work[col], errors="coerce")
+
+                # Convert to Int64 (nullable integer) to handle NaN
+                # Use Int64 (capital I) instead of int64 to allow NaN
+                gdf_work[col] = gdf_work[col].astype("Int64")
+
+                # Log conversion info
+                nan_count = gdf_work[col].isna().sum()
+                if nan_count > 0:
+                    console.print(
+                        f"[yellow]⚠️  Column '{col}': {nan_count}/{original_count} values converted to NaN[/yellow]"
+                    )
+
+                logger.debug(f"Converted column '{col}' to Int64 dtype")
+
+    # Apply filter
+    try:
+        gdf_filtered = gdf_work.query(additional_filter)
+
+        # Log filter results
+        filtered_count = len(gdf_filtered)
+        total_count = len(gdf)
+        console.print(f"[cyan]🔍 Filter applied: '{additional_filter}'[/cyan]")
+        console.print(
+            f"[cyan]   {filtered_count:,} / {total_count:,} features match ({filtered_count / total_count * 100:.1f}%)[/cyan]"
+        )
+
+        return gdf_filtered
+
+    except Exception as e:
+        console.print(f"[red]❌ Filter query failed: {e}[/red]")
+        console.print(f"[yellow]   Query: '{additional_filter}'[/yellow]")
+        logger.error(f"Filter query failed: {e}")
+
+        # Show column dtypes for debugging
+        if numeric_columns:
+            console.print("[yellow]   Column types:[/yellow]")
+            for col in numeric_columns:
+                if col in gdf_work.columns:
+                    console.print(f"     - {col}: {gdf_work[col].dtype}")
+
+        # Return unfiltered data as fallback
+        console.print("[yellow]   Returning unfiltered data[/yellow]")
+        return gdf.copy()
 
 
 class LayerMapping:
@@ -555,6 +694,7 @@ class ClassificationApplicator:
         label_field: Optional[str] = "LABEL",
         symbol_prefix: Optional[str] = None,
         field_mapping: Optional[Dict[str, str]] = None,
+        field_types: Optional[Dict[str, str]] = {},
         treat_zero_as_null: bool = False,
         debug: bool = False,
     ):
@@ -572,6 +712,7 @@ class ClassificationApplicator:
         """
         self.classification = classification
         self.symbol_field = symbol_field
+        self.field_types = field_types
         self.label_field = label_field
         self.symbol_prefix = symbol_prefix or self._sanitize_prefix(
             classification.layer_name or "symbol"
@@ -635,6 +776,7 @@ class ClassificationApplicator:
             preserve_existing: If True and SYMBOL field exists, only update NULL/empty values
                               If False, update all matching features (overwrite mode)
         """
+
         # Check if fields exist
         symbol_exists = self.symbol_field in gdf.columns
         label_exists = self.label_field and self.label_field in gdf.columns
@@ -658,9 +800,42 @@ class ClassificationApplicator:
             gdf[self.label_field] = None
             logger.info(f"Created new field: {self.label_field}")
 
-        # Apply filter
+        # TODO
+        # Check required fields
+        all_present, missing = self.matcher.check_required_fields(gdf)
+        if not all_present:
+            raise ValueError(f"Missing required fields in GPKG: {missing}")
+
+        logger.success(
+            f"All required GPKG fields present: {self.matcher.required_gpkg_fields}"
+        )
+        logger.info(self.field_types)
+
+        # Step 2: Cast fields to correct types
+        if self.field_types:
+            console.print(f"\n[cyan]📊 Casting field types...[/cyan]")
+            for field, dtype in field_types.items():
+                if field in gdf.columns:
+                    try:
+                        if dtype.lower().startswith("int"):
+                            dtype = dtype.capitalize()
+                            gdf[field] = pd.to_numeric(gdf[field], errors="coerce")
+                        gdf[field] = gdf[field].astype(dtype)
+                        console.print(f"[green]✓ {field} → {dtype}[/green]")
+                    except Exception as e:
+                        console.print(f"[red]✗ {field}: {e}[/red]")
+
+        # Step 3: Extract numeric columns
+        numeric_columns = get_numeric_field_names(self.field_types)
+        console.print(f"[cyan]Numeric columns: {', '.join(numeric_columns)}[/cyan]")
+
+        # Step 4: Apply filter with numeric columns
         if additional_filter:
-            gdf_filtered = gdf.query(additional_filter).copy()
+            gdf_filtered = apply_robust_filter(
+                gdf,
+                additional_filter=additional_filter,
+                numeric_columns=numeric_columns,
+            )
         else:
             gdf_filtered = gdf.copy()
 
@@ -944,6 +1119,7 @@ def apply_classification_to_gdf(
     symbol_prefix: Optional[str] = None,
     additional_filter: Optional[str] = None,
     field_mapping: Optional[Dict[str, str]] = None,
+    field_types: Optional[Dict[str, str]] = None,
     treat_zero_as_null: bool = False,
     debug: bool = False,
     overwrite: bool = False,
@@ -970,6 +1146,7 @@ def apply_classification_to_gdf(
         symbol_field=symbol_field,
         symbol_prefix=symbol_prefix,
         field_mapping=field_mapping,
+        field_types=field_types,
         treat_zero_as_null=treat_zero_as_null,
         debug=debug,
     )
@@ -1456,6 +1633,7 @@ def apply(
                 except Exception as e:
                     console.print(f"[red]Failed to cast {field} to {dtype}: {e}[/red]")
 
+        # TODO
         if layer_mapping:
             field_types = layer_mapping.get_field_types(target_layer)
 
