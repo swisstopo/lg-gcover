@@ -154,6 +154,10 @@ class SymbolInfo:
 
     # Line symbol specific
     line_type: Optional[str] = None
+    line_style: Optional[str] = None  # 'solid', 'dash', 'dot'
+    dash_pattern: Optional[List[float]] = None  # [dash_length, space_length, ...]
+    cap_style: Optional[str] = None  # 'Butt', 'Round', 'Square'
+    join_style: Optional[str] = None  # 'Miter', 'Round', 'Bevel'
 
     # Polygon symbol specific
     fill_type: Optional[str] = None
@@ -178,7 +182,7 @@ def truncate_label(label: str, max_length: int = 140) -> str:
 
     # Truncate at max_length
     if len(label) <= max_length:
-            return label
+        return label
 
     # Find first comma
     comma_pos = label.find(",")
@@ -187,8 +191,6 @@ def truncate_label(label: str, max_length: int = 140) -> str:
         truncated = label[:comma_pos].strip()
         if len(truncated) <= max_length:
             return truncated
-
-
 
     return label[: max_length - 3].strip() + "..."
 
@@ -444,8 +446,19 @@ class CIMSymbolParser:
 
     @staticmethod
     def _parse_line_symbol(symbol_obj: Dict[str, Any]) -> SymbolInfo:
-        """Parse CIMLineSymbol."""
-        info = SymbolInfo(symbol_type=SymbolType.LINE, raw_symbol=symbol_obj)
+        """
+        Parse CIMLineSymbol with enhanced dash pattern extraction.
+
+        Extracts:
+        - Line width and color
+        - Dash patterns from CIMGeometricEffectDashes
+        - Cap and join styles
+        """
+        info = SymbolInfo(
+            symbol_type=SymbolType.LINE,
+            raw_symbol=symbol_obj,
+            line_style="solid",  # Default to solid
+        )
 
         symbol_layers = symbol_obj.get("symbolLayers", [])
 
@@ -458,9 +471,21 @@ class CIMSymbolParser:
             if layer_type == "CIMSolidStroke":
                 info.line_type = "CIMSolidStroke"
                 info.width = layer.get("width")
+                info.cap_style = layer.get("capStyle")
+                info.join_style = layer.get("joinStyle")
+
+                # Extract color
                 color_info = CIMColorParser.parse_color(layer.get("color"))
                 if color_info:
                     info.color = color_info
+
+                # Check for dash pattern in effects
+                effects = layer.get("effects", [])
+                if effects:
+                    dash_info = CIMSymbolParser._extract_dash_pattern(effects)
+                    if dash_info:
+                        info.line_style = dash_info["style"]
+                        info.dash_pattern = dash_info["pattern"]
 
             elif layer_type == "CIMCharacterMarker":
                 # Line with character markers
@@ -469,6 +494,66 @@ class CIMSymbolParser:
                 info.size = layer.get("size")
 
         return info
+
+    @staticmethod
+    def _extract_dash_pattern(
+        effects: List[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Extract dash pattern from CIM geometric effects.
+
+        Args:
+            effects: List of CIM effect dictionaries
+
+        Returns:
+            Dictionary with:
+                - 'style': 'solid', 'dash', or 'dot'
+                - 'pattern': [dash_length, space_length, ...] or None
+        """
+        for effect in effects:
+            effect_type = effect.get("type", "")
+
+            if effect_type == "CIMGeometricEffectDashes":
+                dash_template = effect.get("dashTemplate", [])
+
+                if not dash_template:
+                    continue
+
+                # Classify the pattern as dash or dot
+                style = CIMSymbolParser._classify_dash_pattern(dash_template)
+
+                return {"style": style, "pattern": dash_template}
+
+        return None
+
+    @staticmethod
+    def _classify_dash_pattern(dash_template: List[float]) -> str:
+        """
+        Classify a dash template as 'dash' or 'dot'.
+
+        Heuristic:
+        - First value < 2.0: classified as 'dot'
+        - First value >= 2.0: classified as 'dash'
+
+        Args:
+            dash_template: List of dash lengths [dash, space, ...]
+
+        Returns:
+            'dash' or 'dot'
+        """
+        if not dash_template:
+            return "solid"
+
+        first_dash = dash_template[0]
+
+        # Threshold to distinguish dot from dash
+        # Adjust this value based on your specific requirements
+        DOT_THRESHOLD = 2.0
+
+        if first_dash < DOT_THRESHOLD:
+            return "dot"
+        else:
+            return "dash"
 
     @staticmethod
     def _parse_polygon_symbol(symbol_obj: Dict[str, Any]) -> SymbolInfo:
@@ -889,7 +974,7 @@ class ESRIClassificationExtractor:
                 classification.feature_dataset = data_connection.get("featureDataset")
                 # classification.workspace_connection = data_connection.get(
                 #    "workspaceConnectionString"
-                #)
+                # )
 
                 logger.debug(
                     f"Extracted data connection for {classification.layer_name}: "
@@ -1143,7 +1228,7 @@ class ClassificationDisplayer:
 
     @staticmethod
     def _format_symbol_info(symbol_info: Optional[SymbolInfo]) -> str:
-        """Format symbol information for display."""
+        """Format symbol information for display with enhanced line style support."""
         if not symbol_info:
             return "No symbol"
 
@@ -1154,16 +1239,28 @@ class ClassificationDisplayer:
             parts.append(f"Color: {color_hex}")
 
         if symbol_info.size:
-            parts.append(f"Size: {symbol_info.size}")
+            parts.append(f"Size: {symbol_info.size:.2f}")
 
         if symbol_info.width:
-            parts.append(f"Width: {symbol_info.width}")
+            parts.append(f"Width: {symbol_info.width:.3f}")
 
         if symbol_info.font_family:
             parts.append(f"Font: {symbol_info.font_family}")
 
         if symbol_info.character_index is not None:
             parts.append(f"Char: {symbol_info.character_index}")
+
+        # Enhanced line style information
+        if symbol_info.symbol_type == SymbolType.LINE:
+            if symbol_info.line_style:
+                parts.append(f"Style: {symbol_info.line_style}")
+
+            if symbol_info.dash_pattern:
+                pattern_str = "-".join(str(v) for v in symbol_info.dash_pattern)
+                parts.append(f"Pattern: [{pattern_str}]")
+
+            if symbol_info.cap_style:
+                parts.append(f"Cap: {symbol_info.cap_style}")
 
         # Identify marker type for points
         if symbol_info.symbol_type == SymbolType.POINT:
@@ -1516,7 +1613,10 @@ def explore_layer_structure(
 
 
 def extract_lyrx(
-    lyrx_path: Union[str, Path], use_arcpy: bool = None, display: bool = True, max_label_length: int=40
+    lyrx_path: Union[str, Path],
+    use_arcpy: bool = None,
+    display: bool = True,
+    max_label_length: int = 40,
 ) -> List[LayerClassification]:
     """
     Convenience function to extract classification from .lyrx file.
@@ -1579,16 +1679,29 @@ def extract_aprx(
 @click.option("--no-arcpy", is_flag=True, help="Force JSON parsing (no arcpy)")
 @click.option("--layers", multiple=True, help="Specific layer names (for .aprx)")
 @click.option("--quiet", is_flag=True, help="Suppress rich display")
-@click.option("--explore", is_flag=True, help="Explore layer structure (show all layers and groups)")
-@click.option("--export", type=click.Choice(["json", "csv"]), help="Export results to file")
-@click.option("--max-label-length", type=int, default=130, help="Maximum label length (default: 40)")
+@click.option(
+    "--explore",
+    is_flag=True,
+    help="Explore layer structure (show all layers and groups)",
+)
+@click.option(
+    "--export", type=click.Choice(["json", "csv"]), help="Export results to file"
+)
+@click.option(
+    "--max-label-length",
+    type=int,
+    default=130,
+    help="Maximum label length (default: 40)",
+)
 def classify(input, no_arcpy, layers, quiet, explore, export, max_label_length):
     """Extract ESRI layer classification information from .lyrx or .aprx files."""
     input_path = Path(input)
 
     if explore:
         if input_path.suffix.lower() != ".lyrx":
-            console.print("[red]Error: --explore only supports .lyrx files currently[/red]")
+            console.print(
+                "[red]Error: --explore only supports .lyrx files currently[/red]"
+            )
             raise click.Abort()
 
         structure = explore_layer_structure(input_path, use_arcpy=not no_arcpy)
@@ -1611,7 +1724,13 @@ def classify(input, no_arcpy, layers, quiet, explore, export, max_label_length):
             if export == "json":
                 export_data = [to_serializable_dict(c) for c in results]
                 with open(export_path, "w", encoding="utf-8") as f:
-                    json.dump(export_data, f, indent=2, ensure_ascii=False, cls=ClassificationJSONEncoder)
+                    json.dump(
+                        export_data,
+                        f,
+                        indent=2,
+                        ensure_ascii=False,
+                        cls=ClassificationJSONEncoder,
+                    )
                 console.print(f"[green]Exported to {export_path}[/green]")
 
             elif export == "csv":
@@ -1627,13 +1746,15 @@ def classify(input, no_arcpy, layers, quiet, explore, export, max_label_length):
 
         if quiet:
             total_classes = sum(len(class_list) for class_list in results.values())
-            console.print(f"Extracted {total_classes} layer classifications from {len(results)} layers")
+            console.print(
+                f"Extracted {total_classes} layer classifications from {len(results)} layers"
+            )
 
     else:
         console.print("[red]Error: Input must be .lyrx or .aprx file[/red]")
         raise click.Abort()
 
+
 # Entry point
 if __name__ == "__main__":
     classify()
-

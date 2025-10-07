@@ -45,3 +45,10 @@ def test_publish_command_help():
     result = runner.invoke(cli, ["--env", "test","publish", "--help"])
     assert result.exit_code == 0
     assert "Usage:" in result.output
+
+def test_publish_qgis_command_help():
+    """Test gdb command with no arguments (should show help or fail gracefully)."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--env", "test","publish", "qgis", "--help"])
+    assert result.exit_code == 0
+    assert "Usage:" in result.output

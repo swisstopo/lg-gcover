@@ -25,6 +25,11 @@ from gcover.publish.esri_classification_applicator import \
     ClassificationApplicator
 from gcover.publish.style_config import (BatchClassificationConfig,
                                          apply_batch_from_config)
+
+from gcover.publish.esri_classification_extractor import extract_lyrx
+
+from gcover.publish.generator import MapServerGenerator, QGISGenerator
+
 from gcover.publish.tooltips_enricher import (EnhancedTooltipsEnricher,
                                               EnrichmentConfig, LayerMapping,
                                               LayerType,
@@ -723,8 +728,220 @@ def list_mapsheets(ctx, admin_zones: Optional[Path]):
 
 
 @publish_commands.command()
+@click.pass_context
+@click.argument("style_file", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    required=True,
+    help="Output mapfile path",
+)
+@click.option("--layer-name", "-l", required=True, help="MapServer layer name")
+@click.option(
+    "--data-path", "-d", required=True, help="Data source path (OGR connection string)"
+)
+@click.option(
+    "--layer-type",
+    "-t",
+    type=click.Choice(["POLYGON", "LINE", "POINT"]),
+    default="POLYGON",
+    help="Geometry type",
+)
+@click.option("--classification-name", "-c", help="Specific classification to use")
+@click.option(
+    "--symbol-prefix",
+    "-p",
+    default="class",
+    help='Prefix for symbol IDs (e.g., "bedrock", "unco")',
+)
+@click.option(
+    "--use-symbol-field",
+    is_flag=True,
+    help="Use SYMBOL field instead of complex expressions",
+)
+@click.option(
+    "--symbol-field", default="SYMBOL", help="Name of symbol field (default: SYMBOL)"
+)
+def mapserver(
+    ctx,
+    style_file,
+    output,
+    layer_name,
+    data_path,
+    layer_type,
+    classification_name,
+    symbol_prefix,
+    use_symbol_field,
+    symbol_field,
+):
+    """Generate MapServer mapfile CLASS sections.
+
+    \b
+    Two modes:
+    1. Field-based (default): Complex expressions using classification fields
+    2. Symbol-based (--use-symbol-field): Simple expressions using SYMBOL field
+
+    \b
+    Examples:
+      # Field-based (complex expressions)
+      style-gen mapserver Bedrock.lyrx -o bedrock.map \\
+        -l gc_bedrock -d "data/geocover.gpkg,layer=GC_BEDROCK" -t POLYGON
+
+      # Symbol-based (simple expressions, requires pre-classified data)
+      style-gen mapserver Bedrock.lyrx -o bedrock.map \\
+        -l gc_bedrock -d "data/geocover.gpkg,layer=GC_BEDROCK" -t POLYGON \\
+        --use-symbol-field --symbol-prefix bedrock
+    """
+    # Load classification
+    console.print(f"Loading classification from {style_file}...")
+    classifications = extract_lyrx(style_file, display=False)
+
+    # Select classification
+    if classification_name:
+        classification = next(
+            (c for c in classifications if c.layer_name == classification_name), None
+        )
+        if not classification:
+            console.print(
+                f"[red]Classification '{classification_name}' not found[/red]"
+            )
+            return
+    elif len(classifications) == 1:
+        classification = classifications[0]
+    else:
+        console.print(
+            "[red]Multiple classifications found, specify --classification-name[/red]"
+        )
+        return
+
+    # Generate mapfile
+    generator = MapServerGenerator(
+        layer_type=layer_type,
+        use_symbol_field=use_symbol_field,
+        symbol_field=symbol_field,
+    )
+
+    mapfile_content = generator.generate_layer(
+        classification=classification,
+        layer_name=layer_name,
+        data_path=data_path,
+        symbol_prefix=symbol_prefix,
+    )
+
+    # Save
+    output.write_text(mapfile_content)
+    console.print(f"[green]✓ Generated MapServer layer: {output}[/green]")
+    console.print(f"  Classes: {len([c for c in classification.classes if c.visible])}")
+    console.print(
+        f"  Mode: {'SYMBOL field' if use_symbol_field else 'Field expressions'}"
+    )
+
+    # Generate symbol file
+    symbol_file = output.parent / "symbols.sym"
+    if not symbol_file.exists():
+        symbol_content = generator.generate_symbol_file()
+        symbol_file.write_text(symbol_content)
+        console.print(f"[green]✓ Generated symbol file: {symbol_file}[/green]")
+
+
+@publish_commands.command()
+@click.pass_context
+@click.argument("style_file", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    required=True,
+    help="Output QML file path",
+)
+@click.option(
+    "--geometry-type",
+    "-t",
+    type=click.Choice(["Polygon", "Line", "Point"]),
+    default="Polygon",
+    help="Geometry type",
+)
+@click.option("--classification-name", "-c", help="Specific classification to use")
+@click.option(
+    "--symbol-prefix",
+    "-p",
+    default="class",
+    help='Prefix for symbol IDs (e.g., "bedrock", "unco")',
+)
+@click.option(
+    "--use-symbol-field",
+    is_flag=True,
+    help="Use SYMBOL field instead of complex expressions",
+)
+@click.option(
+    "--symbol-field", default="SYMBOL", help="Name of symbol field (default: SYMBOL)"
+)
+def qgis(
+    ctx,
+    style_file,
+    output,
+    geometry_type,
+    classification_name,
+    symbol_prefix,
+    use_symbol_field,
+    symbol_field,
+):
+    """Generate QGIS QML style file.
+
+    \b
+    Examples:
+      # Field-based rules
+      style-gen qgis Bedrock.lyrx -o bedrock.qml -t Polygon
+
+      # Symbol-based rules (simpler, faster)
+      style-gen qgis Bedrock.lyrx -o bedrock.qml -t Polygon \\
+        --use-symbol-field --symbol-prefix bedrock
+    """
+    # Load classification
+    console.print(f"Loading classification from {style_file}...")
+    classifications = extract_lyrx(style_file, display=False)
+
+    # Select classification
+    if classification_name:
+        classification = next(
+            (c for c in classifications if c.layer_name == classification_name), None
+        )
+        if not classification:
+            console.print(
+                f"[red]Classification '{classification_name}' not found[/red]"
+            )
+            return
+    elif len(classifications) == 1:
+        classification = classifications[0]
+    else:
+        console.print(
+            "[red]Multiple classifications found, specify --classification-name[/red]"
+        )
+        return
+
+    # Generate QML
+    generator = QGISGenerator(
+        geometry_type=geometry_type,
+        use_symbol_field=use_symbol_field,
+        symbol_field=symbol_field,
+    )
+
+    qml_content = generator.generate_qml(classification, symbol_prefix)
+
+    # Save
+    output.write_text(qml_content)
+    console.print(f"[green]✓ Generated QGIS style: {output}[/green]")
+    console.print(f"  Rules: {len([c for c in classification.classes if c.visible])}")
+    console.print(
+        f"  Mode: {'SYMBOL field' if use_symbol_field else 'Field expressions'}"
+    )
+
+
+@publish_commands.command()
+@click.pass_context
 @click.argument("tooltip_db", type=click.Path(exists=True, path_type=Path))
-def list_layers(tooltip_db: Path):
+def list_layers(ctx, tooltip_db: Path):
     """List available layers in tooltip database."""
 
     try:
