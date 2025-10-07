@@ -1363,11 +1363,12 @@ def denormalize_geocover(
 
         # Write results to single GPKG
         console.print(f"\n[green]💾 Writing results to:[/green] {output}")
-        kwargs = {}
-        mode = "a"
-        if overwrite:
-            kwargs["OVERWRITE"] = "YES"
-            mode = "w"
+        output.parent.mkdir(parents=True, exist_ok=True)
+
+        # Handle file-level overwrite
+        if overwrite and output.exists():
+            console.print(f"[yellow]⚠️  Overwriting existing file: {output}[/yellow]")
+            output.unlink()
 
         with Progress(
             SpinnerColumn(),
@@ -1382,27 +1383,54 @@ def denormalize_geocover(
                 progress.update(write_task, description=f"Writing {table_name}...")
 
                 try:
-                    # Use table_name as layer name in GPKG
-                    if output.exists():  # and table_name != list(results.keys())[0]:
-                        # Append to existing GPKG
-                        # gdf.to_file(output, layer=table_name, driver="GPKG", mode="a")
-                        gdf.to_file(
-                            output,
-                            layer=table_name,
-                            driver="GPKG",
-                            engine="fiona",
-                            mode=mode,
-                            **kwargs,
+                    # Check if layer already exists
+                    layer_exists = False
+                    if output.exists():
+                        try:
+                            existing_layers = fiona.listlayers(output)
+                            layer_exists = table_name in existing_layers
+                        except Exception:
+                            pass
+
+                    # Determine write strategy
+                    if layer_exists and not overwrite:
+                        console.print(
+                            f"[yellow]  ⊘ Skipping existing layer '{table_name}' (use --overwrite to replace)[/yellow]"
                         )
-                    else:
-                        # Create new GPKG or write first layer
-                        gdf.to_file(output, layer=table_name, driver="GPKG")
+                        logger.warning(
+                            f"Layer '{table_name}' already exists in {output}, skipping"
+                        )
+                        progress.advance(write_task)
+                        continue
+
+                    # Write layer using pyogrio (better GPKG support)
+                    layer_options = {}
+                    if layer_exists and overwrite:
+                        console.print(
+                            f"[yellow]  ↻ Overwriting layer '{table_name}'[/yellow]"
+                        )
+                        layer_options["OVERWRITE"] = "YES"
+
+                    gdf.to_file(
+                        output,
+                        layer=table_name,
+                        driver="GPKG",
+                        engine="pyogrio",  # More robust GPKG handling
+                        append=output.exists(),  # Append if file exists
+                        **layer_options,
+                    )
 
                     logger.info(f"Wrote layer '{table_name}' with {len(gdf)} features")
+                    console.print(
+                        f"[green]  ✓ {table_name}: {len(gdf)} features[/green]"
+                    )
 
                 except Exception as e:
+                    import traceback
+
                     logger.error(f"Failed to write {table_name}: {e}")
                     console.print(f"[red]❌ Failed to write {table_name}: {e}[/red]")
+                    logger.error(f"Full traceback: {traceback.format_exc()}")
 
                 progress.advance(write_task)
 
