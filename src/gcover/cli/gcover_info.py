@@ -3,18 +3,17 @@
 GPKG Field Manager - A CLI tool to list and rename fields in GeoPackage files.
 """
 
-import geopandas as gpd
-import pandas as pd
-import click
-from typing import List
-from rich.console import Console
-from rich.table import Table
-from rich.prompt import Prompt, Confirm
-from typing import List, Optional
-import numpy as np
-import pandas.api.types as ptypes
-
 import warnings
+from typing import List, Optional
+
+import click
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+import pandas.api.types as ptypes
+from rich.console import Console
+from rich.prompt import Confirm, Prompt
+from rich.table import Table
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
@@ -101,11 +100,28 @@ def change_field_type(
 ) -> gpd.GeoDataFrame:
     """Change field type with proper error handling."""
     try:
-        if new_type == "int":
+        if new_type in ("Int64", "Int32", "Int16", "Int8", "int"):  # Nullable type
             # Handle conversion to integer, dealing with NaN values
-            gdf[field_name] = (
-                pd.to_numeric(gdf[field_name], errors="coerce").fillna(0).astype(int)
+            new_type = "Int64" if new_type == "int" else new_type
+            gdf[field_name] = pd.to_numeric(gdf[field_name], errors="coerce").astype(
+                new_type
             )
+        elif new_type in (
+            "int64",
+            "int32",
+            "int16",
+            "int8",
+            "uint64",
+            "uint32",
+            "uint16",
+            "uint8",
+        ):
+            gdf[field_name] = (
+                pd.to_numeric(gdf[field_name], errors="coerce")
+                .fillna(0)
+                .astype(new_type)
+            )
+
         elif new_type == "float":
             gdf[field_name] = pd.to_numeric(gdf[field_name], errors="coerce")
         elif new_type == "str":
@@ -229,7 +245,25 @@ def info(filename: str, layer: Optional[str], in_place: bool, spatial_only: bool
                 console.print(f"Current type: {current_type}")
 
                 new_type = Prompt.ask(
-                    "Enter new type", choices=["str", "int", "float"], default="int"
+                    "Enter new type",
+                    choices=[
+                        "str",
+                        "int",
+                        "float",
+                        "int64",
+                        "int32",
+                        "int16",
+                        "int8",
+                        "uint64",
+                        "uint32",
+                        "uint16",
+                        "uint8",
+                        "Int64",
+                        "Int32",
+                        "Int16",
+                        "Int8",
+                    ],
+                    default="Int64",
                 )
 
                 if str(current_type) == new_type:
