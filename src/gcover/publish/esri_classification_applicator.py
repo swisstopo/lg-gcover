@@ -622,7 +622,11 @@ class ClassificationMatcher:
             feature_value = feature.get(gpkg_field)
 
             # Check if we should treat 0 as null
-            if self.treat_zero_as_null and feature_value == 0:
+            if (
+                self.treat_zero_as_null
+                and not pd.isna(feature_value)
+                and feature_value == 0
+            ):
                 feature_value = None
 
             # Handle NULL values in expected

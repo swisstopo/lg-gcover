@@ -6,6 +6,7 @@ Generate map server configuration from ESRI classification rules.
 """
 
 import json
+import uuid
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,7 +21,6 @@ from gcover.publish.esri_classification_extractor import (
     ClassificationClass, ESRIClassificationExtractor, LayerClassification)
 
 from .esri_classification_extractor import extract_lyrx
-
 
 console = Console()
 
@@ -768,71 +768,177 @@ class QGISGenerator:
             </layer>
           </symbol>'''
 
+    def _generate_point_symbol(self, symbol_idx: int, class_obj) -> str:
+        """
+        Generate QGIS 3.x point symbol XML.
 
+        Supports:
+        - SimpleMarker: Basic geometric shapes (circle, square, triangle)
+        - FontMarker: Character-based symbols from fonts (when font_family is present)
 
-    def _generate_point_symbol(
-        self, symbol_idx: int, class_obj: ClassificationClass
-    ) -> str:
-        """Generate QGIS 3.x point symbol XML."""
-        import uuid
+        Args:
+            symbol_idx: Symbol index for naming
+            class_obj: ClassificationClass object with symbol_info
 
+        Returns:
+            QGIS XML symbol definition string
+        """
+        # Check if we have a character marker (font-based symbol)
+        if (
+            hasattr(class_obj, "symbol_info")
+            and class_obj.symbol_info
+            and class_obj.symbol_info.font_family
+            and class_obj.symbol_info.character_index is not None
+        ):
+            return self._generate_font_marker(symbol_idx, class_obj)
+        else:
+            return self._generate_simple_marker(symbol_idx, class_obj)
+
+    def _generate_simple_marker(self, symbol_idx: int, class_obj) -> str:
+        """Generate QGIS SimpleMarker (geometric shape) symbol."""
         marker_color = "128,128,128,255"
         marker_size = "2"
         marker_name = "circle"
 
-        if hasattr(class_obj, "symbol") and class_obj.symbol:
-            esri_symbol = class_obj.symbol
-            if hasattr(esri_symbol, "color") and esri_symbol.color:
-                r, g, b = esri_symbol.color[:3]
-                marker_color = f"{r},{g},{b},255"
-            if hasattr(esri_symbol, "size") and esri_symbol.size:
-                marker_size = f"{esri_symbol.size * 0.35:.1f}"
-            if hasattr(esri_symbol, "type"):
+        if hasattr(class_obj, "symbol_info") and class_obj.symbol_info:
+            symbol_info = class_obj.symbol_info
+
+            # Extract color
+            if symbol_info.color:
+                r = symbol_info.color.r
+                g = symbol_info.color.g
+                b = symbol_info.color.b
+                a = symbol_info.color.alpha
+                marker_color = f"{r},{g},{b},{a}"
+
+            # Extract size (convert points to mm)
+            if symbol_info.size:
+                marker_size = f"{symbol_info.size * 0.352778:.2f}"
+
+            # Map ESRI marker types to QGIS names
+            # Note: This is a simplified mapping - you may need to adjust
+            if hasattr(symbol_info, "raw_symbol"):
+                marker_type = symbol_info.raw_symbol.get("type", "")
                 marker_map = {
                     "esriSMSCircle": "circle",
                     "esriSMSSquare": "square",
                     "esriSMSTriangle": "triangle",
+                    "esriSMSDiamond": "diamond",
+                    "esriSMSCross": "cross",
+                    "esriSMSX": "cross2",
                 }
-                marker_name = marker_map.get(esri_symbol.type, "circle")
+                marker_name = marker_map.get(marker_type, "circle")
 
         layer_id = str(uuid.uuid4())
 
         return f'''      <symbol force_rhr="0" is_animated="0" frame_rate="10" type="marker" name="{symbol_idx}" alpha="1" clip_to_extent="1">
-        <data_defined_properties>
-          <Option type="Map">
-            <Option type="QString" name="name" value=""/>
-            <Option name="properties"/>
-            <Option type="QString" name="type" value="collection"/>
-          </Option>
-        </data_defined_properties>
-        <layer enabled="1" id="{{{layer_id}}}" class="SimpleMarker" locked="0" pass="0">
-          <Option type="Map">
-            <Option type="QString" name="angle" value="0"/>
-            <Option type="QString" name="cap_style" value="square"/>
-            <Option type="QString" name="color" value="{marker_color}"/>
-            <Option type="QString" name="horizontal_anchor_point" value="1"/>
-            <Option type="QString" name="joinstyle" value="bevel"/>
-            <Option type="QString" name="name" value="{marker_name}"/>
-            <Option type="QString" name="offset" value="0,0"/>
-            <Option type="QString" name="offset_map_unit_scale" value="3x:0,0,0,0,0,0"/>
-            <Option type="QString" name="offset_unit" value="MM"/>
-            <Option type="QString" name="outline_color" value="35,35,35,255"/>
-            <Option type="QString" name="outline_style" value="solid"/>
-            <Option type="QString" name="outline_width" value="0"/>
-            <Option type="QString" name="outline_width_map_unit_scale" value="3x:0,0,0,0,0,0"/>
-            <Option type="QString" name="outline_width_unit" value="MM"/>
-            <Option type="QString" name="scale_method" value="diameter"/>
-            <Option type="QString" name="size" value="{marker_size}"/>
-            <Option type="QString" name="size_map_unit_scale" value="3x:0,0,0,0,0,0"/>
-            <Option type="QString" name="size_unit" value="MM"/>
-            <Option type="QString" name="vertical_anchor_point" value="1"/>
-          </Option>
-          <data_defined_properties>
-            <Option type="Map">
-              <Option type="QString" name="name" value=""/>
-              <Option name="properties"/>
-              <Option type="QString" name="type" value="collection"/>
-            </Option>
-          </data_defined_properties>
-        </layer>
-      </symbol>'''
+            <data_defined_properties>
+              <Option type="Map">
+                <Option type="QString" name="name" value=""/>
+                <Option name="properties"/>
+                <Option type="QString" name="type" value="collection"/>
+              </Option>
+            </data_defined_properties>
+            <layer enabled="1" id="{{{layer_id}}}" class="SimpleMarker" locked="0" pass="0">
+              <Option type="Map">
+                <Option type="QString" name="angle" value="0"/>
+                <Option type="QString" name="cap_style" value="square"/>
+                <Option type="QString" name="color" value="{marker_color}"/>
+                <Option type="QString" name="horizontal_anchor_point" value="1"/>
+                <Option type="QString" name="joinstyle" value="bevel"/>
+                <Option type="QString" name="name" value="{marker_name}"/>
+                <Option type="QString" name="offset" value="0,0"/>
+                <Option type="QString" name="offset_map_unit_scale" value="3x:0,0,0,0,0,0"/>
+                <Option type="QString" name="offset_unit" value="MM"/>
+                <Option type="QString" name="outline_color" value="35,35,35,255"/>
+                <Option type="QString" name="outline_style" value="solid"/>
+                <Option type="QString" name="outline_width" value="0"/>
+                <Option type="QString" name="outline_width_map_unit_scale" value="3x:0,0,0,0,0,0"/>
+                <Option type="QString" name="outline_width_unit" value="MM"/>
+                <Option type="QString" name="scale_method" value="diameter"/>
+                <Option type="QString" name="size" value="{marker_size}"/>
+                <Option type="QString" name="size_map_unit_scale" value="3x:0,0,0,0,0,0"/>
+                <Option type="QString" name="size_unit" value="MM"/>
+                <Option type="QString" name="vertical_anchor_point" value="1"/>
+              </Option>
+              <data_defined_properties>
+                <Option type="Map">
+                  <Option type="QString" name="name" value=""/>
+                  <Option name="properties"/>
+                  <Option type="QString" name="type" value="collection"/>
+                </Option>
+              </data_defined_properties>
+            </layer>
+          </symbol>'''
+
+    def _generate_font_marker(self, symbol_idx: int, class_obj) -> str:
+        """
+        Generate QGIS FontMarker (character-based) symbol.
+
+        Used for ESRI CIMCharacterMarker symbols that use font characters.
+        """
+        symbol_info = class_obj.symbol_info
+
+        # Extract font information
+        font_family = symbol_info.font_family
+        character_index = symbol_info.character_index
+
+        # Convert character index to Unicode character
+        # ESRI uses decimal character codes
+        character = chr(character_index)
+
+        # Extract color
+        marker_color = "128,128,128,255"
+        if symbol_info.color:
+            r = symbol_info.color.r
+            g = symbol_info.color.g
+            b = symbol_info.color.b
+            a = symbol_info.color.alpha
+            marker_color = f"{r},{g},{b},{a}"
+
+        # Extract size (convert points to mm)
+        marker_size = "3.5"
+        if symbol_info.size:
+            marker_size = f"{symbol_info.size * 0.352778:.2f}"
+
+        layer_id = str(uuid.uuid4())
+
+        # Note: QGIS FontMarker uses different parameters than SimpleMarker
+        return f'''      <symbol force_rhr="0" is_animated="0" frame_rate="10" type="marker" name="{symbol_idx}" alpha="1" clip_to_extent="1">
+            <data_defined_properties>
+              <Option type="Map">
+                <Option type="QString" name="name" value=""/>
+                <Option name="properties"/>
+                <Option type="QString" name="type" value="collection"/>
+              </Option>
+            </data_defined_properties>
+            <layer enabled="1" id="{{{layer_id}}}" class="FontMarker" locked="0" pass="0">
+              <Option type="Map">
+                <Option type="QString" name="angle" value="0"/>
+                <Option type="QString" name="chr" value="{character}"/>
+                <Option type="QString" name="color" value="{marker_color}"/>
+                <Option type="QString" name="font" value="{font_family}"/>
+                <Option type="QString" name="font_style" value=""/>
+                <Option type="QString" name="horizontal_anchor_point" value="1"/>
+                <Option type="QString" name="joinstyle" value="bevel"/>
+                <Option type="QString" name="offset" value="0,0"/>
+                <Option type="QString" name="offset_map_unit_scale" value="3x:0,0,0,0,0,0"/>
+                <Option type="QString" name="offset_unit" value="MM"/>
+                <Option type="QString" name="outline_color" value="0,0,0,255"/>
+                <Option type="QString" name="outline_width" value="0"/>
+                <Option type="QString" name="outline_width_map_unit_scale" value="3x:0,0,0,0,0,0"/>
+                <Option type="QString" name="outline_width_unit" value="MM"/>
+                <Option type="QString" name="size" value="{marker_size}"/>
+                <Option type="QString" name="size_map_unit_scale" value="3x:0,0,0,0,0,0"/>
+                <Option type="QString" name="size_unit" value="MM"/>
+                <Option type="QString" name="vertical_anchor_point" value="1"/>
+              </Option>
+              <data_defined_properties>
+                <Option type="Map">
+                  <Option type="QString" name="name" value=""/>
+                  <Option name="properties"/>
+                  <Option type="QString" name="type" value="collection"/>
+                </Option>
+              </data_defined_properties>
+            </layer>
+          </symbol>'''
