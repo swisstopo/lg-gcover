@@ -7,16 +7,13 @@ This package provides tools for enriching lightweight GeoCover datasets
 through intelligent spatial matching.
 """
 
-from .tooltips_enricher import (
-    EnhancedTooltipsEnricher,
-    EnrichmentConfig,
-    create_enrichment_config,
-LayerMapping,
-
-)
+from .esri_classification_applicator import ClassificationApplicator
+from .tooltips_enricher import (EnhancedTooltipsEnricher, EnrichmentConfig,
+                                LayerMapping, create_enrichment_config)
 
 __all__ = [
     "EnhancedTooltipsEnricher",
     "EnrichmentConfig",
     "create_enrichment_config",
+    "ClassificationApplicator",
 ]

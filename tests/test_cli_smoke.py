@@ -38,3 +38,10 @@ def test_gdb_command_invalid_path():
     # Should fail gracefully, not crash with unhandled exception
     assert result.exit_code != 0
     assert "Traceback" not in result.output or "FileNotFoundError" in result.output
+
+def test_publish_command_help():
+    """Test gdb command with no arguments (should show help or fail gracefully)."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--env", "test","publish", "--help"])
+    assert result.exit_code == 0
+    assert "Usage:" in result.output

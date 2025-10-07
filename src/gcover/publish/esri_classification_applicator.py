@@ -19,10 +19,6 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import yaml
-# Import classification extractor
-from esri_classification_extractor import (ClassificationClass,
-                                           ESRIClassificationExtractor,
-                                           LayerClassification, extract_lyrx)
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
@@ -30,6 +26,11 @@ from rich.progress import (BarColumn, Progress, SpinnerColumn,
                            TaskProgressColumn, TextColumn)
 from rich.prompt import Confirm
 from rich.table import Table
+
+# Import classification extractor
+from .esri_classification_extractor import (ClassificationClass,
+                                            ESRIClassificationExtractor,
+                                            LayerClassification, extract_lyrx)
 
 console = Console()
 
@@ -51,6 +52,282 @@ def float_to_int_string(val):
             return str(f)
     except (ValueError, TypeError):
         return val  # leave unchanged if not a number
+
+
+def get_numeric_field_names(field_types):
+    """
+    Extract field names that have numerical dtypes.
+
+    Args:
+        field_types: Dict of {field_name: dtype_string}
+
+    Returns:
+        List of field names with numeric types
+    """
+    numeric_dtypes = {
+        "int64",
+        "int32",
+        "int16",
+        "int8",
+        "Int64",
+        "Int32",
+        "Int16",
+        "Int8",  # Nullable integers
+        "uint64",
+        "uint32",
+        "uint16",
+        "uint8",
+        "float64",
+        "float32",
+        "float16",
+        "number",
+        "numeric",
+    }
+
+    numeric_fields = [
+        field
+        for field, dtype in field_types.items()
+        if dtype.lower() in {dt.lower() for dt in numeric_dtypes}
+    ]
+
+    return numeric_fields
+
+
+def get_numeric_fields_from_dataframe(gdf):
+    """
+    Extract numeric field names directly from GeoDataFrame.
+    More reliable than string matching.
+    """
+    import numpy as np
+    import pandas as pd
+
+    numeric_fields = []
+    for col in gdf.columns:
+        if col == "geometry":  # Skip geometry column
+            continue
+
+        # Check if dtype is numeric
+        if pd.api.types.is_numeric_dtype(gdf[col]):
+            numeric_fields.append(col)
+
+    return numeric_fields
+
+
+def cast_geodataframe_fields(gdf, field_types, strict=False):
+    """
+    Cast GeoDataFrame fields to specified types with robust error handling.
+
+    Args:
+        gdf: GeoDataFrame to cast
+        field_types: Dict of {field_name: dtype_string}
+        strict: If True, raise errors; if False, log warnings and continue
+
+    Returns:
+        GeoDataFrame with casted fields
+    """
+    stats = {"success": [], "failed": [], "skipped": []}
+
+    for field, dtype_str in field_types.items():
+        if field not in gdf.columns:
+            stats["skipped"].append(field)
+            console.print(f"[yellow]⊘ Field '{field}' not in data, skipping[/yellow]")
+            continue
+
+        try:
+            # Get original state for comparison
+            original_dtype = gdf[field].dtype
+            null_count_before = gdf[field].isna().sum()
+
+            # Handle numeric types with potential NULL values
+            if dtype_str.lower() in ["int64", "int32", "int16", "int8"]:
+                # Use nullable Integer types (capital I)
+                nullable_dtype = dtype_str.capitalize()  # int64 -> Int64
+
+                # Convert to numeric first (coerce non-numeric to NaN)
+                gdf[field] = pd.to_numeric(gdf[field], errors="coerce")
+
+                # Cast to nullable integer
+                gdf[field] = gdf[field].astype(nullable_dtype)
+
+                null_count_after = gdf[field].isna().sum()
+                new_nulls = null_count_after - null_count_before
+
+                console.print(
+                    f"[green]✓ {field}: {original_dtype} → {nullable_dtype}"
+                    f"{f' (+{new_nulls} NaN)' if new_nulls > 0 else ''}[/green]"
+                )
+
+                if new_nulls > 0:
+                    console.print(
+                        f"  [yellow]⚠️  {new_nulls} values coerced to NaN during conversion[/yellow]"
+                    )
+
+            # Handle float types
+            elif dtype_str.lower() in ["float64", "float32"]:
+                gdf[field] = pd.to_numeric(gdf[field], errors="coerce")
+                gdf[field] = gdf[field].astype(dtype_str)
+
+                null_count_after = gdf[field].isna().sum()
+                new_nulls = null_count_after - null_count_before
+
+                console.print(
+                    f"[green]✓ {field}: {original_dtype} → {dtype_str}"
+                    f"{f' (+{new_nulls} NaN)' if new_nulls > 0 else ''}[/green]"
+                )
+
+            # Handle boolean
+            elif dtype_str.lower() in ["bool", "boolean"]:
+                # Use nullable boolean
+                gdf[field] = gdf[field].astype("boolean")
+                console.print(f"[green]✓ {field}: {original_dtype} → boolean[/green]")
+
+            # Handle string
+            elif dtype_str.lower() in ["str", "string", "object"]:
+                gdf[field] = gdf[field].astype("string")
+                console.print(f"[green]✓ {field}: {original_dtype} → string[/green]")
+
+            # Handle datetime
+            elif dtype_str.lower().startswith("datetime"):
+                gdf[field] = pd.to_datetime(gdf[field], errors="coerce")
+                console.print(
+                    f"[green]✓ {field}: {original_dtype} → datetime64[/green]"
+                )
+
+            # Default: try direct casting
+            else:
+                gdf[field] = gdf[field].astype(dtype_str)
+                console.print(
+                    f"[green]✓ {field}: {original_dtype} → {dtype_str}[/green]"
+                )
+
+            stats["success"].append(field)
+
+        except Exception as e:
+            stats["failed"].append((field, str(e)))
+            console.print(f"[red]✗ Failed to cast {field} to {dtype_str}: {e}[/red]")
+
+            # Show sample values for debugging
+            sample = gdf[field].head(5).tolist()
+            console.print(f"  [yellow]Sample values: {sample}[/yellow]")
+
+            if strict:
+                raise
+
+    # Summary
+    console.print(f"\n[cyan]Type casting summary:[/cyan]")
+    console.print(f"  • Success: {len(stats['success'])}")
+    console.print(f"  • Failed: {len(stats['failed'])}")
+    console.print(f"  • Skipped: {len(stats['skipped'])}")
+
+    return gdf
+
+
+def validate_field_types(gdf, field_types):
+    """Check if field types can be applied without errors."""
+    issues = []
+
+    for field, dtype in field_types.items():
+        if field not in gdf.columns:
+            continue
+
+        # Check for conversion issues
+        if dtype.lower() in ["int64", "int32", "int16", "int8"]:
+            # Try numeric conversion
+            numeric_series = pd.to_numeric(gdf[field], errors="coerce")
+            non_numeric = gdf[field][numeric_series.isna() & gdf[field].notna()]
+
+            if len(non_numeric) > 0:
+                issues.append(
+                    {
+                        "field": field,
+                        "dtype": dtype,
+                        "issue": "non-numeric values",
+                        "count": len(non_numeric),
+                        "samples": non_numeric.head(3).tolist(),
+                    }
+                )
+
+    if issues:
+        console.print("\n[yellow]⚠️  Type conversion issues detected:[/yellow]")
+        for issue in issues:
+            console.print(
+                f"  • {issue['field']} ({issue['dtype']}): "
+                f"{issue['count']} {issue['issue']}"
+            )
+            console.print(f"    Examples: {issue['samples']}")
+
+    return issues
+
+
+def apply_robust_filter(gdf, additional_filter=None, numeric_columns=None):
+    """
+    Apply filter with robust type handling.
+
+    Args:
+        gdf: GeoDataFrame to filter
+        additional_filter: Query string like 'KIND == 14334001'
+        numeric_columns: List of columns to ensure are numeric (e.g., ['KIND'])
+
+    Returns:
+        Filtered GeoDataFrame
+    """
+    if not additional_filter:
+        return gdf.copy()
+
+    # Create working copy
+    gdf_work = gdf.copy()
+
+    # Convert specified columns to numeric types
+    if numeric_columns:
+        for col in numeric_columns:
+            if col in gdf_work.columns:
+                original_count = len(gdf_work)
+
+                # Convert to numeric, handling errors
+                gdf_work[col] = pd.to_numeric(gdf_work[col], errors="coerce")
+
+                # Convert to Int64 (nullable integer) to handle NaN
+                # Use Int64 (capital I) instead of int64 to allow NaN
+                gdf_work[col] = gdf_work[col].astype("Int64")
+
+                # Log conversion info
+                nan_count = gdf_work[col].isna().sum()
+                if nan_count > 0:
+                    console.print(
+                        f"[yellow]⚠️  Column '{col}': {nan_count}/{original_count} values converted to NaN[/yellow]"
+                    )
+
+                logger.debug(f"Converted column '{col}' to Int64 dtype")
+
+    # Apply filter
+    try:
+        gdf_filtered = gdf_work.query(additional_filter)
+
+        # Log filter results
+        filtered_count = len(gdf_filtered)
+        total_count = len(gdf)
+        console.print(f"[cyan]🔍 Filter applied: '{additional_filter}'[/cyan]")
+        console.print(
+            f"[cyan]   {filtered_count:,} / {total_count:,} features match ({filtered_count / total_count * 100:.1f}%)[/cyan]"
+        )
+
+        return gdf_filtered
+
+    except Exception as e:
+        console.print(f"[red]❌ Filter query failed: {e}[/red]")
+        console.print(f"[yellow]   Query: '{additional_filter}'[/yellow]")
+        logger.error(f"Filter query failed: {e}")
+
+        # Show column dtypes for debugging
+        if numeric_columns:
+            console.print("[yellow]   Column types:[/yellow]")
+            for col in numeric_columns:
+                if col in gdf_work.columns:
+                    console.print(f"     - {col}: {gdf_work[col].dtype}")
+
+        # Return unfiltered data as fallback
+        console.print("[yellow]   Returning unfiltered data[/yellow]")
+        return gdf.copy()
 
 
 class LayerMapping:
@@ -409,6 +686,7 @@ class ClassificationApplicator:
         label_field: Optional[str] = "LABEL",
         symbol_prefix: Optional[str] = None,
         field_mapping: Optional[Dict[str, str]] = None,
+        field_types: Optional[Dict[str, str]] = {},
         treat_zero_as_null: bool = False,
         debug: bool = False,
     ):
@@ -426,6 +704,7 @@ class ClassificationApplicator:
         """
         self.classification = classification
         self.symbol_field = symbol_field
+        self.field_types = field_types
         self.label_field = label_field
         self.symbol_prefix = symbol_prefix or self._sanitize_prefix(
             classification.layer_name or "symbol"
@@ -443,13 +722,18 @@ class ClassificationApplicator:
             f"Initialized applicator for '{classification.layer_name}' with {len(self.symbol_map)} classes"
         )
         if label_field:
-            logger.info(
-                f"Will add both SYMBOL ({symbol_field}) and LABEL ({label_field}) fields"
-            )
+            label_field_msg = f"Will add both SYMBOL ({symbol_field}) and LABEL ({label_field}) fields"
+            logger.info(label_field_msg)
+            console.print(label_field_msg)
+
         if field_mapping:
-            logger.debug(f"Using field mapping: {field_mapping}")
+            field_mapping_msg = f"  Using field mapping: {field_mapping}"
+            logger.debug(field_mapping_msg)
+            console.print(field_mapping_msg)
         if treat_zero_as_null:
-            logger.info("Treating 0 values as NULL for matching")
+            treat_zero_as_null_msg = "  Treating 0 values as NULL for matching"
+            logger.info(treat_zero_as_null_msg)
+            console.print(treat_zero_as_null_msg)
 
     def _sanitize_prefix(self, name: str) -> str:
         """Sanitize name for use as symbol prefix."""
@@ -484,6 +768,7 @@ class ClassificationApplicator:
             preserve_existing: If True and SYMBOL field exists, only update NULL/empty values
                               If False, update all matching features (overwrite mode)
         """
+
         # Check if fields exist
         symbol_exists = self.symbol_field in gdf.columns
         label_exists = self.label_field and self.label_field in gdf.columns
@@ -507,63 +792,125 @@ class ClassificationApplicator:
             gdf[self.label_field] = None
             logger.info(f"Created new field: {self.label_field}")
 
-        # Apply filter
+        # TODO
+        # Check required fields
+        all_present, missing = self.matcher.check_required_fields(gdf)
+        if not all_present:
+            raise ValueError(f"Missing required fields in GPKG: {missing}")
+
+        logger.success(
+            f"All required GPKG fields present: {self.matcher.required_gpkg_fields}"
+        )
+        logger.info(self.field_types)
+
+        # Step 2: Cast fields to correct types
+        if self.field_types:
+            console.print(f"\n[cyan]📊 Casting field types...[/cyan]")
+            for field, dtype in field_types.items():
+                if field in gdf.columns:
+                    try:
+                        if dtype.lower().startswith("int"):
+                            dtype = dtype.capitalize()
+                            gdf[field] = pd.to_numeric(gdf[field], errors="coerce")
+                        gdf[field] = gdf[field].astype(dtype)
+                        console.print(f"[green]✓ {field} → {dtype}[/green]")
+                    except Exception as e:
+                        console.print(f"[red]✗ {field}: {e}[/red]")
+
+        # Step 3: Extract numeric columns
+        numeric_columns = get_numeric_field_names(self.field_types)
+        console.print(f"[cyan]Numeric columns: {', '.join(numeric_columns)}[/cyan]")
+
+        # Step 4: Apply filter with numeric columns
         if additional_filter:
-            gdf_filtered = gdf.query(additional_filter).copy()
+            pandas_filter = translate_esri_to_pandas(additional_filter)
+            gdf_filtered = apply_robust_filter(
+                gdf,
+                additional_filter=pandas_filter,
+                numeric_columns=numeric_columns,
+            )
         else:
             gdf_filtered = gdf.copy()
 
-        # Classify features
-        symbols = []
-        labels = []
+        # Initialize counters
         matched_count = 0
         unmatched_count = 0
         preserved_count = 0
+        symbols = []
+        labels = []
+        console.print(f"   Matching {len(gdf_filtered)} features...")
 
-        for idx, feature in gdf_filtered.iterrows():
-            # Check if we should preserve existing value
-            # CORRECT - explicitly check for NULL
-            if preserve_existing and symbol_exists:
-                existing_symbol = gdf.loc[idx, self.symbol_field]
+        # Create progress bar
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task(f"Matching features...", total=len(gdf_filtered))
 
-                # DEBUG
-                if idx in list(gdf_filtered.index)[:20]:  # First 5 features
-                    logger.info(
-                        f"Feature {idx}: existing_symbol={existing_symbol}, type={type(existing_symbol)}, notna={pd.notna(existing_symbol)}"
+            for idx, feature in gdf_filtered.iterrows():
+                # Check if we should preserve existing value
+                # CORRECT - explicitly check for NULL
+                if preserve_existing and symbol_exists:
+                    existing_symbol = gdf.loc[idx, self.symbol_field]
+
+                    # DEBUG
+                    if idx in list(gdf_filtered.index)[:20]:  # First 20 features
+                        logger.debug(
+                            f"Feature {idx}: existing_symbol={existing_symbol}, type={type(existing_symbol)}, notna={pd.notna(existing_symbol)}"
+                        )
+
+                    # Check for both Python None and string "None"
+                    if (
+                        pd.notna(existing_symbol)
+                        and existing_symbol is not None
+                        and existing_symbol != "None"
+                        and existing_symbol != ""
+                    ):  # Also check empty string
+                        symbols.append(existing_symbol)
+                        if self.label_field:
+                            labels.append(gdf.loc[idx, self.label_field])
+                        preserved_count += 1
+                        progress.advance(task)
+                        continue
+
+                # Match feature
+                match_result = self.matcher.match_feature(feature)
+
+                if match_result:
+                    matched_label, all_matches = match_result
+                    symbol_id = self.symbol_map[matched_label]
+                    symbols.append(symbol_id)
+                    labels.append(matched_label)
+                    matched_count += 1
+                else:
+                    # Leave as NULL (or keep existing if preserve_existing)
+                    if preserve_existing and symbol_exists:
+                        symbols.append(gdf.loc[idx, self.symbol_field])
+                        if self.label_field:
+                            labels.append(gdf.loc[idx, self.label_field])
+                    else:
+                        symbols.append(None)
+                        labels.append(None)
+                    unmatched_count += 1
+
+                # Update progress with stats every 100 features
+                if (matched_count + unmatched_count + preserved_count) % 100 == 0:
+                    progress.update(
+                        task,
+                        description=f"Matching features... (✓{matched_count} ⊘{unmatched_count} ↻{preserved_count})",
                     )
 
-                # Check for both Python None and string "None"
-                if (
-                    pd.notna(existing_symbol)
-                    and existing_symbol is not None
-                    and existing_symbol != "None"
-                    and existing_symbol != ""
-                ):  # Also check empty string
-                    symbols.append(existing_symbol)
-                    if self.label_field:
-                        labels.append(gdf.loc[idx, self.label_field])
-                    preserved_count += 1
-                    continue
+                progress.advance(task)
 
-            # Match feature
-            match_result = self.matcher.match_feature(feature)
-
-            if match_result:
-                matched_label, all_matches = match_result
-                symbol_id = self.symbol_map[matched_label]
-                symbols.append(symbol_id)
-                labels.append(matched_label)
-                matched_count += 1
-            else:
-                # Leave as NULL (or keep existing if preserve_existing)
-                if preserve_existing and symbol_exists:
-                    symbols.append(gdf.loc[idx, self.symbol_field])
-                    if self.label_field:
-                        labels.append(gdf.loc[idx, self.label_field])
-                else:
-                    symbols.append(None)
-                    labels.append(None)
-                unmatched_count += 1
+        # Final summary after progress bar closes
+        console.print(f"\n[green]✅ Feature matching complete:[/green]")
+        console.print(f"  • Matched: {matched_count}")
+        console.print(f"  • Unmatched: {unmatched_count}")
+        console.print(f"  • Preserved: {preserved_count}")
+        console.print(f"  • Total: {len(gdf_filtered)}")
 
         # Update the dataframe
         # gdf.loc[gdf_filtered.index, self.symbol_field] = symbols
@@ -765,6 +1112,7 @@ def apply_classification_to_gdf(
     symbol_prefix: Optional[str] = None,
     additional_filter: Optional[str] = None,
     field_mapping: Optional[Dict[str, str]] = None,
+    field_types: Optional[Dict[str, str]] = None,
     treat_zero_as_null: bool = False,
     debug: bool = False,
     overwrite: bool = False,
@@ -791,6 +1139,7 @@ def apply_classification_to_gdf(
         symbol_field=symbol_field,
         symbol_prefix=symbol_prefix,
         field_mapping=field_mapping,
+        field_types=field_types,
         treat_zero_as_null=treat_zero_as_null,
         debug=debug,
     )
@@ -1276,6 +1625,23 @@ def apply(
                     console.print(f"[green]Casted {field} to {dtype}: {e}[/green]")
                 except Exception as e:
                     console.print(f"[red]Failed to cast {field} to {dtype}: {e}[/red]")
+
+        # TODO
+        if layer_mapping:
+            field_types = layer_mapping.get_field_types(target_layer)
+
+            if field_types:
+                issues = validate_field_types(gdf, field_types)
+                # if not issues:
+                #     gdf = cast_geodataframe_fields(gdf, field_types)
+                console.print(
+                    f"\n[cyan]📊 Casting field types for '{target_layer}'...[/cyan]"
+                )
+                gdf = cast_geodataframe_fields(gdf, field_types, strict=False)
+            else:
+                console.print(
+                    f"[yellow]No field type mappings for '{target_layer}'[/yellow]"
+                )
 
         if field_mapping:
             console.print(f"[dim]Field mapping: {field_mapping}[/dim]")
