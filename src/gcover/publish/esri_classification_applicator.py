@@ -19,26 +19,18 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import yaml
-
-# Import classification extractor
-from esri_classification_extractor import (
-    ClassificationClass,
-    ESRIClassificationExtractor,
-    LayerClassification,
-    extract_lyrx,
-)
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import (
-    BarColumn,
-    Progress,
-    SpinnerColumn,
-    TaskProgressColumn,
-    TextColumn,
-)
+from rich.progress import (BarColumn, Progress, SpinnerColumn,
+                           TaskProgressColumn, TextColumn)
 from rich.prompt import Confirm
 from rich.table import Table
+
+# Import classification extractor
+from .esri_classification_extractor import (ClassificationClass,
+                                            ESRIClassificationExtractor,
+                                            LayerClassification, extract_lyrx)
 
 console = Console()
 
@@ -831,9 +823,10 @@ class ClassificationApplicator:
 
         # Step 4: Apply filter with numeric columns
         if additional_filter:
+            pandas_filter = translate_esri_to_pandas(additional_filter)
             gdf_filtered = apply_robust_filter(
                 gdf,
-                additional_filter=additional_filter,
+                additional_filter=pandas_filter,
                 numeric_columns=numeric_columns,
             )
         else:

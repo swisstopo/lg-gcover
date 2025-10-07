@@ -8,26 +8,27 @@ import os
 import sys
 from importlib.resources import files
 from pathlib import Path
-from typing import List, Optional, Dict, Any
-import yaml
+from typing import Any, Dict, List, Optional
 
 import click
 import geopandas as gpd
 import pandas as pd
+import yaml
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
-from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.table import Table
 
 from gcover.config import SDE_INSTANCES, AppConfig, load_config
-from gcover.publish.tooltips_enricher import (
-    EnhancedTooltipsEnricher,
-    EnrichmentConfig,
-    LayerMapping,
-    LayerType,
-    create_enrichment_config,
-)
+from gcover.publish.esri_classification_applicator import \
+    ClassificationApplicator
+from gcover.publish.style_config import (BatchClassificationConfig,
+                                         apply_batch_from_config)
+from gcover.publish.tooltips_enricher import (EnhancedTooltipsEnricher,
+                                              EnrichmentConfig, LayerMapping,
+                                              LayerType,
+                                              create_enrichment_config)
 
 console = Console()
 
@@ -50,6 +51,301 @@ def get_publish_config(ctx):
 def publish_commands(ctx):
     """Commands for preparing GeoCover data for publication."""
     pass
+
+
+'''
+@publish_commands.command()
+@click.pass_context
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress non-error output")
+def cli(verbose: bool, quiet: bool):
+    """🎨 Classification Symbol Applicator
+
+    Apply ESRI classification rules to GeoDataFrames/GPKG files.
+    Adds a SYMBOL field with generated class identifiers based on classification rules.
+    """
+    if quiet:
+        logger.remove()
+        logger.add(sys.stdout, level="ERROR", format="<red>{level}</red>: {message}")
+    elif verbose:
+        logger.remove()
+        logger.add(
+            sys.stdout,
+            level="DEBUG",
+            format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>",
+        )'''
+
+
+@publish_commands.command()
+@click.pass_context
+@click.argument("gpkg_file", type=click.Path(exists=True, path_type=Path))
+@click.argument("config_file", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--layer", "-l", help="Specific layer to process (default: all layers in config)"
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Output GPKG path (default: input_classified.gpkg)",
+)
+@click.option(
+    "--styles-dir",
+    type=click.Path(exists=True, path_type=Path),
+    help="Base directory for resolving relative style paths (default: config file directory)",
+)
+@click.option("--debug", is_flag=True, help="Enable debug output")
+@click.option(
+    "--dry-run", is_flag=True, help="Parse config without applying classifications"
+)
+def apply_config(
+    ctx,
+    gpkg_file: Path,
+    config_file: Path,
+    layer: Optional[str],
+    output: Optional[Path],
+    styles_dir: Optional[Path],
+    debug: bool,
+    dry_run: bool,
+):
+    """Apply multiple classifications from YAML configuration file.
+
+    This command processes a GPKG using a YAML configuration that specifies
+    which style files to apply to which layers, with field mappings and filters.
+
+    \b
+    Example config structure:
+      global:
+        treat_zero_as_null: true
+        symbol_field: SYMBOL
+        label_field: LABEL
+      layers:
+        - gpkg_layer: GC_POINT_OBJECTS
+          classifications:
+            - style_file: styles/springs.lyrx
+              classification_name: Quelle
+              filter: KIND == 12501001
+              symbol_prefix: spring
+            - style_file: styles/boreholes.lyrx
+              filter: KIND == 12501002
+              symbol_prefix: borehole
+
+    \b
+    Examples:
+      # Apply all classifications from config
+      classifier apply-config geocover.gpkg config.yaml
+
+      # Process only specific layer
+      classifier apply-config geocover.gpkg config.yaml -l GC_POINT_OBJECTS
+
+      # Specify styles directory
+      classifier apply-config data.gpkg config.yaml --styles-dir /path/to/styles
+
+      # Dry run to validate config
+      classifier apply-config geocover.gpkg config.yaml --dry-run
+    """
+    try:
+        console.print(f"\n[bold blue]📋 Batch Classification from Config[/bold blue]\n")
+
+        # Load configuration
+        with console.status("[cyan]Loading configuration...", spinner="dots"):
+            config = BatchClassificationConfig(config_file, styles_dir)
+
+        console.print(f"[green]✓[/green] Loaded configuration:")
+        console.print(f"  • Layers: {len(config.layers)}")
+        console.print(f"  • Symbol field: {config.symbol_field}")
+        console.print(f"  • Label field: {config.label_field}")
+        console.print(f"  • Treat 0 as NULL: {config.treat_zero_as_null}")
+
+        # Display layer summary
+        table = Table(title="Configuration Summary", show_header=True)
+        table.add_column("GPKG Layer", style="cyan")
+        table.add_column("Classifications", style="yellow", justify="right")
+        table.add_column("Style Files", style="dim")
+
+        for layer_config in config.layers:
+            style_files = [c.style_file.name for c in layer_config.classifications]
+            table.add_row(
+                layer_config.gpkg_layer,
+                str(len(layer_config.classifications)),
+                ", ".join(style_files[:3]) + ("..." if len(style_files) > 3 else ""),
+            )
+
+        console.print(table)
+
+        if dry_run:
+            console.print("\n[yellow]🔍 Dry run - no changes will be made[/yellow]")
+
+            # Validate that style files exist
+            console.print("\nValidating style files...")
+            all_valid = True
+            for layer_config in config.layers:
+                for class_config in layer_config.classifications:
+                    if not class_config.style_file.exists():
+                        console.print(
+                            f"  [red]✗ Missing: {class_config.style_file}[/red]"
+                        )
+                        all_valid = False
+                    else:
+                        console.print(
+                            f"  [green]✓ Found: {class_config.style_file.name}[/green]"
+                        )
+
+            if all_valid:
+                console.print("\n[green]✓ Configuration is valid![/green]")
+            else:
+                console.print("\n[red]✗ Configuration has errors[/red]")
+            return
+
+        # Apply classifications
+        stats = apply_batch_from_config(
+            gpkg_path=gpkg_file,
+            config=config,
+            layer_name=layer,
+            output_path=output,
+            debug=debug,
+        )
+
+        # Display final statistics
+        console.print("\n[bold green]✅ Batch processing complete![/bold green]\n")
+
+        summary_table = Table(title="Processing Statistics", show_header=True)
+        summary_table.add_column("Metric", style="cyan")
+        summary_table.add_column("Value", style="green", justify="right")
+
+        summary_table.add_row("Layers processed", str(stats["layers_processed"]))
+        summary_table.add_row(
+            "Classifications applied", str(stats["classifications_applied"])
+        )
+        summary_table.add_row("Features classified", str(stats["features_classified"]))
+        summary_table.add_row("Total features", str(stats["features_total"]))
+
+        if stats["features_total"] > 0:
+            pct = stats["features_classified"] / stats["features_total"] * 100
+            summary_table.add_row("Coverage", f"{pct:.1f}%")
+
+        console.print(summary_table)
+
+        output_file = output or gpkg_file.parent / f"{gpkg_file.stem}_classified.gpkg"
+        console.print(f"\n[dim]Output: {output_file}[/dim]")
+
+    except Exception as e:
+        logger.error(f"Batch processing failed: {e}")
+        if debug:
+            import traceback
+
+            logger.debug(traceback.format_exc())
+        raise
+
+
+@publish_commands.command()
+@click.pass_context
+@click.argument(
+    "output_path", type=click.Path(path_type=Path), default="classification_config.yaml"
+)
+@click.option(
+    "--example",
+    type=click.Choice(["simple", "complex"]),
+    default="complex",
+    help="Type of example to generate",
+)
+def create_config(ctx, output_path: Path, example: str):
+    """Create an example YAML configuration file for batch processing.
+
+    \b
+    Examples:
+      # Create simple example
+      classifier create-config config.yaml --example simple
+
+      # Create complex example with multiple layers
+      classifier create-config config.yaml --example complex
+    """
+    if example == "simple":
+        config = {
+            "global": {
+                "treat_zero_as_null": True,
+                "symbol_field": "SYMBOL",
+                "label_field": "LABEL",
+            },
+            "layers": [
+                {
+                    "gpkg_layer": "GC_FOSSILS",
+                    "classifications": [
+                        {
+                            "style_file": "styles/Fossils.lyrx",
+                            "classification_name": "Fossils",
+                            "filter": "KIND == 14601006",
+                            "symbol_prefix": "fossil",
+                            "fields": {
+                                "KIND": "KIND",
+                                "LFOS_DIVISION": "LFOS_DIVISION",
+                                "LFOS_STATUS": "LFOS_STATUS",
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+    else:  # complex
+        config = {
+            "global": {
+                "treat_zero_as_null": True,
+                "symbol_field": "SYMBOL",
+                "label_field": "LABEL",
+                "overwrite": False,
+            },
+            "layers": [
+                {
+                    "gpkg_layer": "GC_POINT_OBJECTS",
+                    "classifications": [
+                        {
+                            "style_file": "styles/Point_Objects_Quelle.lyrx",
+                            "classification_name": "Quelle",
+                            "filter": "KIND == 12501001",
+                            "symbol_prefix": "spring",
+                            "fields": {
+                                "KIND": "KIND",
+                                "HSUR_TYPE": "HSUR_TYPE",
+                                "HSUR_STATUS": "HSUR_STATUS",
+                            },
+                        },
+                        {
+                            "style_file": "styles/Point_Objects_Bohrung_Fels_erreicht.lyrx",
+                            "classification_name": "Bohrung Fels erreicht",
+                            "filter": "KIND == 12501002 and LBOR_ROCK_REACHED == 1",
+                            "symbol_prefix": "borehole_rock",
+                        },
+                        {
+                            "style_file": "styles/Point_Objects_Erraticker.lyrx",
+                            "classification_name": "Erraticker",
+                            "filter": "KIND == 14601008",
+                            "symbol_prefix": "erratic",
+                        },
+                    ],
+                },
+                {
+                    "gpkg_layer": "GC_FOSSILS",
+                    "classifications": [
+                        {
+                            "style_file": "styles/Fossils.lyrx",
+                            "filter": "KIND == 14601006",
+                            "symbol_prefix": "fossil",
+                        }
+                    ],
+                },
+            ],
+        }
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        yaml.dump(
+            config, f, default_flow_style=False, allow_unicode=True, sort_keys=False
+        )
+
+    console.print(f"[green]✓ Created example configuration: {output_path}[/green]")
+    console.print(f"\nEdit this file to match your layers and style files, then run:")
+    console.print(
+        f"[cyan]  classifier apply-config your_data.gpkg {output_path}[/cyan]"
+    )
 
 
 @publish_commands.command()
