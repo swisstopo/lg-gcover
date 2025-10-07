@@ -8,6 +8,7 @@ through intelligent spatial matching.
 """
 
 from .esri_classification_applicator import ClassificationApplicator
+from .generator import MapServerGenerator, QGISGenerator
 from .tooltips_enricher import (EnhancedTooltipsEnricher, EnrichmentConfig,
                                 LayerMapping, create_enrichment_config)
 
@@ -16,4 +17,6 @@ __all__ = [
     "EnrichmentConfig",
     "create_enrichment_config",
     "ClassificationApplicator",
+    "MapServerGenerator",
+    "QGISGenerator",
 ]
