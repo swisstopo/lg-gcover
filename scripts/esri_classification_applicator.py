@@ -53,6 +53,152 @@ def float_to_int_string(val):
         return val  # leave unchanged if not a number
 
 
+def cast_geodataframe_fields(gdf, field_types, strict=False):
+    """
+    Cast GeoDataFrame fields to specified types with robust error handling.
+
+    Args:
+        gdf: GeoDataFrame to cast
+        field_types: Dict of {field_name: dtype_string}
+        strict: If True, raise errors; if False, log warnings and continue
+
+    Returns:
+        GeoDataFrame with casted fields
+    """
+    stats = {"success": [], "failed": [], "skipped": []}
+
+    for field, dtype_str in field_types.items():
+        if field not in gdf.columns:
+            stats["skipped"].append(field)
+            console.print(f"[yellow]⊘ Field '{field}' not in data, skipping[/yellow]")
+            continue
+
+        try:
+            # Get original state for comparison
+            original_dtype = gdf[field].dtype
+            null_count_before = gdf[field].isna().sum()
+
+            # Handle numeric types with potential NULL values
+            if dtype_str.lower() in ["int64", "int32", "int16", "int8"]:
+                # Use nullable Integer types (capital I)
+                nullable_dtype = dtype_str.capitalize()  # int64 -> Int64
+
+                # Convert to numeric first (coerce non-numeric to NaN)
+                gdf[field] = pd.to_numeric(gdf[field], errors="coerce")
+
+                # Cast to nullable integer
+                gdf[field] = gdf[field].astype(nullable_dtype)
+
+                null_count_after = gdf[field].isna().sum()
+                new_nulls = null_count_after - null_count_before
+
+                console.print(
+                    f"[green]✓ {field}: {original_dtype} → {nullable_dtype}"
+                    f"{f' (+{new_nulls} NaN)' if new_nulls > 0 else ''}[/green]"
+                )
+
+                if new_nulls > 0:
+                    console.print(
+                        f"  [yellow]⚠️  {new_nulls} values coerced to NaN during conversion[/yellow]"
+                    )
+
+            # Handle float types
+            elif dtype_str.lower() in ["float64", "float32"]:
+                gdf[field] = pd.to_numeric(gdf[field], errors="coerce")
+                gdf[field] = gdf[field].astype(dtype_str)
+
+                null_count_after = gdf[field].isna().sum()
+                new_nulls = null_count_after - null_count_before
+
+                console.print(
+                    f"[green]✓ {field}: {original_dtype} → {dtype_str}"
+                    f"{f' (+{new_nulls} NaN)' if new_nulls > 0 else ''}[/green]"
+                )
+
+            # Handle boolean
+            elif dtype_str.lower() in ["bool", "boolean"]:
+                # Use nullable boolean
+                gdf[field] = gdf[field].astype("boolean")
+                console.print(f"[green]✓ {field}: {original_dtype} → boolean[/green]")
+
+            # Handle string
+            elif dtype_str.lower() in ["str", "string", "object"]:
+                gdf[field] = gdf[field].astype("string")
+                console.print(f"[green]✓ {field}: {original_dtype} → string[/green]")
+
+            # Handle datetime
+            elif dtype_str.lower().startswith("datetime"):
+                gdf[field] = pd.to_datetime(gdf[field], errors="coerce")
+                console.print(
+                    f"[green]✓ {field}: {original_dtype} → datetime64[/green]"
+                )
+
+            # Default: try direct casting
+            else:
+                gdf[field] = gdf[field].astype(dtype_str)
+                console.print(
+                    f"[green]✓ {field}: {original_dtype} → {dtype_str}[/green]"
+                )
+
+            stats["success"].append(field)
+
+        except Exception as e:
+            stats["failed"].append((field, str(e)))
+            console.print(f"[red]✗ Failed to cast {field} to {dtype_str}: {e}[/red]")
+
+            # Show sample values for debugging
+            sample = gdf[field].head(5).tolist()
+            console.print(f"  [yellow]Sample values: {sample}[/yellow]")
+
+            if strict:
+                raise
+
+    # Summary
+    console.print(f"\n[cyan]Type casting summary:[/cyan]")
+    console.print(f"  • Success: {len(stats['success'])}")
+    console.print(f"  • Failed: {len(stats['failed'])}")
+    console.print(f"  • Skipped: {len(stats['skipped'])}")
+
+    return gdf
+
+
+def validate_field_types(gdf, field_types):
+    """Check if field types can be applied without errors."""
+    issues = []
+
+    for field, dtype in field_types.items():
+        if field not in gdf.columns:
+            continue
+
+        # Check for conversion issues
+        if dtype.lower() in ["int64", "int32", "int16", "int8"]:
+            # Try numeric conversion
+            numeric_series = pd.to_numeric(gdf[field], errors="coerce")
+            non_numeric = gdf[field][numeric_series.isna() & gdf[field].notna()]
+
+            if len(non_numeric) > 0:
+                issues.append(
+                    {
+                        "field": field,
+                        "dtype": dtype,
+                        "issue": "non-numeric values",
+                        "count": len(non_numeric),
+                        "samples": non_numeric.head(3).tolist(),
+                    }
+                )
+
+    if issues:
+        console.print("\n[yellow]⚠️  Type conversion issues detected:[/yellow]")
+        for issue in issues:
+            console.print(
+                f"  • {issue['field']} ({issue['dtype']}): "
+                f"{issue['count']} {issue['issue']}"
+            )
+            console.print(f"    Examples: {issue['samples']}")
+
+    return issues
+
+
 class LayerMapping:
     """Mapping configuration between GPKG layers and classification layers."""
 
@@ -1309,6 +1455,22 @@ def apply(
                     console.print(f"[green]Casted {field} to {dtype}: {e}[/green]")
                 except Exception as e:
                     console.print(f"[red]Failed to cast {field} to {dtype}: {e}[/red]")
+
+        if layer_mapping:
+            field_types = layer_mapping.get_field_types(target_layer)
+
+            if field_types:
+                issues = validate_field_types(gdf, field_types)
+                # if not issues:
+                #     gdf = cast_geodataframe_fields(gdf, field_types)
+                console.print(
+                    f"\n[cyan]📊 Casting field types for '{target_layer}'...[/cyan]"
+                )
+                gdf = cast_geodataframe_fields(gdf, field_types, strict=False)
+            else:
+                console.print(
+                    f"[yellow]No field type mappings for '{target_layer}'[/yellow]"
+                )
 
         if field_mapping:
             console.print(f"[dim]Field mapping: {field_mapping}[/dim]")
