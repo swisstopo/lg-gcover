@@ -17,8 +17,10 @@ from loguru import logger
 from rich.console import Console
 
 from gcover.publish.esri_classification_extractor import (
-    ClassificationClass, ESRIClassificationExtractor, LayerClassification,
-    extract_lyrx)
+    ClassificationClass, ESRIClassificationExtractor, LayerClassification)
+
+from .esri_classification_extractor import extract_lyrx
+
 
 console = Console()
 
@@ -766,86 +768,7 @@ class QGISGenerator:
             </layer>
           </symbol>'''
 
-    def _generate_line_symbol_ori(
-        self, symbol_idx: int, class_obj: ClassificationClass
-    ) -> str:
-        """Generate QGIS 3.x line symbol XML."""
-        import uuid
 
-        line_color = "128,128,128,255"
-        line_width = "0.26"
-
-        if hasattr(class_obj, "symbol_info") and class_obj.symbol_info:
-            symbol_info = class_obj.symbol_info
-
-            # Extract line color from ColorInfo
-            if hasattr(symbol_info, "color") and symbol_info.color:
-                color_info = symbol_info.color
-                if (
-                    hasattr(color_info, "r")
-                    and hasattr(color_info, "g")
-                    and hasattr(color_info, "b")
-                ):
-                    r = color_info.r
-                    g = color_info.g
-                    b = color_info.b
-                    r_norm = r / 255
-                    g_norm = g / 255
-                    b_norm = b / 255
-                    line_color = f"{r},{g},{b},255,rgb:{r_norm},{g_norm},{b_norm},1"
-
-            # Extract line width
-            if hasattr(symbol_info, "width") and symbol_info.width:
-                line_width = f"{symbol_info.width * 0.35:.2f}"  # Points to mm
-
-        layer_id = str(uuid.uuid4())
-
-        return f'''      <symbol force_rhr="0" is_animated="0" frame_rate="10" type="line" name="{symbol_idx}" alpha="1" clip_to_extent="1">
-        <data_defined_properties>
-          <Option type="Map">
-            <Option type="QString" name="name" value=""/>
-            <Option name="properties"/>
-            <Option type="QString" name="type" value="collection"/>
-          </Option>
-        </data_defined_properties>
-        <layer enabled="1" id="{{{layer_id}}}" class="SimpleLine" locked="0" pass="0">
-          <Option type="Map">
-            <Option type="QString" name="align_dash_pattern" value="0"/>
-            <Option type="QString" name="capstyle" value="square"/>
-            <Option type="QString" name="customdash" value="5;2"/>
-            <Option type="QString" name="customdash_map_unit_scale" value="3x:0,0,0,0,0,0"/>
-            <Option type="QString" name="customdash_unit" value="MM"/>
-            <Option type="QString" name="dash_pattern_offset" value="0"/>
-            <Option type="QString" name="dash_pattern_offset_map_unit_scale" value="3x:0,0,0,0,0,0"/>
-            <Option type="QString" name="dash_pattern_offset_unit" value="MM"/>
-            <Option type="QString" name="draw_inside_polygon" value="0"/>
-            <Option type="QString" name="joinstyle" value="bevel"/>
-            <Option type="QString" name="line_color" value="{line_color}"/>
-            <Option type="QString" name="line_style" value="solid"/>
-            <Option type="QString" name="line_width" value="{line_width}"/>
-            <Option type="QString" name="line_width_unit" value="MM"/>
-            <Option type="QString" name="offset" value="0"/>
-            <Option type="QString" name="offset_map_unit_scale" value="3x:0,0,0,0,0,0"/>
-            <Option type="QString" name="offset_unit" value="MM"/>
-            <Option type="QString" name="ring_filter" value="0"/>
-            <Option type="QString" name="trim_distance_end" value="0"/>
-            <Option type="QString" name="trim_distance_end_map_unit_scale" value="3x:0,0,0,0,0,0"/>
-            <Option type="QString" name="trim_distance_end_unit" value="MM"/>
-            <Option type="QString" name="trim_distance_start" value="0"/>
-            <Option type="QString" name="trim_distance_start_map_unit_scale" value="3x:0,0,0,0,0,0"/>
-            <Option type="QString" name="trim_distance_start_unit" value="MM"/>
-            <Option type="QString" name="use_custom_dash" value="0"/>
-            <Option type="QString" name="width_map_unit_scale" value="3x:0,0,0,0,0,0"/>
-          </Option>
-          <data_defined_properties>
-            <Option type="Map">
-              <Option type="QString" name="name" value=""/>
-              <Option name="properties"/>
-              <Option type="QString" name="type" value="collection"/>
-            </Option>
-          </data_defined_properties>
-        </layer>
-      </symbol>'''
 
     def _generate_point_symbol(
         self, symbol_idx: int, class_obj: ClassificationClass
