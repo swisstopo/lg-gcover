@@ -443,13 +443,18 @@ class ClassificationApplicator:
             f"Initialized applicator for '{classification.layer_name}' with {len(self.symbol_map)} classes"
         )
         if label_field:
-            logger.info(
-                f"Will add both SYMBOL ({symbol_field}) and LABEL ({label_field}) fields"
-            )
+            label_field_msg = f"Will add both SYMBOL ({symbol_field}) and LABEL ({label_field}) fields"
+            logger.info(label_field_msg)
+            console.print(label_field_msg)
+
         if field_mapping:
-            logger.debug(f"Using field mapping: {field_mapping}")
+            field_mapping_msg = f"  Using field mapping: {field_mapping}"
+            logger.debug(field_mapping_msg)
+            console.print(field_mapping_msg)
         if treat_zero_as_null:
-            logger.info("Treating 0 values as NULL for matching")
+            treat_zero_as_null_msg = "  Treating 0 values as NULL for matching"
+            logger.info(treat_zero_as_null_msg)
+            console.print(treat_zero_as_null_msg)
 
     def _sanitize_prefix(self, name: str) -> str:
         """Sanitize name for use as symbol prefix."""
@@ -513,57 +518,85 @@ class ClassificationApplicator:
         else:
             gdf_filtered = gdf.copy()
 
-        # Classify features
-        symbols = []
-        labels = []
+        # Initialize counters
         matched_count = 0
         unmatched_count = 0
         preserved_count = 0
+        symbols = []
+        labels = []
+        console.print(f"   Matching {len(gdf_filtered)} features...")
 
-        for idx, feature in gdf_filtered.iterrows():
-            # Check if we should preserve existing value
-            # CORRECT - explicitly check for NULL
-            if preserve_existing and symbol_exists:
-                existing_symbol = gdf.loc[idx, self.symbol_field]
+        # Create progress bar
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task(f"Matching features...", total=len(gdf_filtered))
 
-                # DEBUG
-                if idx in list(gdf_filtered.index)[:20]:  # First 5 features
-                    logger.info(
-                        f"Feature {idx}: existing_symbol={existing_symbol}, type={type(existing_symbol)}, notna={pd.notna(existing_symbol)}"
+            for idx, feature in gdf_filtered.iterrows():
+                # Check if we should preserve existing value
+                # CORRECT - explicitly check for NULL
+                if preserve_existing and symbol_exists:
+                    existing_symbol = gdf.loc[idx, self.symbol_field]
+
+                    # DEBUG
+                    if idx in list(gdf_filtered.index)[:20]:  # First 20 features
+                        logger.debug(
+                            f"Feature {idx}: existing_symbol={existing_symbol}, type={type(existing_symbol)}, notna={pd.notna(existing_symbol)}"
+                        )
+
+                    # Check for both Python None and string "None"
+                    if (
+                        pd.notna(existing_symbol)
+                        and existing_symbol is not None
+                        and existing_symbol != "None"
+                        and existing_symbol != ""
+                    ):  # Also check empty string
+                        symbols.append(existing_symbol)
+                        if self.label_field:
+                            labels.append(gdf.loc[idx, self.label_field])
+                        preserved_count += 1
+                        progress.advance(task)
+                        continue
+
+                # Match feature
+                match_result = self.matcher.match_feature(feature)
+
+                if match_result:
+                    matched_label, all_matches = match_result
+                    symbol_id = self.symbol_map[matched_label]
+                    symbols.append(symbol_id)
+                    labels.append(matched_label)
+                    matched_count += 1
+                else:
+                    # Leave as NULL (or keep existing if preserve_existing)
+                    if preserve_existing and symbol_exists:
+                        symbols.append(gdf.loc[idx, self.symbol_field])
+                        if self.label_field:
+                            labels.append(gdf.loc[idx, self.label_field])
+                    else:
+                        symbols.append(None)
+                        labels.append(None)
+                    unmatched_count += 1
+
+                # Update progress with stats every 100 features
+                if (matched_count + unmatched_count + preserved_count) % 100 == 0:
+                    progress.update(
+                        task,
+                        description=f"Matching features... (✓{matched_count} ⊘{unmatched_count} ↻{preserved_count})",
                     )
 
-                # Check for both Python None and string "None"
-                if (
-                    pd.notna(existing_symbol)
-                    and existing_symbol is not None
-                    and existing_symbol != "None"
-                    and existing_symbol != ""
-                ):  # Also check empty string
-                    symbols.append(existing_symbol)
-                    if self.label_field:
-                        labels.append(gdf.loc[idx, self.label_field])
-                    preserved_count += 1
-                    continue
+                progress.advance(task)
 
-            # Match feature
-            match_result = self.matcher.match_feature(feature)
-
-            if match_result:
-                matched_label, all_matches = match_result
-                symbol_id = self.symbol_map[matched_label]
-                symbols.append(symbol_id)
-                labels.append(matched_label)
-                matched_count += 1
-            else:
-                # Leave as NULL (or keep existing if preserve_existing)
-                if preserve_existing and symbol_exists:
-                    symbols.append(gdf.loc[idx, self.symbol_field])
-                    if self.label_field:
-                        labels.append(gdf.loc[idx, self.label_field])
-                else:
-                    symbols.append(None)
-                    labels.append(None)
-                unmatched_count += 1
+        # Final summary after progress bar closes
+        console.print(f"\n[green]✅ Feature matching complete:[/green]")
+        console.print(f"  • Matched: {matched_count}")
+        console.print(f"  • Unmatched: {unmatched_count}")
+        console.print(f"  • Preserved: {preserved_count}")
+        console.print(f"  • Total: {len(gdf_filtered)}")
 
         # Update the dataframe
         # gdf.loc[gdf_filtered.index, self.symbol_field] = symbols
