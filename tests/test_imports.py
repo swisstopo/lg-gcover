@@ -18,6 +18,7 @@ def test_cli_imports():
     from gcover.cli import qa_cmd
     from gcover.cli import schema_cmd
     from gcover.cli import sde_cmd
+    from gcover.cli import publish_cmd
 
     assert callable(main.cli)
 
