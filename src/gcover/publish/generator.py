@@ -18,7 +18,10 @@ from loguru import logger
 from rich.console import Console
 
 from gcover.publish.esri_classification_extractor import (
-    ClassificationClass, ESRIClassificationExtractor, LayerClassification)
+    ClassificationClass,
+    ESRIClassificationExtractor,
+    LayerClassification,
+)
 
 from .esri_classification_extractor import extract_lyrx
 
@@ -30,7 +33,7 @@ class MapServerGenerator:
 
     def __init__(
         self,
-        layer_type: str = "POLYGON",
+        layer_type: str = "Polygon",
         use_symbol_field: bool = False,
         symbol_field: str = "SYMBOL",
     ):
@@ -657,26 +660,48 @@ class QGISGenerator:
         </layer>
       </symbol>'''
 
-    def _generate_line_symbol(
-        self, symbol_idx: int, class_obj: ClassificationClass
-    ) -> str:
-        """Generate QGIS 3.x line symbol XML."""
-        import uuid
+    def _generate_line_symbol(self, symbol_idx: int, class_obj) -> str:
+        """
+        Generate QGIS 3.x line symbol XML.
 
+        Supports:
+        - SimpleLine: Regular lines with solid, dash, or dot patterns
+        - MarkerLine: Lines decorated with font characters (when font_family is present)
+
+        Args:
+            symbol_idx: Symbol index for naming
+            class_obj: ClassificationClass object with symbol_info
+
+        Returns:
+            QGIS XML symbol definition string
+        """
+        # Check if we have a character marker (font-based symbol on line)
+        if (
+            hasattr(class_obj, "symbol_info")
+            and class_obj.symbol_info
+            and class_obj.symbol_info.font_family
+            and class_obj.symbol_info.character_index is not None
+        ):
+            return self._generate_marker_line(symbol_idx, class_obj)
+        else:
+            return self._generate_simple_line(symbol_idx, class_obj)
+
+    def _generate_simple_line(self, symbol_idx: int, class_obj) -> str:
+        """
+        Generate QGIS SimpleLine with support for solid, dash, and dot patterns.
+        """
         line_color = "128,128,128,255"
         line_width = "0.26"
-        # Custom dash pattern (if applicable)
         use_custom_dash = "0"
         custom_dash = "5;2"
         line_style = "solid"
-        dash_pattern = "0"
+        cap_style = "square"
+        join_style = "bevel"
 
         if hasattr(class_obj, "symbol_info") and class_obj.symbol_info:
             symbol_info = class_obj.symbol_info
 
-            print(symbol_info.line_style)
-
-            # Extract line color from ColorInfo
+            # Extract line color
             if hasattr(symbol_info, "color") and symbol_info.color:
                 color_info = symbol_info.color
                 if (
@@ -687,39 +712,55 @@ class QGISGenerator:
                     r = color_info.r
                     g = color_info.g
                     b = color_info.b
+                    a = getattr(color_info, "alpha", 255)
                     r_norm = r / 255
                     g_norm = g / 255
                     b_norm = b / 255
-                    line_color = f"{r},{g},{b},255,rgb:{r_norm},{g_norm},{b_norm},1"
+                    a_norm = a / 255
+                    line_color = f"{r},{g},{b},{a},rgb:{r_norm:.3f},{g_norm:.3f},{b_norm:.3f},{a_norm:.3f}"
 
-            # Extract line width
+            # Extract line width (convert points to mm)
             if hasattr(symbol_info, "width") and symbol_info.width:
-                line_width = f"{symbol_info.width * 0.35:.2f}"  # Points to mm
+                line_width = f"{symbol_info.width * 0.352778:.2f}"
 
-            # Extract line width
-            line_style = symbol_info.line_style
+            # Extract line style
+            if hasattr(symbol_info, "line_style") and symbol_info.line_style:
+                line_style = symbol_info.line_style
 
-            dash_pattern = symbol_info.dash_pattern
+            # Extract dash pattern
+            dash_pattern = getattr(symbol_info, "dash_pattern", None)
 
-        layer_id = str(uuid.uuid4())
+            if line_style in ("dash", "dot") and dash_pattern:
+                use_custom_dash = "1"
+                # Convert ESRI pattern to QGIS format
+                custom_dash = ";".join(str(float(v)) for v in dash_pattern)
 
-        if line_style in ("dash", "dot") and dash_pattern:
-            use_custom_dash = "1"
-            # Convert ESRI pattern to QGIS format (space-separated to semicolon-separated)
-            custom_dash = ";".join(str(float(v)) for v in dash_pattern)
-            console.print("custom...")
+            # Extract cap and join styles
+            if hasattr(symbol_info, "cap_style") and symbol_info.cap_style:
+                esri_to_qgis_cap = {
+                    "Butt": "flat",
+                    "Round": "round",
+                    "Square": "square",
+                }
+                cap_style = esri_to_qgis_cap.get(symbol_info.cap_style, "square")
+
+            if hasattr(symbol_info, "join_style") and symbol_info.join_style:
+                esri_to_qgis_join = {
+                    "Miter": "miter",
+                    "Round": "round",
+                    "Bevel": "bevel",
+                }
+                join_style = esri_to_qgis_join.get(symbol_info.join_style, "bevel")
 
         # Map style to QGIS line_style
         qgis_style_map = {
             "solid": "solid",
-            "dash": "dash"
-            if use_custom_dash == "1"
-            else "solid",  # Use solid with custom pattern
-            "dot": "dot" if use_custom_dash == "1" else "solid",
+            "dash": "solid" if use_custom_dash == "1" else "dash",
+            "dot": "solid" if use_custom_dash == "1" else "dot",
         }
         qgis_line_style = qgis_style_map.get(line_style, "solid")
 
-        console.print(f"Line style: {qgis_line_style}")
+        layer_id = str(uuid.uuid4())
 
         return f'''      <symbol force_rhr="0" is_animated="0" frame_rate="10" type="line" name="{symbol_idx}" alpha="1" clip_to_extent="1">
             <data_defined_properties>
@@ -732,7 +773,7 @@ class QGISGenerator:
             <layer enabled="1" id="{{{layer_id}}}" class="SimpleLine" locked="0" pass="0">
               <Option type="Map">
                 <Option type="QString" name="align_dash_pattern" value="0"/>
-                <Option type="QString" name="capstyle" value="square"/>
+                <Option type="QString" name="capstyle" value="{cap_style}"/>
                 <Option type="QString" name="customdash" value="{custom_dash}"/>
                 <Option type="QString" name="customdash_map_unit_scale" value="3x:0,0,0,0,0,0"/>
                 <Option type="QString" name="customdash_unit" value="MM"/>
@@ -740,7 +781,7 @@ class QGISGenerator:
                 <Option type="QString" name="dash_pattern_offset_map_unit_scale" value="3x:0,0,0,0,0,0"/>
                 <Option type="QString" name="dash_pattern_offset_unit" value="MM"/>
                 <Option type="QString" name="draw_inside_polygon" value="0"/>
-                <Option type="QString" name="joinstyle" value="bevel"/>
+                <Option type="QString" name="joinstyle" value="{join_style}"/>
                 <Option type="QString" name="line_color" value="{line_color}"/>
                 <Option type="QString" name="line_style" value="{qgis_line_style}"/>
                 <Option type="QString" name="line_width" value="{line_width}"/>
@@ -765,6 +806,120 @@ class QGISGenerator:
                   <Option type="QString" name="type" value="collection"/>
                 </Option>
               </data_defined_properties>
+            </layer>
+          </symbol>'''
+
+    def _generate_marker_line(self, symbol_idx: int, class_obj) -> str:
+        """
+        Generate QGIS MarkerLine with FontMarker decoration.
+
+        Used for ESRI CIMCharacterMarker on lines - places font characters
+        repeatedly along the line at specified intervals.
+        """
+        symbol_info = class_obj.symbol_info
+
+        # Extract font information
+        font_family = symbol_info.font_family
+        character_index = symbol_info.character_index
+        character = chr(character_index)
+
+        # Extract color
+        marker_color = "128,128,128,255"
+        if symbol_info.color:
+            r = symbol_info.color.r
+            g = symbol_info.color.g
+            b = symbol_info.color.b
+            a = getattr(symbol_info.color, "alpha", 255)
+            marker_color = f"{r},{g},{b},{a}"
+
+        # Extract size (convert points to mm)
+        marker_size = "3.5"
+        if symbol_info.size:
+            marker_size = f"{symbol_info.size * 0.352778:.2f}"
+
+        # Line width for the underlying line (if needed)
+        line_width = "0.26"
+        if hasattr(symbol_info, "width") and symbol_info.width:
+            line_width = f"{symbol_info.width * 0.352778:.2f}"
+
+        # Marker placement interval (default: 3mm spacing)
+        marker_interval = "3"
+
+        layer_id = str(uuid.uuid4())
+        marker_id = str(uuid.uuid4())
+
+        return f'''      <symbol force_rhr="0" is_animated="0" frame_rate="10" type="line" name="{symbol_idx}" alpha="1" clip_to_extent="1">
+            <data_defined_properties>
+              <Option type="Map">
+                <Option type="QString" name="name" value=""/>
+                <Option name="properties"/>
+                <Option type="QString" name="type" value="collection"/>
+              </Option>
+            </data_defined_properties>
+            <layer enabled="1" id="{{{layer_id}}}" class="MarkerLine" locked="0" pass="0">
+              <Option type="Map">
+                <Option type="QString" name="average_angle_length" value="4"/>
+                <Option type="QString" name="average_angle_map_unit_scale" value="3x:0,0,0,0,0,0"/>
+                <Option type="QString" name="average_angle_unit" value="MM"/>
+                <Option type="QString" name="interval" value="{marker_interval}"/>
+                <Option type="QString" name="interval_map_unit_scale" value="3x:0,0,0,0,0,0"/>
+                <Option type="QString" name="interval_unit" value="MM"/>
+                <Option type="QString" name="offset" value="0"/>
+                <Option type="QString" name="offset_along_line" value="0"/>
+                <Option type="QString" name="offset_along_line_map_unit_scale" value="3x:0,0,0,0,0,0"/>
+                <Option type="QString" name="offset_along_line_unit" value="MM"/>
+                <Option type="QString" name="offset_map_unit_scale" value="3x:0,0,0,0,0,0"/>
+                <Option type="QString" name="offset_unit" value="MM"/>
+                <Option type="bool" name="place_on_every_part" value="true"/>
+                <Option type="QString" name="placements" value="Interval"/>
+                <Option type="QString" name="ring_filter" value="0"/>
+                <Option type="QString" name="rotate" value="1"/>
+              </Option>
+              <data_defined_properties>
+                <Option type="Map">
+                  <Option type="QString" name="name" value=""/>
+                  <Option name="properties"/>
+                  <Option type="QString" name="type" value="collection"/>
+                </Option>
+              </data_defined_properties>
+              <symbol force_rhr="0" is_animated="0" frame_rate="10" type="marker" name="@{symbol_idx}@0" alpha="1" clip_to_extent="1">
+                <data_defined_properties>
+                  <Option type="Map">
+                    <Option type="QString" name="name" value=""/>
+                    <Option name="properties"/>
+                    <Option type="QString" name="type" value="collection"/>
+                  </Option>
+                </data_defined_properties>
+                <layer enabled="1" id="{{{marker_id}}}" class="FontMarker" locked="0" pass="0">
+                  <Option type="Map">
+                    <Option type="QString" name="angle" value="0"/>
+                    <Option type="QString" name="chr" value="{character}"/>
+                    <Option type="QString" name="color" value="{marker_color}"/>
+                    <Option type="QString" name="font" value="{font_family}"/>
+                    <Option type="QString" name="font_style" value=""/>
+                    <Option type="QString" name="horizontal_anchor_point" value="1"/>
+                    <Option type="QString" name="joinstyle" value="bevel"/>
+                    <Option type="QString" name="offset" value="0,0"/>
+                    <Option type="QString" name="offset_map_unit_scale" value="3x:0,0,0,0,0,0"/>
+                    <Option type="QString" name="offset_unit" value="MM"/>
+                    <Option type="QString" name="outline_color" value="0,0,0,255"/>
+                    <Option type="QString" name="outline_width" value="0"/>
+                    <Option type="QString" name="outline_width_map_unit_scale" value="3x:0,0,0,0,0,0"/>
+                    <Option type="QString" name="outline_width_unit" value="MM"/>
+                    <Option type="QString" name="size" value="{marker_size}"/>
+                    <Option type="QString" name="size_map_unit_scale" value="3x:0,0,0,0,0,0"/>
+                    <Option type="QString" name="size_unit" value="MM"/>
+                    <Option type="QString" name="vertical_anchor_point" value="1"/>
+                  </Option>
+                  <data_defined_properties>
+                    <Option type="Map">
+                      <Option type="QString" name="name" value=""/>
+                      <Option name="properties"/>
+                      <Option type="QString" name="type" value="collection"/>
+                    </Option>
+                  </data_defined_properties>
+                </layer>
+              </symbol>
             </layer>
           </symbol>'''
 
