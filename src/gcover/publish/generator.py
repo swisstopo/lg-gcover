@@ -18,7 +18,10 @@ from loguru import logger
 from rich.console import Console
 
 from gcover.publish.esri_classification_extractor import (
-    ClassificationClass, ESRIClassificationExtractor, LayerClassification)
+    ClassificationClass,
+    ESRIClassificationExtractor,
+    LayerClassification,
+)
 
 from .esri_classification_extractor import extract_lyrx
 
@@ -30,7 +33,7 @@ class MapServerGenerator:
 
     def __init__(
         self,
-        layer_type: str = "POLYGON",
+        layer_type: str = "Polygon",
         use_symbol_field: bool = False,
         symbol_field: str = "SYMBOL",
     ):
