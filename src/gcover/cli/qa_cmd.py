@@ -7,31 +7,30 @@ store them in DuckDB, and query the results.
 """
 
 import sys
-from datetime import datetime, timedelta
+from collections import defaultdict
+from datetime import datetime
+from datetime import datetime as dt
+from datetime import timedelta
 from importlib.resources import files
 from pathlib import Path
-from typing import Optional, List
-import pandas as pd
-from collections import defaultdict
-from datetime import datetime as dt
+from typing import List, Optional
 
 import click
+import pandas as pd
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from gcover.cli.gdb_cmd import (
-    get_latest_topology_verification_info,
-    get_latest_assets_info,
-)
+from gcover.cli.gdb_cmd import (get_latest_assets_info,
+                                get_latest_topology_verification_info)
+from gcover.cli.main import confirm_extended
 from gcover.config import AppConfig, load_config
 from gcover.gdb.assets import AssetType
+from gcover.gdb.enhanced_qa_stats import EnhancedQAConverter
 from gcover.gdb.manager import GDBAssetManager
 from gcover.gdb.qa_converter import FileGDBConverter
 from gcover.qa.analyzer import QAAnalyzer
-from gcover.gdb.enhanced_qa_stats import EnhancedQAConverter
-from gcover.cli.main import confirm_extended
 
 OUTPUT_FORMATS = ["csv", "xlsx", "json"]
 GROUP_BY_CHOICES = ["mapsheets", "work_units", "lots"]
@@ -1711,7 +1710,9 @@ def extract(
         s3_profile = qa_config.get_s3_profile(global_config)
 
         # TODO use same function as `aggregate`
-        verification_type, rc_version, timestamp = FileGDBConverter.parse_gdb_path(rc2_gdb)
+        verification_type, rc_version, timestamp = FileGDBConverter.parse_gdb_path(
+            rc2_gdb
+        )
 
         converted_dir = (
             Path(output)
@@ -1875,7 +1876,6 @@ def trend_analysis(
     if verbose:
         logger.remove()
         logger.add(sys.stderr, level="DEBUG")
-
 
     qa_config, global_config = get_qa_config(ctx)
 

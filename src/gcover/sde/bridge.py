@@ -3,26 +3,19 @@
 GCover SDE Bridge - High-level interface for geodata import/export with ESRI Enterprise Geodatabase
 """
 
-from typing import Dict, List, Optional, Union, Any, Callable
 import contextlib
-from pathlib import Path
-from datetime import datetime as dt
-import traceback
 import os
+import traceback
+from datetime import datetime as dt
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import geopandas as gpd
 import pandas as pd
 from loguru import logger
-from rich.progress import (
-    Progress,
-    TaskID,
-    SpinnerColumn,
-    TextColumn,
-    BarColumn,
-    MofNCompleteColumn,
-    TimeElapsedColumn,
-    TimeRemainingColumn,
-)
+from rich.progress import (BarColumn, MofNCompleteColumn, Progress,
+                           SpinnerColumn, TaskID, TextColumn,
+                           TimeElapsedColumn, TimeRemainingColumn)
 
 try:
     import arcpy

@@ -8,23 +8,13 @@ transform_esri_json deserializer.
 
 import json
 from dataclasses import asdict, is_dataclass
-from typing import Any, Dict, List, Union
 from datetime import datetime
+from typing import Any, Dict, List, Union
 
 # Import your dataclasses
-from .models import (
-    CodedValue,
-    CodedDomain,
-    RangeDomain,
-    Field,
-    SubtypeValue,
-    Subtype,
-    RelationshipClass,
-    Index,
-    FeatureClass,
-    Table,
-    ESRISchema,
-)
+from .models import (CodedDomain, CodedValue, ESRISchema, FeatureClass, Field,
+                     Index, RangeDomain, RelationshipClass, Subtype,
+                     SubtypeValue, Table)
 
 
 def serialize_esri_schema_to_dict(schema: ESRISchema) -> Dict[str, Any]:

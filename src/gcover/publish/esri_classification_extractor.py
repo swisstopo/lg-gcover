@@ -10,21 +10,18 @@ Author: Generated for lg-gcover project
 
 import json
 import zipfile
-from pathlib import Path
-from typing import Dict, List, Optional, Union, Any, Tuple
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from enum import Enum
-import click
-import json
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+import click
 from loguru import logger
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
-from rich.tree import Tree
 from rich.progress import Progress, SpinnerColumn, TextColumn
-
+from rich.table import Table
+from rich.tree import Tree
 
 # Try to import arcpy - graceful degradation if not available
 try:

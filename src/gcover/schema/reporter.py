@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Union
 from jinja2 import Environment, FileSystemLoader, Template
 from loguru import logger
 
-from .differ import SchemaDiff, ChangeType, CodedValueChange
+from .differ import ChangeType, CodedValueChange, SchemaDiff
 
 
 def _convert_enum_to_string(obj):

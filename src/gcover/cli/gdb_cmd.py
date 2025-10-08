@@ -19,35 +19,19 @@ from rich.table import Table
 # from gcover.gdb.config import  load_config TODO
 from gcover.config import AppConfig, load_config
 from gcover.config.models import GDBConfig, GlobalConfig
-from gcover.gdb.assets import (
-    AssetType,
-    BackupGDBAsset,
-    GDBAsset,
-    IncrementGDBAsset,
-    ReleaseCandidate,
-    VerificationGDBAsset,
-    find_duplicate_groups,
-    print_duplicate_report,
-    remove_duplicate_assets,
-)
+from gcover.gdb.assets import (AssetType, BackupGDBAsset, GDBAsset,
+                               IncrementGDBAsset, ReleaseCandidate,
+                               VerificationGDBAsset, find_duplicate_groups,
+                               print_duplicate_report, remove_duplicate_assets)
 from gcover.gdb.manager import GDBAssetManager
 from gcover.gdb.storage import MetadataDB, S3Uploader, TOTPGenerator
-
 # Import utility functions
-from gcover.gdb.utils import (
-    check_disk_space,
-    copy_gdb_asset,
-    create_backup_manifest,
-    create_destination_path,
-    filter_assets_by_criteria,
-    find_largest_assets,
-    format_size,
-    get_asset_age_distribution,
-    get_directory_size,
-    quick_size_check,
-    verify_backup_integrity,
-)
-
+from gcover.gdb.utils import (check_disk_space, copy_gdb_asset,
+                              create_backup_manifest, create_destination_path,
+                              filter_assets_by_criteria, find_largest_assets,
+                              format_size, get_asset_age_distribution,
+                              get_directory_size, quick_size_check,
+                              verify_backup_integrity)
 
 console = Console()
 
@@ -186,7 +170,6 @@ def scan(
     create_manifest,
 ):
     """Scan filesystem for GDB assets and optionally copy them"""
-
 
     gdb_config, global_config, environment, verbose = get_configs(ctx)
     s3_config = global_config.s3

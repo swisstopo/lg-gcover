@@ -2,7 +2,7 @@
 CLI module for gcover.
 """
 
-from .main import cli
 from .gcover_info import info
+from .main import cli
 
-__all__ = ["cli","info"]
+__all__ = ["cli", "info"]

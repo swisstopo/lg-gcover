@@ -1,8 +1,8 @@
 # connection_manager.py
 import os
 import tempfile
-from pathlib import Path
 from datetime import datetime as dt
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from loguru import logger
@@ -26,7 +26,6 @@ class SDEConnectionManager:
             if version_list:
                 user_version = version_list[0]
                 self.create_connection(instance="GCOVERP", version=user_version)
-
 
         return self
 

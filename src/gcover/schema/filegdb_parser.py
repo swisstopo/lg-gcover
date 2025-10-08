@@ -7,8 +7,8 @@ parsing the XML definitions to extract all schema information.
 
 import json
 import xml.etree.ElementTree as ET
-from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     from osgeo import ogr, osr
@@ -19,19 +19,9 @@ except ImportError:
 from loguru import logger
 
 # Import your dataclasses
-from .models import (
-    ESRISchema,
-    CodedDomain,
-    CodedValue,
-    RangeDomain,
-    FeatureClass,
-    Table,
-    Field,
-    Index,
-    RelationshipClass,
-    Subtype,
-    SubtypeValue,
-)
+from .models import (CodedDomain, CodedValue, ESRISchema, FeatureClass, Field,
+                     Index, RangeDomain, RelationshipClass, Subtype,
+                     SubtypeValue, Table)
 
 
 class FileGDBParser:
@@ -1280,8 +1270,8 @@ def extract_relationships_via_ogrinfo(gdb_path: str) -> List[Dict[str, str]]:
     Workaround: Extract relationship info using ogrinfo subprocess call.
     This parses the output of 'ogrinfo <gdb>' to get relationship details.
     """
-    import subprocess
     import re
+    import subprocess
 
     relationships = []
 
