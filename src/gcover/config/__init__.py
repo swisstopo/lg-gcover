@@ -7,27 +7,20 @@ Consolidates all previous config approaches into one clean system
 import os
 from pathlib import Path
 
-from .models import (
-    AppConfig,
-    GlobalConfig,
-    GDBConfig,
-    SDEConfig,
-    QAConfig,
-    S3Config,
-    SchemaConfig,
-)
-from .loader import load_config, get_config
+from .loader import get_config, load_config
+from .models import (AppConfig, GDBConfig, GlobalConfig, QAConfig, S3Config,
+                     SchemaConfig, SDEConfig)
 
 # Paths
-CONFIG_DIR = Path.home() / '.gcover'
+CONFIG_DIR = Path.home() / ".gcover"
 CONFIG_DIR.mkdir(exist_ok=True)
 
 # SDE Instance mapping
 SDE_INSTANCES = {
-    'prod': 'GCOVERP',
-    'integration': 'GCOVERI',
-    'GCOVERP': 'GCOVERP',
-    'GCOVERI': 'GCOVERI'
+    "prod": "GCOVERP",
+    "integration": "GCOVERI",
+    "GCOVERP": "GCOVERP",
+    "GCOVERI": "GCOVERI",
 }
 
 # Versions par défaut
@@ -37,9 +30,9 @@ DEFAULT_CHUNK_SIZE = 1024
 
 DEFAULT_NUM_WORKERS = 4
 
-DEFAULT_INSTANCE = 'GCOVERP'
+DEFAULT_INSTANCE = "GCOVERP"
 
-DEFAULT_CRS = 'EPSG:2056'
+DEFAULT_CRS = "EPSG:2056"
 
 EXCLUDED_TABLES = {
     "GC_CONFLICT_POLYGON",

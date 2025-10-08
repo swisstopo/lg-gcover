@@ -18,10 +18,7 @@ from loguru import logger
 from rich.console import Console
 
 from gcover.publish.esri_classification_extractor import (
-    ClassificationClass,
-    ESRIClassificationExtractor,
-    LayerClassification,
-)
+    ClassificationClass, ESRIClassificationExtractor, LayerClassification)
 
 from .esri_classification_extractor import extract_lyrx
 

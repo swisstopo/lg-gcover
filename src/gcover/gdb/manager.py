@@ -5,18 +5,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import duckdb
-
 # Configure logging
 from loguru import logger
 
-from .assets import (
-    AssetType,
-    BackupGDBAsset,
-    GDBAsset,
-    IncrementGDBAsset,
-    ReleaseCandidate,
-    VerificationGDBAsset,
-)
+from .assets import (AssetType, BackupGDBAsset, GDBAsset, IncrementGDBAsset,
+                     ReleaseCandidate, VerificationGDBAsset)
 from .storage import MetadataDB, S3Uploader
 
 GBD_TO_EXCLUDE = ["progress.gdb", "temp.gdb"]

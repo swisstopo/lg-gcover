@@ -5,32 +5,26 @@ Enhanced GeoCover Tooltips Enrichment Module
 Supports multiple tooltip layers, flexible source mappings, and configurable workflows.
 """
 
-from typing import Dict, List, Optional, Union, Tuple, Any, Set
-from pathlib import Path
-import tempfile
 import shutil
-from datetime import datetime
+import tempfile
 import traceback
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import geopandas as gpd
-import pandas as pd
-from shapely.geometry import box
 import numpy as np
+import pandas as pd
 from loguru import logger
-from rich.progress import (
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    BarColumn,
-    TaskProgressColumn,
-)
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-
 from pyogrio.errors import DataLayerError
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import (BarColumn, Progress, SpinnerColumn,
+                           TaskProgressColumn, TextColumn)
+from rich.table import Table
+from shapely.geometry import box
 
 try:
     import arcpy
@@ -40,9 +34,9 @@ except ImportError:
     HAS_ARCPY = False
     logger.warning("arcpy not available - using pure geopandas approach")
 
-from ..sde.bridge import GCoverSDEBridge, create_bridge
 from gcover.core.geometry import load_gpkg_with_validation, safe_read_filegdb
 
+from ..sde.bridge import GCoverSDEBridge, create_bridge
 
 console = Console()
 
@@ -504,113 +498,125 @@ class EnhancedTooltipsEnricher:
         source_features: gpd.GeoDataFrame,
         layer_mapping: LayerMapping,
     ) -> pd.DataFrame:
-            """Fast polygon matching for nearly-identical geometries (Shapely 2.x compatible)."""
+        """Fast polygon matching for nearly-identical geometries (Shapely 2.x compatible)."""
 
-            # Ensure CRS compatibility
-            if tooltip_features.crs != source_features.crs:
-                source_features = source_features.to_crs(tooltip_features.crs)
+        # Ensure CRS compatibility
+        if tooltip_features.crs != source_features.crs:
+            source_features = source_features.to_crs(tooltip_features.crs)
 
-            matches = []
+        matches = []
 
-            # Build spatial index
-            source_sindex = source_features.sindex
+        # Build spatial index
+        source_sindex = source_features.sindex
 
-            # Create lookup dict for faster access
-            source_dict = {idx: row for idx, row in source_features.iterrows()}
+        # Create lookup dict for faster access
+        source_dict = {idx: row for idx, row in source_features.iterrows()}
 
-            # Helper function to compare geometries with tolerance (Shapely 2.x compatible)
-            def geometries_almost_equal(geom1, geom2, tolerance=1e-6):
-                """Check if two geometries are almost equal within tolerance."""
-                try:
-                    # Method 1: Use equals_exact (Shapely 2.x)
-                    if hasattr(geom1, 'equals_exact'):
-                        return geom1.equals_exact(geom2, tolerance)
-                    # Method 2: Fallback for Shapely 1.x
-                    elif hasattr(geom1, 'almost_equals'):
-                        return geom1.almost_equals(geom2, decimal=6)
-                    # Method 3: Manual check using symmetric difference
-                    else:
-                        sym_diff = geom1.symmetric_difference(geom2)
-                        return sym_diff.area < tolerance
-                except Exception:
-                    return False
+        # Helper function to compare geometries with tolerance (Shapely 2.x compatible)
+        def geometries_almost_equal(geom1, geom2, tolerance=1e-6):
+            """Check if two geometries are almost equal within tolerance."""
+            try:
+                # Method 1: Use equals_exact (Shapely 2.x)
+                if hasattr(geom1, "equals_exact"):
+                    return geom1.equals_exact(geom2, tolerance)
+                # Method 2: Fallback for Shapely 1.x
+                elif hasattr(geom1, "almost_equals"):
+                    return geom1.almost_equals(geom2, decimal=6)
+                # Method 3: Manual check using symmetric difference
+                else:
+                    sym_diff = geom1.symmetric_difference(geom2)
+                    return sym_diff.area < tolerance
+            except Exception:
+                return False
 
-            with Progress() as progress:
-                task = progress.add_task(
-                    f"Matching {layer_mapping.tooltip_layer} polygons...",
-                    total=len(tooltip_features)
+        with Progress() as progress:
+            task = progress.add_task(
+                f"Matching {layer_mapping.tooltip_layer} polygons...",
+                total=len(tooltip_features),
+            )
+
+            for idx, tooltip_feat in tooltip_features.iterrows():
+                tooltip_geom = tooltip_feat.geometry
+                progress.update(task, advance=1)
+
+                # Validate geometry
+                if tooltip_geom is None or tooltip_geom.is_empty:
+                    logger.warning(f"Skipping empty geometry at index {idx}")
+                    continue
+
+                # Quick spatial index query
+                possible_matches_idx = list(
+                    source_sindex.intersection(tooltip_geom.bounds)
                 )
 
-                for idx, tooltip_feat in tooltip_features.iterrows():
-                    tooltip_geom = tooltip_feat.geometry
-                    progress.update(task, advance=1)
+                if not possible_matches_idx:
+                    continue
 
-                    # Validate geometry
-                    if tooltip_geom is None or tooltip_geom.is_empty:
-                        logger.warning(f"Skipping empty geometry at index {idx}")
+                best_match = None
+                best_score = 0
+                match_method = "none"
+
+                for src_idx in possible_matches_idx:
+                    src_feat = source_dict[src_idx]
+                    src_geom = src_feat.geometry
+
+                    # Validate source geometry
+                    if src_geom is None or src_geom.is_empty:
                         continue
 
-                    # Quick spatial index query
-                    possible_matches_idx = list(source_sindex.intersection(tooltip_geom.bounds))
+                    # Test 1: Exact equality (fastest)
+                    if tooltip_geom.equals(src_geom):
+                        best_match = src_feat["UUID"]
+                        best_score = 1.0
+                        match_method = "exact"
+                        break
 
-                    if not possible_matches_idx:
-                        continue
+                    # Test 2: Almost equals with tolerance (handles rounding)
+                    if geometries_almost_equal(tooltip_geom, src_geom, tolerance=1e-6):
+                        best_match = src_feat["UUID"]
+                        best_score = 0.95
+                        match_method = "almost_exact"
+                        break
 
-                    best_match = None
-                    best_score = 0
-                    match_method = "none"
+                    # Test 3: High overlap for slightly different geometries
+                    if tooltip_geom.intersects(src_geom):
+                        try:
+                            intersection = tooltip_geom.intersection(src_geom)
+                            # Use Jaccard index (IoU)
+                            union = tooltip_geom.union(src_geom)
+                            iou = (
+                                intersection.area / union.area if union.area > 0 else 0
+                            )
 
-                    for src_idx in possible_matches_idx:
-                        src_feat = source_dict[src_idx]
-                        src_geom = src_feat.geometry
-
-                        # Validate source geometry
-                        if src_geom is None or src_geom.is_empty:
+                            if iou > best_score and iou > layer_mapping.area_threshold:
+                                best_match = src_feat["UUID"]
+                                best_score = iou
+                                match_method = "iou"
+                        except Exception as e:
+                            logger.debug(
+                                f"Error calculating overlap for idx {idx}: {e}"
+                            )
                             continue
 
-                        # Test 1: Exact equality (fastest)
-                        if tooltip_geom.equals(src_geom):
-                            best_match = src_feat["UUID"]
-                            best_score = 1.0
-                            match_method = "exact"
-                            break
-
-                        # Test 2: Almost equals with tolerance (handles rounding)
-                        if geometries_almost_equal(tooltip_geom, src_geom, tolerance=1e-6):
-                            best_match = src_feat["UUID"]
-                            best_score = 0.95
-                            match_method = "almost_exact"
-                            break
-
-                        # Test 3: High overlap for slightly different geometries
-                        if tooltip_geom.intersects(src_geom):
-                            try:
-                                intersection = tooltip_geom.intersection(src_geom)
-                                # Use Jaccard index (IoU)
-                                union = tooltip_geom.union(src_geom)
-                                iou = intersection.area / union.area if union.area > 0 else 0
-
-                                if iou > best_score and iou > layer_mapping.area_threshold:
-                                    best_match = src_feat["UUID"]
-                                    best_score = iou
-                                    match_method = "iou"
-                            except Exception as e:
-                                logger.debug(f"Error calculating overlap for idx {idx}: {e}")
-                                continue
-
-                    if best_match:
-                        matches.append({
+                if best_match:
+                    matches.append(
+                        {
                             "OBJECTID": tooltip_feat["OBJECTID"],
                             "UUID": best_match,
                             "match_method": match_method,
                             "confidence": round(best_score, 3),
-                        })
-                    else:
-                        logger.debug(f"No match found for OBJECTID {tooltip_feat.get('OBJECTID')}")
+                        }
+                    )
+                else:
+                    logger.debug(
+                        f"No match found for OBJECTID {tooltip_feat.get('OBJECTID')}"
+                    )
 
-            matches_df = pd.DataFrame(matches)
-            logger.info(f"Found {len(matches_df)} polygon matches out of {len(tooltip_features)} features")
-            return matches_df
+        matches_df = pd.DataFrame(matches)
+        logger.info(
+            f"Found {len(matches_df)} polygon matches out of {len(tooltip_features)} features"
+        )
+        return matches_df
 
     def _match_polygons_ori(
         self,

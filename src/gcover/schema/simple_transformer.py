@@ -7,6 +7,7 @@ This is a lightweight alternative to the full dataclass-based transformer.
 import json
 import traceback
 from typing import Any, Dict
+
 from loguru import logger
 
 SCHEMA_VERSION = 2

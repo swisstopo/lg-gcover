@@ -1,40 +1,31 @@
 #!/usr/bin/env python3
 
+import base64
 import hashlib
+import hmac
 import os
 import re
+import struct
+import time
 import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
-from botocore.config import Config
-import requests
-import time
-import hmac
-import base64
-import struct
-
 
 import boto3
 import duckdb
-from botocore.exceptions import ClientError
+import requests
 from botocore.config import Config
-
-from gcover.config.models import ProxyConfig
-
+from botocore.exceptions import ClientError
 # Configure logging
 from loguru import logger
 
-from .assets import (
-    AssetType,
-    BackupGDBAsset,
-    GDBAsset,
-    GDBAssetInfo,
-    IncrementGDBAsset,
-    VerificationGDBAsset,
-)
+from gcover.config.models import ProxyConfig
+
+from .assets import (AssetType, BackupGDBAsset, GDBAsset, GDBAssetInfo,
+                     IncrementGDBAsset, VerificationGDBAsset)
 
 
 class TOTPGenerator:

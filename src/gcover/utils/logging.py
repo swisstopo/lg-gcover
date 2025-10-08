@@ -3,14 +3,15 @@
 Centralized logging configuration for the gcover application.
 """
 
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Optional
+
 from loguru import logger
 from rich.console import Console
-import sys
-from pathlib import Path
-from typing import Optional, Dict, Any
-from datetime import datetime
 
-from gcover.config import load_config, AppConfig
+from gcover.config import AppConfig, load_config
 
 
 class GCoverLogger:

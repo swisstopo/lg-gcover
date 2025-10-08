@@ -21,23 +21,16 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from gcover.config import SDE_INSTANCES, AppConfig, load_config
-from gcover.publish.esri_classification_applicator import ClassificationApplicator
-from gcover.publish.style_config import (
-    BatchClassificationConfig,
-    apply_batch_from_config,
-)
-
+from gcover.publish.esri_classification_applicator import \
+    ClassificationApplicator
 from gcover.publish.esri_classification_extractor import extract_lyrx
-
 from gcover.publish.generator import MapServerGenerator, QGISGenerator
-
-from gcover.publish.tooltips_enricher import (
-    EnhancedTooltipsEnricher,
-    EnrichmentConfig,
-    LayerMapping,
-    LayerType,
-    create_enrichment_config,
-)
+from gcover.publish.style_config import (BatchClassificationConfig,
+                                         apply_batch_from_config)
+from gcover.publish.tooltips_enricher import (EnhancedTooltipsEnricher,
+                                              EnrichmentConfig, LayerMapping,
+                                              LayerType,
+                                              create_enrichment_config)
 
 console = Console()
 
