@@ -1,5 +1,5 @@
 # Makefile for easy test execution
-.PHONY: test lint smoke install-dev
+.PHONY: test lint format smoke install-dev
 
 # Install development dependencies
 install-dev:
@@ -9,10 +9,13 @@ install-dev:
 smoke:
 	pytest tests/test_imports.py tests/test_cli_smoke.py -v --no-cov
 
-# Run linting
-lint:
-	ruff check src/ --fix
+
+format:
 	ruff format src/
+
+# Run linting
+lint: format
+	ruff check src/ --fix
 
 # Run all tests
 test:
