@@ -18,7 +18,10 @@ from loguru import logger
 from rich.console import Console
 
 from gcover.publish.esri_classification_extractor import (
-    ClassificationClass, ESRIClassificationExtractor, LayerClassification)
+    ClassificationClass,
+    ESRIClassificationExtractor,
+    LayerClassification,
+)
 
 from .esri_classification_extractor import extract_lyrx
 
@@ -33,42 +36,34 @@ class MapServerGenerator:
         layer_type: str = "Polygon",
         use_symbol_field: bool = False,
         symbol_field: str = "SYMBOL",
+        font_name_prefix: str = "esri",
     ):
         """
         Initialize generator.
 
         Args:
             layer_type: POLYGON, LINE, or POINT
-            use_symbol_field: If True, use simple SYMBOL field expressions instead of complex field logic
+            use_symbol_field: If True, use simple SYMBOL field expressions
             symbol_field: Name of symbol field in data (default: SYMBOL)
+            font_name_prefix: Prefix for font names in FONTSET (default: "esri")
         """
         self.layer_type = layer_type.upper()
         self.use_symbol_field = use_symbol_field
         self.symbol_field = symbol_field
+        self.font_name_prefix = font_name_prefix
 
-    def generate_expression_from_fields(
-        self, class_obj: ClassificationClass, field_names: List[str]
-    ) -> str:
-        """
-        Generate MapServer EXPRESSION from classification field values.
+        # Track fonts used for FONTSET generation
+        self.fonts_used: Set[str] = set()
 
-        Args:
-            class_obj: Classification class with field values
-            field_names: List of field names used in classification
-
-        Returns:
-            MapServer EXPRESSION string
-        """
-        # Build expression for each value combination (OR logic)
+    def generate_expression_from_fields(self, class_obj, field_names: List[str]) -> str:
+        """Generate MapServer EXPRESSION from classification field values."""
         expressions = []
 
         for field_values in class_obj.field_values:
-            # Build conditions for this combination (AND logic)
             conditions = []
 
             for field_name, expected_value in zip(field_names, field_values):
                 if expected_value == "<Null>":
-                    # MapServer: empty string or NULL
                     conditions.append(
                         f'([{field_name}] eq "" OR NOT [DEFINED_{field_name}])'
                     )
@@ -77,56 +72,34 @@ class MapServerGenerator:
                 elif expected_value == "999999":
                     conditions.append(f'([{field_name}] eq "999999")')
                 else:
-                    # Regular value - MapServer uses string comparison
                     conditions.append(f'([{field_name}] eq "{expected_value}")')
 
-            # Combine with AND
             if len(conditions) == 1:
                 expressions.append(conditions[0])
             else:
                 expressions.append(f"({' AND '.join(conditions)})")
 
-        # Combine combinations with OR
         if len(expressions) == 1:
             return expressions[0]
         else:
             return f"({' OR '.join(expressions)})"
 
     def generate_expression_from_symbol(self, symbol_id: str) -> str:
-        """
-        Generate simple MapServer EXPRESSION using SYMBOL field.
-
-        Args:
-            symbol_id: Symbol identifier (e.g., "bedrock_1204", "unco_5")
-
-        Returns:
-            MapServer EXPRESSION string
-        """
+        """Generate simple MapServer EXPRESSION using SYMBOL field."""
         return f'([{self.symbol_field}] eq "{symbol_id}")'
 
     def generate_class(
         self,
-        class_obj: ClassificationClass,
+        class_obj,
         field_names: List[str],
         class_index: int,
         symbol_prefix: str = "class",
     ) -> str:
-        """
-        Generate a single MapServer CLASS block.
-
-        Args:
-            class_obj: Classification class with styling info
-            field_names: Field names for expression (if not using symbol field)
-            class_index: Class index for symbol ID generation
-            symbol_prefix: Prefix for symbol IDs (e.g., "bedrock", "unco")
-
-        Returns:
-            MapServer CLASS block as string
-        """
+        """Generate a single MapServer CLASS block."""
         if not class_obj.visible:
             return ""
 
-        # Generate expression based on mode
+        # Generate expression
         if self.use_symbol_field:
             symbol_id = f"{symbol_prefix}_{class_index}"
             expression = self.generate_expression_from_symbol(symbol_id)
@@ -143,15 +116,15 @@ class MapServerGenerator:
             f"    EXPRESSION {expression}",
         ]
 
-        # Add STYLE block based on layer type and extracted symbol info
+        # Add STYLE block
         lines.append("    STYLE")
 
         if self.layer_type == "POLYGON":
             self._add_polygon_style(lines, class_obj)
         elif self.layer_type == "LINE":
-            self._add_line_style(lines, class_obj)
+            self._add_line_style(lines, class_obj, class_index, symbol_prefix)
         elif self.layer_type == "POINT":
-            self._add_point_style(lines, class_obj)
+            self._add_point_style(lines, class_obj, class_index, symbol_prefix)
 
         lines.append("    END # STYLE")
         lines.append("  END # CLASS")
@@ -159,9 +132,8 @@ class MapServerGenerator:
 
         return "\n".join(lines)
 
-    def _add_polygon_style(self, lines: List[str], class_obj: ClassificationClass):
+    def _add_polygon_style(self, lines: List[str], class_obj):
         """Add polygon styling from ESRI symbol_info."""
-        # Extract color from symbol_info (ColorInfo object)
         if hasattr(class_obj, "symbol_info") and class_obj.symbol_info:
             symbol_info = class_obj.symbol_info
 
@@ -182,7 +154,7 @@ class MapServerGenerator:
             else:
                 lines.append("      COLOR 128 128 128")
 
-            # Outline - extract from raw_symbol
+            # Outline
             if hasattr(symbol_info, "raw_symbol") and symbol_info.raw_symbol:
                 raw = symbol_info.raw_symbol
                 if "symbolLayers" in raw:
@@ -200,9 +172,8 @@ class MapServerGenerator:
                                     r, g, b = values[:3]
                                 lines.append(f"      OUTLINECOLOR {r} {g} {b}")
 
-                                # Outline width
                                 if "width" in layer:
-                                    width = layer["width"] * 1.33  # Points to pixels
+                                    width = layer["width"] * 1.33
                                     lines.append(f"      WIDTH {width:.2f}")
                                 break
                     else:
@@ -212,58 +183,136 @@ class MapServerGenerator:
             else:
                 lines.append("      OUTLINECOLOR 64 64 64")
         else:
-            # Fallback defaults
             lines.append("      COLOR 128 128 128")
             lines.append("      OUTLINECOLOR 64 64 64")
 
-    def _add_line_style(self, lines: List[str], class_obj: ClassificationClass):
-        """Add line styling from ESRI symbol_info."""
+    def _add_line_style(
+        self, lines: List[str], class_obj, class_index: int, symbol_prefix: str
+    ):
+        """Add line styling from ESRI symbol_info, with font marker support."""
         if hasattr(class_obj, "symbol_info") and class_obj.symbol_info:
             symbol_info = class_obj.symbol_info
 
-            # Line color
-            if hasattr(symbol_info, "color") and symbol_info.color:
-                color_info = symbol_info.color
-                if hasattr(color_info, "r"):
-                    lines.append(
-                        f"      COLOR {color_info.r} {color_info.g} {color_info.b}"
-                    )
+            # Check if this is a font marker on line
+            if (
+                hasattr(symbol_info, "font_family")
+                and symbol_info.font_family
+                and hasattr(symbol_info, "character_index")
+                and symbol_info.character_index is not None
+            ):
+                # Generate a truetype symbol for this line
+                font_symbol_name = f"{symbol_prefix}_line_font_{class_index}"
+                self._add_truetype_line_marker(lines, symbol_info, font_symbol_name)
+
+                # Track font for FONTSET
+                self.fonts_used.add(symbol_info.font_family)
+
+            else:
+                # Regular line styling
+                # Line color
+                if hasattr(symbol_info, "color") and symbol_info.color:
+                    color_info = symbol_info.color
+                    if hasattr(color_info, "r"):
+                        lines.append(
+                            f"      COLOR {color_info.r} {color_info.g} {color_info.b}"
+                        )
+                    else:
+                        lines.append("      COLOR 128 128 128")
                 else:
                     lines.append("      COLOR 128 128 128")
-            else:
-                lines.append("      COLOR 128 128 128")
 
-            # Line width
-            if hasattr(symbol_info, "width") and symbol_info.width:
-                width = symbol_info.width * 1.33  # Points to pixels
-                lines.append(f"      WIDTH {width:.2f}")
-            else:
-                lines.append("      WIDTH 1.0")
+                # Line width
+                if hasattr(symbol_info, "width") and symbol_info.width:
+                    width = symbol_info.width * 1.33
+                    lines.append(f"      WIDTH {width:.2f}")
+                else:
+                    lines.append("      WIDTH 1.0")
+
+                # Dash pattern
+                if (
+                    hasattr(symbol_info, "line_style")
+                    and symbol_info.line_style
+                    and hasattr(symbol_info, "dash_pattern")
+                    and symbol_info.dash_pattern
+                ):
+                    line_style = symbol_info.line_style
+                    if line_style == "dash":
+                        lines.append('      SYMBOL "dashed"')
+                    elif line_style == "dot":
+                        lines.append('      SYMBOL "dotted"')
         else:
             lines.append("      COLOR 128 128 128")
             lines.append("      WIDTH 1.0")
 
-    def _add_point_style(self, lines: List[str], class_obj: ClassificationClass):
-        """Add point styling from ESRI symbol_info."""
+    def _add_truetype_line_marker(
+        self, lines: List[str], symbol_info, font_symbol_name: str
+    ):
+        """Add TrueType font marker on line."""
+        # Reference the truetype symbol
+        lines.append(f'      SYMBOL "{font_symbol_name}"')
+
+        # Color
+        if hasattr(symbol_info, "color") and symbol_info.color:
+            color_info = symbol_info.color
+            if hasattr(color_info, "r"):
+                lines.append(
+                    f"      COLOR {color_info.r} {color_info.g} {color_info.b}"
+                )
+            else:
+                lines.append("      COLOR 128 128 128")
+        else:
+            lines.append("      COLOR 128 128 128")
+
+        # Size (convert points to pixels)
+        if hasattr(symbol_info, "size") and symbol_info.size:
+            size = symbol_info.size * 1.33
+            lines.append(f"      SIZE {size:.1f}")
+        else:
+            lines.append("      SIZE 10")
+
+        # Gap between symbols (spacing along line)
+        lines.append("      GAP -30")  # Negative for pattern repeat
+
+    def _add_point_style(
+        self, lines: List[str], class_obj, class_index: int, symbol_prefix: str
+    ):
+        """Add point styling from ESRI symbol_info, with font marker support."""
         if hasattr(class_obj, "symbol_info") and class_obj.symbol_info:
             symbol_info = class_obj.symbol_info
 
-            # Marker type
-            marker_type = "circle"
-            if hasattr(symbol_info, "symbol_type"):
-                type_str = str(symbol_info.symbol_type)
-                if "Square" in type_str:
-                    marker_type = "square"
-                elif "Triangle" in type_str:
-                    marker_type = "triangle"
-                elif "Star" in type_str:
-                    marker_type = "star"
+            # Check if this is a font marker (TrueType)
+            if (
+                hasattr(symbol_info, "font_family")
+                and symbol_info.font_family
+                and hasattr(symbol_info, "character_index")
+                and symbol_info.character_index is not None
+            ):
+                # Generate a truetype symbol for this point
+                font_symbol_name = f"{symbol_prefix}_point_font_{class_index}"
 
-            lines.append(f'      SYMBOL "{marker_type}"')
+                # Reference the truetype symbol
+                lines.append(f'      SYMBOL "{font_symbol_name}"')
 
-            # Size
+                # Track font for FONTSET
+                self.fonts_used.add(symbol_info.font_family)
+
+            else:
+                # Regular geometric marker
+                marker_type = "circle"
+                if hasattr(symbol_info, "symbol_type"):
+                    type_str = str(symbol_info.symbol_type)
+                    if "Square" in type_str:
+                        marker_type = "square"
+                    elif "Triangle" in type_str:
+                        marker_type = "triangle"
+                    elif "Star" in type_str:
+                        marker_type = "star"
+
+                lines.append(f'      SYMBOL "{marker_type}"')
+
+            # Size (convert points to pixels)
             if hasattr(symbol_info, "size") and symbol_info.size:
-                size = symbol_info.size * 1.33  # Points to pixels
+                size = symbol_info.size * 1.33
                 lines.append(f"      SIZE {size:.1f}")
             else:
                 lines.append("      SIZE 8")
@@ -286,23 +335,12 @@ class MapServerGenerator:
 
     def generate_layer(
         self,
-        classification: LayerClassification,
+        classification,
         layer_name: str,
         data_path: str,
         symbol_prefix: str = "class",
     ) -> str:
-        """
-        Generate complete MapServer LAYER block.
-
-        Args:
-            classification: Layer classification with styling
-            layer_name: Name for the layer
-            data_path: Path to data source (e.g., OGR connection string)
-            symbol_prefix: Prefix for symbol IDs (e.g., "bedrock", "unco")
-
-        Returns:
-            Complete LAYER block
-        """
+        """Generate complete MapServer LAYER block."""
         lines = [
             "LAYER",
             f'  NAME "{layer_name}"',
@@ -333,13 +371,45 @@ class MapServerGenerator:
 
         return "\n".join(lines)
 
-    def generate_symbol_file(self) -> str:
-        """Generate MapServer symbol file with basic symbols."""
+    def generate_symbol_file(self, classification_list: List = None) -> str:
+        """
+        Generate MapServer symbol file with basic and TrueType symbols.
+
+        Args:
+            classification_list: List of LayerClassification objects to scan for font markers
+
+        Returns:
+            Complete SYMBOLSET file content
+        """
         lines = [
             "SYMBOLSET",
             "",
-            "  # Basic symbols for GeoCover",
+            "  # Basic geometric symbols for GeoCover",
             "",
+        ]
+
+        # Add basic geometric symbols
+        lines.extend(self._generate_basic_symbols())
+
+        # Add TrueType font symbols if classifications provided
+        if classification_list:
+            font_symbols = self._generate_font_symbols_from_classifications(
+                classification_list
+            )
+            if font_symbols:
+                lines.append("")
+                lines.append("  # TrueType font marker symbols")
+                lines.append("")
+                lines.extend(font_symbols)
+
+        lines.append("")
+        lines.append("END # SYMBOLSET")
+
+        return "\n".join(lines)
+
+    def _generate_basic_symbols(self) -> List[str]:
+        """Generate basic geometric symbols."""
+        return [
             "  SYMBOL",
             '    NAME "circle"',
             "    TYPE ELLIPSE",
@@ -402,9 +472,128 @@ class MapServerGenerator:
             "    TYPE SIMPLE",
             "    PATTERN 2 4 END",
             "  END",
-            "",
-            "END # SYMBOLSET",
         ]
+
+    def _generate_font_symbols_from_classifications(
+        self, classification_list: List
+    ) -> List[str]:
+        """
+        Scan classifications and generate TrueType symbols for all font markers.
+
+        Args:
+            classification_list: List of LayerClassification objects
+
+        Returns:
+            List of SYMBOL definition lines
+        """
+        symbols = []
+        font_symbols_generated = set()  # Track to avoid duplicates
+
+        for classification in classification_list:
+            symbol_prefix = classification.layer_name or "class"
+
+            for class_index, class_obj in enumerate(classification.classes):
+                if not class_obj.visible:
+                    continue
+
+                if not hasattr(class_obj, "symbol_info") or not class_obj.symbol_info:
+                    continue
+
+                symbol_info = class_obj.symbol_info
+
+                # Check for font marker
+                if (
+                    hasattr(symbol_info, "font_family")
+                    and symbol_info.font_family
+                    and hasattr(symbol_info, "character_index")
+                    and symbol_info.character_index is not None
+                ):
+                    font_family = symbol_info.font_family
+                    character = chr(symbol_info.character_index)
+
+                    # Generate unique symbol name
+                    layer_type = (
+                        "point" if hasattr(classification, "geometry_type") else "point"
+                    )
+                    symbol_name = f"{symbol_prefix}_font_{class_index}"
+
+                    # Avoid duplicates
+                    symbol_key = f"{font_family}_{symbol_info.character_index}"
+                    if symbol_key in font_symbols_generated:
+                        continue
+
+                    font_symbols_generated.add(symbol_key)
+                    self.fonts_used.add(font_family)
+
+                    # Generate SYMBOL block
+                    symbols.extend(
+                        [
+                            "  SYMBOL",
+                            f'    NAME "{symbol_name}"',
+                            "    TYPE TRUETYPE",
+                            f'    FONT "{self._sanitize_font_name(font_family)}"',
+                            f'    CHARACTER "{character}"',
+                            "    FILLED TRUE",
+                            "    ANTIALIAS TRUE",
+                            "  END",
+                            "",
+                        ]
+                    )
+
+        return symbols
+
+    def _sanitize_font_name(self, font_family: str) -> str:
+        """
+        Sanitize font family name for use in FONTSET.
+
+        Converts "ESRI Default Marker" to "esri_default_marker"
+        """
+        return font_family.lower().replace(" ", "_").replace("-", "_")
+
+    def generate_fontset(self, font_paths: Dict[str, str] = None) -> str:
+        """
+        Generate MapServer FONTSET file.
+
+        Args:
+            font_paths: Dictionary mapping font family names to file paths
+                       e.g., {"ESRI Default Marker": "/path/to/esridefaultmarker.ttf"}
+
+        Returns:
+            FONTSET file content
+        """
+        lines = [
+            "# MapServer FONTSET file",
+            "# Font definitions for TrueType fonts",
+            "#",
+            "# Format: <alias> <font_file_path>",
+            "",
+        ]
+
+        # If font_paths provided, use them
+        if font_paths:
+            for font_family in sorted(self.fonts_used):
+                sanitized_name = self._sanitize_font_name(font_family)
+                font_path = font_paths.get(
+                    font_family, f"/path/to/{sanitized_name}.ttf"
+                )
+                lines.append(f'{sanitized_name} "{font_path}"')
+        else:
+            # Generate placeholder entries
+            for font_family in sorted(self.fonts_used):
+                sanitized_name = self._sanitize_font_name(font_family)
+                lines.append(
+                    f'{sanitized_name} "/usr/share/fonts/truetype/{sanitized_name}.ttf"'
+                )
+                lines.append(f"# Original name: {font_family}")
+
+        lines.append("")
+        lines.append("# Common system fonts")
+        lines.append(
+            'arial "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"'
+        )
+        lines.append(
+            'arial_bold "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"'
+        )
 
         return "\n".join(lines)
 
