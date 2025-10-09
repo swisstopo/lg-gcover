@@ -31,6 +31,8 @@ from gcover.publish.complex_polygon_generators import (
 
 from .esri_classification_extractor import extract_lyrx
 
+from gcover.publish.tooltips_enricher import LayerType
+
 console = Console()
 
 

@@ -27,6 +27,7 @@ from rich.tree import Tree
 
 from .esri_classification_applicator import ClassificationApplicator
 from .esri_classification_extractor import extract_lyrx
+from .tooltips_enricher import LayerType
 
 console = Console()
 
@@ -36,10 +37,12 @@ class ClassificationConfig:
     """Configuration for a single classification application."""
 
     style_file: Path
+    mapfile_name: Optional[str] = None
     classification_name: Optional[str] = None
     fields: Optional[Dict[str, str]] = None
     filter: Optional[str] = None
     symbol_prefix: Optional[str] = None
+
 
 
 @dataclass
@@ -49,6 +52,7 @@ class LayerConfig:
     gpkg_layer: str
     classifications: List[ClassificationConfig]
     field_types: Optional[Dict[str, str]] = None
+    layer_type: Optional[LayerType] = None
 
 
 class BatchClassificationConfig:
@@ -85,6 +89,8 @@ class BatchClassificationConfig:
     def _parse_layer_config(self, layer_dict: dict) -> LayerConfig:
         """Parse a single layer configuration."""
         gpkg_layer = layer_dict["gpkg_layer"]
+        layer_type_str = layer_dict.get("layer_type")
+        layer_type = LayerType(layer_type_str) if layer_type_str else None
         classifications = []
         field_types = layer_dict.get("field_types", {})
 
@@ -108,6 +114,7 @@ class BatchClassificationConfig:
             gpkg_layer=gpkg_layer,
             classifications=classifications,
             field_types=field_types,
+            layer_type=layer_type,
         )
 
     def get_layer_config(self, gpkg_layer: str) -> Optional[LayerConfig]:
