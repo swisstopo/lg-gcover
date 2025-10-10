@@ -19,8 +19,22 @@ layers:
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
-          symbol_prefix: surface
+          symbol_prefix: surfaces
           # Dummy, for testing filter: "KIND == 12001002"
+
+    - gpkg_layer: exploit_points
+      layer_type: point
+      field_types:
+        KIND: Int64 # `Int64` with capital `I` is a nullable integer...
+      classifications:
+        - style_file: styles/Exploit_Geomat_Pt.lyrx
+          classification_name: Exploit_Geomat_Pt
+          filter: KIND=10601001
+          symbol_prefix: geomat_pnt
+          fields:
+            KIND: KIND
+            AEXP_STATUS: AEXP_STATUS
+
     - gpkg_layer: fossils
       layer_type: point
       field_types:
@@ -75,7 +89,32 @@ layers:
         KIND: Int64
         TTEC_STATUS: Int64
         TTEC_LIM_TYP: Int64
+        LPRO_LITHO: Int64
       classifications:
+        - style_file: styles/Linear Objects_GeolKontur.lyrx
+          classification_name: Linear Objects_GeolKontur
+          mapfile_name: geolkontur
+          fields:
+                KIN: KIND
+                LGEO_STATUS: LGEO_STATUS
+          symbol_prefix: geolkontur
+          filter: KIND = 13001001
+        - style_file: styles/Linear Objects_Gesteinhorizont.lyrx
+          classification_name: Linear Objects_Gesteinhorizont
+          mapfile_name: gesteinhorizont
+          fields:
+            KIN: KIND
+            LPRO_LITHO: LPRO_LITHO
+          symbol_prefix: gesteinhorizont
+          filter: KIND = 13101001
+        - style_file: styles/Linear Objects_Hilfs_Karto.lyrx
+          classification_name: Linear Objects_Hilfs_Karto
+          mapfile_name: hilfs_karto
+          fields:
+            KIN: KIND
+          symbol_prefix: hilfs_karto
+          filter: KIND IN (15601001, 15601002)
+
         - style_file: styles/Linear Objects_Bruch.lyrx
           classification_name: Linear Objects_Bruch
           mapfile_name: surfaces
@@ -106,7 +145,37 @@ layers:
         MPLA_POLARITY: Int64
         DIP: Int64
         ABOR_FM_A: Int64
+        MPLA_POLARITY: Int64
+        TDEF_FOLD_TYP: Int64
+        AEXP_STATUS: Int64
+
+
+
       classifications:
+        - style_file: styles/Point_Mpla_Planar_Structures.lyrx
+          classification_name: Point_Mpla_Planar_Structures
+          filter: KIND IN (13801001,13801002, 13801004, 13801003, 13801005, 13801006)
+          fields:
+            # Map GPKG field to classification field (can be complex paths)
+            KIND: KIND
+            MPLA_POLARITY: MPLA_POLARITY
+            DIP: DIP
+          symbol_prefix: planar_struct
+        - style_file: styles/Point Objects_Achsenfläche.lyrx
+          classification_name: Point Objects_Achsenfläche
+          filter: KIND=14601006
+          fields:
+            # Map GPKG field to classification field (can be complex paths)
+            KIND: KIND
+            TDEF_FOLD_TYP: TDEF_FOLD_TYP
+          symbol_prefix: achsenflaeche
+        - style_file: styles/Point Objects_Orient.lyrx
+          classification_name: Point Objects_Orient
+          filter: KIND IN (11901001,12501002,12501003,12501004,12501006,12101006,13601001,13601002 ,13601003,13701001,13701002,13701004,14601004)
+          fields:
+            # Map GPKG field to classification field (can be complex paths)
+            KIND: KIND
+          symbol_prefix: orient
         - style_file: styles/Point_Objects_Bohrung_Fels_erreicht.lyrx
           classification_name: Point_Objects_Bohrung_Fels_erreicht
           filter: KIND=10501001 AND ABOR_DEPTH_BEDR<>999
@@ -115,6 +184,14 @@ layers:
             KIND: KIND
             ABOR_FM_A: ABOR_FM_A
           symbol_prefix: bohrung_fels_erreicht
+        - style_file: styles/Point_Objects_Sondierung.lyrx
+          classification_name: Point_Objects_Sondierung
+          filter: KIND IN (1051002,10501003,10501004,10501005)
+          symbol_prefix: sondierung
+          fields:
+            KIND: KIND
+            ABOR_DEPTH_BEDR: ABOR_DEPTH_BEDR
+
         - style_file: styles/Point_Objects_Bohrung_Fels_nicht_erreicht.lyrx
           classification_name: Point_Objects_Bohrung_Fels_nicht_erreicht
           filter: KIND IN 10501001 AND ABOR_DEPTH_BEDR = 999
