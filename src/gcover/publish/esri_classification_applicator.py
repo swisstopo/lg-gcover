@@ -31,6 +31,7 @@ from rich.table import Table
 from .esri_classification_extractor import (ClassificationClass,
                                             ESRIClassificationExtractor,
                                             LayerClassification, extract_lyrx)
+from .utils import translate_esri_to_pandas
 
 console = Console()
 
