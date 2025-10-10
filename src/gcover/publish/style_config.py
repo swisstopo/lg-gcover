@@ -157,7 +157,9 @@ def apply_batch_from_config(
     # Determine which layers to process
     if layer_name:
         if layer_name not in available_layers:
-            raise ValueError(f"Layer '{layer_name}' not found in GPKG")
+            # raise ValueError(f"Layer '{layer_name}' not found in GPKG")
+            console.er(f"Layer '{layer_name}' not found in GPKG")
+            return {}
         layers_to_process = [layer_name]
     else:
         # Process all layers that have config
@@ -179,6 +181,7 @@ def apply_batch_from_config(
         "classifications_applied": 0,
         "features_classified": 0,
         "features_total": 0,
+        "features_newly_classified": 0,
     }
 
     # Process each layer
@@ -298,14 +301,16 @@ def apply_batch_from_config(
                     gdf_result[config.symbol_field].notna()
                     & (gdf[config.symbol_field].isna())
                 ).sum()
-                stats["features_classified"] += newly_classified
+                features_classified = gdf_result[config.symbol_field].notna().sum()
+                stats["features_newly_classified"] += newly_classified
+                stats["features_classified"] += features_classified
                 stats["classifications_applied"] += 1
 
                 # Update gdf for next classification
                 gdf = gdf_result
 
                 console.print(
-                    f"    [green]✓ Classified {newly_classified} features[/green]"
+                    f"    [green]✓ Newly classified {newly_classified} features[/green]"
                 )
 
             except Exception as e:

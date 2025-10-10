@@ -59,7 +59,14 @@ def get_publish_config(ctx):
 @click.pass_context
 def publish_commands(ctx):
     """Commands for preparing GeoCover data for publication."""
-    pass
+    # Ensure context object exists and has required keys
+    if ctx.obj is None:
+        ctx.ensure_object(dict)
+
+    # Set defaults if not provided by parent gcover command
+    ctx.obj.setdefault("environment", "development")
+    ctx.obj.setdefault("verbose", False)
+    ctx.obj.setdefault("config_path", None)
 
 
 '''
@@ -250,6 +257,9 @@ def apply_config(
         summary_table.add_row("Layers processed", str(stats["layers_processed"]))
         summary_table.add_row(
             "Classifications applied", str(stats["classifications_applied"])
+        )
+        summary_table.add_row(
+            "Features newly classified", str(stats["features_newly_classified"])
         )
         summary_table.add_row("Features classified", str(stats["features_classified"]))
         summary_table.add_row("Total features", str(stats["features_total"]))

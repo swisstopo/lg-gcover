@@ -22,26 +22,34 @@ import yaml
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import (BarColumn, Progress, SpinnerColumn,
-                           TaskProgressColumn, TextColumn)
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+)
 from rich.prompt import Confirm
 from rich.table import Table
 
 # Import classification extractor
-from .esri_classification_extractor import (ClassificationClass,
-                                            ESRIClassificationExtractor,
-                                            LayerClassification, extract_lyrx)
+from .esri_classification_extractor import (
+    ClassificationClass,
+    ESRIClassificationExtractor,
+    LayerClassification,
+    extract_lyrx,
+)
 from .utils import translate_esri_to_pandas
 
 console = Console()
 
 # Configure loguru
-logger.remove()
+"""logger.remove()
 logger.add(
     sys.stdout,
     format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
     level="INFO",
-)
+)"""
 
 
 def float_to_int_string(val):
