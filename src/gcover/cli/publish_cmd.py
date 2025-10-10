@@ -14,6 +14,7 @@ import click
 import geopandas as gpd
 import pandas as pd
 import yaml
+import time
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
@@ -108,6 +109,11 @@ def cli(verbose: bool, quiet: bool):
     help="Output GPKG path (default: input_classified.gpkg)",
 )
 @click.option(
+    "--continue-on-error",
+    is_flag=True,
+    help="Continue processing other assets if one fails",
+)
+@click.option(
     "--styles-dir",
     type=click.Path(exists=True, path_type=Path),
     help="Base directory for resolving relative style paths (default: config file directory)",
@@ -126,6 +132,7 @@ def apply_config(
     debug: bool,
     dry_run: bool,
     bbox: Optional[tuple],
+    continue_on_error: bool,
 ):
     """Apply multiple classifications from YAML configuration file.
 
@@ -216,6 +223,8 @@ def apply_config(
                 console.print("\n[red]✗ Configuration has errors[/red]")
             return
 
+        start_time = time.time()
+
         # Apply classifications
         stats = apply_batch_from_config(
             gpkg_path=gpkg_file,
@@ -224,7 +233,12 @@ def apply_config(
             output_path=output,
             debug=debug,
             bbox=bbox,
+            continue_on_error=continue_on_error,
         )
+
+        end_time = time.time()
+        elapsed = end_time - start_time
+        mins, secs = divmod(elapsed, 60)
 
         # Display final statistics
         console.print("\n[bold green]✅ Batch processing complete![/bold green]\n")
@@ -243,6 +257,7 @@ def apply_config(
         if stats["features_total"] > 0:
             pct = stats["features_classified"] / stats["features_total"] * 100
             summary_table.add_row("Coverage", f"{pct:.1f}%")
+        summary_table.add_row("Processing time", f"{int(mins)}m {secs:.1f}s")
 
         console.print(summary_table)
 
