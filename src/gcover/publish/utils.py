@@ -21,13 +21,12 @@ pandas_filter = "KIND in (14401001, 14401002) & ((PRINTED == 1) | (PRINTED.isna(
 def translate_esri_to_pandas(esri_expression):
     """
     Translate ESRI definitionExpression to pandas query syntax.
-
     Handles:
     - AND/OR → &/|
     - = → ==
     - IS NULL → .isna()
     - IS NOT NULL → .notna()
-    - IN clause
+    - IN clause (with or without parentheses)
 
     Args:
         esri_expression: ESRI-style filter string
@@ -37,23 +36,31 @@ def translate_esri_to_pandas(esri_expression):
     """
     expr = esri_expression
 
-    # Replace logical operators (case insensitive)
+    # Replace IN (case insensitive) first
+    expr = re.sub(r"\bIN\b", "in", expr, flags=re.IGNORECASE)
+
+    # Handle IN clause without parentheses
+    # Pattern: FIELD in value(s) → FIELD in (value(s))
+    # Matches values (numbers, strings, commas) until AND/OR or end
+    # The (?!\() ensures we don't match if parentheses already exist
+    expr = re.sub(
+        r"(\w+)\s+in\s+(?!\()([\w\s,\'\"]+?)(?=\s+(?:AND|OR)\b|$)",
+        r"\1 in (\2)",
+        expr,
+        flags=re.IGNORECASE,
+    )
+
+    # Replace logical operators
     expr = re.sub(r"\bAND\b", "&", expr, flags=re.IGNORECASE)
     expr = re.sub(r"\bOR\b", "|", expr, flags=re.IGNORECASE)
 
-    # Replace IN (case insensitive)
-    expr = re.sub(r"\bIN\b", "in", expr, flags=re.IGNORECASE)
-
     # Replace IS NOT NULL with .notna()
-    # Pattern: FIELD IS NOT NULL → FIELD.notna()
     expr = re.sub(r"(\w+)\s+IS\s+NOT\s+NULL", r"\1.notna()", expr, flags=re.IGNORECASE)
 
     # Replace IS NULL with .isna()
-    # Pattern: FIELD IS NULL → FIELD.isna()
     expr = re.sub(r"(\w+)\s+IS\s+NULL", r"\1.isna()", expr, flags=re.IGNORECASE)
 
     # Replace single = with == (but not in != or ==)
-    # Look for = that's not preceded or followed by =, !, <, >
     expr = re.sub(r"(?<![=!<>])=(?![=])", "==", expr)
 
     # Replace <> with !=
