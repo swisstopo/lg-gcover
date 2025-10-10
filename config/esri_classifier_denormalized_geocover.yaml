@@ -95,7 +95,7 @@ layers:
           classification_name: Linear Objects_GeolKontur
           mapfile_name: geolkontur
           fields:
-                KIN: KIND
+                KIND: KIND
                 LGEO_STATUS: LGEO_STATUS
           symbol_prefix: geolkontur
           filter: KIND = 13001001
@@ -103,7 +103,7 @@ layers:
           classification_name: Linear Objects_Gesteinhorizont
           mapfile_name: gesteinhorizont
           fields:
-            KIN: KIND
+            KIND: KIND
             LPRO_LITHO: LPRO_LITHO
           symbol_prefix: gesteinhorizont
           filter: KIND = 13101001
@@ -111,7 +111,7 @@ layers:
           classification_name: Linear Objects_Hilfs_Karto
           mapfile_name: hilfs_karto
           fields:
-            KIN: KIND
+            KIND: KIND
           symbol_prefix: hilfs_karto
           filter: KIND IN (15601001, 15601002)
 
