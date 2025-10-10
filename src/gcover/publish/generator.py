@@ -626,8 +626,7 @@ class MapServerGenerator:
                     spec = FontSymbol(font_family, symbol_info.character_index)
 
                     if spec in self.symbol_registry:
-                        font_symbol_name = self.symbol_registry[spec]
-
+                        # Nothing to do
                         continue
                     else:
                         font_symbol_name = f"{spec.font_family}_{spec.char_index}"
@@ -662,25 +661,34 @@ class MapServerGenerator:
 
                         images.append(image)
 
-                        console.print(f"== Adding {symbol_key} ()")
+                        # console.print(f"== Adding {symbol_key} ()")
                         symbols_generated.add(symbol_key)
                         self.fonts_used.add(font_family)
 
                         font_name = self._sanitize_font_name(font_family)
 
-                        symbols.extend(
-                            [
-                                "  SYMBOL",
-                                f'    NAME "{font_symbol_name}"',
-                                "    TYPE TRUETYPE",
-                                f'    FONT "{font_name}"',
-                                f'    CHARACTER "{escape_mapserver_string(character)}"',
-                                "    FILLED TRUE",
-                                "    ANTIALIAS TRUE",
-                                "  END",
-                                "",
-                            ]
-                        )
+        # Generating smybols
+        for spec in sorted(
+            self.symbol_registry.keys(), key=lambda s: (s.font_family, s.char_index)
+        ):
+            font_symbol_name = self.symbol_registry[spec]
+            # print(f"{font_symbol_name} → {spec}")
+            font_name = spec.font_family
+            character = escape_mapserver_string(chr(spec.char_index))
+
+            symbols.extend(
+                [
+                    "  SYMBOL",
+                    f'    NAME "{font_symbol_name}"',
+                    "    TYPE TRUETYPE",
+                    f'    FONT "{font_name}"',
+                    f'    CHARACTER "{character}"',
+                    "    FILLED TRUE",
+                    "    ANTIALIAS TRUE",
+                    "  END",
+                    "",
+                ]
+            )
 
         images[0].save(
             f"mapserver/font_characters.pdf",
