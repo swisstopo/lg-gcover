@@ -124,6 +124,7 @@ def apply_batch_from_config(
     layer_name: Optional[str] = None,
     output_path: Optional[Path] = None,
     debug: bool = False,
+    bbox: Optional[tuple] = None,
 ) -> Dict[str, any]:
     """
     Apply all classifications from config to a GPKG.
@@ -183,8 +184,13 @@ def apply_batch_from_config(
         console.print(f"\n[bold blue]Processing layer: {layer}[/bold blue]")
         console.print(f"Applying {len(layer_config.classifications)} classifications")
 
+        kwargs = {"layer": layer}
+        if bbox:
+            kwargs["bbox"] = bbox
+
         # Load layer
-        gdf = gpd.read_file(gpkg_path, layer=layer)
+        gdf = gpd.read_file(gpkg_path, **kwargs)
+
         stats["features_total"] += len(gdf)
 
         # Initialize symbol/label fields

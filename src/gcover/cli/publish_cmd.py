@@ -21,16 +21,22 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from gcover.config import SDE_INSTANCES, AppConfig, load_config
-from gcover.publish.esri_classification_applicator import \
-    ClassificationApplicator
+from gcover.publish.esri_classification_applicator import ClassificationApplicator
 from gcover.publish.esri_classification_extractor import extract_lyrx
 from gcover.publish.generator import MapServerGenerator, QGISGenerator
-from gcover.publish.style_config import (BatchClassificationConfig,
-                                         apply_batch_from_config)
-from gcover.publish.tooltips_enricher import (EnhancedTooltipsEnricher,
-                                              EnrichmentConfig, LayerMapping,
-                                              LayerType,
-                                              create_enrichment_config)
+from gcover.publish.style_config import (
+    BatchClassificationConfig,
+    apply_batch_from_config,
+)
+from gcover.publish.tooltips_enricher import (
+    EnhancedTooltipsEnricher,
+    EnrichmentConfig,
+    LayerMapping,
+    LayerType,
+    create_enrichment_config,
+)
+
+from .main import _split_bbox
 
 console = Console()
 
@@ -86,6 +92,16 @@ def cli(verbose: bool, quiet: bool):
     "--layer", "-l", help="Specific layer to process (default: all layers in config)"
 )
 @click.option(
+    "-b",
+    "--bbox",
+    required=False,
+    nargs=1,
+    type=click.STRING,
+    callback=_split_bbox,
+    default=None,
+    help="Filter with a bbox",
+)
+@click.option(
     "--output",
     "-o",
     type=click.Path(path_type=Path),
@@ -109,6 +125,7 @@ def apply_config(
     styles_dir: Optional[Path],
     debug: bool,
     dry_run: bool,
+    bbox: Optional[tuple],
 ):
     """Apply multiple classifications from YAML configuration file.
 
@@ -206,6 +223,7 @@ def apply_config(
             layer_name=layer,
             output_path=output,
             debug=debug,
+            bbox=bbox,
         )
 
         # Display final statistics
