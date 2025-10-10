@@ -3,8 +3,8 @@
 # Global settings (optional)
 global:
     treat_zero_as_null: true
-    symbol_field: REVISION_QUALITY
-    #label_field: LABEL
+    symbol_field: MAP_SYMBOL
+    label_field: LABEL
     overwrite: false
 # Layer configurations
 layers:
