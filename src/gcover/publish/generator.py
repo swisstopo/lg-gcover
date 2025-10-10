@@ -31,7 +31,19 @@ from gcover.publish.complex_polygon_generators import (
 
 from .esri_classification_extractor import extract_lyrx
 
+from gcover.publish.tooltips_enricher import LayerType
+
 console = Console()
+
+
+@dataclass(frozen=True)
+class FontSymbol:
+    font_family: str
+    char_index: int
+    # Add more fields as needed (e.g., weight, color)
+
+    def symbol_name(self) -> str:
+        return f"{self.font_family}_{self.char_index}"
 
 
 class MapServerGenerator:
@@ -65,6 +77,7 @@ class MapServerGenerator:
         # Track fonts and symbols used
         self.fonts_used: Set[str] = set()
         self.pattern_symbols: List[Dict] = []  # Store pattern symbol definitions
+        self.symbol_registry: Dict = {}
 
     def generate_expression_from_fields(self, class_obj, field_names: List[str]) -> str:
         """Generate MapServer EXPRESSION from classification field values."""
@@ -214,7 +227,9 @@ class MapServerGenerator:
 
         return "\n".join(lines)
 
-    def generate_symbol_file(self, classification_list: List = None) -> str:
+    def generate_symbol_file(
+        self, classification_list: List = None, prefixes: Dict = {}
+    ) -> str:
         """
         Generate MapServer symbol file with all symbol types.
 
@@ -244,7 +259,7 @@ class MapServerGenerator:
         if classification_list:  # CIM objects
             # Point and line font markers
             font_symbols = self._generate_font_symbols_from_classifications(
-                classification_list
+                classification_list, prefixes
             )
             if font_symbols:
                 lines.append("")
@@ -497,7 +512,19 @@ class MapServerGenerator:
                 and hasattr(symbol_info, "character_index")
                 and symbol_info.character_index is not None
             ):
-                font_symbol_name = f"{symbol_prefix}_point_font_{class_index}"
+                # TODO: new logic
+                font_family = self._sanitize_font_name(symbol_info.font_family)
+                char_index = symbol_info.character_index
+
+                spec = FontSymbol(font_family, char_index)
+
+                if spec not in self.symbol_registry:
+                    font_symbol_name = f"{spec.font_family}_{spec.char_index}"
+                    self.symbol_registry[spec] = font_symbol_name
+                else:
+                    font_symbol_name = self.symbol_registry[spec]
+                # font_symbol_name = f"{symbol_prefix}_point_font_{class_index}"  ori
+                # font_symbol_name = f"{symbol_prefix}_{class_index}"  # TODO
                 lines.append(f'      SYMBOL "{font_symbol_name}"')
                 self.fonts_used.add(symbol_info.font_family)
             else:
@@ -534,20 +561,34 @@ class MapServerGenerator:
             lines.append("      SIZE 8")
             lines.append("      COLOR 128 128 128")
 
+    # TODO
     def _get_prefix(self, layer_name, default="class"):
         PREFIXES = {"Fossils": "foss", "Surfaces": "surf"}
 
-        return PREFIXES.get(layer_name, default)
+        return PREFIXES.get(layer_name, layer_name)
 
     def _generate_font_symbols_from_classifications(
-        self, classification_list: List
+        self, classification_list: List, prefixes
     ) -> List[str]:
         """Generate TrueType symbols for point and line markers."""
         symbols = []
         symbols_generated = set()
 
+        def escape_mapserver_string(s: str) -> str:
+            return s.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
+
+        # TODO
+        from PIL import Image, ImageDraw, ImageFont
+
+        font_size = 100
+        img_size = (200, 200)
+        font_path = "/home/marco/.fonts/g/GeoFonts1.ttf"
+        font2_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+        images = []
+
         for classification in classification_list:
-            symbol_prefix = self._get_prefix(classification.layer_name)
+            symbol_prefix = prefixes.get(classification.layer_name, "class")
 
             for class_index, class_obj in enumerate(classification.classes):
                 if not class_obj.visible:
@@ -562,7 +603,7 @@ class MapServerGenerator:
                     hasattr(symbol_info, "symbol_type")
                     and symbol_info.symbol_type == SymbolType.POINT
                 ):
-                    console.print(symbol_info)
+                    pass  # TODO
 
                 if (
                     hasattr(symbol_info, "font_family")
@@ -570,7 +611,7 @@ class MapServerGenerator:
                     and hasattr(symbol_info, "character_index")
                     and symbol_info.character_index is not None
                 ):
-                    font_family = symbol_info.font_family
+                    font_family = self._sanitize_font_name(symbol_info.font_family)
                     character = chr(symbol_info.character_index)
 
                     # Generate symbol names for both point and line
@@ -578,14 +619,50 @@ class MapServerGenerator:
                         f"{symbol_prefix}_point_font_{class_index}",
                         f"{symbol_prefix}_line_font_{class_index}",
                     ]
+                    symbol_names = [
+                        f"{symbol_prefix}_{class_index}",  # TODO
+                    ]
 
-                    for symbol_name in symbol_names:
-                        symbol_key = (
-                            f"{font_family}_{symbol_info.character_index}_{symbol_name}"
-                        )
+                    spec = FontSymbol(font_family, symbol_info.character_index)
+
+                    if spec in self.symbol_registry:
+                        font_symbol_name = self.symbol_registry[spec]
+
+                        continue
+                    else:
+                        font_symbol_name = f"{spec.font_family}_{spec.char_index}"
+                        self.symbol_registry[spec] = font_symbol_name
+
+                        symbol_key = font_symbol_name
                         if symbol_key in symbols_generated:
                             continue
 
+                        char = chr(symbol_info.character_index)  # chr(index)
+                        image = Image.new("RGB", img_size, color="white")
+                        draw = ImageDraw.Draw(image)
+                        font = ImageFont.truetype(font_path, font_size)
+
+                        # Draw character
+                        bbox = draw.textbbox((0, 0), char, font=font)
+                        text_width = bbox[2] - bbox[0]
+                        text_height = bbox[3] - bbox[1]
+                        position = (
+                            (img_size[0] - text_width) // 2,
+                            (img_size[1] - text_height) // 2,
+                        )
+                        draw.text(position, char, font=font, fill="black")
+
+                        # Add index label
+                        draw.text(
+                            (10, 10),
+                            f"{font_symbol_name}, char: {char}",
+                            font=ImageFont.truetype(font2_path, 14),
+                            fill="gray",
+                        )
+
+                        images.append(image)
+
+                        console.print(f"== Adding {symbol_key} ()")
                         symbols_generated.add(symbol_key)
                         self.fonts_used.add(font_family)
 
@@ -594,16 +671,22 @@ class MapServerGenerator:
                         symbols.extend(
                             [
                                 "  SYMBOL",
-                                f'    NAME "{symbol_name}"',
+                                f'    NAME "{font_symbol_name}"',
                                 "    TYPE TRUETYPE",
                                 f'    FONT "{font_name}"',
-                                f'    CHARACTER "{character}"',
+                                f'    CHARACTER "{escape_mapserver_string(character)}"',
                                 "    FILLED TRUE",
                                 "    ANTIALIAS TRUE",
                                 "  END",
                                 "",
                             ]
                         )
+
+        images[0].save(
+            f"mapserver/font_characters.pdf",
+            save_all=True,
+            append_images=images[1:],
+        )
 
         return symbols
 
