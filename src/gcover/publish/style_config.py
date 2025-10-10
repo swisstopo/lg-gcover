@@ -44,7 +44,6 @@ class ClassificationConfig:
     symbol_prefix: Optional[str] = None
 
 
-
 @dataclass
 class LayerConfig:
     """Configuration for a GPKG layer with multiple classifications."""
@@ -132,6 +131,7 @@ def apply_batch_from_config(
     output_path: Optional[Path] = None,
     debug: bool = False,
     bbox: Optional[tuple] = None,
+    continue_on_error: Optional[bool] = False,
 ) -> Dict[str, any]:
     """
     Apply all classifications from config to a GPKG.
@@ -209,9 +209,6 @@ def apply_batch_from_config(
         # Cast fields
         field_types = layer_config.field_types
 
-        console.print(field_types)
-        console.print(gdf.columns)
-
         for field, dtype in field_types.items():
             if field in gdf.columns:
                 try:
@@ -233,9 +230,13 @@ def apply_batch_from_config(
             console.print(
                 f"\n  [{i}/{len(layer_config.classifications)}] {class_config.style_file.name}"
             )
-
-            # Load classification from style file
-            classifications = extract_lyrx(class_config.style_file, display=False)
+            try:
+                # Load classification from style file
+                classifications = extract_lyrx(class_config.style_file, display=False)
+            except FileNotFoundError as e:
+                logger.error(f"Style .lyrx not found: {class_config.style_file}")
+                if continue_on_error:
+                    continue
 
             # Find the right classification
             classification = None
