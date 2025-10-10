@@ -37,6 +37,19 @@ env_map = {
 }
 
 
+def _split_bbox(ctx, param, value):
+    # split columns by ',' and remove whitespace
+    try:
+        bbox = list(map(float, [c.strip() for c in value.split(",")]))
+        # validate
+        if len(bbox) != 4:
+            raise ValueError("bbox must have four values")
+    except ValueError as e:
+        raise click.BadOptionUsage("resolution", f"--bbox: {e}")
+
+    return bbox
+
+
 def confirm_extended(prompt: str, default=True):
     response = click.prompt(prompt + " [y/n]", default="y" if default else "n")
     response = response.strip().lower()
