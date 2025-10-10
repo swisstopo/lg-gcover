@@ -124,7 +124,7 @@ def apply_batch_from_config(
     layer_name: Optional[str] = None,
     output_path: Optional[Path] = None,
     debug: bool = False,
-    bbox: Optional[list] = None,
+    bbox: Optional[tuple] = None,
 ) -> Dict[str, any]:
     """
     Apply all classifications from config to a GPKG.

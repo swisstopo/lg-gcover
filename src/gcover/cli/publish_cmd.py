@@ -125,7 +125,7 @@ def apply_config(
     styles_dir: Optional[Path],
     debug: bool,
     dry_run: bool,
-    bbox: Optional[list],
+    bbox: Optional[tuple],
 ):
     """Apply multiple classifications from YAML configuration file.
 

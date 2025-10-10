@@ -47,7 +47,7 @@ def _split_bbox(ctx, param, value):
     except ValueError as e:
         raise click.BadOptionUsage("resolution", f"--bbox: {e}")
 
-    return bbox
+    return tuple(bbox)
 
 
 def confirm_extended(prompt: str, default=True):
