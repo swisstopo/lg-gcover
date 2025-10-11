@@ -248,6 +248,7 @@ layers:
           classification_name: Unco Deposits_Bachschutt
           # filter: RUNC_LITHO NOT IN (15101009, 15101015,15101019, 15101021, 15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101041,15101046, 15101047, 15101048, 15101049, 15101055, 15101058, 15101040)
           symbol_prefix: unco_bachschutt
+          filter: RUNC_LITHO=15101041
           fields:
             KIND: KIND
             RUNC_LITHO: RUNC_LITHO
@@ -255,15 +256,15 @@ layers:
             RUNC_CHRONO_B: RUNC_CHRONO_B # missing
         - style_file: styles/Unco Deposits_Litho__20000.lyrx
           classification_name: Unco Deposits_Litho_<20000
-          # filter: RUNC_LITHO NOT IN (15101009, 15101015,15101019, 15101021, 15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101041,15101046, 15101047, 15101048, 15101049, 15101055, 15101058, 15101040)
           symbol_prefix: unco_litho
+          filter: RUNC_LITHO NOT IN (15101009, 15101015,15101019, 15101021, 15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101041,15101046, 15101047, 15101048, 15101049, 15101055, 15101058, 15101040)
           fields:
             KIND: KIND
             RUNC_LITHO: RUNC_LITHO
         - style_file: styles/Unco Deposits_Chrono_Moräne.lyrx
           classification_name: Unco Deposits_Chrono_Moräne
-          # filter: RUNC_LITHO NOT IN (15101009, 15101015,15101019, 15101021, 15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101041,15101046, 15101047, 15101048, 15101049, 15101055, 15101058, 15101040)
           symbol_prefix: unco_chrono_moraene
+          filter: RUNC_LITHO =15101021
           fields:
             KIND: KIND
             RUNC_LITHO: RUNC_LITHO.
@@ -271,8 +272,8 @@ layers:
             RUNC_CHRONO_T: RUNC_CHRONO_T # missing
         - style_file: styles/Unco Deposits_Chrono_T.lyrx
           classification_name: Unco Deposits_Chrono_T
-          # filter: RUNC_LITHO NOT IN (15101009, 15101015,15101019, 15101021, 15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101041,15101046, 15101047, 15101048, 15101049, 15101055, 15101058, 15101040)
           symbol_prefix: unco_chrono_t
+          filter: RUNC_LITHO IN (15101019,15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101040, 15101046, 15101047, 15101048, 15101049, 15101055, 15101058)
           fields:
             KIND: KIND
             RUNC_LITHO: RUNC_LITHO.
@@ -280,8 +281,8 @@ layers:
             RUNC_CHRONO_T: RUNC_CHRONO_T # missing
         - style_file: styles/Unco Deposits_Chrono_B.lyrx
           classification_name: Unco Deposits_Chrono_B
-          # filter: RUNC_LITHO NOT IN (15101009, 15101015,15101019, 15101021, 15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101041,15101046, 15101047, 15101048, 15101049, 15101055, 15101058, 15101040)
           symbol_prefix: unco_chrono_b
+          filter: RUNC_LITHO IN (15101009, 15101015)
           fields:
             KIND: KIND
             RUNC_LITHO: RUNC_LITHO.
