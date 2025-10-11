@@ -1,6 +1,51 @@
 import re
 
 import pandas as pd
+from PIL import Image, ImageDraw, ImageFont
+
+
+def generate_font_image(font_symbol_name, font_name, char_index):
+    font_size = 100
+    img_size = (200, 200)
+    image = None
+
+    font_paths = {
+        "geofonts1": "/home/marco/.fonts/g/GeoFonts1.ttf",
+        "geofonts2": "/home/marco/.fonts/g/GeoFonts2.ttf",
+        "default": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    }
+
+    char = chr(char_index)  # chr(index)
+
+    font_path = font_paths.get(font_name)
+    if not font_path:
+        console.print(f"[red]Font {font_name} not found on system")
+        return image
+
+    image = Image.new("RGB", img_size, color="white")
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.truetype(font_path, font_size)
+
+    # Draw character
+    bbox = draw.textbbox((0, 0), char, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    position = (
+        (img_size[0] - text_width) // 2,
+        (img_size[1] - text_height) // 2,
+    )
+    draw.text(position, char, font=font, fill="black")
+
+    # Add index label
+    draw.text(
+        (10, 10),
+        f"{font_symbol_name}: '{char}' ({char_index})",
+        font=ImageFont.truetype(font_paths["default"], 12),
+        fill="gray",
+    )
+
+    return image
+
 
 # ============================================================================
 # ESRI vs PANDAS SYNTAX
