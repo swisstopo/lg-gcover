@@ -12,6 +12,7 @@ import uuid
 from typing import List, Dict, Optional, Tuple, Set
 from dataclasses import dataclass
 
+from .style_config import FontSymbol
 
 # Font paths configuration
 FONT_PATHS = {
@@ -512,7 +513,14 @@ def _add_mapserver_pattern_fill(
     r, g, b, a = marker_info.color
 
     # Generate symbol name
+    # TODO
     symbol_name = f"{symbol_prefix}_poly_pattern_{class_index}_{marker_index}"
+    font_name = marker_info.font_family.lower().replace(" ", "")
+    char_index = marker_info.character_index
+    html_code = f"&#{char_index};"  # → '&#84;'
+    char = chr(char_index)
+
+    symbol_name = f"{font_name}_{char_index}"
 
     # Track font usage
     fonts_used.add(marker_info.font_family)
@@ -603,16 +611,25 @@ def generate_mapserver_pattern_symbols(classification_list: List) -> List[str]:
                     f"{symbol_prefix}_poly_pattern_{class_index}_{marker_index}"
                 )
 
+                # TODO
+                font_name = marker_info.font_family.lower().replace(" ", "")
+                char_index = marker_info.character_index
+                html_code = f"&#{char_index};"  # → '&#84;'
+                character = chr(char_index)
+
+                symbol_name = f"{font_name}_{char_index}"
+
                 # Avoid duplicates
                 symbol_key = f"{marker_info.font_family}_{marker_info.character_index}"
+                symbol_key = symbol_name
                 if symbol_key in symbols_generated:
                     continue
 
                 symbols_generated.add(symbol_key)
 
                 # Sanitize font name
-                font_name = marker_info.font_family.replace(" ", "").lower()
-                character = chr(marker_info.character_index)
+                # font_name = marker_info.font_family.replace(" ", "").lower()
+                # character = chr(marker_info.character_index)
 
                 # Convert spacing from points to pixels
                 step_x_px = marker_info.step_x * 1.33
@@ -624,7 +641,7 @@ def generate_mapserver_pattern_symbols(classification_list: List) -> List[str]:
                         f'    NAME "{symbol_name}"',
                         "    TYPE TRUETYPE",
                         f'    FONT "{font_name}"',
-                        f'    CHARACTER "{character}"',
+                        f"    CHARACTER \"{html_code}\"   # → '{character}'",
                         "    FILLED TRUE",
                         "    ANTIALIAS TRUE",
                         f"    # Grid spacing: {step_x_px:.1f}x{step_y_px:.1f} pixels",
@@ -680,12 +697,22 @@ def scan_and_generate_pattern_symbols(
             for marker_index, marker_info in enumerate(
                 layers_info["character_markers"]
             ):
+                # TODO
                 symbol_name = (
                     f"{symbol_prefix}_poly_pattern_{class_index}_{marker_index}"
                 )
 
+                font_name = marker_info.font_family.lower().replace(" ", "")
+                symbol_name = f"{font_name}_{marker_index}"
+                char_index = marker_info.character_index
+                html_code = f"&#{char_index};"  # → '&#84;'
+                char = chr(char_index)
+
+                symbol_name = f"{font_name}_{char_index}"
+
                 # Check if already generated
                 symbol_key = f"{marker_info.font_family}_{marker_info.character_index}_{symbol_name}"
+                smybol_key = symbol_name
                 if symbol_key in symbols_generated:
                     continue
 
@@ -709,7 +736,7 @@ def scan_and_generate_pattern_symbols(
                         f'    NAME "{symbol_name}"',
                         "    TYPE TRUETYPE",
                         f'    FONT "{font_name}"',
-                        f'    CHARACTER "{character}"',
+                        f"    CHARACTER \"{html_code}\"   # → '{character}'",
                         "    FILLED TRUE",
                         "    ANTIALIAS TRUE",
                         f"    # Color: RGB({r}, {g}, {b})",

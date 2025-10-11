@@ -35,15 +35,7 @@ from gcover.publish.tooltips_enricher import LayerType
 
 console = Console()
 
-
-@dataclass(frozen=True)
-class FontSymbol:
-    font_family: str
-    char_index: int
-    # Add more fields as needed (e.g., weight, color)
-
-    def symbol_name(self) -> str:
-        return f"{self.font_family}_{self.char_index}"
+from .style_config import FontSymbol
 
 
 class MapServerGenerator:
@@ -435,7 +427,20 @@ class MapServerGenerator:
                 and hasattr(symbol_info, "character_index")
                 and symbol_info.character_index is not None
             ):
-                font_symbol_name = f"{symbol_prefix}_line_font_{class_index}"
+                # TODO
+                font_family = self._sanitize_font_name(symbol_info.font_family)
+                char_index = symbol_info.character_index
+
+                spec = FontSymbol(font_family, char_index)
+
+                if spec not in self.symbol_registry:
+                    font_symbol_name = f"{spec.font_family}_{spec.char_index}"
+                    self.symbol_registry[spec] = font_symbol_name
+                else:
+                    font_symbol_name = self.symbol_registry[spec]
+
+                #
+                # font_symbol_name = f"{symbol_prefix}_line_font_{class_index}"
                 self._add_truetype_line_marker(lines, symbol_info, font_symbol_name)
                 self.fonts_used.add(symbol_info.font_family)
             else:
@@ -586,6 +591,10 @@ class MapServerGenerator:
         font2_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
         images = []
+
+        from .complex_polygon_generators import generate_mapserver_pattern_symbols
+
+        symbols.extend(generate_mapserver_pattern_symbols(classification_list))
 
         for classification in classification_list:
             symbol_prefix = prefixes.get(classification.layer_name, "class")

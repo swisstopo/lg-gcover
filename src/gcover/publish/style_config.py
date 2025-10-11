@@ -32,6 +32,16 @@ from .tooltips_enricher import LayerType
 console = Console()
 
 
+@dataclass(frozen=True)
+class FontSymbol:
+    font_family: str
+    char_index: int
+    # Add more fields as needed (e.g., weight, color)
+
+    def symbol_name(self) -> str:
+        return f"{self.font_family}_{self.char_index}"
+
+
 @dataclass
 class ClassificationConfig:
     """Configuration for a single classification application."""
@@ -211,6 +221,7 @@ def apply_batch_from_config(
 
         # Cast fields
         field_types = layer_config.field_types
+        console.print(f"\n[bold blue]Field types: {field_types}[/bold blue]")
 
         for field, dtype in field_types.items():
             if field in gdf.columns:
@@ -269,6 +280,7 @@ def apply_batch_from_config(
                     label_field=config.label_field,
                     symbol_prefix=class_config.symbol_prefix,
                     field_mapping=class_config.fields,
+                    field_types=field_types,
                     treat_zero_as_null=config.treat_zero_as_null,
                     debug=debug,
                 )
@@ -280,12 +292,12 @@ def apply_batch_from_config(
                     preserve_existing=True,  # But preserve existing non-NULL values
                 )
                 # TODO After bedrock classification
-                console.print(
-                    f"After {class_config.classification_name}: {gdf_result[config.symbol_field].notna().sum()} symbols"
-                )
-                console.print(
-                    f"{class_config.classification_name} symbols: {gdf_result[config.symbol_field].value_counts()}"
-                )
+                # console.print(
+                #    f"After {class_config.classification_name}: {gdf_result[config.symbol_field].notna().sum()} symbols"
+                # )
+                # console.print(
+                #    f"{class_config.classification_name} symbols: {gdf_result[config.symbol_field].value_counts()}"
+                # )
 
                 # Clean up string "None" values
                 gdf_result[config.symbol_field] = gdf_result[
@@ -336,10 +348,11 @@ def apply_batch_from_config(
             gdf.to_file(output_path, layer=layer, driver="GPKG")
 
         gdf_check = gpd.read_file(output_path, layer=layer)
-        console.print(
-            f"After save: {gdf_check[config.symbol_field].notna().sum()} symbols"
-        )
-        console.print(f"Saved symbols: {gdf_check[config.symbol_field].value_counts()}")
+        # TODO
+        # console.print(
+        #    f"After save: {gdf_check[config.symbol_field].notna().sum()} symbols"
+        # )
+        # console.print(f"Saved symbols: {gdf_check[config.symbol_field].value_counts()}")
 
         stats["layers_processed"] += 1
 
