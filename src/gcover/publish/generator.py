@@ -111,7 +111,7 @@ class MapServerGenerator:
         self,
         classification,
         layer_name: str,
-        data_path: str,
+        data_path: str = None,
         symbol_prefix: str = "class",
     ) -> str:
         """
@@ -130,10 +130,42 @@ class MapServerGenerator:
             "LAYER",
             f'  NAME "{layer_name}"',
             f"  TYPE {self.layer_type}",
-            f'  DATA "{data_path}"',
             "  STATUS ON",
             "",
         ]
+
+        lines.extend(
+            [
+                "",
+                "  METADATA",
+                f'    "wms_title"    "{layer_name.capitalize()}"',
+                f'    "wms_abstract" "{layer_name.capitalize()}"',
+                '    "wms_srs"      "EPSG:2056 EPSG:4326 EPSG:3857"',
+                '    "wms_extent" "2350000 1050000 2850000 1250000"',
+                "  END",
+            ]
+        )
+
+        if data_path:
+            lines.extend(
+                [
+                    "",
+                    "  CONNECTIONTYPE POSTGIS",
+                    '  CONNECTION "host=postgis port=5432 dbname=geocover user=gcover password=gcover123"',
+                    f'  DATA "geom from (SELECT * from {data_path} where {self.symbol_field.lower()} IS NOT NULL) as blabla using unique gid using srid=2056"',
+                ]
+            )
+
+        lines.extend(
+            [
+                "",
+                "  PROJECTION",
+                '    "init=epsg:2056"',
+                "  END",
+            ]
+        )
+
+        lines.extend(["", '  TEMPLATE "empty"', ""])
 
         if self.use_symbol_field:
             # Add CLASSITEM for simplified expressions

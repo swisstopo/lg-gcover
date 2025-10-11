@@ -2,6 +2,9 @@ import re
 
 import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
+from rich.console import Console
+
+console = Console()
 
 
 def generate_font_image(font_symbol_name, font_name, char_index):
