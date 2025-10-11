@@ -90,7 +90,17 @@ layers:
         TTEC_STATUS: Int64
         TTEC_LIM_TYP: Int64
         LPRO_LITHO: Int64
+        GGLA_GLAC_TYP: Int64
       classifications:
+        - style_file: styles/Linear Objects_Moränenwall.lyrx
+          classification_name: Linear Objects_Moränenwall
+          filter: KIND=11301001
+          mapfile_name: linear_moraenen
+          fields:
+            KIND: KIND
+            GGLA_GLAC_TYP: GGLA_GLAC_TYP
+          symbol_prefix: moraenenwall
+
         - style_file: styles/Linear Objects_GeolKontur.lyrx
           classification_name: Linear Objects_GeolKontur
           mapfile_name: geolkontur
