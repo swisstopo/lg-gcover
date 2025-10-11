@@ -223,14 +223,7 @@ layers:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
           symbol_prefix: pnt_orient
-        - style_file: styles/Point_Mpla_Planar_Structures.lyrx
-          classification_name: Point Point_Mpla_Planar_Structures
-          fields:
-            # Map GPKG field to classification field (can be complex paths)
-            KIND: KIND
-            MPLA_POLARITY: MPLA_POLARITY
-            DIP: DIP
-          symbol_prefix: point_planar_structures
+
     - gpkg_layer: unco_deposits
       layer_type: polygon
       field_types:
