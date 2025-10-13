@@ -390,7 +390,7 @@ def scan(
 
                             # Use utils function for copying
                             success = copy_gdb_asset(
-                                asset.path, dest_path, verify=verify, overwrite=overwrite, verify=verify
+                                asset.path, dest_path, verify=verify, overwrite=overwrite
                             )
 
                             if success:
