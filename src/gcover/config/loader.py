@@ -13,7 +13,7 @@ from rich.console import Console
 
 from .models import AppConfig
 
-console = Console()
+from gcover.utils.console import console
 
 
 class ConfigManager:

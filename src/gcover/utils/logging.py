@@ -12,13 +12,14 @@ from loguru import logger
 from rich.console import Console
 
 from gcover.config import AppConfig, load_config
+from gcover.utils.console import console
 
 
 class GCoverLogger:
     """Centralized logger for the gcover application with config integration."""
 
     def __init__(self):
-        self.console = Console()
+        self.console = console
         self._is_configured = False
         self._current_level = "INFO"
         self._log_file = None

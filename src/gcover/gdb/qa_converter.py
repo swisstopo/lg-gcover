@@ -23,7 +23,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from gcover.config import load_config
 from gcover.gdb.storage import S3Uploader
 
-console = Console()
+from gcover.utils.console import console
 
 
 @dataclass

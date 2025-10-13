@@ -4,6 +4,7 @@ CLI for GDB Asset Management System
 """
 
 import sys
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -34,7 +35,7 @@ from gcover.gdb.utils import (check_disk_space, copy_gdb_asset,
                               get_directory_size, quick_size_check,
                               verify_backup_integrity)
 
-console = Console()
+from gcover.utils.console import console
 
 
 def get_configs(ctx) -> tuple[GDBConfig, GlobalConfig, str, bool]:

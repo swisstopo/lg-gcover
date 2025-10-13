@@ -2,6 +2,8 @@ import re
 
 import pandas as pd
 
+from gcover.utils.console import console
+
 # ============================================================================
 # ESRI vs PANDAS SYNTAX
 # ============================================================================

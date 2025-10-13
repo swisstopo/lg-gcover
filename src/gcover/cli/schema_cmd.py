@@ -17,7 +17,7 @@ from gcover.schema.serializer import (save_esri_schema_to_file,
                                       serialize_esri_schema_to_dict)
 from gcover.schema.simple_transformer import transform_esri_flat_json
 
-console = Console()
+from gcover.utils.console import console
 
 
 def get_schema_configs(ctx) -> tuple[SchemaConfig, GlobalConfig]:

@@ -38,7 +38,7 @@ from gcover.core.geometry import load_gpkg_with_validation, safe_read_filegdb
 
 from ..sde.bridge import GCoverSDEBridge, create_bridge
 
-console = Console()
+from gcover.utils.console import console
 
 
 class LayerType(Enum):

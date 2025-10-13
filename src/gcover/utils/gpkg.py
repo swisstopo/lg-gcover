@@ -22,7 +22,7 @@ from rich.progress import (BarColumn, Progress, SpinnerColumn,
 
 from ..config import DEFAULT_CHUNK_SIZE, DEFAULT_NUM_WORKERS
 
-console = Console()
+from gcover.utils.console import console
 
 
 class GPKGWriter:

@@ -16,7 +16,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-console = Console()
+from gcover.utils.console import console
 from loguru import logger
 
 QATestType = Literal["Topology", "TechnicalQualityAssurance"]

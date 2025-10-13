@@ -13,7 +13,7 @@ from tabulate import tabulate
 from gcover.config import SDE_INSTANCES, AppConfig, load_config  # TODO
 from gcover.sde import SDEConnectionManager, create_bridge
 
-console = Console()
+from gcover.utils.console import console
 
 
 @click.group(name="sde")
