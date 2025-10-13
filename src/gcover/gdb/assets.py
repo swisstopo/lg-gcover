@@ -15,6 +15,11 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from pathlib import Path
+from typing import List, Dict, Optional, Union
+from dataclasses import dataclass
+from datetime import datetime
+import os
 
 import boto3
 import duckdb
@@ -79,6 +84,107 @@ class GDBAssetInfo:
     uploaded: bool = False
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+
+
+
+
+@dataclass
+class LockInfo:
+    """Information about a FileGDB lock file."""
+    lock_file: Path
+    modified_time: datetime
+    size: int
+
+    def __str__(self) -> str:
+        return f"{self.lock_file.name} (modified: {self.modified_time}, size: {self.size} bytes)"
+
+
+def check_gdb_locks(
+        gdb_path: Union[str, Path],
+        include_details: bool = False,
+        check_subdirs: bool = True
+) -> Union[bool, Dict[str, any]]:
+    """
+    Check if a File Geodatabase has lock files (.sr.lock) on Windows.
+
+    Lock files indicate that the FileGDB is currently being accessed by
+    ArcGIS or another process and should not be modified.
+
+    Args:
+        gdb_path: Path to the .gdb directory
+        include_details: If True, return detailed information about locks;
+                        if False, return only boolean
+        check_subdirs: Whether to check subdirectories for lock files
+
+    Returns:
+        If include_details=False: Boolean indicating if locks exist
+        If include_details=True: Dictionary with:
+            - "has_locks": bool
+            - "lock_count": int
+            - "locks": List[LockInfo] - details about each lock file
+            - "gdb_path": Path to the GDB
+
+    Raises:
+        FileNotFoundError: If gdb_path does not exist
+        ValueError: If gdb_path is not a .gdb directory
+
+    Example:
+        >>> check_gdb_locks("C:/data/my_data.gdb")
+        False
+
+        >>> result = check_gdb_locks("C:/data/my_data.gdb", include_details=True)
+        >>> print(f"Locked: {result['has_locks']}, Count: {result['lock_count']}")
+    """
+
+    gdb_path = Path(gdb_path)
+
+    # Validate input
+    if not gdb_path.exists():
+      raise FileNotFoundError(f"FileGDB not found: {gdb_path}")
+
+    if not gdb_path.is_dir():
+        raise ValueError(f"Path is not a directory: {gdb_path}")
+
+    if gdb_path.suffix.lower() != ".gdb":
+        raise ValueError(f"Path does not appear to be a FileGDB (.gdb): {gdb_path}")
+
+    # Find all .sr.lock files
+    lock_files: List[LockInfo] = []
+
+    if os.name == 'nt':
+
+      if check_subdirs:
+        # Recursive search
+        lock_paths = gdb_path.rglob("*.sr.lock")
+      else:
+        # Only immediate directory
+        lock_paths = gdb_path.glob("*.sr.lock")
+
+      for lock_file in lock_paths:
+        try:
+            stat = lock_file.stat()
+            lock_info = LockInfo(
+                lock_file=lock_file,
+                modified_time=datetime.fromtimestamp(stat.st_mtime),
+                size=stat.st_size
+            )
+            lock_files.append(lock_info)
+        except OSError as e:
+            # Lock file might be in use or deleted during iteration
+            continue
+
+    has_locks = len(lock_files) > 0
+
+    # Return format based on include_details flag
+    if not include_details:
+        return has_locks
+
+    return {
+        "has_locks": has_locks,
+        "lock_count": len(lock_files),
+        "locks": lock_files,
+        "gdb_path": gdb_path
+    }
 
 class GDBAsset:
     """Base class for GDB assets"""

@@ -22,6 +22,7 @@ from gcover.config.models import GDBConfig, GlobalConfig
 from gcover.gdb.assets import (AssetType, BackupGDBAsset, GDBAsset,
                                IncrementGDBAsset, ReleaseCandidate,
                                VerificationGDBAsset, find_duplicate_groups,
+                               check_gdb_locks,
                                print_duplicate_report, remove_duplicate_assets)
 from gcover.gdb.manager import GDBAssetManager
 from gcover.gdb.storage import MetadataDB, S3Uploader, TOTPGenerator
@@ -143,6 +144,9 @@ def init(ctx):
     "--dry-run", is_flag=True, help="Show what would be copied without actually copying"
 )
 @click.option(
+    "--overwrite", is_flag=True, default=False, help="Overwrite existing gdb"
+)
+@click.option(
     "--preserve-structure",
     is_flag=True,
     default=True,
@@ -164,6 +168,7 @@ def scan(
     since,
     latest_only,
     dry_run,
+    overwrite,
     preserve_structure,
     flat,
     verify,
@@ -219,6 +224,17 @@ def scan(
             rprint(
                 f"[red]Reduced from {len(filtered_assets)} to {len(assets)} unique assets[/red]"
             )
+
+        unlocked_assets = []
+
+        for asset in assets:
+            if check_gdb_locks(asset.path):
+                rprint(
+                    f"[red]Skipping locked asset: {asset.path}[/red]"
+                )
+            else:
+                unlocked_assets.append(asset)
+        assets = unlocked_assets
 
         # Display scan results
         if assets:
@@ -374,7 +390,7 @@ def scan(
 
                             # Use utils function for copying
                             success = copy_gdb_asset(
-                                asset.path, dest_path, verify=verify, overwrite=True
+                                asset.path, dest_path, verify=verify, overwrite=overwrite, verify=verify
                             )
 
                             if success:
