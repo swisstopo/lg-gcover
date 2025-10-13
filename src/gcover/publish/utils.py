@@ -129,7 +129,7 @@ def apply_esri_filter(gdf, esri_expression, numeric_columns=None, auto_translate
 if __name__ == "__main__":
     from rich.console import Console
 
-    console = Console()
+   
     # Test the translator
     esri_expr = "KIND IN (14401001,14401002) AND (PRINTED = 1 OR PRINTED IS NULL)"
     pandas_expr = translate_esri_to_pandas(esri_expr)

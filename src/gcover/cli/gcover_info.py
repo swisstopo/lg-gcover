@@ -21,7 +21,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 SAMPLE_VALUE_COLUMN_WIDTH = 40
 
 
-console = Console()
+from gcover.utils.console import console
 
 
 def get_supported_layers(filename: str, spatial_only: bool = False) -> List[str]:
