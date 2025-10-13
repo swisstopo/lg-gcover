@@ -355,8 +355,9 @@ def copy_gdb_asset(
 
         if destination.exists():
             if not overwrite:
-                if not click.confirm(f"Destination {destination} exists. Overwrite?"):
-                    return False
+                console.print(f"[dim]Destination {destination} exists. Won't overwrite[dim]")
+                return False
+
 
             # Remove existing destination
             if destination.is_dir():
