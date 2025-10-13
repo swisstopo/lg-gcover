@@ -116,6 +116,7 @@ class BatchClassificationConfig:
                     fields=class_dict.get("fields"),
                     filter=class_dict.get("filter"),
                     symbol_prefix=class_dict.get("symbol_prefix"),
+                    mapfile_name=class_dict.get("mapfile_name",)
                 )
             )
 
