@@ -144,7 +144,7 @@ def init(ctx):
     "--dry-run", is_flag=True, help="Show what would be copied without actually copying"
 )
 @click.option(
-    "--overwrite", is_flag=True, default=False, help="Overwrite existing gdb"
+    "--overwrite", is_flag=True, help="Overwrite existing gdb"
 )
 @click.option(
     "--preserve-structure",
