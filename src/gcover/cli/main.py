@@ -4,6 +4,7 @@ Main CLI entry point for gcover.
 """
 
 import sys
+import os
 from pathlib import Path
 
 import click
@@ -54,6 +55,11 @@ def confirm_extended(prompt: str, default=True):
     response = click.prompt(prompt + " [y/n]", default="y" if default else "n")
     response = response.strip().lower()
     return response in {"y", "yes", "o", "oui"}
+
+
+# TODO
+if HAS_ARCPY:
+    os.environ["GDAL_SKIP"] = "OGR_Arrow,OGR_Parquet"
 
 
 @click.group(context_settings={"show_default": True})

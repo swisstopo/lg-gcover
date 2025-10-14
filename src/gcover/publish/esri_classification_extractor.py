@@ -33,7 +33,7 @@ except ImportError:
     HAS_ARCPY = False
     logger.warning("arcpy not available - using CIM JSON parsing only")
 
-console = Console()
+from gcover.utils.console import console
 
 
 class ClassificationJSONEncoder(json.JSONEncoder):
@@ -104,7 +104,6 @@ def to_serializable_dict(obj: Any) -> Dict[str, Any]:
         return obj
 
 
-console = Console()
 
 
 class SymbolType(Enum):

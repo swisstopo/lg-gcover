@@ -28,7 +28,7 @@ from botocore.exceptions import ClientError
 from loguru import logger
 from rich.console import Console
 
-console = Console()
+from gcover.utils.console import console
 
 
 class AssetType(Enum):

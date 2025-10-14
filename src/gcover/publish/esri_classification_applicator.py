@@ -32,7 +32,7 @@ from .esri_classification_extractor import (ClassificationClass,
                                             ESRIClassificationExtractor,
                                             LayerClassification, extract_lyrx)
 
-console = Console()
+from gcover.utils.console import console
 
 # Configure loguru
 logger.remove()

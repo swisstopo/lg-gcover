@@ -17,6 +17,7 @@ from shapely.geometry import (GeometryCollection, LineString, MultiPolygon,
                               Point, Polygon)
 from shapely.validation import explain_validity
 
+from gcover.utils.console import console
 
 def safe_read_filegdb(
     gdb_path: Union[str, Path],
@@ -700,7 +701,7 @@ def split_features_by_mapsheets(
         GeoDataFrame with features split along mapsheet boundaries
     """
 
-    console = Console()
+
 
     # Suppress warnings during processing
     warnings.filterwarnings("ignore", category=UserWarning)

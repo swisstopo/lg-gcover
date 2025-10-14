@@ -33,7 +33,7 @@ from .esri_classification_extractor import extract_lyrx
 
 from gcover.publish.tooltips_enricher import LayerType
 
-console = Console()
+from gcover.utils.console import console
 
 
 @dataclass(frozen=True)

@@ -25,7 +25,7 @@ except ImportError:
     # Fallback for when used independently
     from gcover.gdb.assets import AssetType, GDBAsset, ReleaseCandidate
 
-console = Console()
+from gcover.utils.console import console
 
 
 def is_windows() -> bool:

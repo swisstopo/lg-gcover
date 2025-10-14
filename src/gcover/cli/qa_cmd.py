@@ -32,6 +32,8 @@ from gcover.gdb.manager import GDBAssetManager
 from gcover.gdb.qa_converter import FileGDBConverter
 from gcover.qa.analyzer import QAAnalyzer
 
+from gcover.utils.console import console
+
 OUTPUT_FORMATS = ["csv", "xlsx", "json"]
 GROUP_BY_CHOICES = ["mapsheets", "work_units", "lots"]
 
@@ -39,7 +41,7 @@ GROUP_BY_CHOICES = ["mapsheets", "work_units", "lots"]
 DEFAULT_ZONES_PATH = files("gcover.data").joinpath("administrative_zones.gpkg")
 
 
-console = Console()
+
 
 
 # Remove default loguru handler and add Rich-style handler

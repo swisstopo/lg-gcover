@@ -29,7 +29,7 @@ from .esri_classification_applicator import ClassificationApplicator
 from .esri_classification_extractor import extract_lyrx
 from .tooltips_enricher import LayerType
 
-console = Console()
+from gcover.utils.console import console
 
 
 @dataclass

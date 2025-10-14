@@ -38,7 +38,7 @@ from gcover.publish.tooltips_enricher import (
 
 from .main import _split_bbox
 
-console = Console()
+from gcover.utils.console import console
 
 
 def get_publish_config(ctx):
