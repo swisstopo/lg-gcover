@@ -20,10 +20,14 @@ import fiona
 import geopandas as gpd
 import pandas as pd
 from loguru import logger
+from rich.console import Console
+from rich.table import Table
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
 DEFAULT_CRS = "EPSG:2056"
+
+console = Console()
 
 
 def load_lots(lots_path: Path) -> gpd.GeoDataFrame:
@@ -71,8 +75,10 @@ def load_work_units(wu_path: Path) -> gpd.GeoDataFrame:
         if "NAME" not in wu_gdf.columns:
             raise ValueError("WU file missing 'NAME' column")
 
+        wu_gdf = wu_gdf.rename(columns={"NAME": "WU_NAME"})
+
         # Keep only essential columns + any extra that exist
-        keep_cols = ["NAME", "geometry"]
+        keep_cols = ["WU_NAME", "geometry"]
         for col in [
             "WU_ID",
             "START_DATE",
@@ -589,8 +595,9 @@ def create_administrative_zones(
         )
 
         # Join with work units
+        # TODO: what to do with this?
         mapsheets_complete = spatial_join_safe(
-            mapsheets_with_lots, wu_gdf, ["NAME", "WU_ID"], "mapsheets-work_units"
+            mapsheets_with_lots, wu_gdf, ["WU_NAME", "WU_ID"], "mapsheets-work_units"
         )
 
         # 4. Write to GPKG
@@ -601,6 +608,46 @@ def create_administrative_zones(
         mapsheets_with_sources.to_file(
             output_path, layer="mapsheets_sources_only", driver="GPKG"
         )
+
+        # Define the grouping columns (mapsheet columns)
+        mapsheet_cols = [
+            "geometry",
+            "MSH_MAP_TITLE",
+            "MSH_MAP_NBR",
+            "MSH_MAP_SCALE",
+            "MSH_BASIS_TOPO",
+            "MSH_AUTHOR",
+            "MSH_OWNER",
+            "MSH_MAPPING_PERIOD",
+            "MSH_PUBL_YEAR",
+            "MSH_BASIS_VECT",
+            "MSH_MORE_INFO",
+            "MSH_TOPO_NR",
+            "SOURCE_RC",
+            "SOURCE_QA",
+            "Version",
+        ]
+
+        # Define the columns to concatenate
+        concat_cols = ["LOT_NR", "Status", "WU_NAME", "WU_ID"]
+
+        aggregation_dict = {
+            "LOT_NR": lambda x: "|".join(x.dropna().astype(int).astype(str).unique()),
+            "Status": lambda x: "|".join(x.dropna().unique()),
+            "WU_NAME": lambda x: "|".join(x.dropna().unique()),
+            "WU_ID": lambda x: "|".join(x.dropna().astype(int).astype(str).unique()),
+        }
+
+        gdf_aggregated = (
+            mapsheets_complete.groupby(mapsheet_cols, dropna=False)
+            .agg(aggregation_dict)
+            .reset_index()
+        )
+
+        mapsheets_complete = gpd.GeoDataFrame(
+            gdf_aggregated, geometry="geometry", crs=mapsheets_gdf.crs
+        )
+
         mapsheets_complete.to_file(
             output_path, layer="mapsheets_with_sources", driver="GPKG"
         )
@@ -624,24 +671,51 @@ def create_administrative_zones(
         click.echo(f"   📁 File: {output_path}")
         click.echo(f"   📊 Layers: mapsheets_with_sources, lots, work_units, mapsheets")
 
-        # Write the docstring to a file
-        now = dt.now().strftime("%Y-%m-%d %H:%M:%S")
+        def sources_diff(gdf):
+            console = Console(record=True)
+            diff_rows = gdf[gdf["SOURCE_RC"] != gdf["SOURCE_QA"]]
+            table = Table(title="Mapsheets with differing SOURCE_RC and SOURCE_QA")
 
-        layers = fiona.listlayers(output_path)
-        layer_string = "\n * ".join(layers)
-        docstring = (
-            f"""{__doc__ or ""}\nLayer list:\n * {layer_string}\n\nGenerated on {now}"""
-        )
-        output_without_ext = output_path.with_suffix("")
-        with open(output_without_ext.with_suffix(".README"), "w") as f:
-            f.write(docstring)
+            table.add_column("MSH_MAP_TITLE", style="cyan")
+            table.add_column("SOURCE_RC", style="magenta")
+            table.add_column("SOURCE_QA", style="green")
 
-        # Validation summary
-        if "SOURCE_RC" in mapsheets_complete.columns:
-            rc1_count = (mapsheets_complete["SOURCE_RC"] == "RC1").sum()
-            rc2_count = (mapsheets_complete["SOURCE_RC"] == "RC2").sum()
-            no_source_count = mapsheets_complete["SOURCE_RC"].isna().sum()
+            for _, row in diff_rows.iterrows():
+                table.add_row(
+                    str(row["MSH_MAP_TITLE"]),
+                    str(row["SOURCE_RC"]),
+                    str(row["SOURCE_QA"]),
+                )
 
+            console.print(table)
+            return console.export_text()
+
+        def validate_column(gdf, source_col):
+            console = Console(record=True)
+            # Count non-null unique values
+            counts = gdf[source_col].dropna().value_counts()
+            total = counts.sum()
+
+            # Create Rich table
+            table = Table(title=f"Unique {source_col} values")
+            table.add_column("Source", style="cyan", no_wrap=True)
+            table.add_column("Count", style="magenta", justify="right")
+
+            for value, count in counts.items():
+                table.add_row(str(value), str(count))
+            table.add_row("[bold]Total[/bold]", f"[bold magenta]{total}[/bold magenta]")
+
+            # Display
+
+            console.print(table)
+            return console.export_text()
+
+            """rc1_count = (mapsheets_complete[source_col] == "RC1").sum()
+            rc2_count = (mapsheets_complete[source_col] == "RC2").sum()
+            other_count =
+            no_source_count = mapsheets_complete[source_col].isna().sum()
+
+            click.echo(f"==Column: {source_col}==")
             click.echo(f"   🔵 RC1 mapsheets: {rc1_count}")
             click.echo(f"   🟢 RC2 mapsheets: {rc2_count}")
             click.echo(f"   ⚪ No source: {no_source_count}")
@@ -649,14 +723,32 @@ def create_administrative_zones(
             if no_source_count > 0:
                 click.echo(
                     f"   ⚠️  {no_source_count} mapsheets have no source assignment"
-                )
+                )"""
+
+        # Validation summary
+        validation_str = ""
+        for source_col in ("SOURCE_RC", "SOURCE_QA"):
+            if source_col in mapsheets_with_sources.columns:
+                validation_str += validate_column(mapsheets_with_sources, source_col)
+
+        source_diff_str = sources_diff(mapsheets_with_sources)
+
+        # Write the docstring to a file
+        now = dt.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        layers = fiona.listlayers(output_path)
+        layer_string = "\n * ".join(layers)
+        docstring = f"""{__doc__ or ""}\nLayer list:\n * {layer_string}\n\n-- 'mapsheets_sources_only' --\n\n{validation_str}\n{source_diff_str}\n\nGenerated on {now}"""
+        output_without_ext = output_path.with_suffix("")
+        with open(output_without_ext.with_suffix(".README"), "w") as f:
+            f.write(docstring)
 
         if "LOT_NR" in mapsheets_complete.columns:
             with_lot = mapsheets_complete["LOT_NR"].notna().sum()
             click.echo(f"   📦 Mapsheets with lot assignment: {with_lot}")
 
-        if "NAME" in mapsheets_complete.columns:
-            with_wu = mapsheets_complete["NAME"].notna().sum()
+        if "WU_NAME" in mapsheets_complete.columns:
+            with_wu = mapsheets_complete["WU_NAME"].notna().sum()
             click.echo(f"   👥 Mapsheets with work unit assignment: {with_wu}")
 
         # Show available columns

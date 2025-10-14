@@ -13,4 +13,38 @@ Layer list:
  * work_units
  * mapsheets
 
-Generated on 2025-10-14 16:53:33
+-- 'mapsheets_sources_only' --
+
+   Unique SOURCE_RC values   
+┏━━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
+┃ Source            ┃ Count ┃
+┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
+│ RC1               │   173 │
+│ RC2               │    46 │
+│ BCK_2016          │     1 │
+│ 20300501_Saas.gdb │     1 │
+│ Total             │   221 │
+└───────────────────┴───────┘
+   Unique SOURCE_QA values   
+┏━━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
+┃ Source            ┃ Count ┃
+┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
+│ RC1               │   170 │
+│ RC2               │    49 │
+│ BCK_2016          │     1 │
+│ 20300501_Saas.gdb │     1 │
+│ Total             │   221 │
+└───────────────────┴───────┘
+
+  Mapsheets with differing SOURCE_RC and  
+                SOURCE_QA                 
+┏━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┓
+┃ MSH_MAP_TITLE  ┃ SOURCE_RC ┃ SOURCE_QA ┃
+┡━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━┩
+│ Chasseral      │ RC1       │ RC2       │
+│ Bellelay       │ RC1       │ RC2       │
+│ Les Diablerets │ RC1       │ RC2       │
+└────────────────┴───────────┴───────────┘
+
+
+Generated on 2025-10-14 21:37:48
