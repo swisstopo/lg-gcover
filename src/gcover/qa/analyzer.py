@@ -149,7 +149,11 @@ class QAAnalyzer:
         return qa_data
 
     def _spatial_join_with_zones(
-        self, qa_gdf: gpd.GeoDataFrame, zone_gdf: gpd.GeoDataFrame, zone_type: str
+        self,
+        qa_gdf: gpd.GeoDataFrame,
+        zone_gdf: gpd.GeoDataFrame,
+        zone_type: str,
+        source_col: str = "both",
     ) -> gpd.GeoDataFrame:
         """
         Perform spatial join between QA issues and administrative zones.
@@ -158,10 +162,13 @@ class QAAnalyzer:
             qa_gdf: QA issues GeoDataFrame
             zone_gdf: Administrative zones GeoDataFrame
             zone_type: Type of zone ('mapsheets', 'work_units', 'lots')
+            source_col: Name of column having the source, usually SOURCE_QA'  for QA
 
         Returns:
             GeoDataFrame with zone attributes joined
         """
+        SOURCE_FIELDS = ("SOURCE_RC", "SOURCE_QA")
+
         if qa_gdf.empty or zone_gdf.empty:
             return gpd.GeoDataFrame()
 
@@ -181,10 +188,17 @@ class QAAnalyzer:
             join_cols.append(zone_name_col)
 
         # Add source information for mapsheets
-        if (
-            zone_type == "mapsheets" and "SOURCE_RC" in zone_gdf.columns
-        ):  # TODO BKP or SO
-            join_cols.append("SOURCE_RC")  # Source (RC1/RC2)
+
+        if source_col == "both":
+            source_cols = list(SOURCE_FIELDS)
+        elif source_col in SOURCE_FIELDS:
+            source_cols = [source_col]
+        else:
+            source_cols = []
+        logger.info(f"Using column {source_cols} for getting source data")
+
+        if zone_type == "mapsheets" and "SOURCE_RC" in zone_gdf.columns and source_cols:
+            join_cols.extend(source_cols)
 
         logger.info(f"join_cols: {join_cols}")
 
@@ -332,7 +346,7 @@ class QAAnalyzer:
                     continue
 
                 filtered_gdf = self._spatial_join_with_zones(
-                    qa_gdf, rc1_mapsheets, "mapsheets"
+                    qa_gdf, rc1_mapsheets, "mapsheets", source_col="SOURCE_QA"
                 )
                 if not filtered_gdf.empty:
                     filtered_gdf["source_rc"] = "RC1"
@@ -372,7 +386,7 @@ class QAAnalyzer:
                     continue
 
                 filtered_gdf = self._spatial_join_with_zones(
-                    qa_gdf, rc2_mapsheets, "mapsheets"
+                    qa_gdf, rc2_mapsheets, "mapsheets", source_col="SOURCE_QA"
                 )
                 if not filtered_gdf.empty:
                     filtered_gdf["source_rc"] = "RC2"
@@ -495,7 +509,10 @@ class QAAnalyzer:
                 if deduplicate_cross_zone and "mapsheets" in self.zones_data:
                     # Perform spatial join first
                     joined_gdf = self._spatial_join_with_zones(
-                        qa_gdf, self.zones_data["mapsheets"], "mapsheets"
+                        qa_gdf,
+                        self.zones_data["mapsheets"],
+                        "mapsheets",
+                        source_col="SOURCE_QA",
                     )
                     if not joined_gdf.empty:
                         before_count = len(joined_gdf)
@@ -638,7 +655,9 @@ class QAAnalyzer:
                 logger.debug(f"Using existing zone information in {layer_name}")
             else:
                 # Perform spatial join with zones (fallback if needed)
-                joined_gdf = self._spatial_join_with_zones(qa_gdf, zone_gdf, zone_type)
+                joined_gdf = self._spatial_join_with_zones(
+                    qa_gdf, zone_gdf, zone_type, source_col="SOURCE_QA"
+                )
 
             if joined_gdf.empty:
                 logger.warning(f"No {layer_name} issues intersect {zone_type} zones")
@@ -814,7 +833,9 @@ class QAAnalyzer:
                     continue
 
                 # Spatial join with zones
-                joined_gdf = self._spatial_join_with_zones(qa_gdf, zone_gdf, zone_type)
+                joined_gdf = self._spatial_join_with_zones(
+                    qa_gdf, zone_gdf, zone_type, source_col="SOURCE_QA"
+                )
 
                 if joined_gdf.empty:
                     logger.warning(

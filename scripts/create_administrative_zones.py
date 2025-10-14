@@ -22,6 +22,7 @@ import pandas as pd
 from loguru import logger
 from rich.console import Console
 from rich.table import Table
+from shapely.ops import unary_union
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -388,6 +389,46 @@ def spatial_join_safe(
         return left_gdf.copy()
 
 
+def border_mapsheet(
+    mapsheets: gpd.GeoDataFrame, buffer_distance: float = 100
+) -> gpd.GeoDataFrame:
+    """
+    Retourne l'aire totale des mapsheets MOINS un buffer autour de toutes les bordures.
+
+    Cela permet d'identifier les zones "intérieures" éloignées des bordures/joints
+    entre mapsheets.
+
+    Parameters
+    ----------
+    mapsheets : gpd.GeoDataFrame
+        GeoDataFrame contenant les polygones des mapsheets
+    buffer_distance : float, default 100
+        Distance du buffer en unités du CRS (généralement mètres)
+
+    Returns
+    -------
+    gpd.GeoDataFrame
+        GeoDataFrame avec une seule géométrie représentant la zone intérieure
+    """
+    # 1. Dissoudre tous les polygons en une seule géométrie (l'aire totale)
+    total_area = mapsheets.unary_union
+
+    # 2. Extraire les bordures de CHAQUE mapsheet (pas de total_area!)
+    # Cela inclut les bordures internes (joints entre mapsheets)
+    borders = mapsheets.boundary.unary_union
+
+    # 3. Créer un buffer autour des bordures
+    border_buffer = borders.buffer(buffer_distance)
+
+    # 4. Soustraire le buffer de l'aire totale
+    inner_area = total_area.difference(border_buffer)
+
+    # 5. Créer un GDF avec cette géométrie
+    inner_area_gdf = gpd.GeoDataFrame(geometry=[inner_area], crs=mapsheets.crs)
+
+    return inner_area_gdf
+
+
 def clean_wu(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """
     Cleans the WU (Work Unit) GeoDataFrame by removing a predefined list of columns.
@@ -653,6 +694,11 @@ def create_administrative_zones(
         )
         logger.info(
             f"✓ Written layer: mapsheets_with_sources ({len(mapsheets_complete)} features)"
+        )
+        buffer_distance = 100
+        border_gdf = border_mapsheet(mapsheets_gdf, buffer_distance=buffer_distance)
+        border_gdf.to_file(
+            output_path, layer=f"borders_{buffer_distance}m", driver="GPKG", mode="a"
         )
 
         # Individual zone layers
