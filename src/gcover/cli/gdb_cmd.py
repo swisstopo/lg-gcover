@@ -19,20 +19,35 @@ from rich.table import Table
 # from gcover.gdb.config import  load_config TODO
 from gcover.config import AppConfig, load_config
 from gcover.config.models import GDBConfig, GlobalConfig
-from gcover.gdb.assets import (AssetType, BackupGDBAsset, GDBAsset,
-                               IncrementGDBAsset, ReleaseCandidate,
-                               VerificationGDBAsset, find_duplicate_groups,
-                               check_gdb_locks,
-                               print_duplicate_report, remove_duplicate_assets)
+from gcover.gdb.assets import (
+    AssetType,
+    BackupGDBAsset,
+    GDBAsset,
+    IncrementGDBAsset,
+    ReleaseCandidate,
+    VerificationGDBAsset,
+    find_duplicate_groups,
+    check_gdb_locks,
+    print_duplicate_report,
+    remove_duplicate_assets,
+)
 from gcover.gdb.manager import GDBAssetManager
 from gcover.gdb.storage import MetadataDB, S3Uploader, TOTPGenerator
+
 # Import utility functions
-from gcover.gdb.utils import (check_disk_space, copy_gdb_asset,
-                              create_backup_manifest, create_destination_path,
-                              filter_assets_by_criteria, find_largest_assets,
-                              format_size, get_asset_age_distribution,
-                              get_directory_size, quick_size_check,
-                              verify_backup_integrity)
+from gcover.gdb.utils import (
+    check_disk_space,
+    copy_gdb_asset,
+    create_backup_manifest,
+    create_destination_path,
+    filter_assets_by_criteria,
+    find_largest_assets,
+    format_size,
+    get_asset_age_distribution,
+    get_directory_size,
+    quick_size_check,
+    verify_backup_integrity,
+)
 from .main import parse_since
 
 console = Console()
@@ -135,7 +150,11 @@ def init(ctx):
 @click.option(
     "--rc", type=click.Choice(["RC1", "RC2"]), help="Filter by release candidate"
 )
-@click.option("--since", type=str, help="Copy only assets since date (YYYY-MM-DD) or natural date (`6 days ago`)")
+@click.option(
+    "--since",
+    type=str,
+    help="Copy only assets since date (YYYY-MM-DD) or natural date (`6 days ago`)",
+)
 @click.option(
     "--latest-only",
     is_flag=True,
@@ -144,9 +163,7 @@ def init(ctx):
 @click.option(
     "--dry-run", is_flag=True, help="Show what would be copied without actually copying"
 )
-@click.option(
-    "--overwrite", is_flag=True, help="Overwrite existing gdb"
-)
+@click.option("--overwrite", is_flag=True, help="Overwrite existing gdb")
 @click.option(
     "--preserve-structure",
     is_flag=True,
@@ -211,7 +228,6 @@ def scan(
             since_date = parse_since(since)
             rprint(f"Parsed date: {since_date}")
 
-
         # Apply filters using utils function
         filtered_assets = filter_assets_by_criteria(
             all_assets, asset_type, rc, since_date, latest_only=latest_only
@@ -228,9 +244,7 @@ def scan(
 
         for asset in assets:
             if check_gdb_locks(asset.path):
-                rprint(
-                    f"[red]Skipping locked asset: {asset.path}[/red]"
-                )
+                rprint(f"[red]Skipping locked asset: {asset.path}[/red]")
             else:
                 unlocked_assets.append(asset)
         assets = unlocked_assets
@@ -389,7 +403,10 @@ def scan(
 
                             # Use utils function for copying
                             success = copy_gdb_asset(
-                                asset.path, dest_path, verify=verify, overwrite=overwrite
+                                asset.path,
+                                dest_path,
+                                verify=verify,
+                                overwrite=overwrite,
                             )
 
                             if success:
@@ -917,7 +934,6 @@ def process_all(
         filtered_assets = []
         since_date = None
         if since:
-
             # Example usage
             since = "2 weeks ago"  # or "2025-10-01"
             since_date = parse_since(since)

@@ -22,8 +22,10 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from gcover.cli.gdb_cmd import (get_latest_assets_info,
-                                get_latest_topology_verification_info)
+from gcover.cli.gdb_cmd import (
+    get_latest_assets_info,
+    get_latest_topology_verification_info,
+)
 from gcover.cli.main import confirm_extended
 from gcover.config import AppConfig, load_config
 from gcover.gdb.assets import AssetType
@@ -247,7 +249,9 @@ def process_single(
     help="Output format",
 )
 @click.option(
-    "--since", type=str, help="Only process assets modified since date (YYYY-MM-DD) or natural date(`2 weeks ago`)"
+    "--since",
+    type=str,
+    help="Only process assets modified since date (YYYY-MM-DD) or natural date(`2 weeks ago`)",
 )
 @click.option("--no-upload", is_flag=True, help="Skip S3 upload")
 @click.option("--no-convert", is_flag=True, help="Skip web format conversion")

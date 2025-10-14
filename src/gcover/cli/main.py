@@ -39,16 +39,15 @@ env_map = {
 }
 
 
-
-
 def parse_since(since: str) -> datetime:
     parsed = dateparser.parse(since, settings={"RELATIVE_BASE": datetime.today()})
     if parsed:
         return parsed
     else:
-        rprint(f"[red]Invalid date: '{since}'. Use YYYY-MM-DD or natural language like '1 week ago'[/red]")
+        rprint(
+            f"[red]Invalid date: '{since}'. Use YYYY-MM-DD or natural language like '1 week ago'[/red]"
+        )
         sys.exit(1)
-
 
 
 def _split_bbox(ctx, param, value):
