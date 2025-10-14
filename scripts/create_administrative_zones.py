@@ -1,22 +1,25 @@
 #!/usr/bin/env python
 
-
-# scripts/create_administrative_zones.py
 """
 Create administrative_zones.gpkg from 4 standardized source files.
 
 Simplified script that handles the real data sources with their actual attributes.
+
+2025-09-05  Added sources for BKP (data for publication)
+2025-10-14  Added Sources for QA (before publication)
 """
 
 import os
-from pathlib import Path
-import click
-import geopandas as gpd
-from loguru import logger
-import pandas as pd
 import warnings
-
+from datetime import datetime as dt
 from importlib.resources import files
+from pathlib import Path
+
+import click
+import fiona
+import geopandas as gpd
+import pandas as pd
+from loguru import logger
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -154,11 +157,20 @@ def load_sources(sources_path: Path) -> pd.DataFrame:
         if "BKP" not in sources_df.columns:
             raise ValueError("Sources file missing 'BKP' column")
         else:
-            sources_df = sources_df.rename(columns={"BKP": "SOURCE_RC"})
+            sources_df = sources_df.rename(
+                columns={"BKP": "SOURCE_RC", "QA": "SOURCE_QA"}
+            )
 
         # Keep only essential columns + any extra that exist
         keep_cols = ["MSH_MAP_NBR"]
-        for col in ["MSH_MAP_TITLE", "MSH_TOPO_NR", "SOURCE_RC", "Version", "Notice"]:
+        for col in [
+            "MSH_MAP_TITLE",
+            "MSH_TOPO_NR",
+            "SOURCE_RC",
+            "SOURCE_QA",
+            "Version",
+            "Notice",
+        ]:
             if col in sources_df.columns:
                 keep_cols.append(col)
 
@@ -447,6 +459,7 @@ def clean_wu(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 @click.option(
     "--output",
     "-o",
+    "output_path",
     default=str(files("gcover.data").joinpath("administrative_zones.gpkg")),
     type=click.Path(path_type=Path),
     help="Output GPKG file path",
@@ -477,12 +490,12 @@ def clean_wu(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     required=True,
     type=click.Path(exists=True, path_type=Path),
     help="Path to sources Excel file",
-    default=str(files("gcover.data").joinpath("GC_Sources_PA.xlsx")),
+    default=str(files("gcover.data").joinpath("GC_Sources_QA.xlsx")),
 )
 @click.option("--overwrite", is_flag=True, help="Overwrite existing output file")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 def create_administrative_zones(
-    output: Path,
+    output_path: Path,
     lots_file: Path,
     wu_file: Path,
     mapsheets_file: Path,
@@ -510,18 +523,19 @@ def create_administrative_zones(
         logger.add(lambda msg: click.echo(msg, err=True), level="DEBUG")
 
     # Check if output exists
-    if output.exists() and not overwrite:
-        click.echo(f"❌ Output file exists: {output}")
+
+    if output_path.exists() and not overwrite:
+        click.echo(f"❌ Output file exists: {output_path}")
         click.echo("   Use --overwrite to replace it")
         return
 
     # Create output directory
-    output.parent.mkdir(parents=True, exist_ok=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Remove existing file
-    if output.exists():
-        output.unlink()
-        logger.info(f"Removed existing file: {output}")
+    if output_path.exists():
+        output_path.unlink()
+        logger.info(f"Removed existing file: {output_path}")
 
     try:
         # 1. Load all source data
@@ -580,35 +594,47 @@ def create_administrative_zones(
         )
 
         # 4. Write to GPKG
-        click.echo(f"💾 Writing to {output}")
+        click.echo(f"💾 Writing to {output_path}")
 
         # Main layer: mapsheets with all attributes
         # TODO: only source is OK?
         mapsheets_with_sources.to_file(
-            output, layer="mapsheets_sources_only", driver="GPKG"
+            output_path, layer="mapsheets_sources_only", driver="GPKG"
         )
         mapsheets_complete.to_file(
-            output, layer="mapsheets_with_sources", driver="GPKG"
+            output_path, layer="mapsheets_with_sources", driver="GPKG"
         )
         logger.info(
             f"✓ Written layer: mapsheets_with_sources ({len(mapsheets_complete)} features)"
         )
 
         # Individual zone layers
-        lots_gdf.to_file(output, layer="lots", driver="GPKG", mode="a")
+        lots_gdf.to_file(output_path, layer="lots", driver="GPKG", mode="a")
         logger.info(f"✓ Written layer: lots ({len(lots_gdf)} features)")
 
-        wu_gdf.to_file(output, layer="work_units", driver="GPKG", mode="a")
+        wu_gdf.to_file(output_path, layer="work_units", driver="GPKG", mode="a")
         logger.info(f"✓ Written layer: work_units ({len(wu_gdf)} features)")
 
         # Base mapsheets layer (for reference)
-        mapsheets_gdf.to_file(output, layer="mapsheets", driver="GPKG", mode="a")
+        mapsheets_gdf.to_file(output_path, layer="mapsheets", driver="GPKG", mode="a")
         logger.info(f"✓ Written layer: mapsheets ({len(mapsheets_gdf)} features)")
 
         # 5. Summary and validation
         click.echo(f"✅ Administrative zones created successfully!")
-        click.echo(f"   📁 File: {output}")
+        click.echo(f"   📁 File: {output_path}")
         click.echo(f"   📊 Layers: mapsheets_with_sources, lots, work_units, mapsheets")
+
+        # Write the docstring to a file
+        now = dt.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        layers = fiona.listlayers(output_path)
+        layer_string = "\n * ".join(layers)
+        docstring = (
+            f"""{__doc__ or ""}\nLayer list:\n * {layer_string}\n\nGenerated on {now}"""
+        )
+        output_without_ext = output_path.with_suffix("")
+        with open(output_without_ext.with_suffix(".README"), "w") as f:
+            f.write(docstring)
 
         # Validation summary
         if "SOURCE_RC" in mapsheets_complete.columns:
