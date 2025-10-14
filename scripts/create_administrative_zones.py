@@ -5,8 +5,8 @@ Create administrative_zones.gpkg from 4 standardized source files.
 
 Simplified script that handles the real data sources with their actual attributes.
 
-2025-09-05  Added sources for BKP (data for publication)
-2025-10-14  Added Sources for QA (before publication)
+2025-09-05  Added `SOURCE_RC` sources for BKP (data for publication)
+2025-10-14  Added sources `SOURCE_QA`  for QA (before publication)
 """
 
 import os
