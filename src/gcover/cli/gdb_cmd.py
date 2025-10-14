@@ -33,6 +33,7 @@ from gcover.gdb.utils import (check_disk_space, copy_gdb_asset,
                               format_size, get_asset_age_distribution,
                               get_directory_size, quick_size_check,
                               verify_backup_integrity)
+from .main import parse_since
 
 console = Console()
 
@@ -134,7 +135,7 @@ def init(ctx):
 @click.option(
     "--rc", type=click.Choice(["RC1", "RC2"]), help="Filter by release candidate"
 )
-@click.option("--since", type=str, help="Copy only assets since date (YYYY-MM-DD)")
+@click.option("--since", type=str, help="Copy only assets since date (YYYY-MM-DD) or natural date (`6 days ago`)")
 @click.option(
     "--latest-only",
     is_flag=True,
@@ -207,11 +208,9 @@ def scan(
         # Parse since date if provided
         since_date = None
         if since:
-            try:
-                since_date = datetime.strptime(since, "%Y-%m-%d")
-            except ValueError:
-                rprint(f"[red]Invalid date format: {since}. Use YYYY-MM-DD[/red]")
-                sys.exit(1)
+            since_date = parse_since(since)
+            rprint(f"Parsed date: {since_date}")
+
 
         # Apply filters using utils function
         filtered_assets = filter_assets_by_criteria(
@@ -918,6 +917,12 @@ def process_all(
         filtered_assets = []
         since_date = None
         if since:
+
+            # Example usage
+            since = "2 weeks ago"  # or "2025-10-01"
+            since_date = parse_since(since)
+            print(f"Parsed date: {since_date.strftime('%Y-%m-%d')}")
+
             try:
                 since_date = datetime.strptime(since, "%Y-%m-%d")
             except ValueError:

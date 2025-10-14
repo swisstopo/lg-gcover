@@ -52,6 +52,7 @@ dependencies = [
     "pyarrow>=17.0.0",
     "fastparquet",
     "requests",
+    "dateparser",
 ]
 
 

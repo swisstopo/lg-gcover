@@ -32,6 +32,8 @@ from gcover.gdb.manager import GDBAssetManager
 from gcover.gdb.qa_converter import FileGDBConverter
 from gcover.qa.analyzer import QAAnalyzer
 
+from .main import parse_since
+
 OUTPUT_FORMATS = ["csv", "xlsx", "json"]
 GROUP_BY_CHOICES = ["mapsheets", "work_units", "lots"]
 
@@ -245,7 +247,7 @@ def process_single(
     help="Output format",
 )
 @click.option(
-    "--since", type=str, help="Only process assets modified since date (YYYY-MM-DD)"
+    "--since", type=str, help="Only process assets modified since date (YYYY-MM-DD) or natural date(`2 weeks ago`)"
 )
 @click.option("--no-upload", is_flag=True, help="Skip S3 upload")
 @click.option("--no-convert", is_flag=True, help="Skip web format conversion")
@@ -298,11 +300,8 @@ def process_all(
 
     since_date = None
     if since:
-        try:
-            since_date = datetime.strptime(since, "%Y-%m-%d")
-        except ValueError:
-            console.print(f"[red]Invalid date format: {since}. Use YYYY-MM-DD[/red]")
-            sys.exit(1)
+        since_date = parse_since(since)
+        console.print(f"Parsed date: {since_date}")
 
     # Get S3 settings
     s3_bucket = qa_config.get_s3_bucket(global_config)

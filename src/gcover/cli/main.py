@@ -9,6 +9,8 @@ from pathlib import Path
 import click
 from loguru import logger
 from rich import print as rprint
+from datetime import datetime
+import dateparser
 
 # Ajouter le dossier parent au path si nécessaire (pour le développement)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -35,6 +37,18 @@ env_map = {
     "int": "integration",
     "test": "test",
 }
+
+
+
+
+def parse_since(since: str) -> datetime:
+    parsed = dateparser.parse(since, settings={"RELATIVE_BASE": datetime.today()})
+    if parsed:
+        return parsed
+    else:
+        rprint(f"[red]Invalid date: '{since}'. Use YYYY-MM-DD or natural language like '1 week ago'[/red]")
+        sys.exit(1)
+
 
 
 def _split_bbox(ctx, param, value):
