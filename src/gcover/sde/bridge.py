@@ -17,6 +17,9 @@ from rich.progress import (BarColumn, MofNCompleteColumn, Progress,
                            SpinnerColumn, TaskID, TextColumn,
                            TimeElapsedColumn, TimeRemainingColumn)
 
+from gcover.utils.console import console
+
+
 try:
     import arcpy
 except ImportError:

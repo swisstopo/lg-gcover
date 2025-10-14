@@ -26,19 +26,21 @@ from rich.progress import (BarColumn, Progress, SpinnerColumn,
 from rich.table import Table
 from shapely.geometry import box
 
+from gcover.utils.console import console
+
 try:
     import arcpy
-
     HAS_ARCPY = True
+    from ..sde.bridge import GCoverSDEBridge, create_bridge
 except ImportError:
     HAS_ARCPY = False
     logger.warning("arcpy not available - using pure geopandas approach")
 
 from gcover.core.geometry import load_gpkg_with_validation, safe_read_filegdb
 
-from ..sde.bridge import GCoverSDEBridge, create_bridge
 
-from gcover.utils.console import console
+
+
 
 
 class LayerType(Enum):
