@@ -62,7 +62,6 @@ jobs:
           pytest \
           pytest-cov \
           black \
-          dateparser \
           ruff conda-build pip setuptools setuptools-scm build
           conda list
 
