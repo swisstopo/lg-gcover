@@ -22,25 +22,34 @@ import yaml
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import (BarColumn, Progress, SpinnerColumn,
-                           TaskProgressColumn, TextColumn)
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+)
 from rich.prompt import Confirm
 from rich.table import Table
 
 # Import classification extractor
-from .esri_classification_extractor import (ClassificationClass,
-                                            ESRIClassificationExtractor,
-                                            LayerClassification, extract_lyrx)
+from .esri_classification_extractor import (
+    ClassificationClass,
+    ESRIClassificationExtractor,
+    LayerClassification,
+    extract_lyrx,
+)
+from .utils import translate_esri_to_pandas
 
 console = Console()
 
 # Configure loguru
-logger.remove()
+"""logger.remove()
 logger.add(
     sys.stdout,
     format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
     level="INFO",
-)
+)"""
 
 
 def float_to_int_string(val):
@@ -805,12 +814,12 @@ class ClassificationApplicator:
         logger.success(
             f"All required GPKG fields present: {self.matcher.required_gpkg_fields}"
         )
-        logger.info(self.field_types)
+        logger.info(f"Fields to cast: {self.field_types}")  # TODO check why not casting
 
         # Step 2: Cast fields to correct types
         if self.field_types:
             console.print(f"\n[cyan]📊 Casting field types...[/cyan]")
-            for field, dtype in field_types.items():
+            for field, dtype in self.field_types.items():
                 if field in gdf.columns:
                     try:
                         if dtype.lower().startswith("int"):
@@ -828,6 +837,7 @@ class ClassificationApplicator:
         # Step 4: Apply filter with numeric columns
         if additional_filter:
             pandas_filter = translate_esri_to_pandas(additional_filter)
+            console.print(f"[cyan]Found filter: {pandas_filter}[/cyan]")
             gdf_filtered = apply_robust_filter(
                 gdf,
                 additional_filter=pandas_filter,
@@ -835,6 +845,11 @@ class ClassificationApplicator:
             )
         else:
             gdf_filtered = gdf.copy()
+            console.print(f"[yellow]No filter[/yellow]")
+
+        console.print(
+            f"[cyan]Using {len(gdf_filtered)} out of total {len(gdf)} features[/cyan]"
+        )
 
         # Initialize counters
         matched_count = 0

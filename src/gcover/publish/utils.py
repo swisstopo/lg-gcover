@@ -1,6 +1,54 @@
 import re
 
 import pandas as pd
+from PIL import Image, ImageDraw, ImageFont
+from rich.console import Console
+
+console = Console()
+
+
+def generate_font_image(font_symbol_name, font_name, char_index):
+    font_size = 100
+    img_size = (200, 200)
+    image = None
+
+    font_paths = {
+        "geofonts1": "/home/marco/.fonts/g/GeoFonts1.ttf",
+        "geofonts2": "/home/marco/.fonts/g/GeoFonts2.ttf",
+        "default": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    }
+
+    char = chr(char_index)  # chr(index)
+
+    font_path = font_paths.get(font_name)
+    if not font_path:
+        console.print(f"[red]Font {font_name} not found on system")
+        return image
+
+    image = Image.new("RGB", img_size, color="white")
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.truetype(font_path, font_size)
+
+    # Draw character
+    bbox = draw.textbbox((0, 0), char, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    position = (
+        (img_size[0] - text_width) // 2,
+        (img_size[1] - text_height) // 2,
+    )
+    draw.text(position, char, font=font, fill="black")
+
+    # Add index label
+    draw.text(
+        (10, 10),
+        f"{font_symbol_name}: '{char}' ({char_index})",
+        font=ImageFont.truetype(font_paths["default"], 12),
+        fill="gray",
+    )
+
+    return image
+
 
 # ============================================================================
 # ESRI vs PANDAS SYNTAX
@@ -21,13 +69,12 @@ pandas_filter = "KIND in (14401001, 14401002) & ((PRINTED == 1) | (PRINTED.isna(
 def translate_esri_to_pandas(esri_expression):
     """
     Translate ESRI definitionExpression to pandas query syntax.
-
     Handles:
     - AND/OR → &/|
     - = → ==
     - IS NULL → .isna()
     - IS NOT NULL → .notna()
-    - IN clause
+    - IN clause (with or without parentheses)
 
     Args:
         esri_expression: ESRI-style filter string
@@ -37,23 +84,31 @@ def translate_esri_to_pandas(esri_expression):
     """
     expr = esri_expression
 
-    # Replace logical operators (case insensitive)
+    # Replace IN (case insensitive) first
+    expr = re.sub(r"\bIN\b", "in", expr, flags=re.IGNORECASE)
+
+    # Handle IN clause without parentheses
+    # Pattern: FIELD in value(s) → FIELD in (value(s))
+    # Matches values (numbers, strings, commas) until AND/OR or end
+    # The (?!\() ensures we don't match if parentheses already exist
+    expr = re.sub(
+        r"(\w+)\s+in\s+(?!\()([\w\s,\'\"]+?)(?=\s+(?:AND|OR)\b|$)",
+        r"\1 in (\2)",
+        expr,
+        flags=re.IGNORECASE,
+    )
+
+    # Replace logical operators
     expr = re.sub(r"\bAND\b", "&", expr, flags=re.IGNORECASE)
     expr = re.sub(r"\bOR\b", "|", expr, flags=re.IGNORECASE)
 
-    # Replace IN (case insensitive)
-    expr = re.sub(r"\bIN\b", "in", expr, flags=re.IGNORECASE)
-
     # Replace IS NOT NULL with .notna()
-    # Pattern: FIELD IS NOT NULL → FIELD.notna()
     expr = re.sub(r"(\w+)\s+IS\s+NOT\s+NULL", r"\1.notna()", expr, flags=re.IGNORECASE)
 
     # Replace IS NULL with .isna()
-    # Pattern: FIELD IS NULL → FIELD.isna()
     expr = re.sub(r"(\w+)\s+IS\s+NULL", r"\1.isna()", expr, flags=re.IGNORECASE)
 
     # Replace single = with == (but not in != or ==)
-    # Look for = that's not preceded or followed by =, !, <, >
     expr = re.sub(r"(?<![=!<>])=(?![=])", "==", expr)
 
     # Replace <> with !=

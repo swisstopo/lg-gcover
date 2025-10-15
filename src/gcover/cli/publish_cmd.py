@@ -14,6 +14,7 @@ import click
 import geopandas as gpd
 import pandas as pd
 import yaml
+import time
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
@@ -58,7 +59,14 @@ def get_publish_config(ctx):
 @click.pass_context
 def publish_commands(ctx):
     """Commands for preparing GeoCover data for publication."""
-    pass
+    # Ensure context object exists and has required keys
+    if ctx.obj is None:
+        ctx.ensure_object(dict)
+
+    # Set defaults if not provided by parent gcover command
+    ctx.obj.setdefault("environment", "development")
+    ctx.obj.setdefault("verbose", False)
+    ctx.obj.setdefault("config_path", None)
 
 
 '''
@@ -108,6 +116,11 @@ def cli(verbose: bool, quiet: bool):
     help="Output GPKG path (default: input_classified.gpkg)",
 )
 @click.option(
+    "--continue-on-error",
+    is_flag=True,
+    help="Continue processing other assets if one fails",
+)
+@click.option(
     "--styles-dir",
     type=click.Path(exists=True, path_type=Path),
     help="Base directory for resolving relative style paths (default: config file directory)",
@@ -126,6 +139,7 @@ def apply_config(
     debug: bool,
     dry_run: bool,
     bbox: Optional[tuple],
+    continue_on_error: bool,
 ):
     """Apply multiple classifications from YAML configuration file.
 
@@ -216,6 +230,8 @@ def apply_config(
                 console.print("\n[red]✗ Configuration has errors[/red]")
             return
 
+        start_time = time.time()
+
         # Apply classifications
         stats = apply_batch_from_config(
             gpkg_path=gpkg_file,
@@ -224,7 +240,12 @@ def apply_config(
             output_path=output,
             debug=debug,
             bbox=bbox,
+            continue_on_error=continue_on_error,
         )
+
+        end_time = time.time()
+        elapsed = end_time - start_time
+        mins, secs = divmod(elapsed, 60)
 
         # Display final statistics
         console.print("\n[bold green]✅ Batch processing complete![/bold green]\n")
@@ -237,12 +258,16 @@ def apply_config(
         summary_table.add_row(
             "Classifications applied", str(stats["classifications_applied"])
         )
+        summary_table.add_row(
+            "Features newly classified", str(stats["features_newly_classified"])
+        )
         summary_table.add_row("Features classified", str(stats["features_classified"]))
         summary_table.add_row("Total features", str(stats["features_total"]))
 
         if stats["features_total"] > 0:
             pct = stats["features_classified"] / stats["features_total"] * 100
             summary_table.add_row("Coverage", f"{pct:.1f}%")
+        summary_table.add_row("Processing time", f"{int(mins)}m {secs:.1f}s")
 
         console.print(summary_table)
 

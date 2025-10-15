@@ -32,6 +32,16 @@ from .tooltips_enricher import LayerType
 console = Console()
 
 
+@dataclass(frozen=True)
+class FontSymbol:
+    font_family: str
+    char_index: int
+    # Add more fields as needed (e.g., weight, color)
+
+    def symbol_name(self) -> str:
+        return f"{self.font_family}_{self.char_index}"
+
+
 @dataclass
 class ClassificationConfig:
     """Configuration for a single classification application."""
@@ -42,7 +52,6 @@ class ClassificationConfig:
     fields: Optional[Dict[str, str]] = None
     filter: Optional[str] = None
     symbol_prefix: Optional[str] = None
-
 
 
 @dataclass
@@ -132,6 +141,7 @@ def apply_batch_from_config(
     output_path: Optional[Path] = None,
     debug: bool = False,
     bbox: Optional[tuple] = None,
+    continue_on_error: Optional[bool] = False,
 ) -> Dict[str, any]:
     """
     Apply all classifications from config to a GPKG.
@@ -157,7 +167,9 @@ def apply_batch_from_config(
     # Determine which layers to process
     if layer_name:
         if layer_name not in available_layers:
-            raise ValueError(f"Layer '{layer_name}' not found in GPKG")
+            # raise ValueError(f"Layer '{layer_name}' not found in GPKG")
+            console.er(f"Layer '{layer_name}' not found in GPKG")
+            return {}
         layers_to_process = [layer_name]
     else:
         # Process all layers that have config
@@ -179,6 +191,7 @@ def apply_batch_from_config(
         "classifications_applied": 0,
         "features_classified": 0,
         "features_total": 0,
+        "features_newly_classified": 0,
     }
 
     # Process each layer
@@ -208,9 +221,7 @@ def apply_batch_from_config(
 
         # Cast fields
         field_types = layer_config.field_types
-
-        console.print(field_types)
-        console.print(gdf.columns)
+        console.print(f"\n[bold blue]Field types: {field_types}[/bold blue]")
 
         for field, dtype in field_types.items():
             if field in gdf.columns:
@@ -233,9 +244,13 @@ def apply_batch_from_config(
             console.print(
                 f"\n  [{i}/{len(layer_config.classifications)}] {class_config.style_file.name}"
             )
-
-            # Load classification from style file
-            classifications = extract_lyrx(class_config.style_file, display=False)
+            try:
+                # Load classification from style file
+                classifications = extract_lyrx(class_config.style_file, display=False)
+            except FileNotFoundError as e:
+                logger.error(f"Style .lyrx not found: {class_config.style_file}")
+                if continue_on_error:
+                    continue
 
             # Find the right classification
             classification = None
@@ -265,6 +280,7 @@ def apply_batch_from_config(
                     label_field=config.label_field,
                     symbol_prefix=class_config.symbol_prefix,
                     field_mapping=class_config.fields,
+                    field_types=field_types,
                     treat_zero_as_null=config.treat_zero_as_null,
                     debug=debug,
                 )
@@ -276,12 +292,12 @@ def apply_batch_from_config(
                     preserve_existing=True,  # But preserve existing non-NULL values
                 )
                 # TODO After bedrock classification
-                console.print(
-                    f"After {class_config.classification_name}: {gdf_result[config.symbol_field].notna().sum()} symbols"
-                )
-                console.print(
-                    f"{class_config.classification_name} symbols: {gdf_result[config.symbol_field].value_counts()}"
-                )
+                # console.print(
+                #    f"After {class_config.classification_name}: {gdf_result[config.symbol_field].notna().sum()} symbols"
+                # )
+                # console.print(
+                #    f"{class_config.classification_name} symbols: {gdf_result[config.symbol_field].value_counts()}"
+                # )
 
                 # Clean up string "None" values
                 gdf_result[config.symbol_field] = gdf_result[
@@ -297,14 +313,16 @@ def apply_batch_from_config(
                     gdf_result[config.symbol_field].notna()
                     & (gdf[config.symbol_field].isna())
                 ).sum()
-                stats["features_classified"] += newly_classified
+                features_classified = gdf_result[config.symbol_field].notna().sum()
+                stats["features_newly_classified"] += newly_classified
+                stats["features_classified"] += features_classified
                 stats["classifications_applied"] += 1
 
                 # Update gdf for next classification
                 gdf = gdf_result
 
                 console.print(
-                    f"    [green]✓ Classified {newly_classified} features[/green]"
+                    f"    [green]✓ Newly classified {newly_classified} features[/green]"
                 )
 
             except Exception as e:
@@ -330,10 +348,11 @@ def apply_batch_from_config(
             gdf.to_file(output_path, layer=layer, driver="GPKG")
 
         gdf_check = gpd.read_file(output_path, layer=layer)
-        console.print(
-            f"After save: {gdf_check[config.symbol_field].notna().sum()} symbols"
-        )
-        console.print(f"Saved symbols: {gdf_check[config.symbol_field].value_counts()}")
+        # TODO
+        # console.print(
+        #    f"After save: {gdf_check[config.symbol_field].notna().sum()} symbols"
+        # )
+        # console.print(f"Saved symbols: {gdf_check[config.symbol_field].value_counts()}")
 
         stats["layers_processed"] += 1
 
