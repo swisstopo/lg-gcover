@@ -3,7 +3,6 @@
 Enhanced CLI commands for preparing GeoCover data for publication.
 Supports multiple tooltip layers, flexible source mappings, and comprehensive configuration.
 """
-
 import os
 import sys
 from importlib.resources import files
@@ -24,7 +23,8 @@ from rich.table import Table
 from gcover.config import SDE_INSTANCES, AppConfig, load_config
 from gcover.publish.esri_classification_applicator import ClassificationApplicator
 from gcover.publish.esri_classification_extractor import extract_lyrx
-from gcover.publish.generator import MapServerGenerator, QGISGenerator
+from gcover.publish.generator import MapServerGenerator
+from gcover.publish.qgis_generator import QGISGenerator
 from gcover.publish.style_config import (
     BatchClassificationConfig,
     apply_batch_from_config,
@@ -67,30 +67,6 @@ def publish_commands(ctx):
     ctx.obj.setdefault("environment", "development")
     ctx.obj.setdefault("verbose", False)
     ctx.obj.setdefault("config_path", None)
-
-
-'''
-@publish_commands.command()
-@click.pass_context
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
-@click.option("--quiet", "-q", is_flag=True, help="Suppress non-error output")
-def cli(verbose: bool, quiet: bool):
-    """🎨 Classification Symbol Applicator
-
-    Apply ESRI classification rules to GeoDataFrames/GPKG files.
-    Adds a SYMBOL field with generated class identifiers based on classification rules.
-    """
-    if quiet:
-        logger.remove()
-        logger.add(sys.stdout, level="ERROR", format="<red>{level}</red>: {message}")
-    elif verbose:
-        logger.remove()
-        logger.add(
-            sys.stdout,
-            level="DEBUG",
-            format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>",
-        )'''
-
 
 @publish_commands.command()
 @click.pass_context
@@ -166,16 +142,16 @@ def apply_config(
     \b
     Examples:
       # Apply all classifications from config
-      classifier apply-config geocover.gpkg config.yaml
+      gcover publish apply-config geocover.gpkg config.yaml
 
       # Process only specific layer
-      classifier apply-config geocover.gpkg config.yaml -l GC_POINT_OBJECTS
+      gcover publish apply-config geocover.gpkg config.yaml -l GC_POINT_OBJECTS
 
       # Specify styles directory
-      classifier apply-config data.gpkg config.yaml --styles-dir /path/to/styles
+      gcover publish apply-config data.gpkg config.yaml --styles-dir /path/to/styles
 
       # Dry run to validate config
-      classifier apply-config geocover.gpkg config.yaml --dry-run
+      gcover publish apply-config geocover.gpkg config.yaml --dry-run
     """
     try:
         console.print(f"\n[bold blue]📋 Batch Classification from Config[/bold blue]\n")
@@ -282,7 +258,6 @@ def apply_config(
             logger.debug(traceback.format_exc())
         raise
 
-
 @publish_commands.command()
 @click.pass_context
 @click.argument(
@@ -294,16 +269,16 @@ def apply_config(
     default="complex",
     help="Type of example to generate",
 )
-def create_config(ctx, output_path: Path, example: str):
-    """Create an example YAML configuration file for batch processing.
+def create_classification_config(ctx, output_path: Path, example: str):
+    """Create an example YAML configuration file for batch classification.
 
     \b
     Examples:
       # Create simple example
-      classifier create-config config.yaml --example simple
+      gcover publish create-classification-config config.yaml --example simple
 
       # Create complex example with multiple layers
-      classifier create-config config.yaml --example complex
+      gcover publish create-classification-config config.yaml --example complex
     """
     if example == "simple":
         config = {
@@ -389,7 +364,7 @@ def create_config(ctx, output_path: Path, example: str):
     console.print(f"[green]✓ Created example configuration: {output_path}[/green]")
     console.print(f"\nEdit this file to match your layers and style files, then run:")
     console.print(
-        f"[cyan]  classifier apply-config your_data.gpkg {output_path}[/cyan]"
+        f"[cyan]  gcover publish apply-config your_data.gpkg {output_path}[/cyan]"
     )
 
 
@@ -767,19 +742,22 @@ def list_mapsheets(ctx, admin_zones: Optional[Path]):
         raise click.Abort()
 
 
+
 @publish_commands.command()
 @click.pass_context
-@click.argument("style_file", type=click.Path(exists=True, path_type=Path))
+@click.argument("style_files", nargs=-1, type=click.Path(exists=True, path_type=Path))
 @click.option(
-    "--output",
+    "--output-dir",
     "-o",
     type=click.Path(path_type=Path),
     required=True,
-    help="Output mapfile path",
+    help="Output directory for mapfiles",
 )
-@click.option("--layer-name", "-l", required=True, help="MapServer layer name")
 @click.option(
-    "--data-path", "-d", required=True, help="Data source path (OGR connection string)"
+    "--config-file",
+    "-c",
+    type=click.Path(exists=True, path_type=Path),
+    help="YAML configuration file (extracts prefixes and layer names automatically)",
 )
 @click.option(
     "--layer-type",
@@ -788,12 +766,8 @@ def list_mapsheets(ctx, admin_zones: Optional[Path]):
     default="Polygon",
     help="Geometry type",
 )
-@click.option("--classification-name", "-c", help="Specific classification to use")
 @click.option(
-    "--symbol-prefix",
-    "-p",
-    default="class",
-    help='Prefix for symbol IDs (e.g., "bedrock", "unco")',
+    "--data-path", "-d", help="Data source path template (use {layer} placeholder)"
 )
 @click.option(
     "--use-symbol-field",
@@ -803,97 +777,205 @@ def list_mapsheets(ctx, admin_zones: Optional[Path]):
 @click.option(
     "--symbol-field", default="SYMBOL", help="Name of symbol field (default: SYMBOL)"
 )
+@click.option(
+    "--prefixes",
+    "-p",
+    help="Layer name to prefix mapping as JSON (overrides config file)",
+)
+@click.option(
+    "--generate-combined",
+    is_flag=True,
+    help="Generate combined symbol file and fontset for all layers",
+)
 def mapserver(
-    ctx,
-    style_file,
-    output,
-    layer_name,
-    data_path,
-    layer_type,
-    classification_name,
-    symbol_prefix,
-    use_symbol_field,
-    symbol_field,
+        ctx,
+        style_files: tuple,
+        output_dir: Path,
+        config_file: Optional[Path],
+        layer_type: str,
+        data_path: Optional[str],
+        use_symbol_field: bool,
+        symbol_field: str,
+        prefixes: Optional[str],
+        generate_combined: bool,
 ):
-    """Generate MapServer mapfile CLASS sections.
+    """Generate MapServer mapfiles from ESRI style files.
 
-    \b
-    Two modes:
-    1. Field-based (default): Complex expressions using classification fields
-    2. Symbol-based (--use-symbol-field): Simple expressions using SYMBOL field
+    Processes multiple style files and generates individual mapfiles plus
+    optional combined symbol file and fontset with proper symbol tracking.
 
     \b
     Examples:
-      # Field-based (complex expressions)
-      style-gen mapserver Bedrock.lyrx -o bedrock.map \\
-        -l gc_bedrock -d "data/geocover.gpkg,layer=GC_BEDROCK" -t POLYGON
+      # Using configuration file (recommended)
+      gcover publish mapserver -o output/ -c config/esri_classifier.yaml \\
+        --generate-combined
 
-      # Symbol-based (simple expressions, requires pre-classified data)
-      style-gen mapserver Bedrock.lyrx -o bedrock.map \\
-        -l gc_bedrock -d "data/geocover.gpkg,layer=GC_BEDROCK" -t POLYGON \\
-        --use-symbol-field --symbol-prefix bedrock
+      # Manual with JSON prefixes
+      gcover publish mapserver styles/*.lyrx -o output/ -t Polygon \\
+        --use-symbol-field --generate-combined \\
+        --prefixes '{"Bedrock":"bedr","Surfaces":"surf","Fossils":"foss"}'
+
+      # With data path template
+      gcover publish mapserver styles/*.lyrx -o output/ \\
+        --data-path "geocover.gpkg,layer={layer}" \\
+        --generate-combined
     """
-    # Load classification
-    console.print(f"Loading classification from {style_file}...")
-    classifications = extract_lyrx(style_file, display=False)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Select classification
-    if classification_name:
-        classification = next(
-            (c for c in classifications if c.layer_name == classification_name), None
-        )
-        if not classification:
-            console.print(
-                f"[red]Classification '{classification_name}' not found[/red]"
-            )
-            return
-    elif len(classifications) == 1:
-        classification = classifications[0]
-    else:
-        console.print(
-            "[red]Multiple classifications found, specify --classification-name[/red]"
-        )
-        return
+    # Load configuration if provided
+    prefix_map = {}
+    mapfile_names = {}
+    config = None
 
-    # Generate mapfile
+    if config_file:
+        console.print(f"[cyan]Loading configuration from {config_file}[/cyan]")
+        config = BatchClassificationConfig(config_file)
+
+        # Extract prefixes and mapfile names from config
+        for layer_config in config.layers:
+            for class_config in layer_config.classifications:
+                if class_config.classification_name:
+                    # Use classification name as key
+                    key = class_config.classification_name
+                    if class_config.symbol_prefix:
+                        prefix_map[key] = class_config.symbol_prefix
+                    if class_config.mapfile_name:
+                        mapfile_names[key] = class_config.mapfile_name
+
+        console.print(f"  [green]✓[/green] Extracted prefixes for {len(prefix_map)} classifications")
+
+        # If no style files specified, use all from config
+        if not style_files:
+            style_files = []
+            for layer_config in config.layers:
+                for class_config in layer_config.classifications:
+                    if class_config.style_file not in style_files:
+                        style_files.append(class_config.style_file)
+            console.print(f"  [green]✓[/green] Found {len(style_files)} style files in config")
+
+    # Override with manual prefixes if provided
+    if prefixes:
+        import json
+        try:
+            manual_prefixes = json.loads(prefixes)
+            prefix_map.update(manual_prefixes)
+            console.print(f"[yellow]Applied manual prefix overrides[/yellow]")
+        except json.JSONDecodeError as e:
+            console.print(f"[red]Error parsing prefixes JSON: {e}[/red]")
+            raise click.Abort()
+
+    if not style_files:
+        console.print("[red]Error: No style files specified. Use style_files argument or --config-file[/red]")
+        raise click.Abort()
+
+    # Single generator for all layers (to track symbols across layers)
     generator = MapServerGenerator(
         layer_type=layer_type,
         use_symbol_field=use_symbol_field,
         symbol_field=symbol_field,
     )
 
-    mapfile_content = generator.generate_layer(
-        classification=classification,
-        layer_name=layer_name,
-        data_path=data_path,
-        symbol_prefix=symbol_prefix,
-    )
+    # Store all classifications for combined symbol file
+    all_classifications = []
+    generated_files = []
 
-    # Save
-    output.write_text(mapfile_content)
-    console.print(f"[green]✓ Generated MapServer layer: {output}[/green]")
-    console.print(f"  Classes: {len([c for c in classification.classes if c.visible])}")
-    console.print(
-        f"  Mode: {'SYMBOL field' if use_symbol_field else 'Field expressions'}"
-    )
+    console.print(f"\n[bold blue]🗺️  Generating MapServer Mapfiles[/bold blue]\n")
 
-    # Generate symbol file
-    symbol_file = output.parent / "symbols.sym"
-    if not symbol_file.exists():
-        symbol_content = generator.generate_symbol_file()
+    for style_file in style_files:
+        console.print(f"Processing {style_file.name}...")
+
+        # Load classifications
+        classifications = extract_lyrx(style_file, display=False)
+
+        if not classifications:
+            console.print(f"[yellow]⚠ No classifications found in {style_file.name}[/yellow]")
+            continue
+
+        # Process each classification
+        for classification in classifications:
+            layer_name = classification.layer_name or style_file.stem
+
+            # Get prefix and mapfile name from config if available
+            symbol_prefix = prefix_map.get(layer_name, layer_name.lower())
+            mapfile_layer_name = mapfile_names.get(layer_name, layer_name)
+
+            # Determine data path
+            layer_data_path = None
+            if data_path:
+                layer_data_path = data_path.replace("{layer}", mapfile_layer_name.upper())
+
+            # Generate mapfile
+            mapfile_content = generator.generate_layer(
+                classification=classification,
+                layer_name=mapfile_layer_name,
+                data_path=layer_data_path,
+                symbol_prefix=symbol_prefix,
+            )
+
+            # Save mapfile
+            output_file = output_dir / f"{mapfile_layer_name}.map"
+            output_file.write_text(mapfile_content)
+            generated_files.append(output_file)
+
+            console.print(
+                f"  [green]✓[/green] Generated: {output_file.name} "
+                f"(prefix: {symbol_prefix}, "
+                f"{len([c for c in classification.classes if c.visible])} classes)"
+            )
+
+            # Store classification for combined symbol file
+            all_classifications.append(classification)
+
+
+
+    # Generate combined symbol file if requested
+    if generate_combined and all_classifications:
+        console.print("\n[cyan]Generating combined symbol file...[/cyan]")
+
+        # Generate symbol file with all collected symbols
+        symbol_content = generator.generate_symbol_file(
+            classification_list=all_classifications,
+            prefixes=prefix_map
+        )
+
+        symbol_file = output_dir / "symbols.sym"
         symbol_file.write_text(symbol_content)
-        console.print(f"[green]✓ Generated symbol file: {symbol_file}[/green]")
+        console.print(f"  [green]✓[/green] Symbol file: {symbol_file}")
+
+        # Generate fontset
+        fontset_content = generator.generate_fontset()
+        fontset_file = output_dir / "fonts.txt"
+        fontset_file.write_text(fontset_content)
+        console.print(f"  [green]✓[/green] Fontset: {fontset_file}")
+
+        # Check for PDF
+        pdf_file = output_dir / "font_characters.pdf"
+        if pdf_file.exists():
+            console.print(f"  [green]✓[/green] Font symbols PDF: {pdf_file}")
+
+        console.print(f"\n[dim]Tracked {len(generator.symbol_registry)} unique font symbols[/dim]")
+        console.print(f"[dim]Used {len(generator.fonts_used)} fonts[/dim]")
+
+    # Summary
+    console.print(f"\n[bold green]✅ Generated {len(generated_files)} mapfile(s)[/bold green]")
+    console.print(f"[dim]Output directory: {output_dir}[/dim]")
 
 
 @publish_commands.command()
 @click.pass_context
-@click.argument("style_file", type=click.Path(exists=True, path_type=Path))
+@click.argument("style_files", nargs=-1, type=click.Path(exists=True, path_type=Path))
 @click.option(
-    "--output",
+    "--output-dir",
     "-o",
     type=click.Path(path_type=Path),
     required=True,
-    help="Output QML file path",
+    help="Output directory for QML files",
+)
+@click.option(
+    "--config-file",
+    "-c",
+    type=click.Path(exists=True, path_type=Path),
+    help="YAML configuration file (extracts prefixes automatically)",
 )
 @click.option(
     "--geometry-type",
@@ -902,13 +984,6 @@ def mapserver(
     default="Polygon",
     help="Geometry type",
 )
-@click.option("--classification-name", "-c", help="Specific classification to use")
-@click.option(
-    "--symbol-prefix",
-    "-p",
-    default="class",
-    help='Prefix for symbol IDs (e.g., "bedrock", "unco")',
-)
 @click.option(
     "--use-symbol-field",
     is_flag=True,
@@ -917,65 +992,117 @@ def mapserver(
 @click.option(
     "--symbol-field", default="SYMBOL", help="Name of symbol field (default: SYMBOL)"
 )
+@click.option(
+    "--prefixes",
+    "-p",
+    help="Layer name to prefix mapping as JSON (overrides config file)",
+)
 def qgis(
-    ctx,
-    style_file,
-    output,
-    geometry_type,
-    classification_name,
-    symbol_prefix,
-    use_symbol_field,
-    symbol_field,
+        ctx,
+        style_files: tuple,
+        output_dir: Path,
+        config_file: Optional[Path],
+        geometry_type: str,
+        use_symbol_field: bool,
+        symbol_field: str,
+        prefixes: Optional[str],
 ):
-    """Generate QGIS QML style file.
+    """Generate QGIS QML style files from ESRI style files.
 
     \b
     Examples:
-      # Field-based rules
-      style-gen qgis Bedrock.lyrx -o bedrock.qml -t Polygon
+      # Using configuration file (recommended)
+      gcover publish qgis -o output/ -c config/esri_classifier.yaml
 
-      # Symbol-based rules (simpler, faster)
-      style-gen qgis Bedrock.lyrx -o bedrock.qml -t Polygon \\
-        --use-symbol-field --symbol-prefix bedrock
+      # Manual with JSON prefixes
+      gcover publish qgis styles/*.lyrx -o output/ -t Polygon \\
+        --use-symbol-field \\
+        --prefixes '{"Bedrock":"bedr","Surfaces":"surf"}'
     """
-    # Load classification
-    console.print(f"Loading classification from {style_file}...")
-    classifications = extract_lyrx(style_file, display=False)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Select classification
-    if classification_name:
-        classification = next(
-            (c for c in classifications if c.layer_name == classification_name), None
-        )
-        if not classification:
-            console.print(
-                f"[red]Classification '{classification_name}' not found[/red]"
-            )
-            return
-    elif len(classifications) == 1:
-        classification = classifications[0]
-    else:
-        console.print(
-            "[red]Multiple classifications found, specify --classification-name[/red]"
-        )
-        return
+    # Load configuration if provided
+    prefix_map = {}
+    config = None
 
-    # Generate QML
+    if config_file:
+        console.print(f"[cyan]Loading configuration from {config_file}[/cyan]")
+        config = BatchClassificationConfig(config_file)
+
+        # Extract prefixes from config
+        for layer_config in config.layers:
+            for class_config in layer_config.classifications:
+                if class_config.classification_name and class_config.symbol_prefix:
+                    prefix_map[class_config.classification_name] = class_config.symbol_prefix
+
+        console.print(f"  [green]✓[/green] Extracted prefixes for {len(prefix_map)} classifications")
+
+        # If no style files specified, use all from config
+        if not style_files:
+            style_files = []
+            for layer_config in config.layers:
+                for class_config in layer_config.classifications:
+                    if class_config.style_file not in style_files:
+                        style_files.append(class_config.style_file)
+            console.print(f"  [green]✓[/green] Found {len(style_files)} style files in config")
+
+    # Override with manual prefixes if provided
+    if prefixes:
+        import json
+        try:
+            manual_prefixes = json.loads(prefixes)
+            prefix_map.update(manual_prefixes)
+            console.print(f"[yellow]Applied manual prefix overrides[/yellow]")
+        except json.JSONDecodeError as e:
+            console.print(f"[red]Error parsing prefixes JSON: {e}[/red]")
+            raise click.Abort()
+
+    if not style_files:
+        console.print("[red]Error: No style files specified. Use style_files argument or --config-file[/red]")
+        raise click.Abort()
+
+    # Generator
     generator = QGISGenerator(
         geometry_type=geometry_type,
         use_symbol_field=use_symbol_field,
         symbol_field=symbol_field,
     )
 
-    qml_content = generator.generate_qml(classification, symbol_prefix)
+    generated_files = []
 
-    # Save
-    output.write_text(qml_content)
-    console.print(f"[green]✓ Generated QGIS style: {output}[/green]")
-    console.print(f"  Rules: {len([c for c in classification.classes if c.visible])}")
-    console.print(
-        f"  Mode: {'SYMBOL field' if use_symbol_field else 'Field expressions'}"
-    )
+    console.print(f"\n[bold blue]🗺️  Generating QGIS QML Files[/bold blue]\n")
+
+    for style_file in style_files:
+        console.print(f"Processing {style_file.name}...")
+
+        # Load classifications
+        classifications = extract_lyrx(style_file, display=False)
+
+        if not classifications:
+            console.print(f"[yellow]⚠ No classifications found in {style_file.name}[/yellow]")
+            continue
+
+        # Process each classification
+        for classification in classifications:
+            layer_name = classification.layer_name or style_file.stem
+            symbol_prefix = prefix_map.get(layer_name, layer_name.lower())
+
+            # Generate QML
+            qml_content = generator.generate_qml(classification, symbol_prefix)
+
+            # Save QML file
+            output_file = output_dir / f"{layer_name}.qml"
+            output_file.write_text(qml_content)
+            generated_files.append(output_file)
+
+            console.print(
+                f"  [green]✓[/green] Generated: {output_file.name} "
+                f"({len([c for c in classification.classes if c.visible])} rules)"
+            )
+
+    # Summary
+    console.print(f"\n[bold green]✅ Generated {len(generated_files)} QML file(s)[/bold green]")
+    console.print(f"[dim]Output directory: {output_dir}[/dim]")
 
 
 @publish_commands.command()
