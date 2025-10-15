@@ -13,12 +13,19 @@ from typing import Any, Callable, Dict, List, Optional, Union
 import geopandas as gpd
 import pandas as pd
 from loguru import logger
-from rich.progress import (BarColumn, MofNCompleteColumn, Progress,
-                           SpinnerColumn, TaskID, TextColumn,
-                           TimeElapsedColumn, TimeRemainingColumn)
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TaskID,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
 
 try:
-    import arcpy
+    from gcover.arcpy_compat import HAS_ARCPY, arcpy
 except ImportError:
     logger.warning("arcpy not available - SDE bridge functionality disabled")
     arcpy = None

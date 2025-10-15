@@ -25,7 +25,7 @@ from rich.tree import Tree
 
 # Try to import arcpy - graceful degradation if not available
 try:
-    import arcpy
+    from gcover.arcpy_compat import HAS_ARCPY, arcpy
 
     HAS_ARCPY = True
     logger.info("arcpy is available - full functionality enabled")

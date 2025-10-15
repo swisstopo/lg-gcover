@@ -26,14 +26,7 @@ from rich.progress import (BarColumn, Progress, SpinnerColumn,
 from rich.table import Table
 from shapely.geometry import box
 
-try:
-    import arcpy
-
-    HAS_ARCPY = True
-except ImportError:
-    HAS_ARCPY = False
-    logger.warning("arcpy not available - using pure geopandas approach")
-
+from gcover.arcpy_compat import HAS_ARCPY, arcpy
 from gcover.core.geometry import load_gpkg_with_validation, safe_read_filegdb
 
 from ..sde.bridge import GCoverSDEBridge, create_bridge
