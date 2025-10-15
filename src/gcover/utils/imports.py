@@ -9,7 +9,7 @@ from functools import wraps
 def try_import_arcpy() -> None:
     """Tente d'importer arcpy et retourne un flag de disponibilité."""
     try:
-        import arcpy
+        from gcover.arcpy_compat import HAS_ARCPY, arcpy
 
         return arcpy, True
     except ImportError:

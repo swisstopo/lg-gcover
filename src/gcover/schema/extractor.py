@@ -28,7 +28,7 @@ def extract_schema(
     """
     import tempfile
 
-    import arcpy
+    from gcover.arcpy_compat import HAS_ARCPY, arcpy
 
     if output_dir is None:
         output_dir = Path(tempfile.mkdtemp())

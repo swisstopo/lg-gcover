@@ -63,7 +63,7 @@ class SDEConnectionManager:
 
     def _create_new_connection(self, instance: str, version: str, key: str) -> Path:
         """Crée une nouvelle connexion SDE"""
-        import arcpy
+        from gcover.arcpy_compat import HAS_ARCPY, arcpy
 
         # Créer répertoire temporaire
         temp_dir = Path(tempfile.mkdtemp(prefix="sde_conn_"))
@@ -104,7 +104,7 @@ class SDEConnectionManager:
 
     def get_versions(self, instance: str) -> List[Dict]:
         """Récupère la liste des versions disponibles"""
-        import arcpy
+        from gcover.arcpy_compat import HAS_ARCPY, arcpy
 
         temp_connection = self.create_connection(instance, "SDE.DEFAULT")
 

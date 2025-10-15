@@ -1,13 +1,12 @@
-import arcpy
-import os
-import arcpy
-import os
 import json
-from pathlib import Path
-import traceback
+import os
 import sys
+import traceback
+from pathlib import Path
 
 from loguru import logger
+
+from gcover.arcpy_compat import HAS_ARCPY, arcpy
 
 # --- Configuration ---
 template_path = r"C:\Program Files\ArcGIS\Pro\Resources\ArcToolBox\Services\routingservices\data\Blank.aprx"  # Default blank template
@@ -70,7 +69,6 @@ def merge_headings(headings, headings_alias):
 
 
 def process_layers(layer):
-
     if layer.isGroupLayer:
         logger.info(f"===Processing group: {layer.name}===")
         for sublayer in layer.listLayers():
@@ -84,7 +82,7 @@ def process_layers(layer):
         lyr_cim = layer.getDefinition("V3")
 
         ## access symbolLayers property following the trail lyr_cim -> renderer -> symbol -> symbol -> symbolLayers
-        #symbology = lyr_cim.renderer.symbol.symbol.symbolLayers
+        # symbology = lyr_cim.renderer.symbol.symbol.symbolLayers
         renderer = sym.renderer
         result["renderer"]["type"] = renderer.type
 
@@ -114,8 +112,6 @@ def process_layers(layer):
                 "width": getattr(symbol, "width", None),
                 "outline": getattr(symbol, "outline", None),
             }
-
-
 
             renderer_dict = {
                 "type": renderer.type,
@@ -158,9 +154,13 @@ def process_layers(layer):
                         character_index = symbol.characterIndex
                         character = chr(character_index)
 
-                        logger.info(f"Font: {font_name}, Character index: {character_index}, Character: {character}")
+                        logger.info(
+                            f"Font: {font_name}, Character index: {character_index}, Character: {character}"
+                        )
                     else:
-                        logger.info(f"Symbol type: {type(symbol).__name__} — not font-based")
+                        logger.info(
+                            f"Symbol type: {type(symbol).__name__} — not font-based"
+                        )
 
                     symbol_dict = {
                         "type": type(symbol).__name__,
@@ -179,13 +179,17 @@ def process_layers(layer):
                     except RuntimeError as e:
                         tb = sys.exc_info()[2]
                         tbinfo = traceback.format_tb(tb)[0]
-                        pymsg = "PYTHON ERRORS:\nTraceback info:\n" + tbinfo + "\nError Info:\n" + str( sys.exc_info()[1])
+                        pymsg = (
+                            "PYTHON ERRORS:\nTraceback info:\n"
+                            + tbinfo
+                            + "\nError Info:\n"
+                            + str(sys.exc_info()[1])
+                        )
                         msgs = "ArcPy ERRORS:\n" + arcpy.GetMessages(2) + "\n"
                         logger.error(f"Error with color: {msgs}")
                         logger.error(f"Error with color: {pymsg}")
 
-                    symbol_dict['color'] = color
-
+                    symbol_dict["color"] = color
 
                     # Add symbol to item
                     group_dict.setdefault("symbols", []).append(symbol_dict)
@@ -219,7 +223,7 @@ def export_map_symbology(mp):
 
 def main():
     # --- Create new project from template ---
-    if  os.path.exists(new_aprx_path):
+    if os.path.exists(new_aprx_path):
         os.remove(new_aprx_path)
 
     arcpy.mp.ArcGISProject(template_path).saveACopy(new_aprx_path)
