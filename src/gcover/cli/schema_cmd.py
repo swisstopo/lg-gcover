@@ -1,28 +1,21 @@
 import json
-from pathlib import Path
 import traceback
-import pandas as pd
 from datetime import datetime
+from pathlib import Path
+
+import click
+import pandas as pd
+from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
-
-import click
-
+# TODO
+from gcover.config import AppConfig, GlobalConfig, SchemaConfig, load_config
 from gcover.schema import SchemaDiff, extract_schema, transform_esri_json
 from gcover.schema.exporters.plantuml import generate_plantuml_from_schema
-from gcover.config import GlobalConfig, SchemaConfig
-from gcover.schema.serializer import (
-    serialize_esri_schema_to_dict,
-    save_esri_schema_to_file,
-)
+from gcover.schema.serializer import (save_esri_schema_to_file,
+                                      serialize_esri_schema_to_dict)
 from gcover.schema.simple_transformer import transform_esri_flat_json
-
-
-# TODO
-from gcover.config import load_config, AppConfig, SchemaConfig
-
-from loguru import logger
 
 console = Console()
 
@@ -49,47 +42,57 @@ def schema():
     pass
 
 
-
 @schema.command(name="export-tables")
 @click.option(
-    "--output-dir", "-o",
+    "--output-dir",
+    "-o",
     type=click.Path(path_type=Path),
-    help="Output directory for exports (default: current directory)"
+    help="Output directory for exports (default: current directory)",
 )
 @click.option(
-    "--workspace", "-w",
+    "--workspace",
+    "-w",
     type=str,
     required=True,
-    help="SDE connection string or GDB path"
+    help="SDE connection string or GDB path",
 )
 @click.option(
     "--all-tables/--gc-tables-only",
     default=False,
-    help="Export all tables or only GC_ tables (default: GC_ only)"
+    help="Export all tables or only GC_ tables (default: GC_ only)",
 )
 @click.option(
     "--include-incremental/--exclude-incremental",
     default=False,
-    help="Include/exclude tables with _I suffix (default: exclude)"
+    help="Include/exclude tables with _I suffix (default: exclude)",
 )
 @click.option(
-    "--format", "-f",
+    "--format",
+    "-f",
     multiple=True,
     type=click.Choice(["excel", "csv", "json"]),
     default=["excel", "json"],
-    help="Output formats (can specify multiple)"
+    help="Output formats (can specify multiple)",
 )
 @click.option(
     "--table-filter",
     multiple=True,
-    help="Specific tables to export (can specify multiple)"
+    help="Specific tables to export (can specify multiple)",
 )
 @click.option(
     "--dry-run",
     is_flag=True,
-    help="Show what would be exported without actually doing it"
+    help="Show what would be exported without actually doing it",
 )
-def export_tables(output_dir, workspace, all_tables, include_incremental, format, table_filter, dry_run):
+def export_tables(
+    output_dir,
+    workspace,
+    all_tables,
+    include_incremental,
+    format,
+    table_filter,
+    dry_run,
+):
     """Export tables from SDE/GDB to various formats.
 
     Exports GeoCover tables from an SDE connection or geodatabase to Excel,
@@ -121,13 +124,21 @@ def export_tables(output_dir, workspace, all_tables, include_incremental, format
 
     # Define table configurations
     TREE_TABLES = [
-        "GC_LITHO", "GC_LITSTRAT", "GC_CHRONO", "GC_TECTO",
-        "GC_LITSTRAT_FORMATION_BANK"
+        "GC_LITHO",
+        "GC_LITSTRAT",
+        "GC_CHRONO",
+        "GC_TECTO",
+        "GC_LITSTRAT_FORMATION_BANK",
     ]
 
     STANDARD_TABLES = [
-        "GC_CHARCAT", "GC_ADMIXTURE", "GC_COMPOSIT",
-        "GC_GEOL_MAPPING_UNIT", "GC_GEOL_MAPPING_UNIT_ATT", "GC_LITSTRAT_UNCO", "GC_CORRELATION"
+        "GC_CHARCAT",
+        "GC_ADMIXTURE",
+        "GC_COMPOSIT",
+        "GC_GEOL_MAPPING_UNIT",
+        "GC_GEOL_MAPPING_UNIT_ATT",
+        "GC_LITSTRAT_UNCO",
+        "GC_CORRELATION",
     ]
 
     ALL_GC_TABLES = TREE_TABLES + STANDARD_TABLES
@@ -150,7 +161,9 @@ def export_tables(output_dir, workspace, all_tables, include_incremental, format
 
         # Determine output directory
         if output_dir is None:
-            output_dir = Path.cwd() / f"table_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            output_dir = (
+                Path.cwd() / f"table_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            )
         else:
             output_dir = Path(output_dir)
 
@@ -192,19 +205,27 @@ def export_tables(output_dir, workspace, all_tables, include_incremental, format
             tables_to_export.append((table, short_name.replace("GC_", "")))
 
         if not tables_to_export:
-            console.print("❌ [bold red]No tables match the specified criteria[/bold red]")
+            console.print(
+                "❌ [bold red]No tables match the specified criteria[/bold red]"
+            )
             raise click.Abort()
 
-        console.print(f"📊 Found [bold cyan]{len(tables_to_export)}[/bold cyan] tables to export")
+        console.print(
+            f"📊 Found [bold cyan]{len(tables_to_export)}[/bold cyan] tables to export"
+        )
 
         # Show what will be exported
         for table_name, short_name in tables_to_export:
             console.print(f"  • {table_name} → {short_name}")
 
         if dry_run:
-            console.print(f"\n📁 Would export to: [bold green]{output_dir}[/bold green]")
+            console.print(
+                f"\n📁 Would export to: [bold green]{output_dir}[/bold green]"
+            )
             console.print(f"📝 Formats: {', '.join(format)}")
-            console.print("🏃 [bold yellow]Dry run complete - no files were created[/bold yellow]")
+            console.print(
+                "🏃 [bold yellow]Dry run complete - no files were created[/bold yellow]"
+            )
             return
 
         # Export tables
@@ -213,8 +234,11 @@ def export_tables(output_dir, workspace, all_tables, include_incremental, format
         # Prepare Excel writer if needed
         excel_writer = None
         if "excel" in format:
-            excel_path = output_dir / f"exported_tables_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-            excel_writer = pd.ExcelWriter(excel_path, engine='openpyxl')
+            excel_path = (
+                output_dir
+                / f"exported_tables_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            )
+            excel_writer = pd.ExcelWriter(excel_path, engine="openpyxl")
 
         exported_count = 0
 
@@ -234,12 +258,14 @@ def export_tables(output_dir, workspace, all_tables, include_incremental, format
                     df = _transform_table_data(df, table_name, COLUMN_TYPE_MAPPING)
 
                     # Generate output filename
-                    clean_name = "_".join([w.capitalize() for w in short_name.split("_")])
+                    clean_name = "_".join(
+                        [w.capitalize() for w in short_name.split("_")]
+                    )
 
                     # Export to requested formats
                     if "csv" in format:
                         csv_path = output_dir / f"{clean_name}.csv"
-                        df.to_csv(csv_path, index=True, encoding='utf-8')
+                        df.to_csv(csv_path, index=True, encoding="utf-8")
                         console.print(f"  ✅ CSV: {csv_path}")
 
                     if "json" in format:
@@ -256,20 +282,26 @@ def export_tables(output_dir, workspace, all_tables, include_incremental, format
                     exported_count += 1
 
                 except Exception as e:
-                    console.print(f"  ❌ [bold red]Failed to export {table_name}:[/bold red] {e}")
-                    logger.error(f"Export error for {table_name}: {traceback.format_exc()}")
+                    console.print(
+                        f"  ❌ [bold red]Failed to export {table_name}:[/bold red] {e}"
+                    )
+                    logger.error(
+                        f"Export error for {table_name}: {traceback.format_exc()}"
+                    )
                     continue
 
         finally:
             if excel_writer is not None:
                 excel_writer.close()
-                console.print(f"📊 Excel file saved: [bold green]{excel_path}[/bold green]")
+                console.print(
+                    f"📊 Excel file saved: [bold green]{excel_path}[/bold green]"
+                )
 
         # Create README
         readme_path = output_dir / "README.txt"
-        with open(readme_path, 'w', encoding='utf-8') as f:
-            f.write(f"GeoCover Tables Export\n")
-            f.write(f"=====================\n\n")
+        with open(readme_path, "w", encoding="utf-8") as f:
+            f.write("GeoCover Tables Export\n")
+            f.write("=====================\n\n")
             f.write(f"Exported on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"Source workspace: {workspace}\n")
             f.write(f"Tables exported: {exported_count}\n")
@@ -278,7 +310,7 @@ def export_tables(output_dir, workspace, all_tables, include_incremental, format
             for table_name, short_name in tables_to_export:
                 f.write(f"  - {table_name}\n")
 
-        console.print(f"\n🎉 [bold green]Export completed![/bold green]")
+        console.print("\n🎉 [bold green]Export completed![/bold green]")
         console.print(f"📊 Exported {exported_count} tables")
         console.print(f"📁 Output directory: [bold green]{output_dir}[/bold green]")
 
@@ -305,7 +337,9 @@ def _arcgis_table_to_df(table_name, input_fields=None, query=""):
 
         # Extract data using SearchCursor
         data = []
-        with arcpy.da.SearchCursor(table_name, final_fields, where_clause=query) as cursor:
+        with arcpy.da.SearchCursor(
+            table_name, final_fields, where_clause=query
+        ) as cursor:
             for row in cursor:
                 data.append(row)
 
@@ -363,14 +397,13 @@ def _export_table_to_json(df, json_path):
         lookup_df = df[["GEOLCODE", "DESCRIPTION"]].copy()
         simple_dict = dict(lookup_df.values)
 
-        with open(json_path, 'w', encoding='utf-8') as f:
+        with open(json_path, "w", encoding="utf-8") as f:
             json.dump(simple_dict, f, ensure_ascii=False, indent=2)
     else:
         # Export as records for complex tables
         df.to_json(json_path, indent=2, orient="records", force_ascii=False)
 
-        
-        
+
 @schema.command(name="transform-simple")
 @click.argument("input_file", type=click.Path(exists=True, path_type=Path))
 @click.option(
@@ -477,19 +510,19 @@ def transform_simple_format(input_file, output, pretty, validate):
 
         # Show sample content
         if "tables" in result and result["tables"]:
-            console.print(f"\n📋 [bold]Sample Tables:[/bold]")
+            console.print("\n📋 [bold]Sample Tables:[/bold]")
             for i, table_name in enumerate(list(result["tables"].keys())[:3]):
                 field_count = len(result["tables"][table_name].get("fields", []))
                 console.print(f"  {i + 1}. {table_name} ({field_count} fields)")
 
         if "featclasses" in result and result["featclasses"]:
-            console.print(f"\n🗺️  [bold]Sample Feature Classes:[/bold]")
+            console.print("\n🗺️  [bold]Sample Feature Classes:[/bold]")
             for i, fc_name in enumerate(list(result["featclasses"].keys())[:3]):
                 field_count = len(result["featclasses"][fc_name].get("fields", []))
                 console.print(f"  {i + 1}. {fc_name} ({field_count} fields)")
 
         console.print(
-            f"\n🎉 [bold green]Simple format transformation completed![/bold green]"
+            "\n🎉 [bold green]Simple format transformation completed![/bold green]"
         )
 
     except FileNotFoundError:
@@ -624,7 +657,7 @@ def transform(
 
             # Show some examples of what was found
             if schema.tables:
-                console.print(f"\n📋 [bold]Sample Tables[/bold] (showing first 5):")
+                console.print("\n📋 [bold]Sample Tables[/bold] (showing first 5):")
                 for i, table_name in enumerate(list(schema.tables.keys())[:5]):
                     console.print(f"  {i + 1}. {table_name}")
                 if len(schema.tables) > 5:
@@ -632,7 +665,7 @@ def transform(
 
             if schema.feature_classes:
                 console.print(
-                    f"\n🗺️  [bold]Sample Feature Classes[/bold] (showing first 5):"
+                    "\n🗺️  [bold]Sample Feature Classes[/bold] (showing first 5):"
                 )
                 for i, fc_name in enumerate(list(schema.feature_classes.keys())[:5]):
                     console.print(f"  {i + 1}. {fc_name}")
@@ -640,7 +673,7 @@ def transform(
                     console.print(f"  ... and {len(schema.feature_classes) - 5} more")
 
         console.print(
-            f"\n🎉 [bold green]Transformation completed successfully![/bold green]"
+            "\n🎉 [bold green]Transformation completed successfully![/bold green]"
         )
 
     except FileNotFoundError:
@@ -655,7 +688,6 @@ def transform(
         console.print(f"❌ [bold red]Transformation failed:[/bold red] {e}")
         logger.error(f"Full error details: {traceback.format_exc()}")
         raise click.Abort()
-
 
 
 @schema.command()

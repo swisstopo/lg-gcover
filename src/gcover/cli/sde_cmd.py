@@ -1,19 +1,17 @@
 # gcover/cli/sde_cmd.py
 import os
 import sys
-import click
-from tabulate import tabulate
-from typing import Optional, List
 from pathlib import Path
+from typing import List, Optional
 
+import click
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
+from rich.table import Table
+from tabulate import tabulate
 
+from gcover.config import SDE_INSTANCES, AppConfig, load_config  # TODO
 from gcover.sde import SDEConnectionManager, create_bridge
-from gcover.config import SDE_INSTANCES
-
-from gcover.config import load_config, AppConfig  # TODO
 
 console = Console()
 
@@ -203,7 +201,7 @@ def quick_connect(instance, interactive):
 
             # Test de connexion
             sde_path = conn_mgr.create_connection(instance, version)
-            click.echo(f"✅ Connexion réussie:")
+            click.echo("✅ Connexion réussie:")
             click.echo(f"   Instance: {instance}")
             click.echo(f"   Version: {version}")
             click.echo(f"   Fichier SDE: {sde_path}")
@@ -585,13 +583,13 @@ def export_bulk(config_file, instance, version, output_dir, format, overwrite):
                     )
 
                     success_count += 1
-                    click.echo(f"   ✅ Completed")
+                    click.echo("   ✅ Completed")
 
                 except Exception as e:
                     click.echo(f"   ❌ Failed: {e}")
                     error_count += 1
 
-            click.echo(f"\n📊 Bulk export completed:")
+            click.echo("\n📊 Bulk export completed:")
             click.echo(f"   ✅ Success: {success_count}")
             click.echo(f"   ❌ Errors: {error_count}")
 
@@ -757,11 +755,9 @@ def import_data(
                     )
 
             if dryrun:
-                click.echo(
-                    f"\n💡 This was a dry run. Use --no-dryrun to apply changes."
-                )
+                click.echo("\n💡 This was a dry run. Use --no-dryrun to apply changes.")
             else:
-                click.echo(f"\n✅ Operation completed successfully!")
+                click.echo("\n✅ Operation completed successfully!")
 
     except Exception as e:
         click.echo(f"❌ Import failed: {e}", err=True)
@@ -851,7 +847,7 @@ def sync_data(
                 sys.exit(1)
 
             if not quiet:
-                click.echo(f"🔄 Starting synchronization...")
+                click.echo("🔄 Starting synchronization...")
 
             # Custom progress callback for detailed sync progress
             progress_info = {"last_update": 0, "start_time": dt.now()}
@@ -883,7 +879,7 @@ def sync_data(
 
             # Display results
             if not quiet:
-                click.echo(f"\n📊 Synchronization Results:")
+                click.echo("\n📊 Synchronization Results:")
                 for operation, count in ops_summary.items():
                     success = (
                         result.get("details", {})
@@ -896,10 +892,10 @@ def sync_data(
 
                 if dryrun:
                     click.echo(
-                        f"\n💡 This was a dry run. Remove --dryrun to apply changes."
+                        "\n💡 This was a dry run. Remove --dryrun to apply changes."
                     )
                 else:
-                    click.echo(f"\n✅ Synchronization completed!")
+                    click.echo("\n✅ Synchronization completed!")
 
     except Exception as e:
         click.echo(f"❌ Sync failed: {e}", err=True)

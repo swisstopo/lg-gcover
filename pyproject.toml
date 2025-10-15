@@ -49,13 +49,17 @@ dependencies = [
     "tabulate>=0.9.0",
     "loguru",
     "jinja2>=3.0.0",
+    "pyarrow>=17.0.0",
+    "fastparquet",
+    "requests",
+    "dateparser",
 ]
 
 
 [project.optional-dependencies]
 # For standalone installations (without ArcGIS Pro)
 standalone = [
-    "gdal>=3.11.0",  # Latest version for better FileGDB support
+    "gdal>=3.10.0",  # Latest version for better FileGDB support
 ]
 # arcpy ne peut pas être installé via pip, mais on documente la dépendance
 esri = []  # Les utilisateurs doivent installer ArcGIS Pro manuellement
@@ -95,7 +99,7 @@ full = [
     "gcover[standalone,dev,docs,cloud,viz]",
 ]
 
-# Install for ESRI environments  
+# Install for ESRI environments
 esri-dev = [
     "gcover[esri,dev,docs,cloud,viz]",
 ]
@@ -112,6 +116,7 @@ Changelog = "https://github.com/swisstopo/lg-gcover/blob/main/CHANGELOG.md"
 
 [project.scripts]
 gcover = "gcover.cli.main:cli"
+gcover-info = "gcover.cli.gcover_info:info"
 gcover-gdb = "gcover.cli.gdb_cli:cli"    # New GDB CLI
 gcover-dashboard = "gcover.gdb.dashboard:main"  # Dashboard
 
@@ -173,6 +178,8 @@ ignore = [
     "E501",  # line too long (handled by black)
     "B008",  # do not perform function calls in argument defaults
     "C901",  # too complex
+    "UP006",  # Dict -> builtin dict
+    "UP045", # X | None
 ]
 
 [tool.ruff.per-file-ignores]
@@ -217,6 +224,14 @@ addopts = [
     "--cov-report=html",
     "--cov-report=xml",
 ]
+# Environment variable handling
+env = [
+    "GCOVER_ENVIRONMENT=test"
+]
+env_override_existing_values = 0
+
+
+
 
 [tool.coverage.run]
 source = ["gcover"]

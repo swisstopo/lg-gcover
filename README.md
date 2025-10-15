@@ -514,6 +514,7 @@ The QA commands handle FileGDB files containing topology and technical quality v
 - **Upload** converted files to S3 with organized structure
 - **Generate** statistics and summaries for dashboard display
 - **Handle** complex geometries from topology validation
+- **Aggregate** and **extract** from RC1/RC2 release according to publication scheme
 
 #### Quick Start
 
@@ -522,13 +523,19 @@ The QA commands handle FileGDB files containing topology and technical quality v
 gcover qa process /path/to/issue.gdb
 
 # Batch process weekly verification results  
-gcover qa batch /media/marco/SANDISK/Verifications
+gcover qa process-all /media/marco/SANDISK/Verifications
 
 # View recent statistics
 gcover qa stats --days-back 7
 
 # Generate HTML dashboard
 gcover qa dashboard
+
+# Agregate QA issues from both RC
+gcover qa aggregate
+
+# Extract/generate a single issue database
+gcover qa extract
 ```
 
 #### Commands
@@ -545,10 +552,10 @@ gcover qa process /path/to/issue.gdb
 **Advanced Options:**
 ```bash
 # With geometry simplification for complex polygons
-gcover qa process /path/to/issue.gdb --simplify-tolerance 1.0
+gcover qa process-all /path/to/issue.gdb --simplify-tolerance 1.0
 
 # Output both GeoParquet and GeoJSON formats
-gcover qa process /path/to/issue.gdb --format both
+gcover qa process-all /path/to/issue.gdb --format both
 
 # Local processing only (no S3 upload)
 gcover qa process /path/to/issue.gdb --no-upload
@@ -626,6 +633,26 @@ gcover qa test-read /path/to/issue.gdb --layer IssuePolygons
 
 # Limit test to fewer features
 gcover qa test-read /path/to/issue.gdb --max-features 5
+```
+
+##### `gcover qa aggregate`
+
+```bash
+# Two-RC mode with extraction (recommended)
+gcover qa aggregate --rc1-gdb rc1.gdb --rc2-gdb rc2.gdb --extract-first --zones-file zones.gpkg
+
+# Single merged input
+gcover qa aggregate --input merged_issues.gpkg --zones-file zones.gpkg
+
+# Auto-discovery
+gcover --env production --verbose qa aggregate --zone-type  mapsheets  --auto-discover --base-dir ./test
+# 
+# Will write to test/Topology/2030-12-31/20250905_07-00-12
+
+# With custom output
+gcover qa aggregate --input data.gpkg --zones-file zones.gpkg --output my_stats --output-format xlsx
+
+
 ```
 
 #### Configuration
@@ -1588,6 +1615,861 @@ if diff.has_changes():
 - **jinja2**: Template rendering for reports
 - **pyyaml**: Configuration file support
 - **pandoc**: Optional, for PDF generation
+
+Here's the logging section to add to your README.md. Insert this **before** the "Global Configuration" section:
+
+
+### Data Publication Preparation
+
+The `gcover publish` commands prepare GeoCover data for publication by applying ESRI classification rules and enriching tooltip layers with source attributes.
+
+#### Overview
+
+Publication preparation involves two main workflows:
+
+1. **Classification**: Apply ESRI symbol and label classifications based on attribute rules
+2. **Enrichment**: Transfer attributes from source databases (RC1/RC2) to tooltip layers for web display
+
+Both workflows support batch processing, flexible configuration, and comprehensive validation.
+
+#### Quick Start
+
+```bash
+# Create configuration templates
+gcover publish create-config classification.yaml --example complex
+gcover publish create-config enrichment.yaml
+
+# Apply classifications
+gcover publish apply-config data.gpkg classification.yaml
+
+# Enrich tooltip layers
+gcover publish enrich --config-file enrichment.yaml
+
+# List available resources
+gcover publish list-mapsheets
+gcover publish list-layers tooltips.gdb
+```
+
+---
+
+### Classification Commands
+
+Apply ESRI classification rules to add SYMBOL and LABEL fields for cartographic display.
+
+#### `gcover publish apply-config`
+
+Apply multiple classifications from a YAML configuration file.
+
+**Basic Usage:**
+```bash
+# Apply all classifications
+gcover publish apply-config geocover.gpkg config.yaml
+
+# Process specific layer
+gcover publish apply-config data.gpkg config.yaml --layer GC_POINT_OBJECTS
+
+# Specify output location
+gcover publish apply-config data.gpkg config.yaml --output classified.gpkg
+
+# Validate configuration without applying
+gcover publish apply-config data.gpkg config.yaml --dry-run
+```
+
+**Advanced Options:**
+```bash
+# Specify base directory for style file paths
+gcover publish apply-config data.gpkg config.yaml \
+    --styles-dir /path/to/styles
+
+# Enable debug output
+gcover publish apply-config data.gpkg config.yaml --debug
+
+# Combined example
+gcover publish apply-config geocover.gpkg config.yaml \
+    --layer GC_FOSSILS \
+    --output fossils_classified.gpkg \
+    --styles-dir ./styles \
+    --debug
+```
+
+**Configuration File Structure:**
+
+```yaml
+# classification_config.yaml
+global:
+  treat_zero_as_null: true      # Treat 0 values as NULL
+  symbol_field: SYMBOL           # Field name for symbol codes
+  label_field: LABEL             # Field name for labels
+  overwrite: false               # Whether to overwrite existing values
+
+layers:
+  - gpkg_layer: GC_POINT_OBJECTS
+    classifications:
+      # Springs classification
+      - style_file: styles/Point_Objects_Quelle.lyrx
+        classification_name: Quelle
+        filter: KIND == 12501001
+        symbol_prefix: spring
+        fields:
+          KIND: KIND
+          HSUR_TYPE: HSUR_TYPE
+          HSUR_STATUS: HSUR_STATUS
+      
+      # Boreholes that reached bedrock
+      - style_file: styles/Point_Objects_Bohrung_Fels_erreicht.lyrx
+        classification_name: Bohrung Fels erreicht
+        filter: KIND == 12501002 and LBOR_ROCK_REACHED == 1
+        symbol_prefix: borehole_rock
+      
+      # Erratic blocks
+      - style_file: styles/Point_Objects_Erraticker.lyrx
+        classification_name: Erraticker
+        filter: KIND == 14601008
+        symbol_prefix: erratic
+
+  - gpkg_layer: GC_FOSSILS
+    classifications:
+      - style_file: styles/Fossils.lyrx
+        filter: KIND == 14601006
+        symbol_prefix: fossil
+        fields:
+          KIND: KIND
+          LFOS_DIVISION: LFOS_DIVISION
+          LFOS_STATUS: LFOS_STATUS
+```
+
+**Configuration Elements:**
+
+| Element | Description | Required |
+|---------|-------------|----------|
+| `style_file` | Path to ESRI .lyrx file (relative to config or --styles-dir) | Yes |
+| `classification_name` | Display name for classification | No |
+| `filter` | SQL-like WHERE clause to select features | No |
+| `symbol_prefix` | Prefix for generated symbol codes | No |
+| `fields` | Field mapping between source and style | No |
+
+**Output:**
+
+The command adds two fields to each classified feature:
+- `SYMBOL`: Generated symbol identifier (e.g., `spring_1`, `spring_2`)
+- `LABEL`: Human-readable label from ESRI classification
+
+#### `gcover publish create-config`
+
+Create example classification configuration files.
+
+```bash
+# Simple example (single layer)
+gcover publish create-config classification.yaml --example simple
+
+# Complex example (multiple layers)
+gcover publish create-config classification.yaml --example complex
+
+# Custom output path
+gcover publish create-config config/my_classification.yaml
+```
+
+**Generated Templates:**
+
+**Simple Example:**
+```yaml
+global:
+  treat_zero_as_null: true
+  symbol_field: SYMBOL
+  label_field: LABEL
+
+layers:
+  - gpkg_layer: GC_FOSSILS
+    classifications:
+      - style_file: styles/Fossils.lyrx
+        classification_name: Fossils
+        filter: KIND == 14601006
+        symbol_prefix: fossil
+        fields:
+          KIND: KIND
+          LFOS_DIVISION: LFOS_DIVISION
+          LFOS_STATUS: LFOS_STATUS
+```
+
+**Complex Example:**
+Includes multiple layers (GC_POINT_OBJECTS, GC_FOSSILS) with various classification rules.
+
+---
+
+### Enrichment Commands
+
+Enrich tooltip layers with attributes from source databases for web publication.
+
+#### `gcover publish enrich`
+
+Transfer attributes from source databases (RC1, RC2, etc.) to tooltip layers.
+
+**Configuration File Approach:**
+
+```bash
+# Using configuration file (recommended)
+gcover publish enrich --config-file enrichment_config.yaml
+
+# With debug output
+gcover --verbose publish enrich --config-file enrichment_config.yaml
+
+# Dry run to validate
+gcover publish enrich --config-file enrichment_config.yaml --dry-run
+```
+
+**Command-Line Approach:**
+
+```bash
+# Specify all parameters on command line
+gcover publish enrich \
+    --tooltip-db /path/to/geocover_tooltips.gdb \
+    --admin-zones /path/to/administrative_zones.gpkg \
+    --source rc1:/path/to/RC1.gdb \
+    --source rc2:/path/to/RC2.gdb \
+    --source saas:/path/to/Saas.gdb \
+    --layers POLYGON_MAIN \
+    --layers POINT_GEOL \
+    --mapsheets "55,25,48" \
+    --output enriched_tooltips.gpkg \
+    --debug-dir debug_output \
+    --save-intermediate
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--config-file` | YAML configuration file path |
+| `--tooltip-db` | Path to geocover_tooltips.gdb |
+| `--admin-zones` | Path to administrative_zones.gpkg |
+| `--source` | Source data as `name:path` (can be specified multiple times) |
+| `--layers` | Specific tooltip layers to process (default: all) |
+| `--mapsheets` | Comma-separated mapsheet numbers (default: all) |
+| `--output` | Output GPKG path |
+| `--debug-dir` | Directory for intermediate/debug files |
+| `--save-intermediate` | Save per-mapsheet intermediate results |
+| `--dry-run` | Preview without executing enrichment |
+
+**Enrichment Configuration File:**
+
+```yaml
+# enrichment_config.yaml
+tooltip_db_path: /path/to/geocover_tooltips.gdb
+admin_zones_path: /path/to/administrative_zones.gpkg
+
+source_paths:
+  rc1: /path/to/RC1.gdb
+  rc2: /path/to/RC2.gdb
+  saas: /path/to/Saas.gdb
+
+output_path: /path/to/enriched_tooltips.gpkg
+debug_output_dir: /path/to/debug_output
+save_intermediate: true
+mapsheet_numbers: null  # Process all mapsheets, or specify: [55, 25, 48]
+clip_tolerance: 0.0
+
+# Layer-specific configurations (optional - uses intelligent defaults)
+layer_mappings:
+  POLYGON_MAIN:
+    source_layers:
+      - GC_ROCK_BODIES/GC_BEDROCK
+      - GC_ROCK_BODIES/GC_UNCO_DESPOSIT
+    transfer_fields:
+      - UUID
+      - GEOLCODE
+      - GLAC_TYP
+      - CHRONO_T
+      - CHRONO_B
+      - gmu_code
+      - tecto
+      - tecto_code
+      - OPERATOR
+      - DATEOFCHANGE
+    area_threshold: 0.7        # 70% overlap required for polygon matching
+    buffer_distance: 0.5       # 0.5m buffer for spatial matching
+  
+  POINT_GEOL:
+    source_layers:
+      - GC_ROCK_BODIES/GC_POINT_OBJECTS
+      - GC_ROCK_BODIES/GC_FOSSILS
+    transfer_fields:
+      - UUID
+      - POINT_TYPE
+      - POINT_CATEGORY
+      - FOSSIL_TYPE
+      - OPERATOR
+      - DATEOFCHANGE
+    point_tolerance: 5.0       # 5m search radius for point matching
+  
+  POINT_HYDRO:
+    source_layers:
+      - GC_ROCK_BODIES/GC_POINT_OBJECTS
+    transfer_fields:
+      - UUID
+      - HSUR_TYPE
+      - HSUR_STATUS
+    point_tolerance: 5.0
+```
+
+**Enrichment Process:**
+
+1. **Mapsheet Assignment**: Each tooltip feature is assigned to mapsheet(s) based on spatial intersection
+2. **Source Selection**: For each mapsheet, the correct source database (RC1/RC2/etc.) is determined
+3. **Spatial Matching**: Tooltip features are matched to source features using:
+   - **Polygons**: Area overlap threshold (default 70%)
+   - **Lines**: Buffer-based intersection
+   - **Points**: Distance-based search (default 5m)
+4. **Attribute Transfer**: Fields are copied from matched source features
+5. **Quality Metadata**: Match confidence and method are recorded
+
+**Output Fields:**
+
+Enriched features include these metadata fields:
+
+- `SOURCE_UUID`: UUID of matched source feature
+- `MATCH_METHOD`: Matching algorithm used (`area_overlap`, `nearest_point`, etc.)
+- `MATCH_LAYER`: Source layer where match was found
+- `MATCH_CONFIDENCE`: Confidence score (0.0-1.0)
+- `MAPSHEET_NBR`: Assigned mapsheet number(s)
+- All configured `transfer_fields`
+
+#### `gcover publish create-config`
+
+Create template configuration file for enrichment.
+
+```bash
+# Basic template
+gcover publish create-config enrichment_config.yaml
+
+# Template with example sources
+gcover publish create-config enrichment_config.yaml --example-sources
+
+# Custom output path
+gcover publish create-config config/my_enrichment.yaml
+```
+
+---
+
+### Utility Commands
+
+#### `gcover publish list-mapsheets`
+
+List available mapsheets and their source (RC1/RC2) assignments.
+
+```bash
+# Use default administrative zones
+gcover publish list-mapsheets
+
+# Specify custom zones file
+gcover publish list-mapsheets --admin-zones /path/to/administrative_zones.gpkg
+```
+
+**Example Output:**
+
+```
+Available Mapsheets from administrative_zones.gpkg:
+
+┏━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━┓
+┃ Map Number ┃ Map Title    ┃ Source ┃
+┡━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━┩
+│ 25         │ Marchairuz   │ RC2    │
+│ 48         │ Saas         │ RC2    │
+│ 55         │ Bonfol       │ RC2    │
+│ 54         │ Weinfelden   │ RC1    │
+│ 77         │ Sembrancher  │ RC1    │
+│ 173        │ Elm          │ RC1    │
+└────────────┴──────────────┴────────┘
+
+Summary:
+  RC1: 135 mapsheets
+  RC2: 86 mapsheets
+
+Total: 221 mapsheets
+```
+
+#### `gcover publish list-layers`
+
+List layers in a tooltip database with feature counts.
+
+```bash
+gcover publish list-layers /path/to/geocover_tooltips.gdb
+```
+
+**Example Output:**
+
+```
+Available layers in geocover_tooltips.gdb:
+
+┏━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
+┃ Layer Name     ┃ Geometry Type  ┃ Feature Count┃
+┡━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
+│ POLYGON_MAIN   │ Multi Polygon  │ 34,567       │
+│ POLYGON_AUX_1  │ Multi Polygon  │ 12,345       │
+│ LINE_AUX       │ Multi Line     │ 8,234        │
+│ POINT_GEOL     │ Point          │ 5,678        │
+│ POINT_HYDRO    │ Point          │ 2,345        │
+└────────────────┴────────────────┴──────────────┘
+```
+
+---
+
+### Common Workflows
+
+#### Complete Publication Pipeline
+
+```bash
+#!/bin/bash
+# Complete publication preparation workflow
+
+echo "🎨 Step 1: Apply classifications"
+gcover publish apply-config \
+    data/geocover.gpkg \
+    config/classification.yaml \
+    --output data/geocover_classified.gpkg
+
+echo "🔗 Step 2: Enrich tooltips"
+gcover publish enrich \
+    --config-file config/enrichment.yaml \
+    --output data/enriched_tooltips.gpkg
+
+echo "✅ Publication data ready!"
+echo "  - Classified: data/geocover_classified.gpkg"
+echo "  - Tooltips: data/enriched_tooltips.gpkg"
+```
+
+#### Incremental Enrichment (Specific Mapsheets)
+
+```bash
+# Process only new/updated mapsheets
+NEW_MAPSHEETS="55,25,48,173"
+
+gcover publish enrich \
+    --config-file enrichment_config.yaml \
+    --mapsheets "$NEW_MAPSHEETS" \
+    --output incremental_tooltips.gpkg \
+    --save-intermediate \
+    --debug-dir debug/incremental
+```
+
+#### Debug Problem Enrichment
+
+```bash
+# Enable verbose logging and save all intermediate results
+gcover --verbose publish enrich \
+    --config-file enrichment_config.yaml \
+    --mapsheets "55" \
+    --layers POLYGON_MAIN \
+    --output debug_output.gpkg \
+    --debug-dir debug/mapsheet_55 \
+    --save-intermediate
+```
+
+#### Validate Before Running
+
+```bash
+# Check configuration and sources
+gcover publish list-mapsheets --admin-zones data/administrative_zones.gpkg
+gcover publish list-layers data/geocover_tooltips.gdb
+
+# Dry run enrichment
+gcover publish enrich --config-file enrichment_config.yaml --dry-run
+
+# Dry run classification
+gcover publish apply-config data.gpkg config.yaml --dry-run
+```
+
+---
+
+### Configuration
+
+Publication commands use the unified gcover configuration system:
+
+```yaml
+# config/gcover_config.yaml
+global:
+  log_level: INFO
+  s3:
+    bucket: "gcover-assets-dev"
+
+publish:
+  styles_base_dir: "./styles"
+  default_symbol_field: "SYMBOL"
+  default_label_field: "LABEL"
+  
+  enrichment:
+    default_area_threshold: 0.7
+    default_point_tolerance: 5.0
+    default_buffer_distance: 0.5
+```
+
+**Environment Variables:**
+
+```bash
+# Override configuration
+export GCOVER_PUBLISH_STYLES_BASE_DIR=/path/to/styles
+export GCOVER_PUBLISH_DEFAULT_AREA_THRESHOLD=0.8
+
+# Use with commands
+gcover publish apply-config data.gpkg config.yaml
+```
+
+---
+
+### Troubleshooting
+
+#### Classification Issues
+
+**Problem: Style file not found**
+```bash
+# Check style file paths
+gcover publish apply-config data.gpkg config.yaml --dry-run
+
+# Specify styles directory
+gcover publish apply-config data.gpkg config.yaml \
+    --styles-dir /absolute/path/to/styles
+```
+
+**Problem: No features classified**
+```bash
+# Enable debug output
+gcover publish apply-config data.gpkg config.yaml --debug
+
+# Verify filter conditions in SQL
+# Check that field names and values match your data
+```
+
+#### Enrichment Issues
+
+**Problem: Low match confidence**
+
+Check enrichment summary output for match statistics:
+```
+📊 Enrichment Results Summary
+┏━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━┓
+┃ Layer        ┃ Total Features┃ Enriched ┃ Success Rate ┃
+┡━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━┩
+│ POLYGON_MAIN │ 1,234         │ 987      │ 80.0%        │
+└──────────────┴───────────────┴──────────┴──────────────┘
+```
+
+If success rate is low:
+- Adjust `area_threshold` (try 0.5 instead of 0.7)
+- Increase `point_tolerance` (try 10m instead of 5m)
+- Enable `save_intermediate` to examine matching results
+
+**Problem: Source database not found**
+```bash
+# Verify source paths
+gcover publish list-mapsheets
+
+# Check that source databases exist
+ls -lh /path/to/RC1.gdb
+ls -lh /path/to/RC2.gdb
+
+# Enable verbose logging
+gcover --verbose publish enrich --config-file config.yaml
+```
+
+**Problem: Memory issues with large datasets**
+```bash
+# Process in smaller batches by mapsheet
+gcover publish enrich \
+    --config-file config.yaml \
+    --mapsheets "55,25,48" \
+    --output batch1.gpkg
+
+gcover publish enrich \
+    --config-file config.yaml \
+    --mapsheets "173,54,77" \
+    --output batch2.gpkg
+
+# Merge results later
+```
+
+#### Performance Tips
+
+**For Large Enrichment Jobs:**
+```bash
+# Process layers independently
+for LAYER in POLYGON_MAIN POINT_GEOL LINE_AUX; do
+    gcover publish enrich \
+        --config-file enrichment_config.yaml \
+        --layers "$LAYER" \
+        --output "enriched_${LAYER}.gpkg"
+done
+
+# Don't save intermediate files in production
+# Remove --save-intermediate flag for faster processing
+```
+
+**For Classification:**
+```bash
+# Process layers independently if config has many layers
+gcover publish apply-config data.gpkg config.yaml \
+    --layer GC_POINT_OBJECTS \
+    --output points_classified.gpkg
+
+gcover publish apply-config data.gpkg config.yaml \
+    --layer GC_FOSSILS \
+    --output fossils_classified.gpkg
+```
+
+---
+
+### Integration Examples
+
+#### Python API
+
+```python
+from gcover.publish import EnhancedTooltipsEnricher, create_enrichment_config
+
+# Create configuration
+config = create_enrichment_config(
+    tooltip_db_path=Path("geocover_tooltips.gdb"),
+    admin_zones_path=Path("administrative_zones.gpkg"),
+    source_paths={
+        "rc1": Path("RC1.gdb"),
+        "rc2": Path("RC2.gdb"),
+    },
+    output_path=Path("enriched_tooltips.gpkg"),
+    mapsheet_numbers=[55, 25, 48],
+)
+
+# Run enrichment
+with EnhancedTooltipsEnricher(config) as enricher:
+    # Enrich specific layer
+    enriched_data = enricher.enrich_layer(
+        layer_name="POLYGON_MAIN",
+        mapsheet_numbers=[55, 25]
+    )
+    
+    # Save results
+    output_path = enricher.save_enriched_data(
+        {"POLYGON_MAIN": enriched_data}
+    )
+    print(f"Saved to: {output_path}")
+```
+
+#### Automation Script
+
+```bash
+#!/bin/bash
+# Automated nightly publication preparation
+
+set -e
+
+LOG_FILE="logs/publication_$(date +%Y%m%d_%H%M%S).log"
+
+{
+    echo "Starting publication preparation at $(date)"
+    
+    # Step 1: Apply latest classifications
+    echo "Applying classifications..."
+    gcover publish apply-config \
+        /data/geocover/current.gpkg \
+        /config/classification.yaml \
+        --output /data/geocover/classified.gpkg
+    
+    # Step 2: Enrich tooltips
+    echo "Enriching tooltip layers..."
+    gcover publish enrich \
+        --config-file /config/enrichment.yaml \
+        --output /data/tooltips/enriched_$(date +%Y%m%d).gpkg
+    
+    # Step 3: Validate outputs
+    echo "Validating outputs..."
+    if [ -f /data/geocover/classified.gpkg ] && \
+       [ -f /data/tooltips/enriched_$(date +%Y%m%d).gpkg ]; then
+        echo "✅ Publication preparation complete!"
+        
+        # Upload to S3 or deployment location
+        aws s3 cp /data/tooltips/enriched_$(date +%Y%m%d).gpkg \
+            s3://publication-bucket/tooltips/latest.gpkg
+    else
+        echo "❌ Publication preparation failed!"
+        exit 1
+    fi
+    
+} 2>&1 | tee -a "$LOG_FILE"
+```
+
+---
+
+### Requirements
+
+- **arcpy**: Required for reading ESRI .lyrx style files
+- **geopandas**: Spatial data processing
+- **pyyaml**: Configuration file parsing
+- **rich**: Terminal output formatting
+- **loguru**: Structured logging
+
+Classification requires ArcGIS Pro installation for ESRI style file support.
+
+
+## Centralized Logging
+
+GCover provides unified logging across all commands with automatic file rotation, Rich console output, and environment-specific configuration.
+
+### Basic Usage
+
+```bash
+# Logging is automatically configured for all commands
+gcover gdb scan                          # Standard logging
+gcover --verbose qa process issue.gdb    # Debug logging
+gcover --log-file custom.log sde export  # Custom log file
+```
+
+### Log Levels and Output
+
+| Level | Usage | Console Output | File Output |
+|-------|--------|---------------|------------|
+| `DEBUG` | `--verbose` flag | Detailed with timestamps | Full context with line numbers |
+| `INFO` | Default | Clean status messages | Standard operational logs |
+| `WARNING` | Issues | Yellow warnings | Warning context |
+| `ERROR` | Failures | Red error messages | Full error details |
+
+### Automatic Log Files
+
+Log files are automatically created with date-based naming:
+
+```bash
+# Development environment
+logs/gcover_development_20250726.log
+
+# Production environment  
+/var/log/gcover/gcover_production_20250726.log
+
+# Custom format with timestamp
+logs/gcover_testing_20250726_143022.log
+```
+
+**File Features:**
+- **Automatic rotation**: 10MB → compress to `.gz`
+- **Retention**: 30 days (configurable per environment)
+- **Thread-safe**: Multiple commands can log simultaneously
+
+### Configuration
+
+Add logging configuration to your `config/gcover_config.yaml`:
+
+```yaml
+global:
+  log_level: INFO
+  
+  logging:
+    file:
+      enabled: true
+      path: "logs/gcover_{environment}_{date}.log"  # Templates resolved automatically
+      rotation: "10 MB"
+      retention: "30 days"
+      compression: "gz"
+    
+    console:
+      format: "simple"          # "simple" or "detailed"
+      show_time: true
+      show_level: true
+    
+    modules:
+      modules:
+        "gcover.sde": "DEBUG"   # Verbose SDE operations
+        "urllib3": "WARNING"    # Quiet HTTP requests
+        "boto3": "WARNING"      # Quiet AWS SDK
+```
+
+### Environment-Specific Logging
+
+```yaml
+# config/environments/development.yaml
+global:
+  logging:
+    console:
+      format: "detailed"        # Show file paths and function names
+      show_path: true
+    modules:
+      modules:
+        "gcover": "DEBUG"       # All modules in debug mode
+
+# config/environments/production.yaml  
+global:
+  logging:
+    file:
+      path: "/var/log/gcover/prod_{date}.log"
+      retention: "90 days"      # Keep production logs longer
+    console:
+      format: "simple"          # Clean production output
+    modules:
+      modules:
+        "gcover": "INFO"        # Standard production logging
+```
+
+### Log Management Commands
+
+```bash
+# Show current logging configuration
+gcover logs show
+
+# View recent log entries  
+gcover logs tail
+gcover logs tail --lines 100
+
+# Enable debug logging dynamically
+gcover logs debug
+```
+
+### Practical Examples
+
+**Daily Processing with Logging:**
+```bash
+#!/bin/bash
+# Process with automatic logging
+gcover --env production gdb scan > processing.log 2>&1
+
+# Check for errors in log
+if grep -q "ERROR" logs/gcover_production_*.log; then
+    echo "⚠️  Errors found in processing"
+fi
+```
+
+**Development Debugging:**
+```bash
+# Enable detailed logging for troubleshooting
+gcover --verbose --env development qa process problematic.gdb
+
+# Check debug information
+tail -f logs/gcover_development_*.log
+```
+
+**Production Monitoring:**
+```bash
+# Monitor production logs
+tail -f /var/log/gcover/gcover_production_*.log
+
+# Archive old logs (automatic with retention settings)
+find /var/log/gcover/ -name "*.log.gz" -mtime +90 -delete
+```
+
+### Integration with External Tools
+
+**Log Analysis:**
+```bash
+# Search for specific operations
+grep "SDE export" logs/gcover_*.log
+
+# Count processing statistics  
+grep -c "✅.*processed" logs/gcover_*.log
+
+# Monitor error rates
+grep "ERROR" logs/gcover_*.log | wc -l
+```
+
+**Monitoring Integration:**
+```bash
+# Send alerts on errors (example with script)
+if tail -100 logs/gcover_production_*.log | grep -q "CRITICAL\|ERROR"; then
+    # Send notification to monitoring system
+    curl -X POST "$SLACK_WEBHOOK" -d '{"text":"GCover errors detected"}'
+fi
+```
 
 
 ## Global Configuration

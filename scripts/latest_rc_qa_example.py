@@ -1,209 +1,204 @@
 #!/usr/bin/env python3
 """
-Usage examples for the new latest RC functionality in gcover
+Enhanced test script to demonstrate the new latest QA functions with file paths
 """
-
-from datetime import datetime
-from gcover.cli.gdb_cmd import get_latest_topology_dates
-
-# ============================================================================
-# CLI Usage Examples
-# ============================================================================
-
-# 1. Get latest topology verification tests (your specific use case)
-# This will show the latest topology verification for RC1 and RC2
-# gcover --env sandisk gdb latest-topology
-
-# Example output:
-"""
-                    Latest Topology Verification Tests                     
-┏━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┓
-┃ RC     ┃ Test Date           ┃ File                                     ┃       Size ┃ Status ┃
-┡━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━┩
-│ RC1    │ 2025-08-23 03:00:10 │ issue.gdb                                │     4.7 MB │ ✅     │
-│ RC2    │ 2025-08-22 07:00:20 │ issue.gdb                                │    15.7 MB │ ✅     │
-└────────┴─────────────────────┴──────────────────────────────────────────┴────────────┴────────┘
-
-✅ Latest Release Couple: 1 days apart
-Latest tests: 2025-08-23 and 2025-08-22
-
-Answer: The latest topology verification tests are:
-  RC1: 2025-08-23
-  RC2: 2025-08-22
-"""
-
-# 2. Get latest assets for any type with release couple check
-# gcover --env sandisk gdb latest-by-rc --type verification_topology --show-couple
-
-# 3. Get latest assets for backup type
-# gcover --env sandisk gdb latest-by-rc --type backup
-
-# 4. Show all latest verification runs
-# gcover --env sandisk gdb latest-verifications
-
-# 5. Get latest assets from last 60 days only
-# gcover --env sandisk gdb latest-by-rc --days-back 60
-
-
-# ============================================================================
-# Python API Usage Examples
-# ============================================================================
 
 from pathlib import Path
-from gcover.gdb.manager import GDBAssetManager
+from datetime import datetime
+import json
 
 
-def example_usage():
-    """Example of using the new methods programmatically"""
+def test_enhanced_functions():
+    """Test the enhanced topology verification functions"""
 
-    # Setup (using your config)
-    base_paths = {
-        "backup": Path("/media/marco/SANDISK/GCOVER"),
-        "verification": Path("/media/marco/SANDISK/Verifications"),
-        "increment": Path("/media/marco/SANDISK/Increment"),
-    }
-
-    manager = GDBAssetManager(
-        base_paths=base_paths,
-        s3_bucket="gcover-gdb-8552d86302f942779f83f7760a7b901b",
-        db_path="gdb_metadata.duckdb",
-        temp_dir="/tmp/gdb_zips",
-        aws_profile="gcover_bucket",
-    )
-
-    # Example 1: Get latest topology verification for each RC
-    print("=== Latest Topology Verification ===")
-    latest_topo = manager.get_latest_assets_by_rc(asset_type="verification_topology")
-
-    for rc_name, asset_info in latest_topo.items():
-        print(
-            f"{rc_name}: {asset_info['timestamp'].strftime('%Y-%m-%d')} - {Path(asset_info['path']).name}"
+    # Import the new functions
+    try:
+        from gcover.cli.gdb_cmd import (
+            get_latest_topology_verification_info,
+            get_latest_topology_dates,
+            verify_topology_files_exist,
         )
+    except ImportError:
+        print("❌ Functions not found - make sure to add them to gdb_cmd.py")
+        return
 
-    # Output:
-    # RC1: 2025-08-23 - issue.gdb
-    # RC2: 2025-08-22 - issue.gdb
+    db_path = "gdb_metadata.duckdb"
 
-    # Example 2: Check if they form a release couple
-    print("\n=== Release Couple Check ===")
-    couple = manager.get_latest_release_couple(asset_type="verification_topology")
-
-    if couple:
-        rc1_date, rc2_date = couple
-        print(f"Latest release couple found:")
-        print(f"  RC1: {rc1_date.strftime('%Y-%m-%d')}")
-        print(f"  RC2: {rc2_date.strftime('%Y-%m-%d')}")
-        print(f"  Days apart: {abs((rc1_date - rc2_date).days)}")
-    else:
-        print("No recent release couple found")
-
-    # Example 3: Get latest for any asset type
-    print("\n=== Latest Backup Assets ===")
-    latest_backups = manager.get_latest_assets_by_rc(asset_type="backup_daily")
-
-    for rc_name, asset_info in latest_backups.items():
-        print(
-            f"{rc_name}: {asset_info['timestamp'].strftime('%Y-%m-%d %H:%M')} - {asset_info['file_size'] / (1024**2):.1f} MB"
-        )
-
-    # Example 4: Get all verification types
-    print("\n=== All Latest Verifications ===")
-    all_verifications = manager.get_latest_verification_runs()
-
-    for verification_type, runs in all_verifications.items():
-        print(f"\n{verification_type}:")
-        for run in runs:
-            print(f"  {run['rc_name']}: {run['timestamp'].strftime('%Y-%m-%d')}")
-
-    # Example 5: Simple function to get just the dates
-    print("\n=== Quick Date Check ===")
-
-    dates = get_latest_topology_dates("gdb_metadata.duckdb")
-    if dates:
-        rc1_date, rc2_date = dates
-        print(f"Latest topology tests: RC1={rc1_date}, RC2={rc2_date}")
-    else:
-        print("No topology verification dates found")
-
-
-# ============================================================================
-# Script Integration Examples
-# ============================================================================
-
-
-def check_daily_qa_runs():
-    """Example script to check if daily QA runs are up to date"""
-    from datetime import datetime, timedelta
-
-    # Get latest dates
-    dates = get_latest_topology_dates("gdb_metadata.duckdb")
-    if not dates:
-        print("ERROR: No topology verification data found")
-        return False
-
-    rc1_date_str, rc2_date_str = dates
-    rc1_date = datetime.strptime(rc1_date_str, "%Y-%m-%d")
-    rc2_date = datetime.strptime(rc2_date_str, "%Y-%m-%d")
-
-    # Check if tests are recent (within last 2 days)
-    now = datetime.now()
-    rc1_age = (now - rc1_date).days
-    rc2_age = (now - rc2_date).days
-
-    print(f"RC1 test age: {rc1_age} days")
-    print(f"RC2 test age: {rc2_age} days")
-
-    if rc1_age <= 2 and rc2_age <= 2:
-        print("✅ QA tests are up to date")
-        return True
-    else:
-        print("⚠️  QA tests may be outdated")
-        return False
-
-
-def find_qa_test_gaps():
-    """Example script to find gaps in QA testing"""
-    base_paths = {
-        "backup": Path("/media/marco/SANDISK/GCOVER"),
-        "verification": Path("/media/marco/SANDISK/Verifications"),
-        "increment": Path("/media/marco/SANDISK/Increment"),
-    }
-
-    manager = GDBAssetManager(
-        base_paths=base_paths,
-        s3_bucket="gcover-gdb-8552d86302f942779f83f7760a7b901b",
-        db_path="gdb_metadata.duckdb",
-        temp_dir="/tmp/gdb_zips",
-        aws_profile="gcover_bucket",
-    )
-
-    # Get all verification types and their latest runs
-    verifications = manager.get_latest_verification_runs()
-
-    print("QA Test Status Summary:")
+    print("🧪 Testing Enhanced Latest QA Functions")
     print("=" * 50)
 
-    for verification_type, runs in verifications.items():
-        print(f"\n{verification_type.replace('verification_', '').upper()}:")
+    # Test 1: Enhanced function with dates and paths
+    print("\n1️⃣  Testing get_latest_topology_verification_info()")
+    info = get_latest_topology_verification_info(db_path)
 
-        runs_by_rc = {run["rc_name"]: run for run in runs}
+    if info:
+        print("✅ Function returned data:")
+        for rc, data in info.items():
+            print(f"   {rc}: {data['date']} -> {data['path']}")
 
-        for rc in ["RC1", "RC2"]:
-            if rc in runs_by_rc:
-                run = runs_by_rc[rc]
-                age_days = (datetime.now() - run["timestamp"]).days
-                status = "✅" if age_days <= 3 else "⚠️" if age_days <= 7 else "❌"
-                print(
-                    f"  {rc}: {run['timestamp'].strftime('%Y-%m-%d')} ({age_days}d ago) {status}"
-                )
-            else:
-                print(f"  {rc}: No data found ❌")
+        # Verify data structure
+        for rc, data in info.items():
+            assert "date" in data, f"Missing 'date' key for {rc}"
+            assert "path" in data, f"Missing 'path' key for {rc}"
+            assert isinstance(data["date"], str), f"Date should be string for {rc}"
+            assert isinstance(data["path"], str), f"Path should be string for {rc}"
+
+        print("   ✅ Data structure is correct")
+    else:
+        print("❌ No data returned")
+        return
+
+    # Test 2: File existence verification
+    print("\n2️⃣  Testing verify_topology_files_exist()")
+    status = verify_topology_files_exist(db_path)
+
+    if status:
+        print("✅ File existence check:")
+        for rc, exists in status.items():
+            icon = "✅" if exists else "❌"
+            print(f"   {rc}: {icon} {'exists' if exists else 'missing'}")
+
+        # Show file details for existing files
+        for rc, data in info.items():
+            if status.get(rc, False):
+                file_path = Path(data["path"])
+                if file_path.exists():
+                    stat = file_path.stat()
+                    size_mb = stat.st_size / (1024 * 1024)
+                    modified = datetime.fromtimestamp(stat.st_mtime)
+
+                    print(
+                        f"     📄 {file_path.name}: {size_mb:.1f} MB, modified {modified.strftime('%Y-%m-%d %H:%M')}"
+                    )
+    else:
+        print("❌ No file status returned")
+
+    # Test 3: Backwards compatible function
+    print("\n3️⃣  Testing get_latest_topology_dates() [backwards compatible]")
+    dates = get_latest_topology_dates(db_path)
+
+    if dates:
+        rc1_date, rc2_date = dates
+        print(f"✅ Backwards compatible function:")
+        print(f"   RC1: {rc1_date}")
+        print(f"   RC2: {rc2_date}")
+
+        # Verify consistency with enhanced function
+        assert dates[0] == info["RC1"]["date"], "RC1 date mismatch between functions"
+        assert dates[1] == info["RC2"]["date"], "RC2 date mismatch between functions"
+        print("   ✅ Data consistent with enhanced function")
+    else:
+        print("❌ No dates returned")
+
+    # Test 4: JSON serialization (for automation)
+    print("\n4️⃣  Testing JSON serialization for automation")
+    json_data = json.dumps(info, indent=2)
+    print("✅ JSON serialization successful:")
+    print(json_data)
+
+    # Test deserialization
+    parsed_data = json.loads(json_data)
+    assert parsed_data == info, "JSON round-trip failed"
+    print("   ✅ JSON round-trip successful")
+
+    # Test 5: Practical usage example
+    print("\n5️⃣  Practical Usage Example")
+    print("Latest topology verification summary:")
+
+    # Check if we have a release couple
+    rc1_date = datetime.strptime(info["RC1"]["date"], "%Y-%m-%d")
+    rc2_date = datetime.strptime(info["RC2"]["date"], "%Y-%m-%d")
+    days_apart = abs((rc1_date - rc2_date).days)
+
+    print(f"   🗓️  RC1: {info['RC1']['date']}")
+    print(f"   🗓️  RC2: {info['RC2']['date']}")
+    print(f"   📏 Days apart: {days_apart}")
+
+    if days_apart <= 7:
+        print("   ✅ Forms a release couple (tests are synchronized)")
+    else:
+        print("   ⚠️  Tests are not synchronized (not a release couple)")
+
+    # Check currency
+    latest_date = max(rc1_date, rc2_date)
+    age_days = (datetime.now() - latest_date).days
+
+    print(f"   📅 Latest test age: {age_days} days")
+    if age_days <= 2:
+        print("   ✅ Tests are current")
+    elif age_days <= 7:
+        print("   ⚠️  Tests are getting old")
+    else:
+        print("   ❌ Tests are outdated")
+
+    print("\n🎉 All tests passed! Enhanced functions are working correctly.")
+
+
+def demo_file_processing():
+    """Demonstrate processing the actual QA files"""
+    from gcover.cli.gdb_cmd import get_latest_topology_verification_info
+
+    print("\n📁 File Processing Demo")
+    print("=" * 30)
+
+    info = get_latest_topology_verification_info("gdb_metadata.duckdb")
+    if not info:
+        print("❌ No data available for demo")
+        return
+
+    # Create demo processing directory
+    demo_dir = Path("./demo_qa_processing")
+    print(f"Creating demo directory: {demo_dir}")
+    demo_dir.mkdir(exist_ok=True)
+
+    for rc, data in info.items():
+        source_path = Path(data["path"])
+
+        print(f"\n{rc} ({data['date']}):")
+        print(f"   Source: {source_path}")
+        print(f"   Exists: {'✅' if source_path.exists() else '❌'}")
+
+        if source_path.exists():
+            # Create a symbolic link instead of copying (faster for demo)
+            demo_link = demo_dir / f"{rc}_{data['date']}_issue.gdb"
+
+            if demo_link.exists():
+                demo_link.unlink()
+
+            try:
+                demo_link.symlink_to(source_path.absolute())
+                print(f"   ✅ Demo link created: {demo_link}")
+
+                # Show some file info
+                if source_path.is_dir():
+                    contents = list(source_path.iterdir())
+                    print(f"   📊 Contains {len(contents)} items")
+
+                    # Show first few items
+                    for item in contents[:3]:
+                        print(f"      - {item.name}")
+                    if len(contents) > 3:
+                        print(f"      ... and {len(contents) - 3} more")
+
+            except OSError as e:
+                print(f"   ⚠️  Could not create link: {e}")
+        else:
+            print(f"   ❌ Source file missing, cannot process")
+
+    print(f"\nDemo files available in: {demo_dir.absolute()}")
+    print("(These are symbolic links to the original files)")
 
 
 if __name__ == "__main__":
-    # Run examples
-    example_usage()
-    print("\n" + "=" * 60 + "\n")
-    check_daily_qa_runs()
-    print("\n" + "=" * 60 + "\n")
-    find_qa_test_gaps()
+    print("🚀 Enhanced Latest QA Functions Test Suite")
+    print("Testing the new file path functionality...")
+
+    try:
+        test_enhanced_functions()
+        demo_file_processing()
+    except Exception as e:
+        print(f"\n❌ Test failed with error: {e}")
+        import traceback
+
+        traceback.print_exc()
+        exit(1)

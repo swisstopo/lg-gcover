@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
-from typing import Any, Optional, Union
-
 from datetime import datetime
+from typing import Any, Optional, Union
 
 from .metadata import SchemaMetadata
 

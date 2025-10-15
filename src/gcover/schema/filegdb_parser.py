@@ -7,8 +7,8 @@ parsing the XML definitions to extract all schema information.
 
 import json
 import xml.etree.ElementTree as ET
-from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     from osgeo import ogr, osr
@@ -19,19 +19,9 @@ except ImportError:
 from loguru import logger
 
 # Import your dataclasses
-from .models import (
-    ESRISchema,
-    CodedDomain,
-    CodedValue,
-    RangeDomain,
-    FeatureClass,
-    Table,
-    Field,
-    Index,
-    RelationshipClass,
-    Subtype,
-    SubtypeValue,
-)
+from .models import (CodedDomain, CodedValue, ESRISchema, FeatureClass, Field,
+                     Index, RangeDomain, RelationshipClass, Subtype,
+                     SubtypeValue, Table)
 
 
 class FileGDBParser:
@@ -1068,7 +1058,7 @@ class FileGDBParser:
     ) -> bool:
         """Check if a dataset should be imported."""
         if not name:
-            logger.debug(f"    Filtering: Empty name - SKIP")
+            logger.debug("    Filtering: Empty name - SKIP")
             return False
 
         # Get base name
@@ -1280,8 +1270,8 @@ def extract_relationships_via_ogrinfo(gdb_path: str) -> List[Dict[str, str]]:
     Workaround: Extract relationship info using ogrinfo subprocess call.
     This parses the output of 'ogrinfo <gdb>' to get relationship details.
     """
-    import subprocess
     import re
+    import subprocess
 
     relationships = []
 
@@ -1447,24 +1437,24 @@ def main():
         logger.info(f"Parsing FileGDB: {gdb_path}")
         schema = parse_filegdb_to_esri_schema(gdb_path)
 
-        print(f"Successfully parsed FileGDB!")
+        print("Successfully parsed FileGDB!")
         print(f"Summary: {schema.get_schema_summary()}")
 
         # Show some examples
         if schema.feature_classes:
-            print(f"\nFeature classes found:")
+            print("\nFeature classes found:")
             for name in list(schema.feature_classes.keys())[:5]:
                 fc = schema.feature_classes[name]
                 print(f"  - {name} ({fc.geometry_type}, {len(fc.fields)} fields)")
 
         if schema.coded_domains:
-            print(f"\nCoded domains found:")
+            print("\nCoded domains found:")
             for name in list(schema.coded_domains.keys())[:5]:
                 domain = schema.coded_domains[name]
                 print(f"  - {name} ({len(domain.coded_values)} values)")
 
         if schema.relationships:
-            print(f"\nRelationships found:")
+            print("\nRelationships found:")
             for name in list(schema.relationships.keys())[:5]:
                 rel = schema.relationships[name]
                 print(f"  - {name}: {rel.origin_table} → {rel.destination_table}")

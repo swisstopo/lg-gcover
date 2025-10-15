@@ -2,19 +2,40 @@
 
 global:
   log_level: WARNING
-
+  proxy: ${GCOVER_PROXY_URL}
   s3:
-    bucket: "lg-gcover-dev-d48b6c57"
-    profile: "gcover_bucket"
-
+    bucket: ${GCOVER_S3_BUCKET_PROD}
+    profile: ${GCOVER_AWS_PROFILE}
+    upload_method: ${GCOVER_UPLOAD_METHOD}
+    upload_timeout: 30
+    totp_secret: ${GCOVER_TOTP_SECRET}
+    lambda_endpoint: ${GCOVER_LAMBDA_ENDPOINT}
+    proxy:
+      http_proxy: ${GCOVER_PROXY_URL}   # e.g., "http://proxy.company.com:8080"
+      https_proxy: ${GCOVER_PROXY_URL}  # e.g., "http://proxy.company.com:8080"
+  logging:
+    file:
+      path: "\\\\adb.intra.admin.ch/swisstopo$/Transfer/mom/gcover_prod_{date}.log" # System log location
+      retention: "90 days" # Keep production logs longer
+    console:
+      format: "simple" # Clean console output
+      show_path: false # No file paths in production
+    modules:
+      modules:
+        "gcover": "INFO" # Standard logging
+        "urllib3": "ERROR" # Only HTTP errors
+        "boto3": "ERROR" # Only AWS errors
 qa:
   db_path: "data/prod_verification_stats.duckdb"
 
 gdb:
+  base_paths:
+    backup: "\\\\v0t0020a.adr.admin.ch/iprod/backup/GCOVER"
+    verification: "\\\\v0t0020a/topgisprod/10_Production_GC/Administration/QA/Verifications"
+    increment: "\\\\v0t0020a.adr.admin.ch/iprod/backup/Increment/GCOVERP"
   processing:
-    max_workers: 8
+    max_workers: 2
+    compression_level: 9
   db_path: "data/prod_gdb_metadata.duckdb"
 
-  processing:
-    compression_level: 9
-    max_workers: 8
+

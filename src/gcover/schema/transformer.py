@@ -6,26 +6,16 @@ consistent filtering logic.
 
 import sys
 import traceback
-from typing import Any, Union, List, Dict, Set
+from typing import Any, Dict, List, Set, Union
 
 from loguru import logger
 
-from gcover.config import EXCLUDED_TABLES, DEFAULT_EXCLUDED_FIELDS
+from gcover.config import DEFAULT_EXCLUDED_FIELDS, EXCLUDED_TABLES
 
 # Import the dataclasses
-from .models import (
-    CodedDomain,
-    CodedValue,
-    ESRISchema,
-    FeatureClass,
-    Field,
-    Index,
-    RangeDomain,
-    RelationshipClass,
-    Subtype,
-    SubtypeValue,
-    Table,
-)
+from .models import (CodedDomain, CodedValue, ESRISchema, FeatureClass, Field,
+                     Index, RangeDomain, RelationshipClass, Subtype,
+                     SubtypeValue, Table)
 
 logger.remove()
 logger.add(sys.stderr, level="INFO")
@@ -628,15 +618,15 @@ def main():
         esri_json_data, target_prefix="GC_", exclude_metadata_fields=True
     )
 
-    print(f"Transformation completed!")
+    print("Transformation completed!")
     print(f"Summary: {schema.get_schema_summary()}")
 
     # List some results
-    print(f"\nTables found:")
+    print("\nTables found:")
     for name in list(schema.tables.keys())[:5]:
         print(f"  - {name}")
 
-    print(f"\nFeature classes found:")
+    print("\nFeature classes found:")
     for name in list(schema.feature_classes.keys())[:5]:
         print(f"  - {name}")
 

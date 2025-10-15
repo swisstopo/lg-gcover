@@ -5,26 +5,20 @@ Provides efficient methods for writing large GeoDataFrames to GPKG files
 with rich progress bars and chunked processing for better user experience.
 """
 
+import multiprocessing as mp
 import os
 import tempfile
-from pathlib import Path
-from typing import Optional, Union, Literal
 from concurrent.futures import ProcessPoolExecutor, as_completed
-import multiprocessing as mp
+from pathlib import Path
+from typing import Literal, Optional, Union
 
 import geopandas as gpd
 import pandas as pd
-from rich.progress import (
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    BarColumn,
-    TaskProgressColumn,
-    TimeElapsedColumn,
-    TimeRemainingColumn,
-)
-from rich.console import Console
 from loguru import logger
+from rich.console import Console
+from rich.progress import (BarColumn, Progress, SpinnerColumn,
+                           TaskProgressColumn, TextColumn, TimeElapsedColumn,
+                           TimeRemainingColumn)
 
 from ..config import DEFAULT_CHUNK_SIZE, DEFAULT_NUM_WORKERS
 

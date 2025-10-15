@@ -6,13 +6,41 @@ global:
   log_level: INFO
   temp_dir: /tmp/gcover
   max_workers: 4
+
   s3:
     bucket: "gcover-assets-dev"
-    profile: "default-aws-profile"  # AWS profile name
+    profile: "default-aws-profile" # AWS profile name
+    # Enhanced S3 upload configuration
+    upload_method: "auto" # Options: "auto", "direct", "presigned"
+
+    # Lambda presigned URL configuration (optional)
+    lambda_endpoint: null # e.g., "https://api.example.com/presigned-url"
+
+    # TOTP authentication for Lambda (choose one)
+    totp_secret: null    # Base32 encoded TOTP secret for generating tokens
+    totp_token: null     # Pre-generated TOTP token (overrides secret)
+
+    # Proxy configuration for direct upload (optional)
+    proxy:
+      http_proxy: null   # e.g., "http://proxy.company.com:8080"
+      https_proxy: null  # e.g., "http://proxy.company.com:8080"
+
+    # Upload timeouts and retries
+    upload_timeout: 300  # Upload timeout in seconds (5 minutes)
+    max_retries: 3       # Maximum number of upload retries
   default_crs: "EPSG:2056"
   chunk_size: 5000
-
-
+  logging:
+    file:
+      enabled: true
+      path: "logs/gcover_{environment}_{date}.log"
+      rotation: "10 MB" # Rotate when file reaches 10MB
+      retention: "30 days" # Keep logs for 30 days
+      compression: "gz" # Compress old logs
+    console:
+      format: "simple" # "simple" or "detailed"
+      show_time: true
+      show_level: true
 # GDB Asset Management configuration
 gdb:
   base_paths:
@@ -20,16 +48,23 @@ gdb:
     verification: "/media/marco/SANDISK/Verifications"
     increment: "/media/marco/SANDISK/Increment"
   db_path: "data/dev_gdb_metadata.duckdb"
-
   temp_dir: "/tmp/gcover/gdb"
-
   processing:
     compression_level: 6
     max_workers: 4
 
+publish:
+  tooltip_db_path: ${GCOVER_DATA_DIR}/products/R14/bgdi/geocover_tooltips.gdb
+  source_paths:
+    rc1: ${GCOVER_DATA_DIR}/Derivations/delivery/R14/RC1.gdb
+    rc2: ${GCOVER_DATA_DIR}/Derivations/delivery/R14/RC2.gdb
+    saas: ${GCOVER_DATA_DIR}/Derivations/delivery/R14/20300501_Saas.gdb
+    bkp_2026: ${GCOVER_DATA_DIR}/Derivations/delivery/R14/BKP_2016.gdb
+
+# QA quality test management
 qa:
   db_path: "data/prod_verification_stats.duckdb"
-
+  output_dir: "qa_output"
 # SDE Connection configuration
 sde:
   instances:
@@ -38,24 +73,21 @@ sde:
       port: 5151
       database: "GCOVERP"
       version: "SDE.DEFAULT"
-      user: null  # Use current user
-
+      user: null # Use current user
     GCOVERQ:
       host: "sde-server.example.com"
       port: 5151
       database: "GCOVERQ"
       version: "SDE.DEFAULT"
       user: null
-
   connection_timeout: 30
   temp_dir: "/tmp/gcover/sde"
   cleanup_on_exit: true
-
 # Schema management configuration
 schema:
   output_dir: "./schemas"
-  template_dir: "./templates/schema"  # Optional custom templates
+  template_dir: "./templates/schema" # Optional custom templates
   default_formats: ["json", "html"]
-  plantuml_path: "/usr/local/bin/plantuml"  # Optional PlantUML installation
+  plantuml_path: "/usr/local/bin/plantuml" # Optional PlantUML installation
   max_diagram_tables: 50
   include_system_tables: false
