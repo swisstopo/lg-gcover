@@ -587,6 +587,9 @@ class ArcPySymbolUpdater:
         edit.startOperation()
 
         try:
+            feature_count = 0
+            update_interval = max(1, int(arcpy.management.GetCount(fc_path)[0]) // 100)  # Update every 1%
+
             # Single pass: read all features, evaluate rules, update
             with arcpy.da.UpdateCursor(
                     fc_path,
@@ -594,6 +597,16 @@ class ArcPySymbolUpdater:
                     where_clause=base_where
             ) as cursor:
                 for row in cursor:
+                    feature_count += 1
+
+                    # Update progress
+                    if progress and task_id:
+                        progress.update(task_id, advance=1)
+
+                    # Log progress periodically
+                    if feature_count % update_interval == 0:
+                        logger.debug(f"Processed {feature_count} features...")
+
                     oid = row[0]
 
                     # Extract current symbol
@@ -609,8 +622,6 @@ class ArcPySymbolUpdater:
 
                     if not should_update:
                         stats["skipped"] += 1
-                        if progress and task_id:
-                            progress.update(task_id, advance=1)
                         continue
 
                     # Build field value dict for rule evaluation
@@ -1082,9 +1093,12 @@ class ArcPySymbolUpdater:
                 fc_path = str(self.gdb_path / fc)
                 total_features = int(arcpy.management.GetCount(fc_path)[0])
 
+                # Total work = features × number of classifications
+                total_work = total_features * len(layer_config.classifications)
+
                 task = progress.add_task(
                     f"[cyan]{fc}",
-                    total=total_features  # Single pass, not per-classification
+                    total=total_work
                 )
 
                 # Apply each classification
