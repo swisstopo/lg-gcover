@@ -37,7 +37,8 @@ class ClassificationConfig:
 @dataclass
 class LayerConfig:
     """Configuration for a feature class with multiple classifications."""
-    feature_class: str  # Changed from gpkg_layer
+    gpkg_layer: str
+    feature_class: Optional[str]
     classifications: List[ClassificationConfig]
     field_types: Optional[Dict[str, str]] = None
 
@@ -77,6 +78,7 @@ class ArcPyClassificationConfig:
         """Parse a single layer configuration."""
         # Support both 'feature_class' and 'gpkg_layer' keys for compatibility
         feature_class = layer_dict.get("feature_class") or layer_dict.get("gpkg_layer")
+        gpkg_layer = layer_dict.get("gpkg_layer")
         classifications = []
         field_types = layer_dict.get("field_types", {})
 
@@ -97,6 +99,7 @@ class ArcPyClassificationConfig:
             )
 
         return LayerConfig(
+            gpkg_layer=gpkg_layer,
             feature_class=feature_class,
             classifications=classifications,
             field_types=field_types,
@@ -450,6 +453,8 @@ class ArcPySymbolUpdater:
             arcpy.env.workspace = str(self.gdb_path / dataset)
             for fc in arcpy.ListFeatureClasses():
                 available_fcs.append(f"{dataset}/{fc}")
+
+        console.print(f"Available feature classes: {available_fcs} ")
 
         # Reset workspace
         arcpy.env.workspace = str(self.gdb_path)

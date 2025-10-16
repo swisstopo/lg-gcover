@@ -59,6 +59,7 @@ class LayerConfig:
     """Configuration for a GPKG layer with multiple classifications."""
 
     gpkg_layer: str
+    feature_class: Optional[str]
     classifications: List[ClassificationConfig]
     field_types: Optional[Dict[str, str]] = None
     layer_type: Optional[LayerType] = None
@@ -97,7 +98,8 @@ class BatchClassificationConfig:
 
     def _parse_layer_config(self, layer_dict: dict) -> LayerConfig:
         """Parse a single layer configuration."""
-        gpkg_layer = layer_dict["gpkg_layer"]
+        gpkg_layer = layer_dict.get("gpkg_layer")
+        feature_class = layer_dict["feature_class"]
         layer_type_str = layer_dict.get("layer_type")
         layer_type = LayerType(layer_type_str) if layer_type_str else None
         classifications = []
@@ -122,6 +124,7 @@ class BatchClassificationConfig:
 
         return LayerConfig(
             gpkg_layer=gpkg_layer,
+            feature_class=feature_class,
             classifications=classifications,
             field_types=field_types,
             layer_type=layer_type,

@@ -120,14 +120,16 @@ def apply_config_filegdb(
 
         # Display feature class summary
         table = Table(title="Configuration Summary", show_header=True)
-        table.add_column("Feature Class", style="cyan")
+        table.add_column("GPKG Layer", style="dim")
+        table.add_column("FileGDB Feature Class", style="cyan")
         table.add_column("Classifications", style="yellow", justify="right")
         table.add_column("Style Files", style="dim")
 
         for layer_config in config.layers:
             style_files = [c.style_file.name for c in layer_config.classifications]
             table.add_row(
-                layer_config.feature_class,
+                layer_config.gpkg_layer or "-",
+                layer_config.feature_class or layer_config.gpkg_layer or "-",
                 str(len(layer_config.classifications)),
                 ", ".join(style_files[:3]) + ("..." if len(style_files) > 3 else ""),
             )
@@ -161,17 +163,24 @@ def apply_config_filegdb(
 
             # Validate feature classes exist
             arcpy.env.workspace = str(gdb_file)
-            console.print("\nValidating feature classes...")
+            console.print("\nValidating feature classes in FileGDB...")
             for layer_config in config.layers:
-                fc_path = str(gdb_file / layer_config.feature_class)
+                fc_name = layer_config.get_target_name("filegdb")
+                if not fc_name:
+                    console.print(
+                        f"  [yellow]⚠ Layer has no feature_class defined: {layer_config.gpkg_layer}[/yellow]"
+                    )
+                    continue
+
+                fc_path = str(gdb_file / fc_name)
                 if arcpy.Exists(fc_path):
                     count = arcpy.management.GetCount(fc_path)[0]
                     console.print(
-                        f"  [green]✓ {layer_config.feature_class} ({count} features)[/green]"
+                        f"  [green]✓ {fc_name} ({count} features)[/green]"
                     )
                 else:
                     console.print(
-                        f"  [red]✗ Feature class not found: {layer_config.feature_class}[/red]"
+                        f"  [red]✗ Feature class not found: {fc_name}[/red]"
                     )
                     all_valid = False
 
