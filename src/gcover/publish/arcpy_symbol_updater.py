@@ -224,7 +224,8 @@ class ArcPySymbolUpdater:
     def load_classification_rules(
             self,
             style_file: Path,
-            classification_name: Optional[str] = None
+            classification_name: Optional[str] = None,
+            field_types: Optional[Dict[str, str]] = None
     ) -> Tuple[List[Dict[str, Any]], Optional[List[str]]]:
         """
         Load classification rules from ESRI .lyrx file.
@@ -232,6 +233,7 @@ class ArcPySymbolUpdater:
         Args:
             style_file: Path to .lyrx style file
             classification_name: Specific classification to extract
+            field_types: Optional field type mapping from config (e.g., {'KIND': 'Int64'})
 
         Returns:
             Tuple of (rules list, field_names list)
@@ -269,12 +271,14 @@ class ArcPySymbolUpdater:
             # Extract field names
             field_names = [f.name for f in classification.fields] if classification.fields else None
 
-            # Convert to rules
-            rules = self._convert_classification_to_rules(classification)
+            # Convert to rules (passing field_types)
+            rules = self._convert_classification_to_rules(classification, field_types)
 
             logger.info(f"Loaded {len(rules)} rules from {classification.layer_name}")
             if field_names:
                 logger.debug(f"  Fields: {field_names}")
+            if field_types:
+                logger.debug(f"  Field types: {field_types}")
 
             return rules, field_names
 
@@ -287,12 +291,14 @@ class ArcPySymbolUpdater:
             logger.debug(traceback.format_exc())
             return [], None
 
-    def _convert_classification_to_rules(self, classification) -> List[Dict[str, Any]]:
+    def _convert_classification_to_rules(self, classification, field_types: Optional[Dict[str, str]] = None) -> List[
+        Dict[str, Any]]:
         """
         Convert LayerClassification object to list of rules.
 
         Args:
             classification: LayerClassification object from extract_lyrx
+            field_types: Optional field type mapping from config (e.g., {'KIND': 'Int64'})
 
         Returns:
             List of rule dictionaries with 'condition', 'symbol', 'label', 'field_values'
@@ -311,7 +317,7 @@ class ArcPySymbolUpdater:
 
         # Process each ClassificationClass
         for class_obj in classification.classes:
-            rule = self._extract_rule_from_classification_class(class_obj, field_names)
+            rule = self._extract_rule_from_classification_class(class_obj, field_names, field_types)
             if rule:
                 rules.append(rule)
 
@@ -321,7 +327,8 @@ class ArcPySymbolUpdater:
     def _extract_rule_from_classification_class(
             self,
             class_obj,
-            field_names: List[str]
+            field_names: List[str],
+            field_types: Optional[Dict[str, str]] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Extract rule dictionary from a ClassificationClass object.
@@ -329,6 +336,7 @@ class ArcPySymbolUpdater:
         Args:
             class_obj: ClassificationClass with label, field_values, symbol_info
             field_names: List of field names used in the classification
+            field_types: Optional field type mapping (e.g., {'KIND': 'Int64'})
 
         Returns:
             Rule dictionary or None
@@ -386,19 +394,40 @@ class ArcPySymbolUpdater:
                 # Build condition for this combination
                 combo_conditions = []
                 for field_name, value in zip(field_names, value_combination):
+                    # Determine if field is numeric based on field_types
+                    is_numeric = False
+                    if field_types and field_name in field_types:
+                        field_type = field_types[field_name].lower()
+                        is_numeric = any(t in field_type for t in ['int', 'float', 'double', 'numeric', 'number'])
+
                     # Format value for SQL
-                    if isinstance(value, str):
-                        # Check if it's a special value
-                        if value.upper() in ('NULL', 'NONE', ''):
+                    if value is None:
+                        combo_conditions.append(f"{field_name} IS NULL")
+                    elif isinstance(value, str):
+                        # Check if it's a NULL representation
+                        # ESRI uses various representations: <Null>, NULL, None, empty string
+                        if value.upper() in ('NULL', 'NONE', '') or value in ('<Null>', '<null>', '<NULL>'):
                             combo_conditions.append(f"{field_name} IS NULL")
+                        elif is_numeric:
+                            # Numeric field - don't quote the value
+                            try:
+                                # Try to convert to number to validate
+                                if '.' in value:
+                                    float(value)
+                                else:
+                                    int(value)
+                                combo_conditions.append(f"{field_name} = {value}")
+                            except ValueError:
+                                logger.warning(
+                                    f"Expected numeric value for {field_name} but got '{value}', treating as string")
+                                escaped_value = value.replace("'", "''")
+                                combo_conditions.append(f"{field_name} = '{escaped_value}'")
                         else:
-                            # Escape single quotes in strings
+                            # String field - quote the value
                             escaped_value = value.replace("'", "''")
                             combo_conditions.append(f"{field_name} = '{escaped_value}'")
-                    elif value is None:
-                        combo_conditions.append(f"{field_name} IS NULL")
                     else:
-                        # Numeric value
+                        # Already numeric type (int, float)
                         combo_conditions.append(f"{field_name} = {value}")
 
                 # Combine field conditions with AND
@@ -463,6 +492,7 @@ class ArcPySymbolUpdater:
             self,
             feature_class: str,
             class_config: ClassificationConfig,
+            field_types: Optional[Dict[str, str]] = None,
             progress: Optional[Progress] = None,
             task_id: Optional[Any] = None,
     ) -> Dict[str, int]:
@@ -472,6 +502,7 @@ class ArcPySymbolUpdater:
         Args:
             feature_class: Feature class path (can include dataset)
             class_config: Classification configuration
+            field_types: Optional field type mapping from layer config
             progress: Optional Rich progress bar
             task_id: Optional task ID for progress updates
 
@@ -480,10 +511,11 @@ class ArcPySymbolUpdater:
         """
         fc_path = str(self.gdb_path / feature_class)
 
-        # Load classification rules
+        # Load classification rules (pass field_types for proper SQL generation)
         rules, field_names = self.load_classification_rules(
             class_config.style_file,
-            class_config.classification_name
+            class_config.classification_name,
+            field_types
         )
 
         if not rules:
@@ -708,6 +740,7 @@ class ArcPySymbolUpdater:
                         result = self.apply_classification_to_feature_class(
                             fc,
                             class_config,
+                            field_types=layer_config.field_types,  # Pass field types
                             progress=progress,
                             task_id=task
                         )

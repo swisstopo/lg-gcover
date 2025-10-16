@@ -35,6 +35,7 @@ except ImportError:
 
 console = Console()
 
+HAS_ARCPY = False
 
 class ClassificationJSONEncoder(json.JSONEncoder):
     """Custom JSON encoder for classification objects."""
@@ -762,6 +763,9 @@ class ESRIClassificationExtractor:
         symbology = layer.symbology
 
         # Check if it's a unique value renderer
+        console.print(type(symbology.renderer))
+        console.print(dir(symbology.renderer))
+
         if (
             not hasattr(symbology, "renderer")
             or symbology.renderer["type"] != "CIMUniqueValueRenderer"
