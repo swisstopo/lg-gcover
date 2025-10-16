@@ -199,6 +199,9 @@ class ArcPySymbolUpdater:
         # Get existing fields
         existing_fields = {f.name.upper() for f in arcpy.ListFields(fc_path)}
 
+
+        console.print(f"Fields: {existing_fields}")
+
         # Add SYMBOL field if missing
         if self.symbol_field.upper() not in existing_fields:
             arcpy.management.AddField(
@@ -471,6 +474,9 @@ class ArcPySymbolUpdater:
         """
         Apply a single classification to a feature class using arcpy cursors.
 
+        Uses a single-pass approach: reads all features once, evaluates all rules in memory,
+        then updates in a single pass. Much faster than multiple cursor passes.
+
         Args:
             feature_class: Feature class path (can include dataset)
             class_config: Classification configuration
@@ -511,15 +517,25 @@ class ArcPySymbolUpdater:
                 if field not in read_fields:
                     read_fields.append(field)
 
-        # Make sure OID is included for debugging
+        # Make sure OID is included
         read_fields.insert(0, "OID@")
 
         # Remove duplicates while preserving order
         read_fields = list(dict.fromkeys(read_fields))
 
-        logger.info(f"Processing {feature_class} with {len(rules)} rules")
+        logger.info(f"Processing {feature_class} with {len(rules)} rules (single-pass mode)")
         logger.debug(f"Reading fields: {read_fields}")
-        logger.debug(f"Classification fields: {field_names}")
+
+        # Build and sanitize additional WHERE clause if specified
+        base_where = self._sanitize_sql_filter(class_config.filter) if class_config.filter else None
+
+        if base_where:
+            logger.debug(f"Base filter: {base_where}")
+
+        # Compile rules into evaluatable functions for faster processing
+        compiled_rules = self._compile_rules(rules, field_names, class_config.symbol_prefix)
+
+        logger.debug(f"Compiled {len(compiled_rules)} rules for evaluation")
 
         # Start edit session for File Geodatabase
         edit = arcpy.da.Editor(str(self.gdb_path))
@@ -527,86 +543,66 @@ class ArcPySymbolUpdater:
         edit.startOperation()
 
         try:
-            # Process each rule
-            for rule_idx, rule in enumerate(rules):
-                # Build WHERE clause for this rule
-                where_clause = self.build_sql_where_clause(
-                    rule,
-                    class_config.fields,
-                    class_config.filter,
-                    field_names
-                )
+            # Single pass: read all features, evaluate rules, update
+            with arcpy.da.UpdateCursor(
+                    fc_path,
+                    read_fields,
+                    where_clause=base_where
+            ) as cursor:
+                for row in cursor:
+                    # Extract current symbol
+                    current_symbol = row[read_fields.index(self.symbol_field)]
 
-                # Determine symbol value
-                symbol_value = rule.get('symbol')  # This is just the index now
-                if class_config.symbol_prefix:
-                    symbol_value = f"{class_config.symbol_prefix}_{symbol_value}"
-                elif not symbol_value:
-                    # Fallback if no prefix and no symbol
-                    symbol_value = f"class_{symbol_value}"
+                    # Check if we should update
+                    should_update = (
+                            self.overwrite or
+                            current_symbol is None or
+                            current_symbol == "" or
+                            current_symbol == "None"
+                    )
 
-                label_value = rule.get('label')
+                    if not should_update:
+                        stats["skipped"] += 1
+                        if progress and task_id:
+                            progress.update(task_id, advance=1)
+                        continue
 
-                logger.debug(f"Rule {rule_idx + 1}/{len(rules)}: {label_value}")
-                logger.debug(f"  WHERE: {where_clause}")
-                logger.debug(f"  Symbol: {symbol_value}")
+                    # Build field value dict for rule evaluation
+                    field_values = {}
+                    for field in field_names or []:
+                        if field in read_fields:
+                            field_values[field] = row[read_fields.index(field)]
 
-                # Use UpdateCursor to update matching features
-                try:
-                    with arcpy.da.UpdateCursor(
-                            fc_path,
-                            read_fields,
-                            where_clause=where_clause
-                    ) as cursor:
-                        rule_updated = 0
-                        for row in cursor:
-                            oid = row[0]
-                            current_symbol = row[read_fields.index(self.symbol_field)]
+                    # Evaluate all rules to find first match
+                    matched_rule = self._evaluate_rules(compiled_rules, field_values, field_types)
 
-                            # Check if we should update
-                            should_update = (
-                                    self.overwrite or
-                                    current_symbol is None or
-                                    current_symbol == "" or
-                                    current_symbol == "None"
-                            )
+                    if matched_rule:
+                        # Update symbol
+                        row[read_fields.index(self.symbol_field)] = matched_rule['symbol']
 
-                            if should_update and symbol_value:
-                                # Update symbol
-                                row[read_fields.index(self.symbol_field)] = symbol_value
+                        # Update label if configured
+                        if self.label_field and matched_rule.get('label'):
+                            row[read_fields.index(self.label_field)] = matched_rule['label']
 
-                                # Update label if configured
-                                if self.label_field and label_value:
-                                    row[read_fields.index(self.label_field)] = label_value
+                        cursor.updateRow(row)
+                        stats["updated"] += 1
+                    else:
+                        stats["skipped"] += 1
 
-                                cursor.updateRow(row)
-                                stats["updated"] += 1
-                                rule_updated += 1
-                            else:
-                                stats["skipped"] += 1
-
-                            # Update progress
-                            if progress and task_id:
-                                progress.update(task_id, advance=1)
-
-                    if rule_updated > 0:
-                        logger.debug(f"  -> Updated {rule_updated} features")
-
-                except Exception as e:
-                    logger.warning(f"Error processing rule {rule_idx + 1} ({label_value}): {e}")
-                    logger.debug(f"  WHERE clause: {where_clause}")
-                    stats["errors"] += 1
-                    continue
+                    # Update progress
+                    if progress and task_id:
+                        progress.update(task_id, advance=1)
 
             # Commit changes
             edit.stopOperation()
             edit.stopEditing(True)
 
-            logger.info(
-                f"✓ {feature_class}: Updated {stats['updated']} features, skipped {stats['skipped']}, errors {stats['errors']}")
+            logger.info(f"✓ {feature_class}: Updated {stats['updated']} features, skipped {stats['skipped']}")
 
         except Exception as e:
             logger.error(f"Error processing {feature_class}: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
             stats["errors"] += 1
 
             # Rollback on error
@@ -617,6 +613,175 @@ class ArcPySymbolUpdater:
             raise
 
         return stats
+
+    def _sanitize_sql_filter(self, filter_str: str) -> str:
+        """
+        Sanitize SQL filter for FileGDB compatibility.
+
+        Converts Python-style operators to SQL operators:
+        - == to =
+        - != to <>
+
+        Args:
+            filter_str: Filter string (may contain Python operators)
+
+        Returns:
+            Sanitized SQL filter string
+        """
+        if not filter_str:
+            return filter_str
+
+        # Replace Python operators with SQL operators
+        # Use word boundaries to avoid replacing inside strings
+        import re
+
+        # Replace == with = (but not inside strings)
+        # Simple approach: replace == with = everywhere
+        sanitized = filter_str.replace('==', '=')
+
+        # Replace != with <> if present
+        sanitized = sanitized.replace('!=', '<>')
+
+        return sanitized
+
+    def _compile_rules(
+            self,
+            rules: List[Dict[str, Any]],
+            field_names: List[str],
+            symbol_prefix: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Compile rules into a faster evaluation format.
+
+        Args:
+            rules: List of rule dictionaries
+            field_names: Field names used in classification
+            symbol_prefix: Optional prefix for symbols
+
+        Returns:
+            List of compiled rule dictionaries
+        """
+        compiled = []
+
+        for rule in rules:
+            symbol_value = rule.get('symbol')
+            if symbol_prefix:
+                symbol_value = f"{symbol_prefix}_{symbol_value}"
+            elif not symbol_value:
+                symbol_value = f"class_{symbol_value}"
+
+            compiled_rule = {
+                'symbol': symbol_value,
+                'label': rule.get('label'),
+                'field_values': rule.get('field_values', []),
+                'field_names': field_names,  # Store field names for evaluation
+                'visible': rule.get('visible', True)
+            }
+
+            # Only include visible rules
+            if compiled_rule['visible']:
+                compiled.append(compiled_rule)
+
+        return compiled
+
+    def _evaluate_rules(
+            self,
+            compiled_rules: List[Dict[str, Any]],
+            feature_values: Dict[str, Any],
+            field_types: Optional[Dict[str, str]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Evaluate all rules against a feature's field values.
+        Returns first matching rule.
+
+        Args:
+            compiled_rules: Pre-compiled rules
+            feature_values: Dictionary of field values from the feature
+            field_types: Optional field type mapping
+
+        Returns:
+            Matching rule dictionary or None
+        """
+        for rule in compiled_rules:
+            # Check if this rule matches the feature
+            if self._rule_matches_feature(rule, feature_values, field_types):
+                return rule
+
+        return None
+
+    def _rule_matches_feature(
+            self,
+            rule: Dict[str, Any],
+            feature_values: Dict[str, Any],
+            field_types: Optional[Dict[str, str]] = None
+    ) -> bool:
+        """
+        Check if a rule matches a feature.
+
+        Args:
+            rule: Rule dictionary with field_values and field_names
+            feature_values: Feature's actual field values
+            field_types: Optional field type mapping
+
+        Returns:
+            True if rule matches
+        """
+        field_value_combinations = rule.get('field_values', [])
+        field_names = rule.get('field_names', [])
+
+        if not field_value_combinations or not field_names:
+            return False
+
+        # Check each value combination (OR logic)
+        for value_combination in field_value_combinations:
+            if len(value_combination) != len(field_names):
+                continue
+
+            # Check all fields in this combination (AND logic)
+            all_match = True
+
+            for field_name, expected_value in zip(field_names, value_combination):
+                actual_value = feature_values.get(field_name)
+
+                # Handle NULL checks
+                if expected_value is None or str(expected_value).upper() in ('NULL', 'NONE', '') or expected_value in (
+                        '<Null>', '<null>', '<NULL>'):
+                    if actual_value is not None and actual_value != '':
+                        all_match = False
+                        break
+                else:
+                    # Determine if field is numeric
+                    is_numeric = False
+                    if field_types and field_name in field_types:
+                        field_type = field_types[field_name].lower()
+                        is_numeric = any(t in field_type for t in ['int', 'float', 'double', 'numeric', 'number'])
+
+                    # Compare values
+                    if is_numeric:
+                        # Numeric comparison
+                        try:
+                            expected_num = float(expected_value) if '.' in str(expected_value) else int(expected_value)
+                            actual_num = float(actual_value) if actual_value is not None else None
+                            if expected_num != actual_num:
+                                all_match = False
+                                break
+                        except (ValueError, TypeError):
+                            # If conversion fails, do string comparison
+                            if str(expected_value) != str(actual_value):
+                                all_match = False
+                                break
+                    else:
+                        # String comparison
+                        if str(expected_value) != str(actual_value):
+                            all_match = False
+                            break
+
+            # If all fields matched in this combination, rule matches
+            if all_match:
+                return True
+
+        # No combination matched
+        return False
 
     def apply_batch_from_config(
             self,
@@ -702,7 +867,7 @@ class ArcPySymbolUpdater:
 
                 task = progress.add_task(
                     f"[cyan]{fc}",
-                    total=total_features * len(layer_config.classifications)
+                    total=total_features  # Single pass, not per-classification
                 )
 
                 # Apply each classification
