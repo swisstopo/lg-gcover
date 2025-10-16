@@ -199,9 +199,6 @@ class ArcPySymbolUpdater:
         # Get existing fields
         existing_fields = {f.name.upper() for f in arcpy.ListFields(fc_path)}
 
-
-        console.print(f"Fields: {existing_fields}")
-
         # Add SYMBOL field if missing
         if self.symbol_field.upper() not in existing_fields:
             arcpy.management.AddField(
@@ -502,20 +499,67 @@ class ArcPySymbolUpdater:
 
         stats = {"updated": 0, "skipped": 0, "errors": 0}
 
-        # Get all fields we need to read
+        # Check which fields are actually available in the feature class
+        available_fields = self._get_available_fields(fc_path)
+        logger.debug(f"Available fields in {feature_class}: {available_fields}")
+
+        # Separate ALL fields (from classification + field mapping) into direct and related
+        all_field_names = set(field_names or [])
+        if class_config.fields:
+            all_field_names.update(class_config.fields.values())
+
+        direct_fields = []
+        related_fields = {}  # {table_name: [field_names]}
+        foreign_keys = {}  # {table_name: fk_field_in_fc}
+
+        for field in all_field_names:
+            if '.' in field:
+                # This is a qualified field name like "TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.FIELD"
+                parts = field.split('.')
+                if len(parts) >= 2:
+                    table_name = '.'.join(parts[:-1])  # Everything except last part
+                    field_name = parts[-1]  # Last part is field name
+
+                    if table_name not in related_fields:
+                        related_fields[table_name] = []
+                    related_fields[table_name].append(field_name)
+
+                    # Try to find foreign key in feature class
+                    if table_name not in foreign_keys:
+                        fk_field = self._find_foreign_key_field(available_fields, table_name)
+                        if fk_field:
+                            foreign_keys[table_name] = fk_field
+                            logger.debug(f"Found FK for {table_name}: {fk_field}")
+                else:
+                    direct_fields.append(field)
+            else:
+                # Simple field name - check if it exists
+                if field.upper() in [f.upper() for f in available_fields]:
+                    direct_fields.append(field)
+                else:
+                    logger.warning(f"Field '{field}' not found in {feature_class}, skipping")
+
+        # Load related table data if needed
+        related_data = {}
+        if related_fields:
+            logger.info(f"Loading data from {len(related_fields)} related table(s)")
+            logger.info(f"Related fields {related_fields}")
+            related_data = self._load_related_tables(fc_path, related_fields, foreign_keys)
+
+        # Get all fields we need to read from main feature class (NO qualified names!)
         read_fields = [self.symbol_field]
         if self.label_field:
             read_fields.append(self.label_field)
 
-        # Add fields from field mapping
-        if class_config.fields:
-            read_fields.extend(class_config.fields.values())
+        # Add direct fields only
+        for field in direct_fields:
+            if field not in read_fields:
+                read_fields.append(field)
 
-        # Add classification fields if not already included
-        if field_names:
-            for field in field_names:
-                if field not in read_fields:
-                    read_fields.append(field)
+        # Add foreign key fields for joining
+        for fk_field in foreign_keys.values():
+            if fk_field not in read_fields:
+                read_fields.append(fk_field)
 
         # Make sure OID is included
         read_fields.insert(0, "OID@")
@@ -550,6 +594,8 @@ class ArcPySymbolUpdater:
                     where_clause=base_where
             ) as cursor:
                 for row in cursor:
+                    oid = row[0]
+
                     # Extract current symbol
                     current_symbol = row[read_fields.index(self.symbol_field)]
 
@@ -569,9 +615,26 @@ class ArcPySymbolUpdater:
 
                     # Build field value dict for rule evaluation
                     field_values = {}
-                    for field in field_names or []:
+
+                    # Add direct fields from the feature class
+                    for field in direct_fields:
                         if field in read_fields:
                             field_values[field] = row[read_fields.index(field)]
+
+                    # Add fields from related tables
+                    for table_name, fields in related_fields.items():
+                        if table_name in related_data:
+                            # Get the foreign key value from this row
+                            fk_field = foreign_keys.get(table_name)
+                            if fk_field and fk_field in read_fields:
+                                fk_value = row[read_fields.index(fk_field)]
+
+                                if fk_value and fk_value in related_data[table_name]:
+                                    related_row = related_data[table_name][fk_value]
+                                    for field in fields:
+                                        # Store with qualified name for rule matching
+                                        qualified_name = f"{table_name}.{field}"
+                                        field_values[qualified_name] = related_row.get(field)
 
                     # Evaluate all rules to find first match
                     matched_rule = self._evaluate_rules(compiled_rules, field_values, field_types)
@@ -613,6 +676,160 @@ class ArcPySymbolUpdater:
             raise
 
         return stats
+
+    def _get_available_fields(self, fc_path: str) -> List[str]:
+        """
+        Get list of available field names in a feature class.
+
+        Args:
+            fc_path: Path to feature class
+
+        Returns:
+            List of field names
+        """
+        try:
+            return [f.name for f in arcpy.ListFields(fc_path)]
+        except Exception as e:
+            logger.warning(f"Error listing fields for {fc_path}: {e}")
+            return []
+
+    def _find_foreign_key_field(self, available_fields: List[str], table_name: str) -> Optional[str]:
+        """
+        Find the foreign key field in the feature class that references a table.
+
+        Args:
+            available_fields: List of field names in feature class
+            table_name: Name of related table (e.g., "TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT")
+
+        Returns:
+            Foreign key field name or None
+        """
+        # Extract simple table name from qualified name
+        simple_table_name = table_name.split('.')[-1]
+
+        # Common FK naming patterns
+        # e.g., GC_GEOL_MAPPING_UNIT_ATT -> GEOL_MAPPING_UNIT_ATT_UUID
+        potential_fks = [
+            f"{simple_table_name}_UUID",
+            f"{simple_table_name}_ID",
+            f"{simple_table_name.replace('GC_', '')}_UUID",
+            f"{simple_table_name.replace('GC_', '')}_ID",
+        ]
+
+        for fk_name in potential_fks:
+            for field in available_fields:
+                if field.upper() == fk_name.upper():
+                    return field
+
+        return None
+
+    def _load_related_tables(
+            self,
+            fc_path: str,
+            related_fields: Dict[str, List[str]],
+            foreign_keys: Dict[str, str]
+    ) -> Dict[str, Dict[Any, Dict[str, Any]]]:
+        """
+        Load data from related tables.
+
+        Args:
+            fc_path: Path to main feature class
+            related_fields: Dict mapping table names to field lists
+            foreign_keys: Dict mapping table names to FK field names in FC
+
+        Returns:
+            Dict mapping table_name -> key_value -> field_values
+        """
+        related_data = {}
+
+        for table_name, fields in related_fields.items():
+            try:
+                # Try to find the related table
+                # Table name might be fully qualified like "TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT"
+                # or simple like "GC_GEOL_MAPPING_UNIT_ATT"
+
+                # Try different paths
+                simple_name = table_name.split('.')[-1]
+                table_paths = [
+                    str(self.gdb_path / simple_name),  # Simple name
+                    str(self.gdb_path / table_name),  # Full name
+                ]
+
+                # Add path with feature dataset if feature class is in one
+                if '/' in fc_path:
+                    dataset = fc_path.rsplit('/', 1)[0]
+                    table_paths.insert(0, str(self.gdb_path / dataset / simple_name))
+
+                table_path = None
+                for path in table_paths:
+                    if arcpy.Exists(path):
+                        table_path = path
+                        break
+
+                if not table_path:
+                    logger.warning(f"Related table not found: {table_name} (tried {len(table_paths)} paths)")
+                    continue
+
+                logger.debug(f"Loading related table: {table_path}")
+
+                # Determine the key field in the related table
+                # Usually UUID or primary key
+                key_field = self._find_table_key_field(table_path)
+
+                if not key_field:
+                    logger.warning(f"Could not find key field in {table_path}")
+                    continue
+
+                # Load the related table data indexed by key
+                read_fields = [key_field] + fields
+                table_data = {}
+
+                with arcpy.da.SearchCursor(table_path, read_fields) as cursor:
+                    for row in cursor:
+                        key_value = row[0]
+                        if key_value:  # Skip NULL keys
+                            field_dict = {}
+                            for i, field in enumerate(fields):
+                                field_dict[field] = row[i + 1]
+                            table_data[key_value] = field_dict
+
+                related_data[table_name] = table_data
+                logger.info(f"Loaded {len(table_data)} records from {table_name}")
+
+            except Exception as e:
+                logger.warning(f"Error loading related table {table_name}: {e}")
+                import traceback
+                logger.debug(traceback.format_exc())
+
+        return related_data
+
+    def _find_table_key_field(self, table_path: str) -> Optional[str]:
+        """
+        Find the primary key field in a table.
+
+        Args:
+            table_path: Path to table
+
+        Returns:
+            Key field name or None
+        """
+        try:
+            fields = [f.name for f in arcpy.ListFields(table_path)]
+
+            # Preferred key fields in order
+            for key_name in ['UUID', 'OBJECTID', 'OID', 'ID', 'FID']:
+                for field in fields:
+                    if field.upper() == key_name:
+                        return field
+
+            # If nothing found, use first field
+            if fields:
+                return fields[0]
+
+        except Exception as e:
+            logger.warning(f"Error finding key field: {e}")
+
+        return None
 
     def _sanitize_sql_filter(self, filter_str: str) -> str:
         """
