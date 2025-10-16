@@ -9,7 +9,7 @@ logic, but operates directly on FileGDB using arcpy.da cursors.
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -36,11 +36,27 @@ class ClassificationConfig:
 
 @dataclass
 class LayerConfig:
-    """Configuration for a feature class with multiple classifications."""
-    gpkg_layer: str
-    feature_class: Optional[str]
-    classifications: List[ClassificationConfig]
+    """Configuration for a layer with multiple classifications."""
+    gpkg_layer: Optional[str] = None  # Used for GPKG files
+    feature_class: Optional[str] = None  # Used for FileGDB
+    classifications: List[ClassificationConfig] = field(default_factory=list)
     field_types: Optional[Dict[str, str]] = None
+    layer_type: Optional[str] = None
+
+    def get_target_name(self, format_type: str = "filegdb") -> str:
+        """
+        Get the appropriate target name based on format.
+
+        Args:
+            format_type: 'gpkg' or 'filegdb'
+
+        Returns:
+            Layer/feature class name
+        """
+        if format_type.lower() == "filegdb":
+            return self.feature_class or self.gpkg_layer
+        else:
+            return self.gpkg_layer or self.feature_class
 
 
 class ArcPyClassificationConfig:
@@ -76,9 +92,14 @@ class ArcPyClassificationConfig:
 
     def _parse_layer_config(self, layer_dict: dict) -> LayerConfig:
         """Parse a single layer configuration."""
-        # Support both 'feature_class' and 'gpkg_layer' keys for compatibility
-        feature_class = layer_dict.get("feature_class") or layer_dict.get("gpkg_layer")
         gpkg_layer = layer_dict.get("gpkg_layer")
+        feature_class = layer_dict.get("feature_class")
+        layer_type = layer_dict.get("layer_type")
+
+        # Validate that at least one is provided
+        if not gpkg_layer and not feature_class:
+            raise ValueError("Layer config must have either 'gpkg_layer' or 'feature_class'")
+
         classifications = []
         field_types = layer_dict.get("field_types", {})
 
@@ -103,12 +124,23 @@ class ArcPyClassificationConfig:
             feature_class=feature_class,
             classifications=classifications,
             field_types=field_types,
+            layer_type=layer_type,
         )
 
-    def get_layer_config(self, feature_class: str) -> Optional[LayerConfig]:
-        """Get configuration for a specific feature class."""
+    def get_layer_config(self, target_name: str, format_type: str = "filegdb") -> Optional[LayerConfig]:
+        """
+        Get configuration for a specific layer.
+
+        Args:
+            target_name: Layer/feature class name to find
+            format_type: 'gpkg' or 'filegdb' - determines which field to check
+
+        Returns:
+            LayerConfig if found, None otherwise
+        """
         for layer in self.layers:
-            if layer.feature_class == feature_class:
+            layer_target = layer.get_target_name(format_type)
+            if layer_target == target_name:
                 return layer
         return None
 
@@ -193,7 +225,7 @@ class ArcPySymbolUpdater:
             self,
             style_file: Path,
             classification_name: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    ) -> Tuple[List[Dict[str, Any]], Optional[List[str]]]:
         """
         Load classification rules from ESRI .lyrx file.
 
@@ -202,91 +234,221 @@ class ArcPySymbolUpdater:
             classification_name: Specific classification to extract
 
         Returns:
-            List of classification rules with conditions and symbols
+            Tuple of (rules list, field_names list)
         """
-        # This is a simplified version - you'll need to use your existing
-        # extract_lyrx() function from esri_classification_extractor
-        # For now, returning placeholder structure
-
         # Import your existing extractor
         try:
             from gcover.publish.esri_classification_extractor import extract_lyrx
+
             classifications = extract_lyrx(style_file, display=False)
 
+            if not classifications:
+                logger.warning(f"No classifications found in {style_file.name}")
+                return [], None
+
             # Find the right classification
+            classification = None
             if classification_name:
                 for c in classifications:
                     if c.layer_name == classification_name:
-                        return self._convert_classification_to_rules(c)
-                logger.warning(f"Classification '{classification_name}' not found")
-                return []
+                        classification = c
+                        break
+                if not classification:
+                    logger.warning(f"Classification '{classification_name}' not found in {style_file.name}")
+                    logger.info(f"Available classifications: {[c.layer_name for c in classifications]}")
+                    return [], None
             elif len(classifications) == 1:
-                return self._convert_classification_to_rules(classifications[0])
+                classification = classifications[0]
             else:
-                logger.error(f"Multiple classifications found, specify classification_name")
-                return []
+                logger.error(
+                    f"Multiple classifications found in {style_file.name}, "
+                    f"specify classification_name. Available: {[c.layer_name for c in classifications]}"
+                )
+                return [], None
+
+            # Extract field names
+            field_names = [f.name for f in classification.fields] if classification.fields else None
+
+            # Convert to rules
+            rules = self._convert_classification_to_rules(classification)
+
+            logger.info(f"Loaded {len(rules)} rules from {classification.layer_name}")
+            if field_names:
+                logger.debug(f"  Fields: {field_names}")
+
+            return rules, field_names
 
         except ImportError:
             logger.error("Cannot import esri_classification_extractor")
-            return []
+            return [], None
+        except Exception as e:
+            logger.error(f"Error loading classification: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            return [], None
 
     def _convert_classification_to_rules(self, classification) -> List[Dict[str, Any]]:
         """
-        Convert classification object to list of rules.
+        Convert LayerClassification object to list of rules.
 
         Args:
-            classification: Classification object from extract_lyrx
+            classification: LayerClassification object from extract_lyrx
 
         Returns:
-            List of rule dictionaries with 'condition', 'symbol', 'label'
+            List of rule dictionaries with 'condition', 'symbol', 'label', 'field_values'
         """
         rules = []
 
-        # Extract rules from classification renderer
-        # This structure depends on your ClassificationRenderer implementation
-        if hasattr(classification, 'renderer') and hasattr(classification.renderer, 'groups'):
-            for group in classification.renderer.groups:
-                for class_obj in group.classes:
-                    rule = {
-                        'condition': class_obj.where_clause if hasattr(class_obj, 'where_clause') else None,
-                        'symbol': class_obj.symbol if hasattr(class_obj, 'symbol') else None,
-                        'label': class_obj.label if hasattr(class_obj, 'label') else None,
-                        'values': class_obj.values if hasattr(class_obj, 'values') else None,
-                    }
-                    rules.append(rule)
+        if not hasattr(classification, 'classes'):
+            logger.warning("Classification has no classes attribute")
+            return rules
 
+        logger.debug(f"Converting {len(classification.classes)} classes to rules")
+
+        # Get field names from classification
+        field_names = [f.name for f in classification.fields] if classification.fields else []
+        logger.debug(f"Classification fields: {field_names}")
+
+        # Process each ClassificationClass
+        for class_obj in classification.classes:
+            rule = self._extract_rule_from_classification_class(class_obj, field_names)
+            if rule:
+                rules.append(rule)
+
+        logger.info(f"Extracted {len(rules)} rules from classification")
         return rules
+
+    def _extract_rule_from_classification_class(
+            self,
+            class_obj,
+            field_names: List[str]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Extract rule dictionary from a ClassificationClass object.
+
+        Args:
+            class_obj: ClassificationClass with label, field_values, symbol_info
+            field_names: List of field names used in the classification
+
+        Returns:
+            Rule dictionary or None
+        """
+        rule = {
+            'label': class_obj.label,
+            'visible': class_obj.visible,
+            'field_values': class_obj.field_values,
+        }
+
+        # Extract symbol identifier
+        if class_obj.symbol_info:
+            symbol_info = class_obj.symbol_info
+
+            # Build symbol identifier from various attributes
+            symbol_parts = []
+
+            # For character markers (font-based symbols)
+            if symbol_info.font_family and symbol_info.character_index is not None:
+                symbol_parts.append(f"{symbol_info.font_family}_{symbol_info.character_index}")
+
+            # Add color if available
+            if symbol_info.color:
+                symbol_parts.append(symbol_info.color.to_hex())
+
+            # Add size/width
+            if symbol_info.size:
+                symbol_parts.append(f"size{symbol_info.size}")
+            elif symbol_info.width:
+                symbol_parts.append(f"width{symbol_info.width}")
+
+            # Combine or use a simple identifier
+            if symbol_parts:
+                rule['symbol'] = "_".join(str(p) for p in symbol_parts)
+            else:
+                # Fallback: use label as symbol
+                rule['symbol'] = class_obj.label.replace(" ", "_").replace("/", "_")
+        else:
+            # No symbol info - use label as identifier
+            rule['symbol'] = class_obj.label.replace(" ", "_").replace("/", "_")
+
+        # Build SQL condition from field_values
+        # field_values is List[List[str]] - each inner list is a combination of field values
+        if class_obj.field_values and field_names:
+            conditions = []
+
+            for value_combination in class_obj.field_values:
+                if len(value_combination) != len(field_names):
+                    logger.warning(
+                        f"Value combination length ({len(value_combination)}) doesn't match "
+                        f"field count ({len(field_names)})"
+                    )
+                    continue
+
+                # Build condition for this combination
+                combo_conditions = []
+                for field_name, value in zip(field_names, value_combination):
+                    # Format value for SQL
+                    if isinstance(value, str):
+                        # Check if it's a special value
+                        if value.upper() in ('NULL', 'NONE', ''):
+                            combo_conditions.append(f"{field_name} IS NULL")
+                        else:
+                            # Escape single quotes in strings
+                            escaped_value = value.replace("'", "''")
+                            combo_conditions.append(f"{field_name} = '{escaped_value}'")
+                    elif value is None:
+                        combo_conditions.append(f"{field_name} IS NULL")
+                    else:
+                        # Numeric value
+                        combo_conditions.append(f"{field_name} = {value}")
+
+                # Combine field conditions with AND
+                if combo_conditions:
+                    conditions.append("(" + " AND ".join(combo_conditions) + ")")
+
+            # Combine all value combinations with OR
+            if conditions:
+                if len(conditions) == 1:
+                    rule['condition'] = conditions[0]
+                else:
+                    rule['condition'] = "(" + " OR ".join(conditions) + ")"
+
+        return rule if (rule.get('symbol') or rule.get('label')) else None
 
     def build_sql_where_clause(
             self,
             rule: Dict[str, Any],
             field_mapping: Optional[Dict[str, str]] = None,
-            additional_filter: Optional[str] = None
+            additional_filter: Optional[str] = None,
+            classification_fields: Optional[List[str]] = None,
     ) -> str:
         """
         Build SQL WHERE clause from classification rule.
 
         Args:
-            rule: Rule dictionary with condition/values
+            rule: Rule dictionary with condition/field_values
             field_mapping: Map config field names to actual field names
             additional_filter: Additional SQL filter to combine
+            classification_fields: Fields used by the classification (from LayerClassification)
 
         Returns:
             SQL WHERE clause string
         """
         clauses = []
 
-        # Add rule condition
+        # Add rule condition if it exists (already built from field_values)
         if rule.get('condition'):
             condition = rule['condition']
 
             # Apply field mapping
             if field_mapping:
                 for config_field, actual_field in field_mapping.items():
+                    # Replace both $field$ syntax and plain field names
                     condition = condition.replace(f"${config_field}$", actual_field)
-                    condition = condition.replace(config_field, actual_field)
+                    # Use word boundaries to avoid partial replacements
+                    import re
+                    condition = re.sub(rf'\b{re.escape(config_field)}\b', actual_field, condition)
 
-            clauses.append(f"({condition})")
+            clauses.append(condition)
 
         # Add additional filter
         if additional_filter:
@@ -319,7 +481,7 @@ class ArcPySymbolUpdater:
         fc_path = str(self.gdb_path / feature_class)
 
         # Load classification rules
-        rules = self.load_classification_rules(
+        rules, field_names = self.load_classification_rules(
             class_config.style_file,
             class_config.classification_name
         )
@@ -339,6 +501,12 @@ class ArcPySymbolUpdater:
         if class_config.fields:
             read_fields.extend(class_config.fields.values())
 
+        # Add classification fields if not already included
+        if field_names:
+            for field in field_names:
+                if field not in read_fields:
+                    read_fields.append(field)
+
         # Make sure OID is included for debugging
         read_fields.insert(0, "OID@")
 
@@ -347,6 +515,7 @@ class ArcPySymbolUpdater:
 
         logger.info(f"Processing {feature_class} with {len(rules)} rules")
         logger.debug(f"Reading fields: {read_fields}")
+        logger.debug(f"Classification fields: {field_names}")
 
         # Start edit session for File Geodatabase
         edit = arcpy.da.Editor(str(self.gdb_path))
@@ -360,7 +529,8 @@ class ArcPySymbolUpdater:
                 where_clause = self.build_sql_where_clause(
                     rule,
                     class_config.fields,
-                    class_config.filter
+                    class_config.filter,
+                    field_names
                 )
 
                 # Determine symbol value
@@ -370,48 +540,63 @@ class ArcPySymbolUpdater:
 
                 label_value = rule.get('label')
 
+                logger.debug(f"Rule {rule_idx + 1}/{len(rules)}: {label_value}")
+                logger.debug(f"  WHERE: {where_clause}")
+                logger.debug(f"  Symbol: {symbol_value}")
+
                 # Use UpdateCursor to update matching features
-                with arcpy.da.UpdateCursor(
-                        fc_path,
-                        read_fields,
-                        where_clause=where_clause
-                ) as cursor:
-                    for row in cursor:
-                        oid = row[0]
-                        current_symbol = row[read_fields.index(self.symbol_field)]
+                try:
+                    with arcpy.da.UpdateCursor(
+                            fc_path,
+                            read_fields,
+                            where_clause=where_clause
+                    ) as cursor:
+                        rule_updated = 0
+                        for row in cursor:
+                            oid = row[0]
+                            current_symbol = row[read_fields.index(self.symbol_field)]
 
-                        # Check if we should update
-                        should_update = (
-                                self.overwrite or
-                                current_symbol is None or
-                                current_symbol == "" or
-                                current_symbol == "None"
-                        )
+                            # Check if we should update
+                            should_update = (
+                                    self.overwrite or
+                                    current_symbol is None or
+                                    current_symbol == "" or
+                                    current_symbol == "None"
+                            )
 
-                        if should_update and symbol_value:
-                            # Update symbol
-                            row[read_fields.index(self.symbol_field)] = symbol_value
+                            if should_update and symbol_value:
+                                # Update symbol
+                                row[read_fields.index(self.symbol_field)] = symbol_value
 
-                            # Update label if configured
-                            if self.label_field and label_value:
-                                row[read_fields.index(self.label_field)] = label_value
+                                # Update label if configured
+                                if self.label_field and label_value:
+                                    row[read_fields.index(self.label_field)] = label_value
 
-                            cursor.updateRow(row)
-                            stats["updated"] += 1
-                        else:
-                            stats["skipped"] += 1
+                                cursor.updateRow(row)
+                                stats["updated"] += 1
+                                rule_updated += 1
+                            else:
+                                stats["skipped"] += 1
 
-                        # Update progress
-                        if progress and task_id:
-                            progress.update(task_id, advance=1)
+                            # Update progress
+                            if progress and task_id:
+                                progress.update(task_id, advance=1)
 
-                logger.debug(f"Rule {rule_idx + 1}: {where_clause} -> {symbol_value} ({stats['updated']} updated)")
+                    if rule_updated > 0:
+                        logger.debug(f"  -> Updated {rule_updated} features")
+
+                except Exception as e:
+                    logger.warning(f"Error processing rule {rule_idx + 1} ({label_value}): {e}")
+                    logger.debug(f"  WHERE clause: {where_clause}")
+                    stats["errors"] += 1
+                    continue
 
             # Commit changes
             edit.stopOperation()
             edit.stopEditing(True)
 
-            logger.info(f"Updated {stats['updated']} features in {feature_class}")
+            logger.info(
+                f"✓ {feature_class}: Updated {stats['updated']} features, skipped {stats['skipped']}, errors {stats['errors']}")
 
         except Exception as e:
             logger.error(f"Error processing {feature_class}: {e}")
@@ -454,8 +639,6 @@ class ArcPySymbolUpdater:
             for fc in arcpy.ListFeatureClasses():
                 available_fcs.append(f"{dataset}/{fc}")
 
-        console.print(f"Available feature classes: {available_fcs} ")
-
         # Reset workspace
         arcpy.env.workspace = str(self.gdb_path)
 
@@ -464,11 +647,11 @@ class ArcPySymbolUpdater:
             fcs_to_process = [fc for fc in feature_classes if fc in available_fcs]
         else:
             # Process all feature classes that have config
-            fcs_to_process = [
-                layer.feature_class
-                for layer in config.layers
-                if layer.feature_class in available_fcs
-            ]
+            fcs_to_process = []
+            for layer in config.layers:
+                fc_name = layer.get_target_name("filegdb")
+                if fc_name and fc_name in available_fcs:
+                    fcs_to_process.append(fc_name)
 
         if not fcs_to_process:
             logger.warning("No feature classes to process!")
@@ -495,7 +678,7 @@ class ArcPySymbolUpdater:
         ) as progress:
 
             for fc in fcs_to_process:
-                layer_config = config.get_layer_config(fc)
+                layer_config = config.get_layer_config(fc, format_type="filegdb")
                 if not layer_config:
                     logger.warning(f"No configuration for {fc}, skipping")
                     continue
@@ -628,7 +811,6 @@ if __name__ == "__main__":
     feature_classes = [sys.argv[3]] if len(sys.argv) > 3 else None
 
     stats = apply_config_to_filegdb(gdb_path, config_path, feature_classes)
-    console.print(stats)
 
     console.print("\n[bold green]Processing Complete![/bold green]")
     console.print(f"Feature classes: {stats['feature_classes_processed']}")
