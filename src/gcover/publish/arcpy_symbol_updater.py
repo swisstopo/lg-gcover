@@ -315,9 +315,9 @@ class ArcPySymbolUpdater:
         field_names = [f.name for f in classification.fields] if classification.fields else []
         logger.debug(f"Classification fields: {field_names}")
 
-        # Process each ClassificationClass
-        for class_obj in classification.classes:
-            rule = self._extract_rule_from_classification_class(class_obj, field_names, field_types)
+        # Process each ClassificationClass with index
+        for idx, class_obj in enumerate(classification.classes):
+            rule = self._extract_rule_from_classification_class(class_obj, field_names, field_types, idx)
             if rule:
                 rules.append(rule)
 
@@ -328,7 +328,8 @@ class ArcPySymbolUpdater:
             self,
             class_obj,
             field_names: List[str],
-            field_types: Optional[Dict[str, str]] = None
+            field_types: Optional[Dict[str, str]] = None,
+            index: int = 0
     ) -> Optional[Dict[str, Any]]:
         """
         Extract rule dictionary from a ClassificationClass object.
@@ -337,6 +338,7 @@ class ArcPySymbolUpdater:
             class_obj: ClassificationClass with label, field_values, symbol_info
             field_names: List of field names used in the classification
             field_types: Optional field type mapping (e.g., {'KIND': 'Int64'})
+            index: Index of this class in the classification (for symbol generation)
 
         Returns:
             Rule dictionary or None
@@ -345,38 +347,8 @@ class ArcPySymbolUpdater:
             'label': class_obj.label,
             'visible': class_obj.visible,
             'field_values': class_obj.field_values,
+            'symbol': str(index),  # Simple index-based symbol
         }
-
-        # Extract symbol identifier
-        if class_obj.symbol_info:
-            symbol_info = class_obj.symbol_info
-
-            # Build symbol identifier from various attributes
-            symbol_parts = []
-
-            # For character markers (font-based symbols)
-            if symbol_info.font_family and symbol_info.character_index is not None:
-                symbol_parts.append(f"{symbol_info.font_family}_{symbol_info.character_index}")
-
-            # Add color if available
-            if symbol_info.color:
-                symbol_parts.append(symbol_info.color.to_hex())
-
-            # Add size/width
-            if symbol_info.size:
-                symbol_parts.append(f"size{symbol_info.size}")
-            elif symbol_info.width:
-                symbol_parts.append(f"width{symbol_info.width}")
-
-            # Combine or use a simple identifier
-            if symbol_parts:
-                rule['symbol'] = "_".join(str(p) for p in symbol_parts)
-            else:
-                # Fallback: use label as symbol
-                rule['symbol'] = class_obj.label.replace(" ", "_").replace("/", "_")
-        else:
-            # No symbol info - use label as identifier
-            rule['symbol'] = class_obj.label.replace(" ", "_").replace("/", "_")
 
         # Build SQL condition from field_values
         # field_values is List[List[str]] - each inner list is a combination of field values
@@ -441,7 +413,7 @@ class ArcPySymbolUpdater:
                 else:
                     rule['condition'] = "(" + " OR ".join(conditions) + ")"
 
-        return rule if (rule.get('symbol') or rule.get('label')) else None
+        return rule if rule.get('symbol') else None
 
     def build_sql_where_clause(
             self,
@@ -566,9 +538,12 @@ class ArcPySymbolUpdater:
                 )
 
                 # Determine symbol value
-                symbol_value = rule.get('symbol')
-                if class_config.symbol_prefix and symbol_value:
+                symbol_value = rule.get('symbol')  # This is just the index now
+                if class_config.symbol_prefix:
                     symbol_value = f"{class_config.symbol_prefix}_{symbol_value}"
+                elif not symbol_value:
+                    # Fallback if no prefix and no symbol
+                    symbol_value = f"class_{symbol_value}"
 
                 label_value = rule.get('label')
 
