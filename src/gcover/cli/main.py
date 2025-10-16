@@ -3,7 +3,7 @@
 Main CLI entry point for gcover.
 """
 
-import sys
+
 from pathlib import Path
 
 import click
@@ -12,15 +12,18 @@ from rich import print as rprint
 from datetime import datetime
 import dateparser
 
+import sys
+
+
+
 # Ajouter le dossier parent au path si nécessaire (pour le développement)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 try:
     from gcover import __version__
-    from gcover.utils.imports import HAS_ARCPY
 except ImportError:
     __version__ = "unknown"
-    HAS_ARCPY = False
+
 
 # from ..config import load_config
 
@@ -94,7 +97,7 @@ def confirm_extended(prompt: str, default=True):
 def cli(ctx, config, log_file, log_info, env, verbose):
     """gcover - Swiss GeoCover data processing toolkit"""
     ctx.ensure_object(dict)
-    ctx.obj["has_arcpy"] = HAS_ARCPY
+    # ctx.obj["has_arcpy"] = HAS_ARCPY
 
     # Normalize environment name
     try:
@@ -121,7 +124,7 @@ def cli(ctx, config, log_file, log_info, env, verbose):
             rprint(f"[cyan]Bucket name: {global_config.s3.bucket}[/cyan]")
             rprint(f"[cyan]Proxy: {global_config.proxy}[/cyan]")
             rprint(f"[cyan]Temp Dir: {global_config.temp_dir}[/cyan]")
-            rprint(f"[cyan]Has arcpy: {HAS_ARCPY}[/cyan]")
+            #rprint(f"[cyan]Has arcpy: {HAS_ARCPY}[/cyan]")
 
         # Setup centralized logging FIRST (before any other operations)
         setup_logging(verbose=verbose, log_file=log_file, environment=env)
@@ -148,7 +151,7 @@ def cli(ctx, config, log_file, log_info, env, verbose):
 def info() -> None:
     """Display information about the gcover installation."""
     click.echo(f"gcover version: {__version__}")
-    click.echo(f"ArcPy available: {'Yes' if HAS_ARCPY else 'No'}")
+    # click.echo(f"ArcPy available: {'Yes' if HAS_ARCPY else 'No'}")
     click.echo(f"Python version: {sys.version.split()[0]}")
 
     # Lister les modules disponibles
