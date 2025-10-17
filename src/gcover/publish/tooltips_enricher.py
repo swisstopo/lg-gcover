@@ -18,7 +18,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 from loguru import logger
-from pyogrio.errors import DataLayerError
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import (BarColumn, Progress, SpinnerColumn,
@@ -373,6 +373,9 @@ class EnhancedTooltipsEnricher:
         Returns:
             Dictionary of clipped GeoDataFrames
         """
+
+        # Late import
+        from pyogrio.errors import DataLayerError
         # Get mapsheet geometry
         mapsheets = self.load_mapsheets_info()
         mapsheet_geom = mapsheets[mapsheets["MSH_MAP_NBR"] == mapsheet_nbr]

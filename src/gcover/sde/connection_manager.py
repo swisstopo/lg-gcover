@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Tuple
 
 from loguru import logger
 
+from gcover.arcpy_compat import HAS_ARCPY, arcpy
 
 class SDEConnectionManager:
     """Gestionnaire centralisé des connexions SDE pour Enterprise Geodatabase"""
@@ -16,6 +17,8 @@ class SDEConnectionManager:
         self._temp_dirs: List[Path] = []  # Suivi des répertoires temporaires
         self._version = version
         self._instance = instance
+
+
 
     def __enter__(self):
         users_version = self.find_user_versions(instances=["GCOVERP"])

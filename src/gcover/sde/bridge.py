@@ -24,11 +24,14 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-try:
-    from gcover.arcpy_compat import HAS_ARCPY, arcpy
-except ImportError:
-    logger.warning("arcpy not available - SDE bridge functionality disabled")
-    arcpy = None
+# Import depuis le module centralisé
+from gcover.arcpy_compat import HAS_ARCPY, arcpy
+
+'''# Vérifier la disponibilité dès l'import (optionnel mais recommandé pour les messages clairs)
+if not HAS_ARCPY:
+    logger.warning("Module gcover.sde.bridge requires arcpy but it's not available")'''
+
+
 
 from .connection_manager import SDEConnectionManager
 
