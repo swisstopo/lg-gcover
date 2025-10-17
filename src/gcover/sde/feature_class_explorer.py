@@ -140,7 +140,7 @@ def get_feature_class_info(workspace, feature_class_path):
         feature_class_path: Either "FeatureClass" or "Dataset/FeatureClass"
     """
     arcpy.env.workspace = workspace
-    full_path = f"{workspace}\\{feature_class_path.replace('/', '\\')}"
+    full_path = str(Path(workspace) / Path(feature_class_path))
     
     try:
         with console.status(f"[bold green]Loading info for {feature_class_path}..."):

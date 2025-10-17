@@ -933,7 +933,8 @@ def inspect_feature_class(feature_class_path, instance, sample):
             console.print()
 
             arcpy.env.workspace = workspace
-            full_path = f"{workspace}\\{feature_class_path.replace('/', '\\')}"
+            # full_path = f"{workspace}\\{feature_class_path.replace('/', '\\')}"
+            full_path = str(Path(workspace) / Path(feature_class_path))
 
             # Get all fields except geometry
             fields = [f.name for f in arcpy.ListFields(full_path)
