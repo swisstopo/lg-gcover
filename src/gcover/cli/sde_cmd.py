@@ -10,6 +10,7 @@ from rich.panel import Panel
 from rich.table import Table
 from tabulate import tabulate
 
+
 from gcover.config import SDE_INSTANCES, AppConfig, load_config  # TODO
 from gcover.sde import SDEConnectionManager, create_bridge
 
@@ -763,6 +764,307 @@ def import_data(
         click.echo(f"❌ Import failed: {e}", err=True)
         sys.exit(1)
 
+
+@sde_commands.command("list-feature-classes")
+@click.option(
+    "--instance",
+    "-i",
+    default="GCOVERP",
+    help="Instance SDE à explorer"
+)
+@click.option(
+    "--format",
+    "-f",
+    type=click.Choice(["tree", "table"], case_sensitive=False),
+    default="tree",
+    help="Format d'affichage (tree ou table)"
+)
+@click.option(
+    "--search",
+    "-s",
+    help="Rechercher des feature classes par nom"
+)
+@click.option(
+    "--info",
+    help="Afficher les détails d'une feature class (ex: TOPGIS_GC.GC_ROCK_BODIES/TOPGIS_GC.GC_BEDROCK)"
+)
+@click.option(
+    "--no-paths",
+    is_flag=True,
+    help="Ne pas afficher les chemins complets (format tree uniquement)"
+)
+def list_feature_classes(instance, format, search, info, no_paths):
+    """
+    Liste les feature classes disponibles dans une instance SDE.
+
+    Exemples:
+
+        # Afficher l'arborescence complète
+        gcover sde list-feature-classes
+
+        # Afficher sous forme de tableau
+        gcover sde list-feature-classes --format table
+
+        # Rechercher des feature classes
+        gcover sde list-feature-classes --search bedrock
+
+        # Afficher les détails d'une feature class
+        gcover sde list-feature-classes --info TOPGIS_GC.GC_ROCK_BODIES/TOPGIS_GC.GC_BEDROCK
+    """
+    try:
+        with SDEConnectionManager() as conn_mgr:
+            # Connect to instance
+            with console.status(f"[bold green]Connexion à {instance}..."):
+                conn = conn_mgr.create_connection(instance)
+                workspace = str(conn)
+
+            console.print(f"[green]✓[/green] Connecté à: [cyan]{workspace}[/cyan]\n")
+
+            # If --info specified, show details and exit
+            if info:
+                console.rule(f"[bold blue]Détails: {info}[/bold blue]")
+                console.print()
+                success = get_feature_class_info(workspace, info)
+                if not success:
+                    raise click.ClickException(f"Feature class non trouvée: {info}")
+                return
+
+            # Scan database
+            with console.status("[bold green]Analyse de la structure..."):
+                results = list_all_feature_classes(workspace)
+
+            # If --search specified, show search results
+            if search:
+                console.print()
+                console.rule(f"[bold blue]Recherche: '{search}'[/bold blue]")
+                console.print()
+
+                matches = search_feature_classes(workspace, search)
+                display_search_results(matches, search)
+
+                # Offer to show details
+                if matches and Confirm.ask("\nAfficher les détails du premier résultat?", default=False):
+                    console.print()
+                    console.rule("[bold blue]Détails[/bold blue]")
+                    console.print()
+                    get_feature_class_info(workspace, matches[0]["path"])
+
+                return
+
+            # Display all feature classes
+            console.print()
+            if format == "tree":
+                display_feature_class_tree(results, workspace, show_paths=not no_paths)
+            else:
+                display_feature_class_table(results, workspace)
+
+            console.print()
+
+    except Exception as e:
+        console.print(f"[bold red]Erreur:[/bold red] {e}")
+        raise click.ClickException(str(e))
+
+
+@sde_commands.command("inspect")
+@click.argument("feature_class_path")
+@click.option(
+    "--instance",
+    "-i",
+    default="GCOVERP",
+    help="Instance SDE"
+)
+@click.option(
+    "--sample",
+    "-n",
+    type=int,
+    default=5,
+    help="Nombre d'enregistrements à afficher en exemple"
+)
+def inspect_feature_class(feature_class_path, instance, sample):
+    """
+    Inspecte une feature class en détail.
+
+    Affiche:
+    - Métadonnées de la feature class
+    - Liste des champs
+    - Exemples d'enregistrements
+
+    Exemples:
+
+        gcover sde inspect TOPGIS_GC.GC_ROCK_BODIES/TOPGIS_GC.GC_BEDROCK
+
+        gcover sde inspect "TOPGIS_GC.GC_BEDROCK" --sample 10
+    """
+
+
+    try:
+        with SDEConnectionManager() as conn_mgr:
+            # Connect
+            with console.status(f"[bold green]Connexion à {instance}..."):
+                conn = conn_mgr.create_connection(instance)
+                workspace = str(conn)
+
+            console.print(f"[green]✓[/green] Connecté à: [cyan]{workspace}[/cyan]\n")
+
+            # Show metadata
+            console.rule(f"[bold blue]{feature_class_path}[/bold blue]")
+            console.print()
+            get_feature_class_info(workspace, feature_class_path)
+
+            # Show sample data
+            console.print()
+            console.rule("[bold blue]Exemples d'enregistrements[/bold blue]")
+            console.print()
+
+            arcpy.env.workspace = workspace
+            full_path = f"{workspace}\\{feature_class_path.replace('/', '\\')}"
+
+            # Get all fields except geometry
+            fields = [f.name for f in arcpy.ListFields(full_path)
+                      if f.type not in ('Geometry', 'OID')][:10]  # Limit to 10 fields for display
+
+            # Create sample data table
+            sample_table = Table(
+                title=f"Premiers {sample} enregistrements",
+                box=box.ROUNDED,
+                show_header=True,
+                header_style="bold yellow"
+            )
+
+            # Add columns
+            for field in fields:
+                sample_table.add_column(field, style="cyan")
+
+            # Read sample data
+            with arcpy.da.SearchCursor(full_path, fields) as cursor:
+                for i, row in enumerate(cursor):
+                    if i >= sample:
+                        break
+                    sample_table.add_row(*[str(val) if val is not None else "[dim]NULL[/dim]" for val in row])
+
+            console.print(sample_table)
+
+            if len(fields) > 10:
+                console.print(f"\n[dim]Note: Seuls les 10 premiers champs sont affichés[/dim]")
+
+    except Exception as e:
+        console.print(f"[bold red]Erreur:[/bold red] {e}")
+        raise click.ClickException(str(e))
+
+
+@sde_commands.command("export-structure")
+@click.option(
+    "--instance",
+    "-i",
+    default="GCOVERP",
+    help="Instance SDE"
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(),
+    help="Fichier de sortie (JSON ou YAML)"
+)
+@click.option(
+    "--format",
+    "-f",
+    type=click.Choice(["json", "yaml"], case_sensitive=False),
+    default="json",
+    help="Format de sortie"
+)
+def export_structure(instance, output, format):
+    """
+    Exporte la structure de la base de données (feature classes, champs, etc.)
+
+    Utile pour:
+    - Documentation
+    - Comparaison entre versions
+    - Génération de code
+
+    Exemples:
+
+        gcover sde export-structure -o structure.json
+
+        gcover sde export-structure -o structure.yaml --format yaml
+    """
+    import arcpy
+    import json
+    from pathlib import Path
+
+    try:
+        with SDEConnectionManager() as conn_mgr:
+            # Connect
+            with console.status(f"[bold green]Connexion à {instance}..."):
+                conn = conn_mgr.create_connection(instance)
+                workspace = str(conn)
+
+            console.print(f"[green]✓[/green] Connecté à: [cyan]{workspace}[/cyan]\n")
+
+            # Scan structure
+            with console.status("[bold green]Extraction de la structure..."):
+                arcpy.env.workspace = workspace
+                results = list_all_feature_classes(workspace)
+
+                # Build detailed structure
+                structure = {
+                    "workspace": workspace,
+                    "instance": instance,
+                    "standalone_feature_classes": [],
+                    "feature_datasets": {}
+                }
+
+                # Process standalone feature classes
+                for fc in results["standalone"]:
+                    full_path = f"{workspace}\\{fc}"
+                    desc = arcpy.Describe(full_path)
+                    fields = [{"name": f.name, "type": f.type, "length": getattr(f, 'length', None)}
+                              for f in arcpy.ListFields(full_path)]
+
+                    structure["standalone_feature_classes"].append({
+                        "name": fc,
+                        "type": desc.shapeType,
+                        "spatial_reference": desc.spatialReference.name,
+                        "fields": fields
+                    })
+
+                # Process feature datasets
+                for dataset, fcs in results["datasets"].items():
+                    structure["feature_datasets"][dataset] = []
+
+                    for fc in fcs:
+                        full_path = f"{workspace}\\{dataset}\\{fc}"
+                        desc = arcpy.Describe(full_path)
+                        fields = [{"name": f.name, "type": f.type, "length": getattr(f, 'length', None)}
+                                  for f in arcpy.ListFields(full_path)]
+
+                        structure["feature_datasets"][dataset].append({
+                            "name": fc,
+                            "type": desc.shapeType,
+                            "spatial_reference": desc.spatialReference.name,
+                            "fields": fields
+                        })
+
+            # Save to file
+            if output:
+                output_path = Path(output)
+
+                if format == "yaml":
+                    import yaml
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        yaml.dump(structure, f, default_flow_style=False, allow_unicode=True)
+                else:  # json
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        json.dump(structure, f, indent=2, ensure_ascii=False)
+
+                console.print(f"[green]✓[/green] Structure exportée vers: [cyan]{output_path}[/cyan]")
+            else:
+                # Print to console
+                import json
+                console.print_json(json.dumps(structure, indent=2))
+
+    except Exception as e:
+        console.print(f"[bold red]Erreur:[/bold red] {e}")
+        raise click.ClickException(str(e))
 
 @sde_commands.command("sync")
 @click.argument("input_path", type=click.Path(exists=True))
