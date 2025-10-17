@@ -14,6 +14,18 @@ from tabulate import tabulate
 from gcover.config import SDE_INSTANCES, AppConfig, load_config  # TODO
 from gcover.sde import SDEConnectionManager, create_bridge
 
+from gcover.arcpy_compat import HAS_ARCPY
+
+from gcover.sde.feature_class_explorer import (
+    list_all_feature_classes,
+    display_feature_class_tree,
+    display_feature_class_table,
+    get_feature_class_info,
+    search_feature_classes,
+    display_search_results,
+)
+
+
 console = Console()
 
 
@@ -811,6 +823,10 @@ def list_feature_classes(instance, format, search, info, no_paths):
         # Afficher les détails d'une feature class
         gcover sde list-feature-classes --info TOPGIS_GC.GC_ROCK_BODIES/TOPGIS_GC.GC_BEDROCK
     """
+    if not HAS_ARCPY:
+        console.print("[bold red]❌ Requires ArcGIS Pro[/bold red]")
+        raise click.Abort()
+
     try:
         with SDEConnectionManager() as conn_mgr:
             # Connect to instance
