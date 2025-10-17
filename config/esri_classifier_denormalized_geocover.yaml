@@ -9,6 +9,7 @@ global:
 # Layer configurations
 layers:
     - gpkg_layer: surfaces
+      feature_class: GC_ROCK_BODIES/GC_SURFACES    # Used when processing FileGDB (optional)
       layer_type: polygon
       field_types:
         KIND: Int64 # `Int64` with capital `I` is a nullable integer...
@@ -23,6 +24,7 @@ layers:
           # Dummy, for testing filter: "KIND == 12001002"
 
     - gpkg_layer: exploit_points
+      feature_class: GC_ROCK_BODIES/GC_EXPLOIT_GEOMAT_PT
       layer_type: point
       field_types:
         KIND: Int64 # `Int64` with capital `I` is a nullable integer...
@@ -37,6 +39,7 @@ layers:
             AEXP_STATUS: AEXP_STATUS
 
     - gpkg_layer: fossils
+      feature_class: GC_ROCK_BODIES/GC_FOSSILS    # Used when processing FileGDB (optional)
       layer_type: point
       field_types:
         KIND: Int64
@@ -53,6 +56,7 @@ layers:
             LFOS_STATUS: LFOS_STATUS
           symbol_prefix: fossil
     - gpkg_layer: exploit_geomat_plg
+      feature_class: GC_ROCK_BODIES/GC_EXPLOIT_GEOMAT_PLG
       layer_type: polygon
       field_types:
         KIND: Int64
@@ -67,6 +71,7 @@ layers:
     # Complex case: Multiple classifications for same layer
     # Bedrock example with complex field mapping
     - gpkg_layer: bedrock
+      feature_class: GC_ROCK_BODIES/GC_BEDROCK
       layer_type: polygon
       field_types:
         KIND: Int64
@@ -85,6 +90,7 @@ layers:
           symbol_prefix: bedrock
           filter: KIND == 14334001
     - gpkg_layer: linear_objects
+      feature_class: GC_ROCK_BODIES/GC_LINEAR_OBJECTS
       layer_type: line
       field_types:
         KIND: Int64
@@ -146,6 +152,7 @@ layers:
             TTEC_STATUS: TTEC_STATUS
           symbol_prefix: linear_ueberschiebung
     - gpkg_layer: point_objects
+      feature_class: GC_ROCK_BODIES/GC_POINT_OBJECTS
       layer_type: point
       field_types:
         KIND: Int64
@@ -212,7 +219,7 @@ layers:
         - style_file: styles/Point_Objects_Bohrung_Fels_nicht_erreicht.lyrx
           classification_name: Point_Objects_Bohrung_Fels_nicht_erreicht
           mapfile_name: bohrung_fels_nicht_erreicht
-          filter: KIND IN 10501001 AND ABOR_DEPTH_BEDR = 999
+          filter: KIND=10501001 AND ABOR_DEPTH_BEDR = 999
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -246,6 +253,7 @@ layers:
           symbol_prefix: pnt_orient
 
     - gpkg_layer: unco_deposits
+      feature_class: GC_ROCK_BODIES/GC_UNCO_DESPOSIT
       layer_type: polygon
       field_types:
         KIND: Int64
