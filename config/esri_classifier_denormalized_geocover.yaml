@@ -219,7 +219,7 @@ layers:
         - style_file: styles/Point_Objects_Bohrung_Fels_nicht_erreicht.lyrx
           classification_name: Point_Objects_Bohrung_Fels_nicht_erreicht
           mapfile_name: bohrung_fels_nicht_erreicht
-          filter: KIND IN 10501001 AND ABOR_DEPTH_BEDR = 999
+          filter: KIND=10501001 AND ABOR_DEPTH_BEDR = 999
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
