@@ -3,13 +3,16 @@
 List feature classes in GCOVERP database with Rich display.
 Can be used standalone or integrated into gcover CLI.
 """
-import arcpy
+from pathlib import Path
+
 from rich.console import Console
 from rich.table import Table
 from rich.tree import Tree
 from rich.panel import Panel
 from rich.text import Text
 from rich import box
+
+from gcover.arcpy_compat import HAS_ARCPY, arcpy
 
 console = Console()
 
