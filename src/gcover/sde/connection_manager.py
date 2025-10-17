@@ -9,15 +9,21 @@ import shutil
 
 from loguru import logger
 
-from gcover.arcpy_compat import HAS_ARCPY, arcpy
+try:
+    import arcpy
+except ImportError:
+    logger.warning("arcpy not available")
+    arcpy = None
 
 
 class SDEConnectionManager:
     """Manages SDE connection files and their lifecycle."""
 
     SDE_CONNECTIONS = {
-        "GCOVERP": Path( r"\\v0t0020a.adr.admin.ch\topgisprod\01_Admin\Connections\GCOVERP@osa.sde"),
+        "GCOVERP": Path(r"\\v0t0020a.adr.admin.ch\topgisprod\01_Admin\Connections\GCOVERP@osa.sde"),
     }
+
+    
 
     # SDE connection parameters for your environment
     SDE_INSTANCES = {
@@ -66,34 +72,138 @@ class SDEConnectionManager:
             Path to .sde connection file
 
         Note:
-            For versioned operations, you should call get_version_workspace()
-            after getting the connection to work with a specific version.
+            For versioned operations, this will create a connection file
+            that is already set to the specified version.
         """
         # Use DEFAULT if no version specified
         if version is None:
             version = "SDE.DEFAULT"
 
-        # For base connection (DEFAULT or unspecified), just return the base .sde
+        # For DEFAULT version, use base connection
         if version == "SDE.DEFAULT":
             if instance in self.SDE_CONNECTIONS and self.SDE_CONNECTIONS[instance].exists():
                 logger.info(f"Using existing .sde file: {self.SDE_CONNECTIONS[instance]}")
                 return self.SDE_CONNECTIONS[instance]
 
-        # For specific versions, we still return the base connection
-        # The version will be handled when setting up the workspace
-        if instance in self.SDE_CONNECTIONS and self.SDE_CONNECTIONS[instance].exists():
-            base_sde = self.SDE_CONNECTIONS[instance]
-            logger.info(f"Using base connection for version {version}: {base_sde}")
-
-            # Store the version mapping for later use
-            self._version_map = getattr(self, '_version_map', {})
-            self._version_map[str(base_sde)] = version
-
-            return base_sde
-
-        # Fallback: create new connection from scratch
+        # For specific versions, we MUST create a version-specific connection file
+        # because arcpy.da.Editor respects the version in the connection file
         connection_key = f"{instance}::{version}"
+
+        # Check if we already have this version connection cached
+        if connection_key in self._connections:
+            existing = self._connections[connection_key]
+            if existing.exists():
+                logger.debug(f"Reusing version connection: {existing}")
+                return existing
+
+        # Create a new version-specific connection
+        if instance in self.SDE_CONNECTIONS and self.SDE_CONNECTIONS[instance].exists():
+            return self._create_version_connection(instance, version, connection_key)
+
+        # Fallback: create from scratch
         return self._create_new_connection(instance, version, connection_key)
+
+    def _create_version_connection(
+        self,
+        instance: str,
+        version: str,
+        connection_key: str
+    ) -> Path:
+        """
+        Create a version-specific connection file.
+
+        This creates a NEW .sde file that is already set to the specified version.
+        This is crucial for edit operations to work on the correct version.
+        """
+        import os
+
+        # Get base connection properties
+        base_sde = self.SDE_CONNECTIONS[instance]
+
+        # Generate new filename for version-specific connection
+        safe_version = version.replace(".", "_").replace("-", "_")
+        new_filename = f"conn_{instance}_{safe_version}.sde"
+        new_path = self._temp_dir / new_filename
+
+        if new_path.exists():
+            logger.info(f"Found existing version connection: {new_path}")
+            self._connections[connection_key] = new_path
+            return new_path
+
+        try:
+            # Read connection properties from base .sde file
+            arcpy.env.workspace = str(base_sde)
+            desc = arcpy.Describe(str(base_sde))
+            conn_props = desc.connectionProperties
+
+            logger.debug(f"Creating version-specific connection for {version}")
+
+            # Get database platform - try different attributes
+            db_platform = None
+            for attr in ['type', 'dbType', 'database_type']:
+                if hasattr(conn_props, attr):
+                    db_platform = getattr(conn_props, attr)
+                    break
+
+            if not db_platform:
+                # Fallback - assume from instance config or guess from instance
+                if instance in self.SDE_INSTANCES:
+                    db_platform = self.SDE_INSTANCES[instance].get('db_type', 'ORACLE')
+                else:
+                    db_platform = 'ORACLE'  # Default guess for your setup
+
+            # Get instance/server
+            db_instance = conn_props.instance if hasattr(conn_props, 'instance') else conn_props.server
+
+            # Get database name (might be empty for Oracle)
+            db_name = getattr(conn_props, 'database', '')
+
+            logger.debug(f"Connection params: platform={db_platform}, instance={db_instance}, db={db_name}")
+
+            # Create new connection WITH version specified
+            result = arcpy.management.CreateDatabaseConnection(
+                out_folder_path=str(self._temp_dir),
+                out_name=new_filename,
+                database_platform=db_platform,
+                instance=db_instance,
+                account_authentication="OPERATING_SYSTEM_AUTH",
+                database=db_name,
+                version_type="TRANSACTIONAL",
+                version=version
+            )
+
+            if not new_path.exists():
+                raise FileNotFoundError(f"Version connection not created: {new_path}")
+
+            # Verify it's set to the correct version
+            arcpy.env.workspace = str(new_path)
+            test_desc = arcpy.Describe(str(new_path))
+            actual_version = test_desc.connectionProperties.version
+
+            if actual_version != version:
+                logger.warning(f"Connection version mismatch: expected {version}, got {actual_version}")
+            else:
+                logger.info(f"Created version connection: {version}")
+
+            self._connections[connection_key] = new_path
+            return new_path
+
+        except Exception as e:
+            logger.error(f"Failed to create version connection: {e}")
+
+            # Show available attributes for debugging
+            try:
+                arcpy.env.workspace = str(base_sde)
+                desc = arcpy.Describe(str(base_sde))
+                conn_props = desc.connectionProperties
+                attrs = [attr for attr in dir(conn_props) if not attr.startswith('_')]
+                logger.debug(f"Available connection properties: {attrs}")
+            except:
+                pass
+
+            if new_path.exists():
+                new_path.unlink()
+            raise RuntimeError(f"Could not create version-specific connection: {e}")
 
     def _copy_and_modify_connection(
         self,

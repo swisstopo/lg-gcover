@@ -8,13 +8,16 @@ import click
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from rich import box
 from tabulate import tabulate
+import geopandas as gpd
+import pandas as pd
 
 
 from gcover.config import SDE_INSTANCES, AppConfig, load_config  # TODO
 from gcover.sde import SDEConnectionManager, create_bridge
 
-from gcover.arcpy_compat import HAS_ARCPY
+from gcover.arcpy_compat import HAS_ARCPY, arcpy
 
 from gcover.sde.feature_class_explorer import (
     list_all_feature_classes,
@@ -911,6 +914,7 @@ def inspect_feature_class(feature_class_path, instance, sample):
 
         gcover sde inspect "TOPGIS_GC.GC_BEDROCK" --sample 10
     """
+    import arcpy
 
 
     try:
