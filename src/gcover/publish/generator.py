@@ -16,19 +16,13 @@ import click
 from loguru import logger
 from rich.console import Console
 
-from .esri_classification_extractor import (
-    ClassificationClass,
-    ESRIClassificationExtractor,
-    LayerClassification,
-    SymbolType,
-)
+from .esri_classification_extractor import (ClassificationClass,
+                                            ESRIClassificationExtractor,
+                                            LayerClassification, SymbolType)
 from .symbol_models import CharacterMarkerInfo, FontSymbol, SymbolLayersInfo
-from .symbol_utils import (
-    extract_color_from_cim,
-    extract_line_style_from_effects,
-    extract_polygon_symbol_layers,
-    sanitize_font_name,
-)
+from .symbol_utils import (extract_color_from_cim,
+                           extract_line_style_from_effects,
+                           extract_polygon_symbol_layers, sanitize_font_name)
 from .tooltips_enricher import LayerType
 from .utils import generate_font_image
 
@@ -269,30 +263,32 @@ class MapServerGenerator:
         """
         Add MapServer STYLE blocks for polygon symbols.
 
-        Supports:
-        - Simple solid fills
-        - Complex multi-layer symbols
-        - Character marker pattern fills
-        - Custom outlines
+        ENHANCED with hatch fill support using full_symbol_layers.
         """
+        # NEW: Try to use full_symbol_layers first (complete extraction)
+        if hasattr(class_obj, "full_symbol_layers") and class_obj.full_symbol_layers:
+            self._add_polygon_styles_from_full_layers(
+                lines, class_obj.full_symbol_layers, class_index, symbol_prefix
+            )
+            return
+
+        # FALLBACK: Use legacy symbol_info extraction
         if not hasattr(class_obj, "symbol_info") or not class_obj.symbol_info:
             self._add_simple_polygon_style(lines)
             return
 
         symbol_info = class_obj.symbol_info
 
-        # Check for complex polygon symbol
         if not hasattr(symbol_info, "raw_symbol") or not symbol_info.raw_symbol:
             self._add_simple_polygon_style(lines)
             return
 
-        # Extract all symbol layers
+        # Extract all symbol layers (legacy method)
         layers_info = extract_polygon_symbol_layers(symbol_info.raw_symbol)
 
-        # Track if we added any fill layers
         has_fill = False
 
-        # Add character marker pattern fills first (bottom layers)
+        # Add character marker pattern fills first
         for i, marker_info in enumerate(layers_info.character_markers):
             self._add_pattern_fill_style(
                 lines, marker_info, class_index, i, symbol_prefix
@@ -305,19 +301,146 @@ class MapServerGenerator:
                 self._add_solid_fill_style(lines, fill_info["color"])
                 has_fill = True
 
-        # Add outline (top layer)
+        # Add outline
         if layers_info.outline:
             self._add_outline_style(lines, layers_info.outline)
 
-        # If no fill layers but we have an outline, add a default fill
-        # If no layers at all, add simple polygon with fill and outline
         if not has_fill:
             if layers_info.outline:
-                # Just add a transparent/default fill
                 self._add_default_fill_style(lines)
             else:
-                # No layers at all, add complete simple style
                 self._add_simple_polygon_style(lines)
+
+    def _add_polygon_styles_from_full_layers(
+        self,
+        lines: List[str],
+        full_layers,  # SymbolLayersInfo object
+        class_index: int,
+        symbol_prefix: str,
+    ) -> None:
+        """
+        NEW: Add polygon styles using complete SymbolLayersInfo.
+
+        Renders all fill types in proper order.
+        """
+        has_fill = False
+
+        # Process fills in order
+        for i, fill_info in enumerate(full_layers.fills):
+            fill_type = fill_info.get("type", "solid")
+
+            if fill_type == "solid":
+                self._add_solid_fill_style(lines, fill_info["color"])
+                has_fill = True
+
+            elif fill_type == "hatch":
+                self._add_hatch_fill_style(
+                    lines, fill_info, class_index, i, symbol_prefix
+                )
+                has_fill = True
+
+            elif fill_type == "character":
+                marker = fill_info.get("marker_info")
+                if marker:
+                    self._add_pattern_fill_style(
+                        lines, marker, class_index, i, symbol_prefix
+                    )
+                    has_fill = True
+
+            elif fill_type == "picture":
+                logger.warning(f"Picture fill not yet supported in MapServer")
+
+            elif fill_type == "gradient":
+                logger.warning(f"Gradient fill not yet supported in MapServer")
+
+        # Add outline (top layer)
+        if full_layers.outline:
+            self._add_outline_style(lines, full_layers.outline)
+
+        # Fallback if no fills
+        if not has_fill:
+            if full_layers.outline:
+                self._add_default_fill_style(lines)
+            else:
+                self._add_simple_polygon_style(lines)
+
+    def _add_hatch_fill_style(
+        self,
+        lines: List[str],
+        hatch_info: Dict,
+        class_index: int,
+        fill_index: int,
+        symbol_prefix: str,
+    ) -> None:
+        """
+        NEW: Add MapServer STYLE for hatch fill pattern.
+        """
+        rotation = hatch_info["rotation"]
+        separation = hatch_info["separation"]
+        line_sym = hatch_info["line_symbol"]
+
+        # Extract line properties
+        line_color = line_sym["color"]
+        line_width = line_sym["width"]
+        r, g, b, a = line_color
+
+        # Generate unique symbol name
+        symbol_name = f"hatch_{int(rotation)}deg_{int(separation * 10)}"
+
+        # Register this hatch symbol
+        hatch_symbol_def = {
+            "name": symbol_name,
+            "type": "hatch",
+            "rotation": rotation,
+            "separation": separation,
+            "line_width": line_width,
+            "line_color": line_color,
+        }
+
+        # Add to registry (avoid duplicates)
+        if not any(s.get("name") == symbol_name for s in self.pattern_symbols):
+            self.pattern_symbols.append(hatch_symbol_def)
+
+        # Convert to pixels
+        separation_px = separation * 1.33
+        width_px = line_width * 1.33
+
+        # Add STYLE block
+        lines.append("    STYLE")
+        lines.append(f'      SYMBOL "{symbol_name}"')
+        lines.append(f"      SIZE {separation_px:.2f}")
+        lines.append(f"      WIDTH {width_px:.2f}")
+        lines.append(f"      COLOR {r} {g} {b}")
+        if a < 255:
+            opacity = int((a / 255) * 100)
+            lines.append(f"      OPACITY {opacity}")
+        lines.append("    END # STYLE")
+
+    def _generate_hatch_pattern_symbols(self) -> List[str]:
+        """
+        NEW: Generate MapServer HATCH symbols.
+        """
+        symbols = []
+
+        for hatch_def in self.pattern_symbols:
+            if hatch_def.get("type") != "hatch":
+                continue
+
+            name = hatch_def["name"]
+            rotation = hatch_def["rotation"]
+
+            symbols.extend(
+                [
+                    "  SYMBOL",
+                    f'    NAME "{name}"',
+                    "    TYPE HATCH",
+                    f"    # Diagonal lines at {rotation}° angle",
+                    "  END",
+                    "",
+                ]
+            )
+
+        return symbols
 
     def _add_pattern_fill_style(
         self,
@@ -585,6 +708,15 @@ class MapServerGenerator:
         lines.append("  # Line pattern symbols")
         lines.append("")
         lines.extend(self._generate_line_pattern_symbols())
+
+        # NEW: Add hatch pattern symbols ⭐
+        if self.pattern_symbols:
+            hatch_symbols = self._generate_hatch_pattern_symbols()
+            if hatch_symbols:
+                lines.append("")
+                lines.append("  # Hatch pattern symbols (diagonal lines)")
+                lines.append("")
+                lines.extend(hatch_symbols)
 
         # Generate font symbols if classifications provided
         if classification_list:
