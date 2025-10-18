@@ -24,14 +24,7 @@ from rich.table import Table
 from rich.tree import Tree
 
 # Try to import arcpy - graceful degradation if not available
-try:
-    from gcover.arcpy_compat import HAS_ARCPY, arcpy
-
-    HAS_ARCPY = True
-    logger.info("arcpy is available - full functionality enabled")
-except ImportError:
-    HAS_ARCPY = False
-    logger.warning("arcpy not available - using CIM JSON parsing only")
+from gcover.arcpy_compat import HAS_ARCPY, arcpy
 
 console = Console()
 
