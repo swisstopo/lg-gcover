@@ -241,7 +241,7 @@ env_override_existing_values = 0
 
 
 [tool.coverage.run]
-source = ["gcover"]
+source = ["src/gcover"]
 omit = [
     "*/tests/*",
     "*/_version.py",
