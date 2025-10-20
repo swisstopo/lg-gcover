@@ -935,7 +935,6 @@ def process_all(
         since_date = None
         if since:
             # Example usage
-            since = "2 weeks ago"  # or "2025-10-01"
             since_date = parse_since(since)
             print(f"Parsed date: {since_date.strftime('%Y-%m-%d')}")
 
