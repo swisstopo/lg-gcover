@@ -27,13 +27,11 @@ from gcover.config.models import ProxyConfig
 from .assets import (AssetType, BackupGDBAsset, GDBAsset, GDBAssetInfo,
                      IncrementGDBAsset, VerificationGDBAsset)
 
-from dataclasses import dataclass
-from typing import Optional
-
 
 @dataclass
 class UploadResult:
     """Result of an upload operation"""
+
     success: bool
     status_code: int
     error_message: Optional[str] = None
@@ -47,6 +45,7 @@ class UploadResult:
     def is_server_error(self) -> bool:
         """Check if error is server-side (5xx)"""
         return 500 <= self.status_code < 600
+
 
 class TOTPGenerator:
     """Generate TOTP tokens for authentication"""
@@ -203,7 +202,7 @@ class S3Uploader:
             return None
 
     def _get_presigned_url(
-        self, s3_key: str, file_size: int, check_exists: Optional[bool]=True
+        self, s3_key: str, file_size: int, check_exists: Optional[bool] = True
     ) -> Optional[Dict[str, Any]]:
         """
         Get presigned URL from Lambda endpoint
@@ -253,9 +252,9 @@ class S3Uploader:
 
             response = requests.post(self.lambda_endpoint, **request_args)
 
-            if response.status_code [200, 204, 409]:
+            if response.status_code[200, 204, 409]:
                 data = response.json()
-                data['status_code'] = response.status_code
+                data["status_code"] = response.status_code
                 logger.debug(f"Presigned URL obtained successfully")
                 return data
             else:
@@ -283,11 +282,9 @@ class S3Uploader:
             file_size = file_path.stat().st_size
             presigned_data = self._get_presigned_url(s3_key, file_size)
 
-            status_code = presigned_data.get('status_code')
+            status_code = presigned_data.get("status_code")
             if status_code and int(status_code) == 409:
-                logger.info(
-                    f"File already exists in s3://{self.bucket_name}/{s3_key}"
-                )
+                logger.info(f"File already exists in s3://{self.bucket_name}/{s3_key}")
                 return True
 
             presigned_url = (
@@ -324,7 +321,6 @@ class S3Uploader:
             else:
                 logger.error(f"Upload failed: {response.status_code} - {response.text}")
                 return False
-
 
         except FileNotFoundError as e:
             logger.error(f"File not found: {e}")
@@ -408,7 +404,7 @@ class S3Uploader:
             except ClientError:
                 return False
         else:
-            logger.warning("Cannot check file existence without S3 client") # TODO
+            logger.warning("Cannot check file existence without S3 client")  # TODO
             return False
 
     def download_file(self, s3_key: str, local_path: Path) -> bool:
