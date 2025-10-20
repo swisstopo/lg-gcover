@@ -20,6 +20,15 @@ import requests
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from loguru import logger
+from rich.progress import (
+    BarColumn,
+    DownloadColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeRemainingColumn,
+    TransferSpeedColumn,
+)
 
 from gcover.config.models import ProxyConfig
 
@@ -98,6 +107,8 @@ class S3Uploader:
         totp_token: Optional[str] = None,
         proxy_config: Optional[ProxyConfig] = None,
         upload_method: str = "auto",
+        show_progress: bool = True,
+        progress_threshold: int = 10 * 1024 * 1024,  # 10 MB
     ):
         """
         Initialize S3 Uploader with multiple upload methods
@@ -110,6 +121,8 @@ class S3Uploader:
             totp_token: Pre-generated TOTP token for Lambda authentication
             proxy_config: ProxyConfig instance for proxy settings (optional)
             upload_method: 'auto', 'direct', or 'presigned'
+            show_progress: Whether to show progress bar for uploads
+            progress_threshold: Minimum file size in bytes to show progress (default 10MB)
         """
         self.bucket_name = bucket_name
         self.profile_name = aws_profile
@@ -118,6 +131,8 @@ class S3Uploader:
         self.totp_token = totp_token
         self.proxy_config = proxy_config
         self.upload_method = upload_method
+        self.show_progress = show_progress
+        self.progress_threshold = progress_threshold
 
         self.proxies = self._init_proxies()
         self.s3_client = None
@@ -272,7 +287,7 @@ class S3Uploader:
 
     def _upload_with_presigned_url(self, file_path: Path, s3_key: str) -> UploadResult:
         """
-        Upload file using presigned URL
+        Upload file using presigned URL with progress bar
 
         Args:
             file_path: Local file path
@@ -318,20 +333,34 @@ class S3Uploader:
 
             logger.debug(f"Uploading with presigned URL")
 
-            # Upload using presigned URL
-            with open(file_path, "rb") as file_obj:
-                request_args = {
-                    "data": file_obj,
-                    "headers": presigned_data.get("headers", {}),
-                    "timeout": 300,
-                    "verify": False,  # TODO: consider using a CA bundle instead
-                }
+            # Determine if we should show progress bar
+            show_bar = self.show_progress and file_size >= self.progress_threshold
 
-                if self.proxies:
-                    request_args["proxies"] = self.proxies
-                    logger.debug(f"Using proxies for presigned upload: {self.proxies}")
+            if show_bar:
+                # Upload with progress bar
+                response = self._upload_with_progress(
+                    file_path,
+                    presigned_url,
+                    file_size,
+                    presigned_data.get("headers", {}),
+                )
+            else:
+                # Upload without progress bar (small files)
+                with open(file_path, "rb") as file_obj:
+                    request_args = {
+                        "data": file_obj,
+                        "headers": presigned_data.get("headers", {}),
+                        "timeout": 300,
+                        "verify": False,
+                    }
 
-                response = requests.put(presigned_url, **request_args)
+                    if self.proxies:
+                        request_args["proxies"] = self.proxies
+                        logger.debug(
+                            f"Using proxies for presigned upload: {self.proxies}"
+                        )
+
+                    response = requests.put(presigned_url, **request_args)
 
             success = response.status_code in [200, 204]
 
@@ -380,6 +409,87 @@ class S3Uploader:
                 s3_key=s3_key,
                 method="presigned",
             )
+
+    def _upload_with_progress(
+        self,
+        file_path: Path,
+        presigned_url: str,
+        file_size: int,
+        headers: Dict[str, str],
+    ) -> requests.Response:
+        """
+        Upload file with rich progress bar
+
+        Args:
+            file_path: Path to file to upload
+            presigned_url: Presigned S3 URL
+            file_size: Total file size in bytes
+            headers: HTTP headers for upload
+
+        Returns:
+            requests.Response object
+        """
+
+        # Custom file-like object that tracks progress
+        class ProgressFileReader:
+            def __init__(self, file_obj, progress_obj, task_id, total_size):
+                self.file_obj = file_obj
+                self.progress = progress_obj
+                self.task_id = task_id
+                self.total_size = total_size
+                self.total_read = 0
+
+            def read(self, size=-1):
+                chunk = self.file_obj.read(size)
+                if chunk:
+                    self.total_read += len(chunk)
+                    self.progress.update(self.task_id, completed=self.total_read)
+                return chunk
+
+            def __len__(self):
+                """Return total size so requests can set Content-Length header"""
+                return self.total_size
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                self.file_obj.close()
+
+        # Create progress bar
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(),
+            DownloadColumn(),
+            TransferSpeedColumn(),
+            TextColumn("•"),
+            TimeRemainingColumn(),
+        ) as progress:
+            task = progress.add_task(
+                f"[cyan]Uploading {file_path.name}", total=file_size
+            )
+
+            with open(file_path, "rb") as f:
+                file_reader = ProgressFileReader(f, progress, task, file_size)
+
+                # Add Content-Length header explicitly to prevent chunked encoding
+                upload_headers = headers.copy()
+                upload_headers["Content-Length"] = str(file_size)
+
+                request_args = {
+                    "data": file_reader,
+                    "headers": upload_headers,
+                    "timeout": 300,
+                    "verify": False,
+                }
+
+                if self.proxies:
+                    request_args["proxies"] = self.proxies
+
+                response = requests.put(presigned_url, **request_args)
+
+        return response
 
     def _upload_direct(self, file_path: Path, s3_key: str) -> UploadResult:
         """
