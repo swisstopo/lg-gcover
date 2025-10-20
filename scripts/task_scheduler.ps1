@@ -14,7 +14,7 @@ $env:PYTHON_RICH_FORCE_ASCII = "true"
 
 
 # Path to conda environment
-$CondaPath = "Y:\conda\envs\GCOVER_ESRI"
+$CondaPath = "Y:\conda\envs\gcover-arcgis"
 $OutputDir = "\\v0t0020a.adr.admin.ch\lg\01_PRODUKTION\GIS\TOPGIS\QA\Weekly"
 $InputDir = "\\v0t0020a\topgisprod\10_Production_GC\Administration\QA"
 $LAST_WEEK = (Get-Date).AddDays(-7).ToString("yyyy-MM-dd")
@@ -41,11 +41,15 @@ Write-Host "Conda environment activated"  2>&1 | Tee-Object -FilePath $LogFile -
 
 Write-Host "Log to: $LogFile"
 
+
+
 Write-Host "--- Processing new GDB assets ---" -ForegroundColor Green
-& gcover   --env production  gdb process-all  --yes  --continue-on-error --filter-type verification_topology  --max-workers 1  --since $LAST_WEEK
+& gcover   --env production --log-file $LogFile  gdb process-all  --yes  --continue-on-error --filter-type verification_topology  --max-workers 1  --since $LAST_WEEK
+
+
 
 Write-Host "--- Processing new QA tests ---" -ForegroundColor Green
-& gcover --env production  qa process-all  --qa-type topology  --max-workers 1 --format flatgeobuf --since $LAST_WEEK   $InputDir
+& gcover --env production --log-file $LogFile  qa process-all  --qa-type topology  --max-workers 1 --format flatgeobuf --since $LAST_WEEK   $InputDir
 
 Write-Host "--- Processing QA aggregate ---" -ForegroundColor Green
 & gcover  --env production qa aggregate --auto-discover --yes --zone-type mapsheets   --output-format xlsx   --type  verification_topology   --base-dir $OutputDir
