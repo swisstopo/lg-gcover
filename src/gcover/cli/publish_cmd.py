@@ -3,6 +3,7 @@
 Enhanced CLI commands for preparing GeoCover data for publication.
 Supports multiple tooltip layers, flexible source mappings, and comprehensive configuration.
 """
+
 import os
 import sys
 from importlib.resources import files
@@ -67,6 +68,7 @@ def publish_commands(ctx):
     ctx.obj.setdefault("environment", "development")
     ctx.obj.setdefault("verbose", False)
     ctx.obj.setdefault("config_path", None)
+
 
 @publish_commands.command()
 @click.pass_context
@@ -257,6 +259,7 @@ def apply_config(
 
             logger.debug(traceback.format_exc())
         raise
+
 
 @publish_commands.command()
 @click.pass_context
@@ -742,7 +745,6 @@ def list_mapsheets(ctx, admin_zones: Optional[Path]):
         raise click.Abort()
 
 
-
 @publish_commands.command()
 @click.pass_context
 @click.argument("style_files", nargs=-1, type=click.Path(exists=True, path_type=Path))
@@ -788,16 +790,16 @@ def list_mapsheets(ctx, admin_zones: Optional[Path]):
     help="Generate combined symbol file and fontset for all layers",
 )
 def mapserver(
-        ctx,
-        style_files: tuple,
-        output_dir: Path,
-        config_file: Optional[Path],
-        layer_type: str,
-        data_path: Optional[str],
-        use_symbol_field: bool,
-        symbol_field: str,
-        prefixes: Optional[str],
-        generate_combined: bool,
+    ctx,
+    style_files: tuple,
+    output_dir: Path,
+    config_file: Optional[Path],
+    layer_type: str,
+    data_path: Optional[str],
+    use_symbol_field: bool,
+    symbol_field: str,
+    prefixes: Optional[str],
+    generate_combined: bool,
 ):
     """Generate MapServer mapfiles from ESRI style files.
 
@@ -842,7 +844,9 @@ def mapserver(
                     if class_config.mapfile_name:
                         mapfile_names[key] = class_config.mapfile_name
 
-        console.print(f"  [green]✓[/green] Extracted prefixes for {len(prefix_map)} classifications")
+        console.print(
+            f"  [green]✓[/green] Extracted prefixes for {len(prefix_map)} classifications"
+        )
 
         # If no style files specified, use all from config
         if not style_files:
@@ -851,11 +855,14 @@ def mapserver(
                 for class_config in layer_config.classifications:
                     if class_config.style_file not in style_files:
                         style_files.append(class_config.style_file)
-            console.print(f"  [green]✓[/green] Found {len(style_files)} style files in config")
+            console.print(
+                f"  [green]✓[/green] Found {len(style_files)} style files in config"
+            )
 
     # Override with manual prefixes if provided
     if prefixes:
         import json
+
         try:
             manual_prefixes = json.loads(prefixes)
             prefix_map.update(manual_prefixes)
@@ -865,7 +872,9 @@ def mapserver(
             raise click.Abort()
 
     if not style_files:
-        console.print("[red]Error: No style files specified. Use style_files argument or --config-file[/red]")
+        console.print(
+            "[red]Error: No style files specified. Use style_files argument or --config-file[/red]"
+        )
         raise click.Abort()
 
     # Single generator for all layers (to track symbols across layers)
@@ -888,7 +897,9 @@ def mapserver(
         classifications = extract_lyrx(style_file, display=False)
 
         if not classifications:
-            console.print(f"[yellow]⚠ No classifications found in {style_file.name}[/yellow]")
+            console.print(
+                f"[yellow]⚠ No classifications found in {style_file.name}[/yellow]"
+            )
             continue
 
         # Process each classification
@@ -902,7 +913,9 @@ def mapserver(
             # Determine data path
             layer_data_path = None
             if data_path:
-                layer_data_path = data_path.replace("{layer}", mapfile_layer_name.upper())
+                layer_data_path = data_path.replace(
+                    "{layer}", mapfile_layer_name.upper()
+                )
 
             # Generate mapfile
             mapfile_content = generator.generate_layer(
@@ -926,16 +939,13 @@ def mapserver(
             # Store classification for combined symbol file
             all_classifications.append(classification)
 
-
-
     # Generate combined symbol file if requested
     if generate_combined and all_classifications:
         console.print("\n[cyan]Generating combined symbol file...[/cyan]")
 
         # Generate symbol file with all collected symbols
         symbol_content = generator.generate_symbol_file(
-            classification_list=all_classifications,
-            prefixes=prefix_map
+            classification_list=all_classifications, prefixes=prefix_map
         )
 
         symbol_file = output_dir / "symbols.sym"
@@ -953,11 +963,15 @@ def mapserver(
         if pdf_file.exists():
             console.print(f"  [green]✓[/green] Font symbols PDF: {pdf_file}")
 
-        console.print(f"\n[dim]Tracked {len(generator.symbol_registry)} unique font symbols[/dim]")
+        console.print(
+            f"\n[dim]Tracked {len(generator.symbol_registry)} unique font symbols[/dim]"
+        )
         console.print(f"[dim]Used {len(generator.fonts_used)} fonts[/dim]")
 
     # Summary
-    console.print(f"\n[bold green]✅ Generated {len(generated_files)} mapfile(s)[/bold green]")
+    console.print(
+        f"\n[bold green]✅ Generated {len(generated_files)} mapfile(s)[/bold green]"
+    )
     console.print(f"[dim]Output directory: {output_dir}[/dim]")
 
 
@@ -998,14 +1012,14 @@ def mapserver(
     help="Layer name to prefix mapping as JSON (overrides config file)",
 )
 def qgis(
-        ctx,
-        style_files: tuple,
-        output_dir: Path,
-        config_file: Optional[Path],
-        geometry_type: str,
-        use_symbol_field: bool,
-        symbol_field: str,
-        prefixes: Optional[str],
+    ctx,
+    style_files: tuple,
+    output_dir: Path,
+    config_file: Optional[Path],
+    geometry_type: str,
+    use_symbol_field: bool,
+    symbol_field: str,
+    prefixes: Optional[str],
 ):
     """Generate QGIS QML style files from ESRI style files.
 
@@ -1033,9 +1047,13 @@ def qgis(
         for layer_config in config.layers:
             for class_config in layer_config.classifications:
                 if class_config.classification_name and class_config.symbol_prefix:
-                    prefix_map[class_config.classification_name] = class_config.symbol_prefix
+                    prefix_map[class_config.classification_name] = (
+                        class_config.symbol_prefix
+                    )
 
-        console.print(f"  [green]✓[/green] Extracted prefixes for {len(prefix_map)} classifications")
+        console.print(
+            f"  [green]✓[/green] Extracted prefixes for {len(prefix_map)} classifications"
+        )
 
         # If no style files specified, use all from config
         if not style_files:
@@ -1044,11 +1062,14 @@ def qgis(
                 for class_config in layer_config.classifications:
                     if class_config.style_file not in style_files:
                         style_files.append(class_config.style_file)
-            console.print(f"  [green]✓[/green] Found {len(style_files)} style files in config")
+            console.print(
+                f"  [green]✓[/green] Found {len(style_files)} style files in config"
+            )
 
     # Override with manual prefixes if provided
     if prefixes:
         import json
+
         try:
             manual_prefixes = json.loads(prefixes)
             prefix_map.update(manual_prefixes)
@@ -1058,7 +1079,9 @@ def qgis(
             raise click.Abort()
 
     if not style_files:
-        console.print("[red]Error: No style files specified. Use style_files argument or --config-file[/red]")
+        console.print(
+            "[red]Error: No style files specified. Use style_files argument or --config-file[/red]"
+        )
         raise click.Abort()
 
     # Generator
@@ -1079,7 +1102,9 @@ def qgis(
         classifications = extract_lyrx(style_file, display=False)
 
         if not classifications:
-            console.print(f"[yellow]⚠ No classifications found in {style_file.name}[/yellow]")
+            console.print(
+                f"[yellow]⚠ No classifications found in {style_file.name}[/yellow]"
+            )
             continue
 
         # Process each classification
@@ -1101,8 +1126,35 @@ def qgis(
             )
 
     # Summary
-    console.print(f"\n[bold green]✅ Generated {len(generated_files)} QML file(s)[/bold green]")
+    console.print(
+        f"\n[bold green]✅ Generated {len(generated_files)} QML file(s)[/bold green]"
+    )
     console.print(f"[dim]Output directory: {output_dir}[/dim]")
+
+
+from gcover.publish.console_generator import inspect_styles_main
+
+
+@publish_commands.command(name="inspect")
+@click.pass_context
+@click.argument("style_files", nargs=-1, type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--detailed",
+    "-d",
+    is_flag=True,
+    help="Show detailed symbol information including layers",
+)
+@click.option(
+    "--config-file",
+    "-c",
+    type=click.Path(exists=True, path_type=Path),
+    help="Load style files from YAML configuration",
+)
+def inspect_styles_cmd(
+    ctx, style_files: tuple, detailed: bool, config_file: Optional[Path]
+):
+    """Inspect and display ESRI style file contents."""
+    inspect_styles_main(style_files, detailed, config_file)
 
 
 @publish_commands.command()

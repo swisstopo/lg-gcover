@@ -5,7 +5,12 @@ ESRI Layer Classification Extractor
 Extract classification information from ESRI ArcGIS layers (.lyrx files or .aprx projects)
 Supports both arcpy-based and direct JSON CIM manipulation approaches.
 
-Author: Generated for lg-gcover project
+ADD THIS to the existing esri_classification_extractor.py file to enable:
+1. Complete symbol extraction (including CIMHatchFill)
+2. Stable class identification
+3. Custom symbol override support
+
+BACKWARDS COMPATIBLE - existing code continues to work.
 """
 
 import json
@@ -29,73 +34,10 @@ from gcover.arcpy_compat import HAS_ARCPY, arcpy
 console = Console()
 
 
-class ClassificationJSONEncoder(json.JSONEncoder):
-    """Custom JSON encoder for classification objects."""
-
-    def default(self, obj):
-        if isinstance(obj, Enum):
-            # Convert enums to their string values
-            return obj.value
-        elif hasattr(obj, "__dataclass_fields__"):
-            # Convert dataclasses to dict, handling nested objects
-            return self._dataclass_to_dict(obj)
-        elif isinstance(obj, (set, tuple)):
-            # Convert sets and tuples to lists
-            return list(obj)
-        else:
-            return super().default(obj)
-
-    def _dataclass_to_dict(self, obj) -> dict:
-        """Convert dataclass to dictionary with proper handling of complex objects."""
-        result = {}
-
-        for field_name, field_value in asdict(obj).items():
-            if field_name.startswith("raw_"):
-                # Skip raw data fields to avoid clutter
-                continue
-            elif isinstance(field_value, Enum):
-                result[field_name] = field_value.value
-            elif isinstance(field_value, (set, tuple)):
-                result[field_name] = list(field_value)
-            else:
-                result[field_name] = field_value
-
-        return result
-
-
-def to_serializable_dict(obj: Any) -> Dict[str, Any]:
-    """Convert any object to a JSON-serializable dictionary."""
-    if hasattr(obj, "__dataclass_fields__"):
-        # It's a dataclass
-        result = {}
-        for field_name in obj.__dataclass_fields__:
-            field_value = getattr(obj, field_name)
-
-            # Skip raw data fields
-            if field_name.startswith("raw_"):
-                continue
-
-            # Handle different types
-            if isinstance(field_value, Enum):
-                result[field_name] = field_value.value
-            elif isinstance(field_value, (list, tuple)):
-                result[field_name] = [
-                    to_serializable_dict(item)
-                    if hasattr(item, "__dataclass_fields__")
-                    else item
-                    for item in field_value
-                ]
-            elif isinstance(field_value, set):
-                result[field_name] = list(field_value)
-            elif hasattr(field_value, "__dataclass_fields__"):
-                result[field_name] = to_serializable_dict(field_value)
-            else:
-                result[field_name] = field_value
-
-        return result
-    else:
-        return obj
-
+from .symbol_models import ClassIdentifier, SymbolOverrideRegistry
+from .symbol_utils import (analyze_symbol_complexity, extract_full_line_symbol,
+                           extract_full_point_symbol,
+                           extract_polygon_symbol_layers)
 
 console = Console()
 
@@ -189,11 +131,17 @@ def truncate_label(label: str, max_length: int = 140) -> str:
 class ClassificationClass:
     """A single classification class from CIMUniqueValueRenderer."""
 
+    # EXISTING FIELDS (keep as-is)
     label: str
-    field_values: List[List[str]]  # List of value combinations
+    field_values: List[List[str]]
     symbol_info: Optional[SymbolInfo] = None
     visible: bool = True
     raw_class: Dict[str, Any] = field(default_factory=dict)
+
+    # NEW FIELDS for enhanced extraction
+    identifier: Optional[ClassIdentifier] = None  # Stable identifier
+    full_symbol_layers: Optional[Any] = None  # Complete SymbolLayersInfo
+    complexity_metrics: Optional[Dict[str, Any]] = None  # Complexity analysis
 
     def __post_init__(self):
         """Post-process the label to truncate if too long."""
@@ -237,6 +185,74 @@ class LayerClassification:
     visibility: bool = True
 
     raw_renderer: Dict[str, Any] = field(default_factory=dict)
+
+
+class ClassificationJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder for classification objects."""
+
+    def default(self, obj):
+        if isinstance(obj, Enum):
+            # Convert enums to their string values
+            return obj.value
+        elif hasattr(obj, "__dataclass_fields__"):
+            # Convert dataclasses to dict, handling nested objects
+            return self._dataclass_to_dict(obj)
+        elif isinstance(obj, (set, tuple)):
+            # Convert sets and tuples to lists
+            return list(obj)
+        else:
+            return super().default(obj)
+
+    def _dataclass_to_dict(self, obj) -> dict:
+        """Convert dataclass to dictionary with proper handling of complex objects."""
+        result = {}
+
+        for field_name, field_value in asdict(obj).items():
+            if field_name.startswith("raw_"):
+                # Skip raw data fields to avoid clutter
+                continue
+            elif isinstance(field_value, Enum):
+                result[field_name] = field_value.value
+            elif isinstance(field_value, (set, tuple)):
+                result[field_name] = list(field_value)
+            else:
+                result[field_name] = field_value
+
+        return result
+
+
+def to_serializable_dict(obj: Any) -> Dict[str, Any]:
+    """Convert any object to a JSON-serializable dictionary."""
+    if hasattr(obj, "__dataclass_fields__"):
+        # It's a dataclass
+        result = {}
+        for field_name in obj.__dataclass_fields__:
+            field_value = getattr(obj, field_name)
+
+            # Skip raw data fields
+            if field_name.startswith("raw_"):
+                continue
+
+            # Handle different types
+            if isinstance(field_value, Enum):
+                result[field_name] = field_value.value
+            elif isinstance(field_value, (list, tuple)):
+                result[field_name] = [
+                    to_serializable_dict(item)
+                    if hasattr(item, "__dataclass_fields__")
+                    else item
+                    for item in field_value
+                ]
+            elif isinstance(field_value, set):
+                result[field_name] = list(field_value)
+            elif hasattr(field_value, "__dataclass_fields__"):
+                result[field_name] = to_serializable_dict(field_value)
+            else:
+                result[field_name] = field_value
+
+        return result
+    else:
+        return obj
 
 
 class CIMColorParser:
@@ -1044,9 +1060,9 @@ class ESRIClassificationExtractor:
             return None
 
     def _parse_classification_class(
-        self, class_obj: Dict[str, Any]
+        self, class_obj: Dict[str, Any], layer_path: str = None, class_index: int = 0
     ) -> Optional[ClassificationClass]:
-        """Parse a single CIMUniqueValueClass."""
+        """Parse a single CIMUniqueValueClass with enhanced extraction."""
         try:
             label = class_obj.get("label", "")
             visible = class_obj.get("visible", True)
@@ -1059,11 +1075,37 @@ class ESRIClassificationExtractor:
                 if isinstance(value_obj, dict) and "fieldValues" in value_obj:
                     field_values.append(value_obj["fieldValues"])
 
-            # Parse symbol
-            symbol_info = None
+            # Extract raw symbol for both legacy and complete parsing
             symbol_ref = class_obj.get("symbol", {})
-            if "symbol" in symbol_ref:
-                symbol_info = CIMSymbolParser.parse_symbol(symbol_ref["symbol"])
+            raw_symbol = symbol_ref.get("symbol", {})
+
+            # Legacy symbol info (backwards compatible)
+            symbol_info = CIMSymbolParser.parse_symbol(raw_symbol)
+
+            # NEW: Complete symbol layers extraction
+            full_symbol_layers = None
+            complexity_metrics = None
+
+            if raw_symbol and raw_symbol.get("type") == "CIMPolygonSymbol":
+                try:
+                    full_symbol_layers = extract_polygon_symbol_layers(raw_symbol)
+                    complexity_metrics = analyze_symbol_complexity(full_symbol_layers)
+                except Exception as e:
+                    logger.debug(f"Could not extract complete symbol layers: {e}")
+
+            # NEW: Create stable identifier
+            identifier = None
+            if field_values and layer_path:
+                try:
+                    identifier = ClassIdentifier.create(
+                        layer_path=layer_path,
+                        field_values=field_values[0] if field_values else [],
+                        class_index=class_index,
+                        symbol_dict=raw_symbol,
+                        label=label,
+                    )
+                except Exception as e:
+                    logger.debug(f"Could not create identifier: {e}")
 
             return ClassificationClass(
                 label=label,
@@ -1071,6 +1113,10 @@ class ESRIClassificationExtractor:
                 symbol_info=symbol_info,
                 visible=visible,
                 raw_class=class_obj,
+                # NEW fields
+                identifier=identifier,
+                full_symbol_layers=full_symbol_layers,
+                complexity_metrics=complexity_metrics,
             )
 
         except Exception as e:
@@ -1427,7 +1473,7 @@ def explore_layer_structure(
     Returns:
         Dictionary with layer structure information
     """
-    extractor = ESRIClassificationExtractor(use_arcpy=use_arcpy)
+    extractor = ESRIClassificationExtractorEnhanced(use_arcpy=use_arcpy)
     lyrx_path = Path(lyrx_path)
 
     console.print(
@@ -1602,6 +1648,432 @@ def explore_layer_structure(
     return structure
 
 
+# =============================================================================
+# ENHANCED CIMSymbolParser (add these methods to existing class)
+# =============================================================================
+
+
+class CIMSymbolParserEnhanced(CIMSymbolParser):
+    """
+    Enhanced symbol parser with complete extraction support.
+
+    ADD THESE METHODS to the existing CIMSymbolParser class.
+    """
+
+    @staticmethod
+    def parse_symbol_complete(symbol_obj: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Parse symbol with COMPLETE layer extraction.
+
+        Returns both:
+        - legacy SymbolInfo for backwards compatibility
+        - full SymbolLayersInfo for complete symbol data
+        """
+        if not isinstance(symbol_obj, dict) or "type" not in symbol_obj:
+            return {"legacy": None, "complete": None, "complexity": None}
+
+        symbol_type_str = symbol_obj["type"]
+
+        # Legacy extraction (existing code)
+        if symbol_type_str == "CIMPointSymbol":
+            legacy_info = CIMSymbolParser._parse_point_symbol(symbol_obj)
+            complete_info = extract_full_point_symbol(symbol_obj)
+            complexity = None
+
+        elif symbol_type_str == "CIMLineSymbol":
+            legacy_info = CIMSymbolParser._parse_line_symbol(symbol_obj)
+            complete_info = extract_full_line_symbol(symbol_obj)
+            complexity = None
+
+        elif symbol_type_str == "CIMPolygonSymbol":
+            legacy_info = CIMSymbolParser._parse_polygon_symbol(symbol_obj)
+            # NEW: Complete extraction including hatch fills
+            complete_info = extract_polygon_symbol_layers(symbol_obj)
+            complexity = analyze_symbol_complexity(complete_info)
+
+        else:
+            legacy_info = SymbolInfo(
+                symbol_type=SymbolType.UNKNOWN, raw_symbol=symbol_obj
+            )
+            complete_info = None
+            complexity = None
+
+        return {
+            "legacy": legacy_info,
+            "complete": complete_info,
+            "complexity": complexity,
+        }
+
+
+# =============================================================================
+# ENHANCED ESRIClassificationExtractor (add these methods)
+# =============================================================================
+
+
+class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
+    """
+    Enhanced extractor methods.
+
+    ADD THESE METHODS to the existing ESRIClassificationExtractor class.
+    """
+
+    def __init__(
+        self,
+        use_arcpy: bool = None,
+        override_registry: Optional[SymbolOverrideRegistry] = None,
+    ):
+        """
+        Initialize extractor with optional override registry.
+
+        Args:
+            use_arcpy: Force arcpy usage (True/False) or auto-detect (None)
+            override_registry: Optional custom symbol override registry
+        """
+        super().__init__()
+        # Call parent __init__ (existing code)
+        if use_arcpy is None:
+            self.use_arcpy = HAS_ARCPY
+        else:
+            self.use_arcpy = use_arcpy and HAS_ARCPY
+
+        # NEW: Override registry
+        self.override_registry = override_registry or SymbolOverrideRegistry()
+
+    def load_overrides(self, yaml_path: str):
+        """Load custom symbol overrides from YAML file."""
+        self.override_registry = SymbolOverrideRegistry.from_yaml(yaml_path)
+
+    def _parse_classification_class_enhanced(
+        self, class_obj: Dict[str, Any], layer_path: str, class_index: int
+    ) -> Optional[ClassificationClass]:
+        """
+        ENHANCED version of _parse_classification_class.
+
+        Extracts:
+        - All existing data (backwards compatible)
+        - Complete symbol layers (NEW)
+        - Stable identifier (NEW)
+        - Complexity metrics (NEW)
+        """
+        try:
+            label = class_obj.get("label", "")
+            visible = class_obj.get("visible", True)
+
+            # Parse field values
+            field_values = []
+            values = class_obj.get("values", [])
+
+            for value_obj in values:
+                if isinstance(value_obj, dict) and "fieldValues" in value_obj:
+                    field_values.append(value_obj["fieldValues"])
+
+            # Extract raw symbol for both legacy and complete parsing
+            symbol_ref = class_obj.get("symbol", {})
+            raw_symbol = symbol_ref.get("symbol", {})
+
+            # Parse with both methods
+            symbol_data = CIMSymbolParserEnhanced.parse_symbol_complete(raw_symbol)
+
+            # Legacy symbol info (backwards compatible)
+            symbol_info = symbol_data["legacy"]
+
+            # Complete symbol layers (NEW)
+            full_symbol_layers = symbol_data["complete"]
+            complexity_metrics = symbol_data["complexity"]
+
+            # Create stable identifier (NEW)
+            identifier = None
+            if field_values:
+                # Use first field value set for identifier
+                identifier = ClassIdentifier.create(
+                    layer_path=layer_path,
+                    field_values=field_values[0] if field_values else [],
+                    class_index=class_index,
+                    symbol_dict=raw_symbol,
+                    label=label,
+                )
+
+            return ClassificationClass(
+                label=label,
+                field_values=field_values,
+                symbol_info=symbol_info,
+                visible=visible,
+                raw_class=class_obj,
+                # NEW fields
+                identifier=identifier,
+                full_symbol_layers=full_symbol_layers,
+                complexity_metrics=complexity_metrics,
+            )
+
+        except Exception as e:
+            logger.error(f"Error parsing classification class: {e}")
+            return None
+
+    def _parse_unique_value_renderer(
+        self, renderer: Dict[str, Any], layer_name: str = None, layer_path: str = None
+    ) -> Optional[LayerClassification]:
+        """Parse CIMUniqueValueRenderer structure."""
+        try:
+            # Extract field information
+            field_names = renderer.get("fields", [])
+            fields = [FieldInfo(name=name) for name in field_names]
+
+            # Extract classes
+            classes = []
+            groups = renderer.get("groups", [])
+
+            class_index = 0
+            for group in groups:
+                group_classes = group.get("classes", [])
+
+                for class_obj in group_classes:
+                    # NEW: Pass layer_path and class_index
+                    classification_class = self._parse_classification_class(
+                        class_obj,
+                        layer_path=layer_path or layer_name or "Unknown",
+                        class_index=class_index,
+                    )
+                    if classification_class:
+                        classes.append(classification_class)
+                        class_index += 1
+
+            # Extract default symbol
+            default_symbol = None
+            if "defaultSymbol" in renderer:
+                default_symbol = CIMSymbolParser.parse_symbol(
+                    renderer["defaultSymbol"].get("symbol", {})
+                )
+
+            return LayerClassification(
+                renderer_type="CIMUniqueValueRenderer",
+                fields=fields,
+                classes=classes,
+                default_label=renderer.get("defaultLabel"),
+                default_symbol=default_symbol,
+                layer_name=layer_name,
+                raw_renderer=renderer,
+            )
+
+        except Exception as e:
+            logger.error(f"Error parsing unique value renderer: {e}")
+            return None
+
+
+# =============================================================================
+# NEW: Custom Symbol Override Integration
+# =============================================================================
+
+
+def apply_overrides_to_classification(
+    classification: LayerClassification, override_registry: SymbolOverrideRegistry
+) -> LayerClassification:
+    """
+    Apply custom symbol overrides to a classification.
+
+    Checks each class against the override registry and marks
+    classes that should use custom symbols.
+
+    Args:
+        classification: Layer classification to process
+        override_registry: Registry of custom symbol overrides
+
+    Returns:
+        Classification with override information added
+    """
+    for cls in classification.classes:
+        if cls.identifier and override_registry.has_override(cls.identifier):
+            override = override_registry.get_override(cls.identifier)
+
+            # Add override info to class (could add a new field to ClassificationClass)
+            cls.custom_override = override
+
+            logger.info(f"Custom override found for {cls.label}: {override.reason}")
+
+    return classification
+
+
+# =============================================================================
+# NEW: Export Functions with Complete Symbol Data
+# =============================================================================
+
+
+def export_complete_classification_to_json(
+    classifications: List[LayerClassification],
+    output_path: Union[str, Path],
+    include_complexity: bool = True,
+) -> Path:
+    """
+    Export classifications with COMPLETE symbol data to JSON.
+
+    Includes all layers (hatch fills, character markers, etc.)
+    and optional complexity metrics.
+
+    Args:
+        classifications: List of LayerClassification objects
+        output_path: Output JSON file path
+        include_complexity: Include complexity analysis
+
+    Returns:
+        Path to created JSON file
+    """
+    import json
+
+    from .symbol_utils import export_symbol_to_dict
+
+    output_path = Path(output_path)
+
+    export_data = []
+
+    for classification in classifications:
+        layer_data = to_serializable_dict(classification)
+
+        # Enhance with complete symbol data
+        for i, cls in enumerate(classification.classes):
+            class_data = layer_data["classes"][i]
+
+            # Add complete symbol layers
+            if cls.full_symbol_layers:
+                class_data["full_symbol_layers"] = export_symbol_to_dict(
+                    cls.full_symbol_layers
+                )
+
+            # Add complexity metrics
+            if include_complexity and cls.complexity_metrics:
+                class_data["complexity"] = cls.complexity_metrics
+
+            # Add identifier
+            if cls.identifier:
+                class_data["identifier"] = cls.identifier.to_dict()
+
+        export_data.append(layer_data)
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(export_data, f, indent=2, ensure_ascii=False)
+
+    logger.info(f"Exported complete classifications to {output_path}")
+    return output_path
+
+
+def generate_override_template(
+    classifications: List[LayerClassification],
+    output_path: Union[str, Path],
+    complexity_threshold: int = 70,
+) -> Path:
+    """
+    Generate a YAML template for custom symbol overrides.
+
+    Identifies complex symbols that may need custom handling
+    and creates a template override file.
+
+    Args:
+        classifications: List of LayerClassification objects
+        output_path: Output YAML file path
+        complexity_threshold: Complexity score threshold
+
+    Returns:
+        Path to created template file
+    """
+    import yaml
+
+    output_path = Path(output_path)
+
+    overrides = []
+
+    for classification in classifications:
+        for cls in classification.classes:
+            # Check if this class needs an override
+            if cls.complexity_metrics:
+                score = cls.complexity_metrics.get("complexity_score", 0)
+
+                if score >= complexity_threshold and cls.identifier:
+                    override = {
+                        "identifier": cls.identifier.to_dict(),
+                        "mapserver_symbol": f"TODO_{cls.identifier.to_key().replace('::', '_')}",
+                        "qgis_symbol_path": f"TODO_{cls.label.replace(' ', '_')}.qml",
+                        "reason": f"Complex symbol (score: {score}/100)",
+                        "notes": cls.complexity_metrics,
+                    }
+                    overrides.append(override)
+
+    template_data = {
+        "description": "Custom symbol overrides for complex patterns",
+        "generated_threshold": complexity_threshold,
+        "overrides": overrides,
+    }
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(output_path, "w") as f:
+        yaml.dump(template_data, f, default_flow_style=False, sort_keys=False)
+
+    logger.info(
+        f"Generated override template with {len(overrides)} candidates: {output_path}"
+    )
+    return output_path
+
+
+# =============================================================================
+# NEW: Convenience Function for Complete Extraction
+# =============================================================================
+
+
+def extract_lyrx_complete(
+    lyrx_path: Union[str, Path],
+    use_arcpy: bool = None,
+    override_yaml: Optional[str] = None,
+    display: bool = True,
+    export_json: Optional[str] = None,
+    generate_override_template_path: Optional[str] = None,
+) -> List[LayerClassification]:
+    """
+    Convenience function for COMPLETE extraction with all features.
+
+    Args:
+        lyrx_path: Path to .lyrx layer file
+        use_arcpy: Use arcpy if available (None = auto-detect)
+        override_yaml: Path to custom symbol override YAML
+        display: Display results with rich
+        export_json: Optional path to export complete JSON
+        generate_override_template_path: Generate override template for complex symbols
+
+    Returns:
+        List of LayerClassification objects with complete symbol data
+    """
+    # Create enhanced extractor
+    extractor = ESRIClassificationExtractorEnhanced(use_arcpy=use_arcpy)
+
+    # Load overrides if provided
+    if override_yaml:
+        extractor.load_overrides(override_yaml)
+        logger.info(f"Loaded {len(extractor.override_registry.overrides)} overrides")
+
+    # Extract classifications
+    classifications = extractor.extract_from_lyrx(lyrx_path)
+
+    # Apply overrides
+    for classification in classifications:
+        apply_overrides_to_classification(classification, extractor.override_registry)
+
+    # Display if requested
+    if display:
+        if len(classifications) > 1:
+            ClassificationDisplayer.display_grouped_classifications(classifications)
+        else:
+            for classification in classifications:
+                ClassificationDisplayer.display_classification(classification)
+
+    # Export complete JSON if requested
+    if export_json:
+        export_complete_classification_to_json(classifications, export_json)
+
+    # Generate override template if requested
+    if generate_override_template_path:
+        generate_override_template(classifications, generate_override_template_path)
+
+    return classifications
+
+
+# Legacy
 def extract_lyrx(
     lyrx_path: Union[str, Path],
     use_arcpy: bool = None,
