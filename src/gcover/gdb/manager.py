@@ -199,7 +199,7 @@ class GDBAssetManager:
                 logger.debug(f"Upload to AWS S3...")
                 if not self.s3_uploader.file_exists(s3_key):
                     uploaded = self.s3_uploader.upload_file(zip_path, s3_key)
-                    asset.info.uploaded = uploaded.success
+                    asset.info.uploaded = uploaded
                     logger.debug(f"Uploaded to s3://{self.bucket_name}/{s3_key}")
                 else:
                     logger.info(
