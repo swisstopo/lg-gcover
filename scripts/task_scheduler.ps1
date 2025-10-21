@@ -72,6 +72,16 @@ Write-Host "--- Processing QA aggregate ---" -ForegroundColor Green
 Write-Host "--- Processing QA extract ---" -ForegroundColor Green
 & gcover    --env production qa extract  --yes --type verification_topology --format filegdb  --output $OutputDir
 
+
+Write-Host "--- Latest Topology assets  ---" -ForegroundColor Green
+& gcover --env production gdb latest-topology
+
+Write-Host "--- Latest Verification (TQA) assets ---" -ForegroundColor Green
+& gcover --env production  gdb latest-verifications
+
+Write-Host "--- Latest assets by RCs ---" -ForegroundColor Green
+& gcover --env production  gdb latest-by-rc
+
 Write-Host "=== QA PROCESSING COMPLETE ===" -ForegroundColor Green
 
 
