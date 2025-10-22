@@ -26,6 +26,9 @@ def find_gdal_files():
     """Find GDAL-related DLL/SO files for bundling."""
     datas = []
     
+    # Get conda prefix if available
+    conda_prefix = os.environ.get('CONDA_PREFIX')
+    
     if IS_WINDOWS:
         # Common Windows locations for GDAL dependencies
         possible_paths = [
@@ -51,27 +54,38 @@ def find_gdal_files():
         ]
         
     elif IS_LINUX:
-        possible_paths = [
+        # Prioritize conda environment
+        possible_paths = []
+        if conda_prefix:
+            possible_paths.append(os.path.join(conda_prefix, 'lib'))
+            print(f"[GDAL Libs] Using conda lib: {conda_prefix}/lib")
+        
+        possible_paths.extend([
+            os.path.join(sys.prefix, 'lib'),
             '/usr/lib',
             '/usr/lib/x86_64-linux-gnu',
             '/usr/local/lib',
-            os.path.join(sys.prefix, 'lib'),
-        ]
+        ])
         
         patterns = [
-            'libgdal*.so*',
-            'libproj*.so*',
-            'libgeos*.so*',
-            'libsqlite*.so*',
-            'libspatialite*.so*',
+            'libgdal.so*',
+            'libproj.so*',
+            'libgeos.so*',
+            'libgeos_c.so*',
+            'libsqlite3.so*',
+            'libspatialite.so*',
         ]
         
     elif IS_MACOS:
-        possible_paths = [
+        possible_paths = []
+        if conda_prefix:
+            possible_paths.append(os.path.join(conda_prefix, 'lib'))
+        
+        possible_paths.extend([
             '/usr/local/lib',
             '/opt/homebrew/lib',
             os.path.join(sys.prefix, 'lib'),
-        ]
+        ])
         
         patterns = [
             'libgdal*.dylib',
@@ -82,16 +96,47 @@ def find_gdal_files():
         ]
     
     # Search for files
+    print(f"[GDAL Libs] Searching in {len(possible_paths)} locations...")
+    seen_files = set()
+    
     for path in possible_paths:
         if not os.path.exists(path):
             continue
-            
+        
+        print(f"[GDAL Libs] Checking: {path}")
         for pattern in patterns:
             for file in Path(path).glob(pattern):
-                # Avoid duplicates
-                if not any(str(file) == item[0] for item in datas):
-                    datas.append((str(file), '.'))
-                    print(f"Found: {file}")
+                file_str = str(file)
+                
+                # Always add the file as found (symlink or real file)
+                if os.path.islink(file_str):
+                    # It's a symlink - add both the symlink and its target
+                    real_file = os.path.realpath(file_str)
+                    
+                    if file_str not in seen_files:
+                        # Add the symlink itself with its link name
+                        datas.append((file_str, '.'))
+                        print(f"Found (symlink): {file}")
+                        seen_files.add(file_str)
+                    
+                    if real_file not in seen_files and os.path.isfile(real_file):
+                        # Also add the target
+                        datas.append((real_file, '.'))
+                        print(f"  -> target: {real_file}")
+                        seen_files.add(real_file)
+                
+                elif os.path.isfile(file_str):
+                    # Regular file
+                    if file_str not in seen_files:
+                        datas.append((file_str, '.'))
+                        print(f"Found: {file}")
+                        seen_files.add(file_str)
+    
+    if not datas:
+        print("[WARNING] No GDAL libraries found!")
+        print("GDAL operations will not work in the executable!")
+    else:
+        print(f"[SUCCESS] Found {len(datas)} GDAL library files")
     
     return datas
 
@@ -203,6 +248,9 @@ def find_gdal_binaries():
         py_version = f"{sys.version_info.major}{sys.version_info.minor}"
         py_version_dot = f"{sys.version_info.major}.{sys.version_info.minor}"
         
+        print(f"[GDAL Binary Search] Python version: {py_version_dot}")
+        print(f"[GDAL Binary Search] osgeo path: {osgeo_path}")
+        
         # Patterns for binary files (Python 3.13+ uses different naming)
         if IS_WINDOWS:
             patterns = [
@@ -231,35 +279,50 @@ def find_gdal_binaries():
         
         # Search for binary files
         found_any = False
+        seen_files = set()
+        
         for pattern in patterns:
             for binary_file in osgeo_path.glob(pattern):
                 # Avoid duplicates
-                if not any(str(binary_file) == item[0] for item in binaries):
+                if binary_file.name not in seen_files:
                     binaries.append((str(binary_file), 'osgeo'))
                     print(f"Found GDAL binary: {binary_file.name}")
+                    seen_files.add(binary_file.name)
                     found_any = True
         
         if not found_any:
-            print(f"Warning: No GDAL binary extensions found in {osgeo_path}")
+            print(f"[WARNING] No GDAL binary extensions found in {osgeo_path}")
             print(f"  Python version: {py_version_dot}")
             print(f"  Searched for patterns like: _gdal*.cpython-{py_version}*.so")
+            print(f"  Listing all .so files in osgeo directory:")
+            for so_file in osgeo_path.glob('*.so'):
+                print(f"    Found: {so_file.name}")
             
             # Try site-packages directly
             for site_pkg in site.getsitepackages():
                 osgeo_alt = Path(site_pkg) / 'osgeo'
-                if osgeo_alt.exists():
+                if osgeo_alt.exists() and osgeo_alt != osgeo_path:
+                    print(f"  Trying alternative location: {osgeo_alt}")
                     for pattern in patterns:
                         for binary_file in osgeo_alt.glob(pattern):
-                            if not any(str(binary_file) == item[0] for item in binaries):
+                            if binary_file.name not in seen_files:
                                 binaries.append((str(binary_file), 'osgeo'))
                                 print(f"Found GDAL binary (alt): {binary_file.name}")
+                                seen_files.add(binary_file.name)
     
     except ImportError as e:
-        print(f"Warning: GDAL not found ({e}), skipping binary search")
+        print(f"[WARNING] GDAL not found ({e}), skipping binary search")
+    except Exception as e:
+        print(f"[ERROR] Exception during GDAL binary search: {e}")
+        import traceback
+        traceback.print_exc()
     
     if not binaries:
-        print("ERROR: No GDAL binaries found! The executable will not work.")
-        print("Please check that GDAL is properly installed.")
+        print("[ERROR] No GDAL binaries found! The executable will not work.")
+        print("Please check that GDAL is properly installed:")
+        print("  python -c 'from osgeo import _gdal; print(\"OK\")'")
+    else:
+        print(f"[SUCCESS] Found {len(binaries)} GDAL binary files")
     
     return binaries
 
@@ -280,12 +343,6 @@ def get_arcpy_dependencies():
 # COLLECT DATA FILES
 # =============================================================================
 
-# Platform-specific binaries
-platform_binaries = find_gdal_files() + find_gdal_binaries()
-
-# GDAL/PROJ data directories
-platform_datas = find_gdal_data() + find_proj_data() + find_dateparser_data()
-
 # Get dateparser data files
 def get_dateparser_data():
     """Include dateparser data files."""
@@ -299,13 +356,20 @@ def get_dateparser_data():
         pass
     return []
 
+
+# Platform-specific binaries
+platform_binaries = find_gdal_files() + find_gdal_binaries()
+
+# GDAL/PROJ data directories
+platform_datas = find_gdal_data() + find_proj_data() + find_dateparser_data()
+
 # Your application data files
 app_datas = [
     ('src/gcover/data/*.gpkg', 'gcover/data'),
     ('src/gcover/data/*.json', 'gcover/data'),  # If you have JSON configs
     ('src/gcover/data/*.xlsx', 'gcover/data'),  # Config files
-    # Add other data files as needed
-] + get_dateparser_data()
+
+]
 
 # Combine all data files
 all_datas = app_datas + platform_datas
@@ -366,7 +430,7 @@ gcover_modules = [
     'gcover.utils',
     'gcover.utils.__init__',
     'gcover.utils.logging',
-    # Core modules
+    # Core modules (only the ones that exist)
     'gcover.schema',
     'gcover.qa',
     'gcover.gdb',
@@ -374,7 +438,6 @@ gcover_modules = [
     'gcover.publish',
     # SDE submodules
     'gcover.sde.connection_manager',
-    'gcover.sde.bridge',
     # GDB submodules  
     'gcover.gdb.manager',
     # QA submodules
@@ -398,7 +461,7 @@ a = Analysis(
     hiddenimports=hidden_imports,
     hookspath=['.'],  # Look for hooks in current directory
     hooksconfig={},
-    runtime_hooks=['rthook_gdal.py'],  # Explicitly list runtime hooks
+    runtime_hooks=['rthook_gdal.py', 'rthook_symlinks.py'],  # Runtime hooks for GDAL and symlinks
     excludes=[
         'matplotlib',  # Exclude if not needed
         'IPython',

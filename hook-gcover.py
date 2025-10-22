@@ -14,12 +14,10 @@ hiddenimports = collect_submodules('gcover')
 # Explicitly ensure all CLI command modules are included
 # These are dynamically imported in main.py with try/except blocks
 cli_commands = [
-    'gcover.cli.bridge_cmd',
     'gcover.cli.schema_cmd', 
     'gcover.cli.gdb_cmd',
     'gcover.cli.qa_cmd',
     'gcover.cli.publish_cmd',
-    'gcover.cli.manage_cmd',
     'gcover.cli.sde_cmd',
 ]
 
@@ -42,10 +40,8 @@ for cmd in cli_commands:
 
 # Also ensure core modules that CLI commands depend on
 core_modules = [
-    'gcover.bridge',
     'gcover.schema',
     'gcover.qa',
-    'gcover.manage',
     'gcover.gdb',
     'gcover.sde',
     'gcover.publish',
@@ -53,7 +49,6 @@ core_modules = [
     'gcover.utils',
     'gcover.utils.logging',
     'gcover.sde.connection_manager',
-    'gcover.sde.bridge',
     'gcover.arcpy_compat',
 ]
 
