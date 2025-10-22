@@ -3,8 +3,8 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ..utils.imports import require_arcpy
-from .models import ESRISchema
-from .transformer import transform_esri_json
+from gcover.models import ESRISchema
+from gcover.transformer import transform_esri_json
 
 
 @require_arcpy

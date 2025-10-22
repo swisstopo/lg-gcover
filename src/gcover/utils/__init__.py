@@ -8,13 +8,13 @@ from typing import TYPE_CHECKING
 
 # Type checking imports (not executed at runtime)
 if TYPE_CHECKING:
-    from .gpkg import (
+    from gcover.gpkg import (
         GPKGWriter,
         append_gdf_to_gpkg,
         estimate_gpkg_size,
         read_gpkg_metadata
     )
-    from .geometry import (
+    from gcover.geometry import (
         buffer_geometry,
         simplify_geometry,
         validate_geometry
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 # Lightweight imports only (no heavy dependencies)
 
-from .logging import gcover_logger, logger, setup_logging
+from gcover.utils.logging import gcover_logger, logger, setup_logging
 
 __all__ = [
     # Logging

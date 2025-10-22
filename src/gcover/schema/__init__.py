@@ -15,20 +15,20 @@ from gcover.schema.serializer import (save_esri_schema_to_file,
                                       serialize_feature_classes_only)
 
 # Import des classes principales
-from .differ import (ChangeType, DomainChange, FieldChange, RelationshipChange,
+from gcover.schema.differ import (ChangeType, DomainChange, FieldChange, RelationshipChange,
                      SchemaDiff, SubtypeChange, TableChange)
-from .exporters.json import export_esri_schema_to_json
-from .exporters.plantuml import generate_plantuml_from_schema
-from .models import (CodedDomain, CodedValue, ESRISchema, FeatureClass, Field,
+from gcover.schema.exporters.json import export_esri_schema_to_json
+from gcover.schema.exporters.plantuml import generate_plantuml_from_schema
+from gcover.schema.models import (CodedDomain, CodedValue, ESRISchema, FeatureClass, Field,
                      Index, RangeDomain, RelationshipClass, Subtype,
                      SubtypeValue, Table)
-from .reporter import generate_report, schema_diff_to_dict
-from .simple_transformer import transform_esri_flat_json
-from .transformer import transform_esri_json
+from gcover.schema.reporter import generate_report, schema_diff_to_dict
+from gcover.schema.simple_transformer import transform_esri_flat_json
+from gcover.schema.transformer import transform_esri_json
 
 # Import conditionnel de l'extracteur (nécessite arcpy)
 try:
-    from .extractor import can_extract_schema, extract_schema
+    from gcover.schema.extractor import can_extract_schema, extract_schema
 except ImportError:
     # arcpy n'est pas disponible
     def extract_schema(*args, **kwargs):
@@ -39,9 +39,9 @@ except ImportError:
 
 
 # Import des exporteurs
-from .exporters.json import (export_esri_schema_to_json,  # TODO PlantUML
+from gcover.schema.exporters.json import (export_esri_schema_to_json,  # TODO PlantUML
                              export_schema_diff_to_json)
-from .filegdb_parser import parse_filegdb_to_esri_schema
+from gcover.schema.filegdb_parser import parse_filegdb_to_esri_schema
 
 __all__ = [
     # Classes principales

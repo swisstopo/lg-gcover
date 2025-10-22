@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
-from .symbol_models import (CharacterMarkerInfo, GradientFillInfo,
+from gcover.publish.symbol_models import (CharacterMarkerInfo, GradientFillInfo,
                             HatchFillInfo, PictureFillInfo, SymbolLayersInfo)
 
 # =============================================================================

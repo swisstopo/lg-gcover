@@ -20,7 +20,7 @@ from rich.progress import (BarColumn, Progress, SpinnerColumn,
                            TaskProgressColumn, TextColumn, TimeElapsedColumn,
                            TimeRemainingColumn)
 
-from ..config import DEFAULT_CHUNK_SIZE, DEFAULT_NUM_WORKERS
+from gcover.config import DEFAULT_CHUNK_SIZE, DEFAULT_NUM_WORKERS
 
 console = Console()
 

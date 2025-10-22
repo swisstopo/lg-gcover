@@ -34,8 +34,8 @@ from gcover.arcpy_compat import HAS_ARCPY, arcpy
 console = Console()
 
 
-from .symbol_models import ClassIdentifier, SymbolOverrideRegistry
-from .symbol_utils import (analyze_symbol_complexity, extract_full_line_symbol,
+from gcover.publish.symbol_models import ClassIdentifier, SymbolOverrideRegistry
+from gcover.publish.symbol_utils import (analyze_symbol_complexity, extract_full_line_symbol,
                            extract_full_point_symbol,
                            extract_polygon_symbol_layers)
 
@@ -1918,7 +1918,7 @@ def export_complete_classification_to_json(
     """
     import json
 
-    from .symbol_utils import export_symbol_to_dict
+    from gcover.symbol_utils import export_symbol_to_dict
 
     output_path = Path(output_path)
 

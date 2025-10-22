@@ -7,9 +7,9 @@ This package provides tools for enriching lightweight GeoCover datasets
 through intelligent spatial matching.
 """
 
-from .esri_classification_applicator import ClassificationApplicator
-from .generator import MapServerGenerator, QGISGenerator
-from .tooltips_enricher import (EnhancedTooltipsEnricher, EnrichmentConfig,
+from gcover.publish.esri_classification_applicator import ClassificationApplicator
+from gcover.publish.generator import MapServerGenerator, QGISGenerator
+from gcover.publish.tooltips_enricher import (EnhancedTooltipsEnricher, EnrichmentConfig,
                                 LayerMapping, create_enrichment_config)
 
 __all__ = [

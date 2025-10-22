@@ -3,7 +3,6 @@
 Main CLI entry point for gcover.
 """
 
-
 from pathlib import Path
 
 import click
@@ -15,7 +14,6 @@ import dateparser
 import sys
 
 
-
 # Ajouter le dossier parent au path si nécessaire (pour le développement)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -25,7 +23,7 @@ except ImportError:
     __version__ = "unknown"
 
 
-# from ..config import load_config
+# from gcover.config import load_config
 
 from gcover.config import AppConfig, load_config
 from gcover.utils.logging import gcover_logger, setup_logging
@@ -124,7 +122,7 @@ def cli(ctx, config, log_file, log_info, env, verbose):
             rprint(f"[cyan]Bucket name: {global_config.s3.bucket}[/cyan]")
             rprint(f"[cyan]Proxy: {global_config.proxy}[/cyan]")
             rprint(f"[cyan]Temp Dir: {global_config.temp_dir}[/cyan]")
-            #rprint(f"[cyan]Has arcpy: {HAS_ARCPY}[/cyan]")
+            # rprint(f"[cyan]Has arcpy: {HAS_ARCPY}[/cyan]")
 
         # Setup centralized logging FIRST (before any other operations)
         setup_logging(verbose=verbose, log_file=log_file, environment=env)
@@ -171,7 +169,6 @@ def info() -> None:
         modules.append("✓ qa (Quality assurance)")
     except ImportError:
         modules.append("✗ qa (not available)")
-
 
     try:
         from gcover import gdb
@@ -247,41 +244,43 @@ def tail_logs(lines):
 # Import des sous-commandes si disponibles
 
 try:
-    from .schema_cmd import schema
+    from gcover.cli.schema_cmd import schema
 
     cli.add_command(schema)
 except ImportError:
-    pass
+    click.echo("Module `schema` not available")
+
 
 try:
-    from .gdb_cmd import gdb
+    from gcover.cli.gdb_cmd import gdb
 
     cli.add_command(gdb)
 except ImportError:
-    pass
+    click.echo("Module `gdb` not available")
+
 
 try:
-    from .qa_cmd import qa_commands
+    from gcover.cli.qa_cmd import qa_commands
 
     cli.add_command(qa_commands)
 except ImportError:
-    pass
+    click.echo("Module `qa` not available")
+
 
 try:
-    from .publish_cmd import publish_commands
+    from gcover.cli.publish_cmd import publish_commands
 
     cli.add_command(publish_commands)
 except ImportError:
     pass
 
 
-
 try:
-    from .sde_cmd import sde_commands
+    from gcover.cli.sde_cmd import sde_commands
 
     cli.add_command(sde_commands)
 except ImportError:
-    pass
+    click.echo("Module `sde` not available")
 
 
 def main() -> None:

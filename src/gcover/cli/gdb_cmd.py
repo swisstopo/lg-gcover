@@ -48,7 +48,7 @@ from gcover.gdb.utils import (
     quick_size_check,
     verify_backup_integrity,
 )
-from .main import parse_since
+from gcover.cli.main import parse_since
 
 console = Console()
 

@@ -19,11 +19,8 @@ from loguru import logger
 from rich import print as rprint
 from rich.console import Console
 
-try:
-    from .assets import AssetType, GDBAsset, ReleaseCandidate
-except ImportError:
-    # Fallback for when used independently
-    from gcover.gdb.assets import AssetType, GDBAsset, ReleaseCandidate
+from gcover.gdb.assets import AssetType, GDBAsset, ReleaseCandidate
+
 
 console = Console()
 

@@ -33,13 +33,13 @@ from rich.prompt import Confirm
 from rich.table import Table
 
 # Import classification extractor
-from .esri_classification_extractor import (
+from gcover.publish.esri_classification_extractor import (
     ClassificationClass,
     ESRIClassificationExtractor,
     LayerClassification,
     extract_lyrx,
 )
-from .utils import translate_esri_to_pandas
+from gcover.publish.utils import translate_esri_to_pandas
 
 console = Console()
 

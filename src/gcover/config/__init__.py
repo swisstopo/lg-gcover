@@ -7,8 +7,8 @@ Consolidates all previous config approaches into one clean system
 import os
 from pathlib import Path
 
-from .loader import get_config, load_config
-from .models import (AppConfig, GDBConfig, GlobalConfig, QAConfig, S3Config,
+from gcover.config.loader import debug_config_loading, load_config
+from gcover.config.models import (AppConfig, GDBConfig, GlobalConfig, QAConfig, S3Config,
                      SchemaConfig, SDEConfig)
 
 # Paths
@@ -77,7 +77,7 @@ __all__ = [
     "S3Config",
     "SchemaConfig",
     "load_config",
-    "get_config",
+    "debug_config_loading",
     "EXCLUDED_TABLES",
     "DEFAULT_EXCLUDED_FIELDS",
     "SDE_INSTANCES",

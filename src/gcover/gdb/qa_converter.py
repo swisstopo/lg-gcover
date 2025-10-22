@@ -77,7 +77,7 @@ class FileGDBConverter:
             config: GDBConfig instance (loads from file if None)
             s3_prefix: S3 prefix for verification files
         """
-        # TODO from .config import load_config
+        # TODO from gcover.config import load_config
         # TODO no used from gcover.config import load_config, AppConfig
 
         self.s3_prefix = s3_prefix.rstrip("/") + "/"
@@ -865,7 +865,7 @@ class FileGDBConverter:
 
 def main():
     """Example usage of the FileGDBConverter."""
-    # from .config import load_config TODO
+    # from gcover.config import load_config TODO
 
     # Load configuration
     config = load_config()

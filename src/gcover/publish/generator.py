@@ -16,15 +16,15 @@ import click
 from loguru import logger
 from rich.console import Console
 
-from .esri_classification_extractor import (ClassificationClass,
+from gcover.publish.esri_classification_extractor import (ClassificationClass,
                                             ESRIClassificationExtractor,
                                             LayerClassification, SymbolType)
-from .symbol_models import CharacterMarkerInfo, FontSymbol, SymbolLayersInfo
-from .symbol_utils import (extract_color_from_cim,
+from gcover.publish.symbol_models import CharacterMarkerInfo, FontSymbol, SymbolLayersInfo
+from gcover.publish.symbol_utils import (extract_color_from_cim,
                            extract_line_style_from_effects,
                            extract_polygon_symbol_layers, sanitize_font_name)
-from .tooltips_enricher import LayerType
-from .utils import generate_font_image
+from gcover.publish.tooltips_enricher import LayerType
+from gcover.publish.utils import generate_font_image
 
 console = Console()
 

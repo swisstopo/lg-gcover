@@ -25,9 +25,9 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from rich.tree import Tree
 
-from .esri_classification_applicator import ClassificationApplicator
-from .esri_classification_extractor import extract_lyrx
-from .tooltips_enricher import LayerType
+from gcover.publish.esri_classification_applicator import ClassificationApplicator
+from gcover.publish.esri_classification_extractor import extract_lyrx
+from gcover.publish.tooltips_enricher import LayerType
 
 console = Console()
 

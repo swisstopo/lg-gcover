@@ -10,12 +10,12 @@ from gcover.gdb.utils import (check_disk_space, copy_gdb_asset,
                               get_directory_size, quick_size_check,
                               verify_backup_integrity)
 
-from .assets import (AssetType, BackupGDBAsset, GDBAsset, IncrementGDBAsset,
+from gcover.gdb.assets import (AssetType, BackupGDBAsset, GDBAsset, IncrementGDBAsset,
                      ReleaseCandidate, VerificationGDBAsset, assets_are_equal,
                      find_duplicate_groups, get_asset_key,
                      print_duplicate_report, remove_duplicate_assets)
-from .manager import GDBAssetManager
-from .storage import MetadataDB, S3Uploader, create_s3_uploader_with_proxy
+from gcover.gdb.manager import GDBAssetManager
+from gcover.gdb.storage import MetadataDB, S3Uploader, create_s3_uploader_with_proxy
 
 __all__ = [
     "GDBAssetManager",

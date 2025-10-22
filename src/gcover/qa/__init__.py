@@ -1,6 +1,6 @@
 """QA utilities."""
 
-from .analyzer import QAAnalyzer
+from gcover.qa.analyzer import QAAnalyzer
 
 __all__ = [
     "QAAnalyzer",
