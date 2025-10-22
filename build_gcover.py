@@ -37,7 +37,15 @@ def check_dependencies():
             __import__(module)
             available.append(f"  ✓ {name}")
         except ImportError:
-            missing.append(f"  ✗ {name} (module: {module})")
+            # Try alternative capitalization (conda vs pip)
+            try:
+                if module == 'pyinstaller':
+                    __import__('PyInstaller')
+                    available.append(f"  ✓ {name}")
+                else:
+                    raise
+            except ImportError:
+                missing.append(f"  ✗ {name} (module: {module})")
     
     print("\n".join(available))
     

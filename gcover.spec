@@ -188,6 +188,82 @@ def find_dateparser_data():
     return datas
 
 
+def find_gdal_binaries():
+    """Find GDAL binary extensions (_gdal, _ogr, _osr, etc.)."""
+    binaries = []
+    
+    try:
+        from osgeo import gdal
+        import osgeo
+        import sys
+        
+        osgeo_path = Path(osgeo.__file__).parent
+        
+        # Get Python version for extension naming
+        py_version = f"{sys.version_info.major}{sys.version_info.minor}"
+        py_version_dot = f"{sys.version_info.major}.{sys.version_info.minor}"
+        
+        # Patterns for binary files (Python 3.13+ uses different naming)
+        if IS_WINDOWS:
+            patterns = [
+                '_gdal*.pyd',
+                '_ogr*.pyd',
+                '_osr*.pyd',
+                '_gdal_array*.pyd',
+                '_gdalconst*.pyd'
+            ]
+        else:
+            # Python 3.13+ uses: _gdal.cpython-313-x86_64-linux-gnu.so
+            # Python 3.8-3.12 uses: _gdal.cpython-38-x86_64-linux-gnu.so or _gdal.so
+            patterns = [
+                f'_gdal*.cpython-{py_version}*.so',
+                f'_ogr*.cpython-{py_version}*.so',
+                f'_osr*.cpython-{py_version}*.so',
+                f'_gdal_array*.cpython-{py_version}*.so',
+                f'_gdalconst*.cpython-{py_version}*.so',
+                # Fallback to generic patterns
+                '_gdal*.so',
+                '_ogr*.so',
+                '_osr*.so',
+                '_gdal_array*.so',
+                '_gdalconst*.so',
+            ]
+        
+        # Search for binary files
+        found_any = False
+        for pattern in patterns:
+            for binary_file in osgeo_path.glob(pattern):
+                # Avoid duplicates
+                if not any(str(binary_file) == item[0] for item in binaries):
+                    binaries.append((str(binary_file), 'osgeo'))
+                    print(f"Found GDAL binary: {binary_file.name}")
+                    found_any = True
+        
+        if not found_any:
+            print(f"Warning: No GDAL binary extensions found in {osgeo_path}")
+            print(f"  Python version: {py_version_dot}")
+            print(f"  Searched for patterns like: _gdal*.cpython-{py_version}*.so")
+            
+            # Try site-packages directly
+            for site_pkg in site.getsitepackages():
+                osgeo_alt = Path(site_pkg) / 'osgeo'
+                if osgeo_alt.exists():
+                    for pattern in patterns:
+                        for binary_file in osgeo_alt.glob(pattern):
+                            if not any(str(binary_file) == item[0] for item in binaries):
+                                binaries.append((str(binary_file), 'osgeo'))
+                                print(f"Found GDAL binary (alt): {binary_file.name}")
+    
+    except ImportError as e:
+        print(f"Warning: GDAL not found ({e}), skipping binary search")
+    
+    if not binaries:
+        print("ERROR: No GDAL binaries found! The executable will not work.")
+        print("Please check that GDAL is properly installed.")
+    
+    return binaries
+
+
 def get_arcpy_dependencies():
     """Get arcpy-related hidden imports (Windows only)."""
     if not IS_WINDOWS:
@@ -205,7 +281,7 @@ def get_arcpy_dependencies():
 # =============================================================================
 
 # Platform-specific binaries
-platform_binaries = find_gdal_files()
+platform_binaries = find_gdal_files() + find_gdal_binaries()
 
 # GDAL/PROJ data directories
 platform_datas = find_gdal_data() + find_proj_data() + find_dateparser_data()
@@ -227,6 +303,7 @@ def get_dateparser_data():
 app_datas = [
     ('src/gcover/data/*.gpkg', 'gcover/data'),
     ('src/gcover/data/*.json', 'gcover/data'),  # If you have JSON configs
+    ('src/gcover/data/*.xlsx', 'gcover/data'),  # Config files
     # Add other data files as needed
 ] + get_dateparser_data()
 
@@ -245,37 +322,90 @@ hidden_imports = [
     'pyproj',
     'rtree',
     'loguru',
-    'click',  # If you're using Click for CLI
+    'click',  # Click CLI framework
+    # GDAL/OGR modules (including C extensions)
     'osgeo',
     'osgeo.gdal',
     'osgeo.ogr',
     'osgeo.osr',
     'osgeo.gdal_array',
+    'osgeo._gdal',      # C extension
+    'osgeo._ogr',       # C extension
+    'osgeo._osr',       # C extension
+    'osgeo._gdal_array', # C extension
     'dateparser',
     'dateparser.timezone_parser',
     'dateparser.data',
     'regex',  # Required by dateparser
-] + get_arcpy_dependencies()
+    'rich',   # Rich text formatting
+    'rich.console',
+    'rich.table',
+    'rich.progress',
+    'pydantic',
+    'pydantic_settings',
+]
+
+# Add all gcover modules explicitly
+gcover_modules = [
+    # Core package
+    'gcover',
+    'gcover.__init__',
+    # CLI
+    'gcover.cli',
+    'gcover.cli.__init__',
+    'gcover.cli.main',
+    'gcover.cli.schema_cmd',
+    'gcover.cli.gdb_cmd',
+    'gcover.cli.qa_cmd',
+    'gcover.cli.publish_cmd',
+    'gcover.cli.sde_cmd',
+    # Config
+    'gcover.config',
+    'gcover.config.__init__',
+    # Utils
+    'gcover.utils',
+    'gcover.utils.__init__',
+    'gcover.utils.logging',
+    # Core modules
+    'gcover.schema',
+    'gcover.qa',
+    'gcover.gdb',
+    'gcover.sde',
+    'gcover.publish',
+    # SDE submodules
+    'gcover.sde.connection_manager',
+    'gcover.sde.bridge',
+    # GDB submodules  
+    'gcover.gdb.manager',
+    # QA submodules
+    'gcover.qa.analyzer',
+    'gcover.qa.rules',
+    # Any other submodules
+    'gcover.arcpy_compat',
+]
+
+hidden_imports += gcover_modules + get_arcpy_dependencies()
 
 # =============================================================================
 # ANALYSIS
 # =============================================================================
 
 a = Analysis(
-    ['src/gcover/cli/main.py', 'src/gcover/cli/__init__.py', 'src/gcover/cli/qa_cmd.py', 'src/gcover/cli/gdb_cmd.py', 'src/gcover/cli/publish_cmd.py', 'src/gcover/cli/schema_cmd.py','src/gcover/cli/sde_cmd.py'],
-    pathex=[],
+    ['src/gcover/cli/main.py'],
+    pathex=['src'],  # Add src to path so imports work
     binaries=platform_binaries,
     datas=all_datas,
     hiddenimports=hidden_imports,
     hookspath=['.'],  # Look for hooks in current directory
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['rthook_gdal.py'],  # Explicitly list runtime hooks
     excludes=[
         'matplotlib',  # Exclude if not needed
         'IPython',
         'notebook',
         'pytest',
         'sphinx',
+        'tkinter',
     ],
     noarchive=False,
     optimize=0,

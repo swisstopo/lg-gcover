@@ -157,12 +157,6 @@ def info() -> None:
     # Lister les modules disponibles
     click.echo("\nAvailable modules:")
     modules = []
-    try:
-        from gcover import bridge
-
-        modules.append("✓ bridge (GeoPandas <-> ESRI)")
-    except ImportError:
-        modules.append("✗ bridge (not available)")
 
     try:
         from gcover import schema
@@ -178,12 +172,6 @@ def info() -> None:
     except ImportError:
         modules.append("✗ qa (not available)")
 
-    try:
-        from gcover import manage
-
-        modules.append("✓ manage (GDB management)")
-    except ImportError:
-        modules.append("✗ manage (not available)")
 
     try:
         from gcover import gdb
@@ -257,12 +245,6 @@ def tail_logs(lines):
 
 
 # Import des sous-commandes si disponibles
-try:
-    from .bridge_cmd import bridge_commands
-
-    cli.add_command(bridge_commands)
-except ImportError:
-    pass
 
 try:
     from .schema_cmd import schema
@@ -292,12 +274,7 @@ try:
 except ImportError:
     pass
 
-try:
-    from .manage_cmd import manage
 
-    cli.add_command(manage)
-except ImportError:
-    pass
 
 try:
     from .sde_cmd import sde_commands
