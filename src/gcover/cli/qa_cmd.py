@@ -1283,15 +1283,15 @@ def aggregate_qa_stats(
         final_path = output
         final_path.mkdir(parents=True, exist_ok=True)
 
-    # Set default zones file from config if available TODO
-    '''if not zones_file:
+    # Set default zones file from config if available
+    if not zones_file:
         # Try to get from config or use a default path
         zones_file = getattr(qa_config, "zones_file", None)
         if not zones_file:
             console.print(
                 "[yellow]Warning: No zones file specified. Use --zones-file option.[/yellow]"
             )
-            return'''
+            return
 
     # Set default output path
     # TODO
@@ -1595,114 +1595,183 @@ def _auto_discover_rc_gdbs(base_dir: Path) -> tuple[Optional[Path], Optional[Pat
 
 
 @qa_commands.command("extract")
-@click.argument("rc1_gdb", type=click.Path(exists=True, path_type=Path))
-@click.argument("rc2_gdb", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--rc1-gdb",
+    type=click.Path(exists=True, dir_okay=True, path_type=Path),
+    help="Path to RC1 QA FileGDB (issue.gdb). If not specified, auto-detects latest couple.",
+)
+@click.option(
+    "--rc2-gdb",
+    type=click.Path(exists=True, dir_okay=True, path_type=Path),
+    help="Path to RC2 QA FileGDB (issue.gdb). If not specified, auto-detects latest couple.",
+)
+@click.option(
+    "--zones-file",
+    default=DEFAULT_ZONES_PATH,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Path to administrative zones GPKG file",
+)
+@click.option(
+    "--type",
+    "asset_type",
+    default=AssetType.VERIFICATION_TOPOLOGY.value,
+    type=click.Choice(
+        [t.value for t in [AssetType.VERIFICATION_TOPOLOGY, AssetType.VERIFICATION_TQA]]
+    ),
+    help=f"Filter by verification asset type.",
+)
 @click.option(
     "--output",
     "-o",
-    type=click.Path(path_type=Path),
     required=True,
-    help="Output directory for extracted issues",
+    type=click.Path(path_type=Path),
+    help="Output path (without extension)",
 )
 @click.option(
     "--format",
-    type=click.Choice(["gpkg", "filegdb"]),
-    default="filegdb",
-    help="Output format for spatial data",
+    "-f",
+    "output_format",
+    type=click.Choice(["gpkg", "filegdb"], case_sensitive=False),
+    default="gpkg",
+    help="Output format: GPKG for analysis, FileGDB for ESRI tools",
 )
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
+@click.option(
+    "--filter-by-source/--no-filter",
+    default=True,
+    help="Filter issues by mapsheet source (RC1/RC2). Disable to extract all issues.",
+)
+@click.option(
+    "--yes", is_flag=True, help="Automatically confirm prompts (for scripting)"
+)
 @click.pass_context
-def extract_relevant(
-        ctx,
-        rc1_gdb: Path,
-        rc2_gdb: Path,
-        output: Path,
-        format: str,
-        verbose: bool,
+def extract(
+    ctx,
+    rc1_gdb: Optional[Path],
+    rc2_gdb: Optional[Path],
+    zones_file: Path,
+    output: Path,
+    output_format: str,
+    filter_by_source: bool,
+    yes: bool,
+    asset_type: str,
 ):
     """
-    Extract relevant QA issues based on mapsheet sources.
+    Extract relevant QA issues based on mapsheet source mapping.
 
-    Saves RC1 and RC2 issues individually, then creates a combined version.
+    This command extracts only the QA issues that are relevant for each mapsheet
+    based on the source mapping (RC1 or RC2). Features overlapping multiple zones
+    are included multiple times.
+
+    Bronze → Silver data transformation.
+
+    AUTO-DETECTION:
+    If --rc1-gdb and --rc2-gdb are not specified, automatically uses the latest
+    QA topology verification couple from the GDB asset database.
+
+    MANUAL SPECIFICATION:
+    Use both --rc1-gdb and --rc2-gdb to specify exact file paths.
+
+    Examples:
+        # Auto-detect latest QA couple
+        gcover qa extract --output /data/silver/qa/filtered/relevant_issues
+
+        # Manual specification
+        gcover qa extract \\
+            --rc1-gdb /data/bronze/qa/RC1/issue.gdb \\
+            --rc2-gdb /data/bronze/qa/RC2/issue.gdb \\
+            --output /data/silver/qa/filtered/relevant_issues \\
+            --format filegdb \\
+            --filter-by-source
     """
-    if verbose:
-        logger.remove()
-        logger.add(sys.stderr, level="DEBUG")
-
-    qa_config, _ = get_qa_config(ctx)
-
-    # Déterminer le type de vérification depuis les chemins
-    from gcover.gdb.qa_converter import FileGDBConverter
-    converter = FileGDBConverter(
-        db_path=qa_config.db_path,
-        temp_dir=qa_config.temp_dir,
-    )
-
-    # Parser les informations des GDB
-    verification_type, _, timestamp = converter._parse_gdb_path(rc1_gdb)
-
-    # NOUVELLE STRUCTURE: timestamp au niveau parent
-    base_output_dir = Path(output) / verification_type / timestamp.strftime("%Y%m%d_%H-%M-%S")
-    base_output_dir.mkdir(parents=True, exist_ok=True)
-
-    console.print(f"[blue]📂 Output directory: {base_output_dir}[/blue]")
-    console.print(f"[dim]Verification type: {verification_type}[/dim]")
-    console.print(f"[dim]Timestamp: {timestamp}[/dim]")
-
-    # Créer l'analyzer
-    from gcover.qa.analyzer import QAAnalyzer
-
-    zones_file = DEFAULT_ZONES_PATH #  TODO qa_config.zones_file  # À configurer dans le config
-    if not zones_file or not Path(zones_file).exists():
-        console.print("[red]Zones file not configured or not found[/red]")
-        console.print("Set 'zones_file' in your QA configuration")
-        raise click.Abort()
-
-    analyzer = QAAnalyzer(zones_file=zones_file)
+    verbose = ctx.obj.get("verbose", False)
 
     try:
-        # Extraire les issues avec sauvegarde individuelle ET combinée
-        stats = analyzer.extract_relevant_issues_separate(
-            rc1_gdb=rc1_gdb,
-            rc2_gdb=rc2_gdb,
-            output_base_dir=base_output_dir,
-            output_format=format,
+        qa_config, global_config = get_qa_config(ctx)
+
+        # Auto-detect QA couple if not provided
+        rc1_gdb, rc2_gdb = _auto_detect_qa_couple(
+            ctx, rc1_gdb, rc2_gdb, asset_type=asset_type
         )
 
-        # Afficher les résultats
-        console.print("\n[green]✅ Extraction complete![/green]")
+        logger.info(f"Using for RC1: {rc1_gdb}")
+        logger.info(f"Using for RC2: {rc2_gdb}")
 
-        results_table = Table(title="Extraction Results")
-        results_table.add_column("Component", style="cyan")
-        results_table.add_column("Issues", justify="right")
-        results_table.add_column("Output Path", style="dim")
+        if not yes:
+            response = (
+                console.input(
+                    f"[bold yellow]Proceed with\nRC1: {rc1_gdb} and \nRC2: {rc2_gdb}?[/bold yellow] [green](y/n)[/green]: "
+                )
+                .strip()
+                .lower()
+            )
+            if response not in {"y", "yes", "o", "oui"}:
+                console.print("[red]Aborted.[/red]")
+                ctx.exit(1)
 
-        results_table.add_row(
-            "RC1 Issues",
-            f"{stats['rc1_issues']:,}",
-            str(stats['rc1_path'])
-        )
-        results_table.add_row(
-            "RC2 Issues",
-            f"{stats['rc2_issues']:,}",
-            str(stats['rc2_path'])
-        )
-        results_table.add_row(
-            "Combined Issues",
-            f"{stats['total_issues']:,}",
-            str(stats['combined_path'])
+        # Get S3 settings
+        s3_bucket = qa_config.get_s3_bucket(global_config)
+        s3_profile = qa_config.get_s3_profile(global_config)
+
+        # TODO use same function as `aggregate`
+        verification_type, rc_version, timestamp = FileGDBConverter.parse_gdb_path(
+            rc2_gdb
         )
 
-        console.print(results_table)
+        '''converted_dir = (
+            Path(output)
+            / verification_type
+            / "RC_combined"
+            / timestamp.strftime("%Y%m%d_%H-%M-%S")
+        )'''
+        converted_dir = Path(output) / verification_type / timestamp.strftime("%Y%m%d_%H-%M-%S")
+
+        logger.debug(f"Output dir: {converted_dir}")
+        converted_dir.mkdir(parents=True, exist_ok=True)
+        console.print(f"\n[blue]Saving to {converted_dir}[/blue]")
+
+        # Initialize analyzer
+        logger.info(f"Initializing QA analyzer with zones from {zones_file}")
+        analyzer = QAAnalyzer(zones_file)
+
+        # Determine output file extension
+        output = converted_dir / "issue"
+        ext = ".gdb" if output_format.lower() == "filegdb" else ".gpkg"
+        output_file = output.with_suffix(ext)
+
+        # Extract relevant issues
+        if filter_by_source:
+            logger.info("Extracting relevant issues based on mapsheet sources")
+            stats = analyzer.extract_relevant_issues(
+                rc1_gdb=rc1_gdb,
+                rc2_gdb=rc2_gdb,
+                output_path=output,
+                output_format=output_format.lower(),
+            )
+        else:
+            logger.warning("Extracting all issues (no source filtering)")
+            stats = analyzer._extract_all_issues(
+                rc1_gdb, rc2_gdb, output, output_format.lower()
+            )
+
+        # Summary
+        click.echo("✅ Extraction complete!")
+        click.echo(f"   📊 {stats['total_issues']:,} total issues extracted")
+        click.echo(f"   🔵 {stats['rc1_issues']:,} RC1 issues")
+        click.echo(f"   🟢 {stats['rc2_issues']:,} RC2 issues")
+        click.echo(f"   📁 Output: {output_file}")
+        click.echo(
+            f"   🔧 Format: {output_format.upper()} ({'analysis' if output_format.lower() == 'gpkg' else 'ESRI tools'})"
+        )
+
+        if filter_by_source:
+            click.echo("   🎯 Source filtering: enabled (mapsheet-specific)")
+        else:
+            click.echo("   🎯 Source filtering: disabled (all issues)")
 
     except Exception as e:
-        console.print(f"[red]❌ Extraction failed: {e}[/red]")
-        if verbose:
-            logger.exception("Full error details:")
-        raise
-
-    finally:
-        converter.close()
+        logger.error(f"Extraction failed: {e}")
+        click.echo(f"❌ Error: {e}", err=True)
+        raise click.Abort()
 
 
 # Additional helper command for QA couple status
