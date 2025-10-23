@@ -1723,6 +1723,13 @@ def extract(
             / "RC_combined"
             / timestamp.strftime("%Y%m%d_%H-%M-%S")
         )
+        converted_dir = (
+                Path(output)
+                / verification_type
+                / timestamp.strftime("%Y-%m-%d")
+
+
+        )
         logger.debug(f"Output dir: {converted_dir}")
         converted_dir.mkdir(parents=True, exist_ok=True)
         console.print(f"\n[blue]Saving to {converted_dir}[/blue]")
@@ -1732,9 +1739,9 @@ def extract(
         analyzer = QAAnalyzer(zones_file)
 
         # Determine output file extension
-        output = converted_dir / "issue"
+        issue_output = converted_dir / "RC_combined" / "issue"
         ext = ".gdb" if output_format.lower() == "filegdb" else ".gpkg"
-        output_file = output.with_suffix(ext)
+        output_file = issue_output.with_suffix(ext)
 
         # Extract relevant issues
         if filter_by_source:
@@ -1742,13 +1749,13 @@ def extract(
             stats = analyzer.extract_relevant_issues(
                 rc1_gdb=rc1_gdb,
                 rc2_gdb=rc2_gdb,
-                output_path=output,
+                output_path=issue_output,
                 output_format=output_format.lower(),
             )
         else:
             logger.warning("Extracting all issues (no source filtering)")
             stats = analyzer._extract_all_issues(
-                rc1_gdb, rc2_gdb, output, output_format.lower()
+                rc1_gdb, rc2_gdb, issue_output, output_format.lower()
             )
 
         # Summary

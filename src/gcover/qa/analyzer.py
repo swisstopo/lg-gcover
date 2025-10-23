@@ -440,7 +440,7 @@ class QAAnalyzer:
         # NEW: Save RC1 issues separately
         # ========================================================================
         if rc1_filtered_data:
-            rc1_output_path = output_path.parent / "RC1" / output_path.name
+            rc1_output_path = output_path.parent.parent / "RC1" / output_path.name
             rc1_output_path.parent.mkdir(parents=True, exist_ok=True)
             self._write_spatial_output(
                 rc1_filtered_data, rc1_output_path, output_format
@@ -451,7 +451,7 @@ class QAAnalyzer:
         # NEW: Save RC2 issues separately
         # ========================================================================
         if rc2_filtered_data:
-            rc2_output_path = output_path.parent / "RC2" / output_path.name
+            rc2_output_path = output_path.parent.parent / "RC2" / output_path.name
             rc2_output_path.parent.mkdir(parents=True, exist_ok=True)
             self._write_spatial_output(
                 rc2_filtered_data, rc2_output_path, output_format
@@ -470,6 +470,8 @@ class QAAnalyzer:
                 combined_layers[layer_type] = pd.concat(layer_gdfs, ignore_index=True)
 
         # Write output
+        # TODO cleanup temp_merged_RC_combined.gpkg
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         self._write_spatial_output(combined_layers, output_path, output_format)
 
         if deduplicate_cross_zone:
