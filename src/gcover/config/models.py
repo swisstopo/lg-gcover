@@ -558,6 +558,7 @@ class QAConfig(BaseModel):
     temp_dir: Path = Path("/tmp/gcover/qa")
     processing: ProcessingConfig = ProcessingConfig()
     default_simplify_tolerance: Optional[float] = None
+    zones_file: Optional[Path] = None
 
     @validator("output_dir", "temp_dir", pre=True)
     def parse_paths(cls, v):

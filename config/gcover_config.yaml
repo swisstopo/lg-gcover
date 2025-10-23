@@ -65,6 +65,7 @@ publish:
 qa:
   db_path: "data/prod_verification_stats.duckdb"
   output_dir: "qa_output"
+  zones_file: "data/administrative_zones.gpkg"  # NOUVEAU
 # SDE Connection configuration
 sde:
   instances:

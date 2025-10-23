@@ -263,6 +263,303 @@ class QAAnalyzer:
         }
         return zone_name_mapping.get(zone_type)
 
+    def extract_relevant_issues_separate(
+            self,
+            rc1_gdb: Path,
+            rc2_gdb: Path,
+            output_base_dir: Path,
+            output_format: str = "filegdb",
+    ) -> Dict[str, Any]:
+        """
+        Extract QA issues with separate RC1, RC2, and combined outputs.
+
+        Creates three outputs:
+        1. RC1 issues only → output_base_dir/RC1/issues.gdb
+        2. RC2 issues only → output_base_dir/RC2/issues.gdb
+        3. Combined issues → output_base_dir/RC_combined/issues.gdb
+
+        Args:
+            rc1_gdb: Path to RC1 QA FileGDB
+            rc2_gdb: Path to RC2 QA FileGDB
+            output_base_dir: Base output directory (timestamp level)
+            output_format: 'gpkg' or 'filegdb'
+
+        Returns:
+            Dictionary with extraction statistics and output paths
+        """
+        SOURCE_COLUMN_NAMES = ["BKP", "SOURCE_RC"]
+
+        if "mapsheets" not in self.zones_data:
+            raise ValueError("Mapsheets data required for relevance filtering")
+
+        mapsheets_gdf = self.zones_data["mapsheets"]
+
+        # Déterminer la colonne source
+        SOURCE_RC_COLUMN = next(
+            (item for item in SOURCE_COLUMN_NAMES if item in mapsheets_gdf.columns),
+            None,
+        )
+
+        if not SOURCE_RC_COLUMN:
+            logger.warning(
+                f"No {','.join(SOURCE_COLUMN_NAMES)} (source RC) column found. "
+                "Using all data without source filtering."
+            )
+            return self._extract_all_issues_separate(
+                rc1_gdb, rc2_gdb, output_base_dir, output_format
+            )
+
+        if SOURCE_RC_COLUMN == "SOURCE_RC":
+            mapsheets_gdf = mapsheets_gdf.rename(columns={"SOURCE_RC": "source_rc"})
+            SOURCE_RC_COLUMN = "source_rc"
+
+        logger.info(f"Using '{SOURCE_RC_COLUMN}' to select source RC")
+        logger.info("Extracting issues with separate RC1, RC2, and combined outputs")
+
+        # Créer les répertoires de sortie
+        rc1_output_dir = output_base_dir / "RC1"
+        rc2_output_dir = output_base_dir / "RC2"
+        combined_output_dir = output_base_dir / "RC_combined"
+
+        for dir_path in [rc1_output_dir, rc2_output_dir, combined_output_dir]:
+            dir_path.mkdir(parents=True, exist_ok=True)
+
+        # Séparer les mapsheets par source
+        rc1_mapsheets = mapsheets_gdf[mapsheets_gdf[SOURCE_RC_COLUMN] == "RC1"]
+        rc2_mapsheets = mapsheets_gdf[mapsheets_gdf[SOURCE_RC_COLUMN] == "RC2"]
+
+        logger.info(
+            f"RC1 mapsheets: {len(rc1_mapsheets)}, RC2 mapsheets: {len(rc2_mapsheets)}"
+        )
+
+        # Dictionnaires pour stocker les données
+        rc1_filtered_data = {}
+        rc2_filtered_data = {}
+        combined_data = {}
+
+        stats = {
+            "rc1_issues": 0,
+            "rc2_issues": 0,
+            "total_issues": 0,
+            "rc1_path": None,
+            "rc2_path": None,
+            "combined_path": None,
+        }
+
+        # ========================================================================
+        # ÉTAPE 1: Traiter les issues RC1
+        # ========================================================================
+        if not rc1_mapsheets.empty:
+            logger.info("Processing RC1 issues...")
+            rc1_data = self._read_qa_gdb(rc1_gdb)
+
+            for layer_name, qa_gdf in rc1_data.items():
+                if qa_gdf.empty:
+                    continue
+
+                # Filtrer avec les mapsheets RC1
+                filtered_gdf = self._spatial_join_with_zones(
+                    qa_gdf, rc1_mapsheets, "mapsheets"
+                )
+
+                if not filtered_gdf.empty:
+                    filtered_gdf["source_rc"] = "RC1"
+                    rc1_filtered_data[layer_name] = filtered_gdf
+                    stats["rc1_issues"] += len(filtered_gdf)
+                    logger.info(f"  {layer_name}: {len(filtered_gdf)} issues")
+
+        # Sauvegarder RC1 uniquement
+        if rc1_filtered_data:
+            rc1_output_path = rc1_output_dir / "issues"
+            self._write_spatial_output(rc1_filtered_data, rc1_output_path, output_format)
+            stats["rc1_path"] = rc1_output_path.with_suffix(
+                ".gdb" if output_format == "filegdb" else ".gpkg"
+            )
+            logger.success(f"RC1 issues saved to {stats['rc1_path']}")
+
+        # ========================================================================
+        # ÉTAPE 2: Traiter les issues RC2
+        # ========================================================================
+        if not rc2_mapsheets.empty:
+            logger.info("Processing RC2 issues...")
+            rc2_data = self._read_qa_gdb(rc2_gdb)
+
+            for layer_name, qa_gdf in rc2_data.items():
+                if qa_gdf.empty:
+                    continue
+
+                # Filtrer avec les mapsheets RC2
+                filtered_gdf = self._spatial_join_with_zones(
+                    qa_gdf, rc2_mapsheets, "mapsheets"
+                )
+
+                if not filtered_gdf.empty:
+                    filtered_gdf["source_rc"] = "RC2"
+                    rc2_filtered_data[layer_name] = filtered_gdf
+                    stats["rc2_issues"] += len(filtered_gdf)
+                    logger.info(f"  {layer_name}: {len(filtered_gdf)} issues")
+
+        # Sauvegarder RC2 uniquement
+        if rc2_filtered_data:
+            rc2_output_path = rc2_output_dir / "issues"
+            self._write_spatial_output(rc2_filtered_data, rc2_output_path, output_format)
+            stats["rc2_path"] = rc2_output_path.with_suffix(
+                ".gdb" if output_format == "filegdb" else ".gpkg"
+            )
+            logger.success(f"RC2 issues saved to {stats['rc2_path']}")
+
+        # ========================================================================
+        # ÉTAPE 3: Créer la version combinée
+        # ========================================================================
+        logger.info("Creating combined output...")
+
+        for layer_type in self.SPATIAL_QA_LAYERS:
+            layer_gdfs = []
+
+            # Ajouter les données RC1 pour ce layer
+            if layer_type in rc1_filtered_data:
+                layer_gdfs.append(rc1_filtered_data[layer_type])
+
+            # Ajouter les données RC2 pour ce layer
+            if layer_type in rc2_filtered_data:
+                layer_gdfs.append(rc2_filtered_data[layer_type])
+
+            # Combiner si on a des données
+            if layer_gdfs:
+                combined_data[layer_type] = pd.concat(layer_gdfs, ignore_index=True)
+                logger.info(
+                    f"  {layer_type}: {len(combined_data[layer_type])} issues "
+                    f"(RC1: {len(rc1_filtered_data.get(layer_type, []))}, "
+                    f"RC2: {len(rc2_filtered_data.get(layer_type, []))})"
+                )
+
+        # Sauvegarder la version combinée
+        if combined_data:
+            combined_output_path = combined_output_dir / "issues"
+            self._write_spatial_output(combined_data, combined_output_path, output_format)
+            stats["combined_path"] = combined_output_path.with_suffix(
+                ".gdb" if output_format == "filegdb" else ".gpkg"
+            )
+            stats["total_issues"] = stats["rc1_issues"] + stats["rc2_issues"]
+            logger.success(f"Combined issues saved to {stats['combined_path']}")
+
+        # ========================================================================
+        # Résumé final
+        # ========================================================================
+        if not rc1_filtered_data and not rc2_filtered_data:
+            logger.warning("No relevant issues found for extraction")
+        else:
+            logger.info(
+                f"Extraction complete: {stats['total_issues']} issues "
+                f"({stats['rc1_issues']} RC1, {stats['rc2_issues']} RC2)"
+            )
+
+        return stats
+
+    def _extract_all_issues_separate(
+            self,
+            rc1_gdb: Path,
+            rc2_gdb: Path,
+            output_base_dir: Path,
+            output_format: str,
+    ) -> Dict[str, Any]:
+        """
+        Fallback: extract all issues without source filtering, with separate outputs.
+
+        Args:
+            rc1_gdb: Path to RC1 QA FileGDB
+            rc2_gdb: Path to RC2 QA FileGDB
+            output_base_dir: Base output directory
+            output_format: 'gpkg' or 'filegdb'
+
+        Returns:
+            Dictionary with extraction statistics and output paths
+        """
+        logger.info("Extracting all QA issues (no source filtering)")
+
+        # Créer les répertoires de sortie
+        rc1_output_dir = output_base_dir / "RC1"
+        rc2_output_dir = output_base_dir / "RC2"
+        combined_output_dir = output_base_dir / "RC_combined"
+
+        for dir_path in [rc1_output_dir, rc2_output_dir, combined_output_dir]:
+            dir_path.mkdir(parents=True, exist_ok=True)
+
+        rc1_data_all = {}
+        rc2_data_all = {}
+        combined_data = {}
+
+        stats = {
+            "rc1_issues": 0,
+            "rc2_issues": 0,
+            "total_issues": 0,
+            "rc1_path": None,
+            "rc2_path": None,
+            "combined_path": None,
+        }
+
+        # Lire et sauvegarder RC1
+        logger.info("Processing all RC1 issues...")
+        rc1_data = self._read_qa_gdb(rc1_gdb)
+        for layer_name, qa_gdf in rc1_data.items():
+            if qa_gdf.empty:
+                continue
+            qa_gdf["source_rc"] = "RC1"
+            rc1_data_all[layer_name] = qa_gdf
+            stats["rc1_issues"] += len(qa_gdf)
+
+        if rc1_data_all:
+            rc1_output_path = rc1_output_dir / "issues"
+            self._write_spatial_output(rc1_data_all, rc1_output_path, output_format)
+            stats["rc1_path"] = rc1_output_path.with_suffix(
+                ".gdb" if output_format == "filegdb" else ".gpkg"
+            )
+
+        # Lire et sauvegarder RC2
+        logger.info("Processing all RC2 issues...")
+        rc2_data = self._read_qa_gdb(rc2_gdb)
+        for layer_name, qa_gdf in rc2_data.items():
+            if qa_gdf.empty:
+                continue
+            qa_gdf["source_rc"] = "RC2"
+            rc2_data_all[layer_name] = qa_gdf
+            stats["rc2_issues"] += len(qa_gdf)
+
+        if rc2_data_all:
+            rc2_output_path = rc2_output_dir / "issues"
+            self._write_spatial_output(rc2_data_all, rc2_output_path, output_format)
+            stats["rc2_path"] = rc2_output_path.with_suffix(
+                ".gdb" if output_format == "filegdb" else ".gpkg"
+            )
+
+        # Combiner
+        logger.info("Creating combined output...")
+        for layer_name in self.SPATIAL_QA_LAYERS:
+            layer_gdfs = []
+            if layer_name in rc1_data_all:
+                layer_gdfs.append(rc1_data_all[layer_name])
+            if layer_name in rc2_data_all:
+                layer_gdfs.append(rc2_data_all[layer_name])
+
+            if layer_gdfs:
+                combined_data[layer_name] = pd.concat(layer_gdfs, ignore_index=True)
+
+        if combined_data:
+            combined_output_path = combined_output_dir / "issues"
+            self._write_spatial_output(combined_data, combined_output_path, output_format)
+            stats["combined_path"] = combined_output_path.with_suffix(
+                ".gdb" if output_format == "filegdb" else ".gpkg"
+            )
+
+        stats["total_issues"] = stats["rc1_issues"] + stats["rc2_issues"]
+
+        logger.info(
+            f"Extraction complete: {stats['total_issues']} issues "
+            f"(no filtering applied)"
+        )
+
+        return stats
+
     def extract_relevant_issues(
         self,
         rc1_gdb: Path,
