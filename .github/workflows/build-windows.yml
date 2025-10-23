@@ -1,0 +1,121 @@
+name: Build Windows Executable
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main , develop]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Setup Conda
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+        auto-update-conda: true
+        python-version: '3.12'
+        channels: conda-forge
+        channel-priority: strict
+
+    - name: Install dependencies
+      shell: powershell
+      run: |
+        # Install GDAL and other geo packages via conda
+        conda install -y `
+          gdal `
+          geopandas `
+          pyproj `
+          fiona `
+          shapely `
+          pyinstaller `
+          pandas `
+          loguru `
+          rich `
+          click `
+          dateparser `
+          pydantic `
+          pydantic-settings `
+          duckdb `
+          boto3 `
+          openpyxl
+
+    - name: Verify GDAL
+      shell: bash
+      run: |
+        python -c "from osgeo import gdal; print(f'GDAL version: {gdal.__version__}')"
+
+    - name: List PyInstaller hooks
+      shell: bash
+      run: |
+        ls -la *.spec hook-*.py rthook*.py build_gcover.py
+
+    - name: Build executable
+      shell: bash
+      run: |
+        python build_gcover.py --clean
+
+    - name: Test executable
+      shell: cmd
+      run: |
+        dist\gcover.exe --version
+        dist\gcover.exe --help
+        dist\gcover.exe info
+
+    - name: Get version
+      id: get_version
+      shell: bash
+      run: |
+        if [[ $GITHUB_REF == refs/tags/v* ]]; then
+          VERSION=${GITHUB_REF#refs/tags/v}
+        else
+          VERSION=$(git rev-parse --short HEAD)
+        fi
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+    - name: Package artifact
+      shell: powershell
+      run: |
+        $version = "${{ steps.get_version.outputs.VERSION }}"
+        $artifactName = "gcover-$version-windows-x64"
+        
+        New-Item -ItemType Directory -Force -Path $artifactName
+        Copy-Item "dist\gcover.exe" "$artifactName\"
+        
+        @"
+        GCover - Windows x64 Build
+        Version: $version
+        Built: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss UTC")
+        
+        Usage:
+          gcover.exe --help
+          gcover.exe info
+          gcover.exe gdb --help
+          gcover.exe qa --help
+          gcover.exe publish --help
+          gcover.exe schema --help
+          gcover.exe sde --help
+        
+        Requirements:
+          - Windows 10/11 x64
+          - No Python required
+        "@ | Out-File -FilePath "$artifactName\README.txt" -Encoding UTF8
+        
+        Compress-Archive -Path $artifactName -DestinationPath "$artifactName.zip"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: gcover-${{ steps.get_version.outputs.VERSION }}-windows-x64
+        path: gcover-${{ steps.get_version.outputs.VERSION }}-windows-x64.zip
+        retention-days: 90
