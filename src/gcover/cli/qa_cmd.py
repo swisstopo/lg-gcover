@@ -1335,7 +1335,7 @@ def aggregate_qa_stats(
         if rc1_gdb and rc2_gdb:
             # Two-RC mode
             console.print(
-                f"[dim]Two-RC mode: RC1={rc1_gdb.name}, RC2={rc2_gdb.name}[/dim]"
+                f"[blue]Two-RC mode: RC1={rc1_gdb.name}, RC2={rc2_gdb.name}[/blue]"
             )
             if not final_path:
                 final_path = get_structured_dir(base_dir, rc2_gdb)
@@ -1375,7 +1375,7 @@ def aggregate_qa_stats(
 
         elif input:
             # Single input mode
-            console.print(f"[dim]Single input mode: {input.name}[/dim]")
+            console.print(f"[blue]Single input mode: {input.name}[/blue]")
 
             if not final_path:
                 final_path = get_structured_dir(base_dir, input)
@@ -1396,6 +1396,9 @@ def aggregate_qa_stats(
 
         elif auto_discover:
             # Auto-discovery mode
+            console.print(
+                f"[blue]Auto-discover mode[/blue]"
+            )
             qa_config, global_config = get_qa_config(ctx)
 
             # Auto-detect QA couple if not provided
@@ -1414,7 +1417,11 @@ def aggregate_qa_stats(
             )
 
             if not final_path:
-                final_path = get_structured_dir(base_dir, rc2_path)
+                # TODO, instead of get_structured_dir
+                verification_type, rc_version, timestamp = FileGDBConverter.parse_gdb_path(
+                    rc2_path
+                )
+                final_path = Path(base_dir) /  verification_type  / timestamp.strftime("%Y%m%d")
                 final_path.mkdir(parents=True, exist_ok=True)
 
             console.print(f"[dim]Output dir: {final_path}[/dim]")
