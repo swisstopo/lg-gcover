@@ -325,6 +325,9 @@ class QAAnalyzer:
         )
 
         all_filtered_data = {}
+        # Dictionaries to store filtered data by RC
+        rc1_filtered_data = {}
+        rc2_filtered_data = {}
         stats = {
             "total_issues": 0,
             "rc1_issues": 0,
@@ -369,6 +372,7 @@ class QAAnalyzer:
                     stats["after_dedup"] += after_dedup_count
 
                     all_filtered_data[f"{layer_name}_RC1"] = filtered_gdf
+                    rc1_filtered_data[layer_name] = filtered_gdf
                     stats["rc1_issues"] += after_dedup_count
 
                     if deduplicate_cross_zone:
@@ -409,6 +413,7 @@ class QAAnalyzer:
                     stats["after_dedup"] += after_dedup_count
 
                     all_filtered_data[f"{layer_name}_RC2"] = filtered_gdf
+                    rc2_filtered_data[layer_name] = filtered_gdf
                     stats["rc2_issues"] += after_dedup_count
 
                     if deduplicate_cross_zone:
@@ -431,6 +436,28 @@ class QAAnalyzer:
             logger.warning("No relevant issues found for extraction")
             return stats
 
+        # ========================================================================
+        # NEW: Save RC1 issues separately
+        # ========================================================================
+        if rc1_filtered_data:
+            rc1_output_path = output_path.parent.parent / "RC1" / output_path.name
+            rc1_output_path.parent.mkdir(parents=True, exist_ok=True)
+            self._write_spatial_output(
+                rc1_filtered_data, rc1_output_path, output_format
+            )
+            logger.info(f"Saved {stats['rc1_issues']} RC1 issues to {rc1_output_path}")
+
+        # ========================================================================
+        # NEW: Save RC2 issues separately
+        # ========================================================================
+        if rc2_filtered_data:
+            rc2_output_path = output_path.parent.parent / "RC2" / output_path.name
+            rc2_output_path.parent.mkdir(parents=True, exist_ok=True)
+            self._write_spatial_output(
+                rc2_filtered_data, rc2_output_path, output_format
+            )
+            logger.info(f"Saved {stats['rc2_issues']} RC2 issues to {rc2_output_path}")
+
         # Combine layers by type (merge RC1 and RC2 data for each layer type)
         combined_layers = {}
         for layer_type in self.SPATIAL_QA_LAYERS:
@@ -443,6 +470,8 @@ class QAAnalyzer:
                 combined_layers[layer_type] = pd.concat(layer_gdfs, ignore_index=True)
 
         # Write output
+        # TODO cleanup temp_merged_RC_combined.gpkg
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         self._write_spatial_output(combined_layers, output_path, output_format)
 
         if deduplicate_cross_zone:
