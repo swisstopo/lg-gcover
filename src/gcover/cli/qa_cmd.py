@@ -1396,9 +1396,7 @@ def aggregate_qa_stats(
 
         elif auto_discover:
             # Auto-discovery mode
-            console.print(
-                f"[blue]Auto-discover mode[/blue]"
-            )
+            console.print(f"[blue]Auto-discover mode[/blue]")
             qa_config, global_config = get_qa_config(ctx)
 
             # Auto-detect QA couple if not provided
@@ -1418,10 +1416,12 @@ def aggregate_qa_stats(
 
             if not final_path:
                 # TODO, instead of get_structured_dir
-                verification_type, rc_version, timestamp = FileGDBConverter.parse_gdb_path(
-                    rc2_path
+                verification_type, rc_version, timestamp = (
+                    FileGDBConverter.parse_gdb_path(rc2_path)
                 )
-                final_path = Path(base_dir) /  verification_type  / timestamp.strftime("%Y%m%d")
+                final_path = (
+                    Path(base_dir) / verification_type / timestamp.strftime("%Y%m%d")
+                )
                 final_path.mkdir(parents=True, exist_ok=True)
 
             console.print(f"[dim]Output dir: {final_path}[/dim]")
@@ -1731,11 +1731,7 @@ def extract(
             / timestamp.strftime("%Y%m%d_%H-%M-%S")
         )
         converted_dir = (
-                Path(output)
-                / verification_type
-                / timestamp.strftime("%Y-%m-%d")
-
-
+            Path(output) / verification_type / timestamp.strftime("%Y-%m-%d")
         )
         logger.debug(f"Output dir: {converted_dir}")
         converted_dir.mkdir(parents=True, exist_ok=True)
