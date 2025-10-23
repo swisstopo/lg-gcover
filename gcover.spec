@@ -407,18 +407,10 @@ hidden_imports = [
     'rich.progress',
     'pydantic',
     'pydantic_settings',
-    'boto3',                  # For S3
-    'botocore',
-    's3fs',
-    'openpyxl',              # For Excel
-    'openpyxl.styles',
-    'gcover.schema',
-    'gcover.qa',
-    'gcover.gdb',
-    'gcover.sde',
-    'gcover.publish',
-    'gcover.core',
-    'gcover.config',
+    # DuckDB and metadata
+    'duckdb',
+    'importlib.metadata',
+    'importlib_metadata',
 ]
 
 # Add all gcover modules explicitly
@@ -448,14 +440,13 @@ gcover_modules = [
     'gcover.gdb',
     'gcover.sde',
     'gcover.publish',
-    'gcover.core',
-    'gcover.config',
     # SDE submodules
     'gcover.sde.connection_manager',
     # GDB submodules  
     'gcover.gdb.manager',
     # QA submodules
     'gcover.qa.analyzer',
+    'gcover.qa.rules',
     # Any other submodules
     'gcover.arcpy_compat',
 ]

@@ -247,24 +247,24 @@ try:
     from gcover.cli.schema_cmd import schema
 
     cli.add_command(schema)
-except ImportError:
-    click.echo("Module `schema` not available")
+except ImportError as e:
+    click.echo(f"Module `schema` not available: {e}")
 
 
 try:
     from gcover.cli.gdb_cmd import gdb
 
     cli.add_command(gdb)
-except ImportError:
-    click.echo("Module `gdb` not available")
+except ImportError as e:
+    click.echo(f"Module `gdb` not available: {e}")
 
 
 try:
     from gcover.cli.qa_cmd import qa_commands
 
     cli.add_command(qa_commands)
-except ImportError:
-    click.echo("Module `qa` not available")
+except ImportError as e:
+    click.echo(f"Module `qa` not available: {e}")
 
 
 try:
