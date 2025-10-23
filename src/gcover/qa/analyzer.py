@@ -1087,7 +1087,7 @@ class QAAnalyzer:
             concatenated_features = deduplicated[
                 deduplicated[zone_columns]
                 .astype(str)
-                .apply(lambda x: x.str.contains(" \| ", na=False, regex=True))
+                .apply(lambda x: x.str.contains(r" \| ", na=False, regex=True))
                 .any(axis=1)
             ]
 

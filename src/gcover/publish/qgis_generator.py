@@ -11,9 +11,9 @@ Supports complex multi-layer symbols including:
 import uuid
 from typing import List, Tuple
 
-from .esri_classification_extractor import ClassificationClass, LayerClassification
-from .symbol_models import CharacterMarkerInfo, SymbolLayersInfo
-from .symbol_utils import extract_polygon_symbol_layers, sanitize_font_name
+from gcover.publish.esri_classification_extractor import ClassificationClass, LayerClassification
+from gcover.publish.symbol_models import CharacterMarkerInfo, SymbolLayersInfo
+from gcover.publish.symbol_utils import extract_polygon_symbol_layers, sanitize_font_name
 
 
 class QGISGenerator:

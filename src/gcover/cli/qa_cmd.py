@@ -34,7 +34,7 @@ from gcover.gdb.manager import GDBAssetManager
 from gcover.gdb.qa_converter import FileGDBConverter
 from gcover.qa.analyzer import QAAnalyzer
 
-from .main import parse_since
+from gcover.cli.main import parse_since
 
 OUTPUT_FORMATS = ["csv", "xlsx", "json"]
 GROUP_BY_CHOICES = ["mapsheets", "work_units", "lots"]

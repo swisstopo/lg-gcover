@@ -38,7 +38,7 @@ from gcover.publish.tooltips_enricher import (
     create_enrichment_config,
 )
 
-from .main import _split_bbox
+from gcover.cli.main import _split_bbox
 
 console = Console()
 

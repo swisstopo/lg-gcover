@@ -1,7 +1,7 @@
 """Core utilities."""
 
-from .config import RELEASE_CANDIDATES, convert_rc, get_all_rcs, long_to_short
-from .geometry import (extract_valid_geometries, geometry_health_check,
+from gcover.core.config import RELEASE_CANDIDATES, convert_rc, get_all_rcs, long_to_short
+from gcover.core.geometry import (extract_valid_geometries, geometry_health_check,
                        load_gpkg_with_validation,
                        repair_self_intersections_with_quality_control,
                        split_features_by_mapsheets,

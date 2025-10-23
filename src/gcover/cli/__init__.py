@@ -11,6 +11,6 @@ if sys.platform == "win32":
         # Will be handled by arcpy_compat later
         pass
 
-from .main import cli
+from gcover.cli.main import cli
 
 __all__ = ["cli"]

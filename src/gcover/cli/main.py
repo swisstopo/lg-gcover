@@ -3,7 +3,6 @@
 Main CLI entry point for gcover.
 """
 
-
 from pathlib import Path
 
 import click
@@ -15,7 +14,6 @@ import dateparser
 import sys
 
 
-
 # Ajouter le dossier parent au path si nécessaire (pour le développement)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -25,7 +23,7 @@ except ImportError:
     __version__ = "unknown"
 
 
-# from ..config import load_config
+# from gcover.config import load_config
 
 from gcover.config import AppConfig, load_config
 from gcover.utils.logging import gcover_logger, setup_logging
@@ -124,7 +122,7 @@ def cli(ctx, config, log_file, log_info, env, verbose):
             rprint(f"[cyan]Bucket name: {global_config.s3.bucket}[/cyan]")
             rprint(f"[cyan]Proxy: {global_config.proxy}[/cyan]")
             rprint(f"[cyan]Temp Dir: {global_config.temp_dir}[/cyan]")
-            #rprint(f"[cyan]Has arcpy: {HAS_ARCPY}[/cyan]")
+            # rprint(f"[cyan]Has arcpy: {HAS_ARCPY}[/cyan]")
 
         # Setup centralized logging FIRST (before any other operations)
         setup_logging(verbose=verbose, log_file=log_file, environment=env)
@@ -157,12 +155,6 @@ def info() -> None:
     # Lister les modules disponibles
     click.echo("\nAvailable modules:")
     modules = []
-    try:
-        from gcover import bridge
-
-        modules.append("✓ bridge (GeoPandas <-> ESRI)")
-    except ImportError:
-        modules.append("✗ bridge (not available)")
 
     try:
         from gcover import schema
@@ -177,13 +169,6 @@ def info() -> None:
         modules.append("✓ qa (Quality assurance)")
     except ImportError:
         modules.append("✗ qa (not available)")
-
-    try:
-        from gcover import manage
-
-        modules.append("✓ manage (GDB management)")
-    except ImportError:
-        modules.append("✗ manage (not available)")
 
     try:
         from gcover import gdb
@@ -257,54 +242,45 @@ def tail_logs(lines):
 
 
 # Import des sous-commandes si disponibles
-try:
-    from .bridge_cmd import bridge_commands
-
-    cli.add_command(bridge_commands)
-except ImportError:
-    pass
 
 try:
-    from .schema_cmd import schema
+    from gcover.cli.schema_cmd import schema
 
     cli.add_command(schema)
-except ImportError:
-    pass
+except ImportError as e:
+    click.echo(f"Module `schema` not available: {e}")
+
 
 try:
-    from .gdb_cmd import gdb
+    from gcover.cli.gdb_cmd import gdb
 
     cli.add_command(gdb)
-except ImportError:
-    pass
+except ImportError as e:
+    click.echo(f"Module `gdb` not available: {e}")
+
 
 try:
-    from .qa_cmd import qa_commands
+    from gcover.cli.qa_cmd import qa_commands
 
     cli.add_command(qa_commands)
-except ImportError:
-    pass
+except ImportError as e:
+    click.echo(f"Module `qa` not available: {e}")
+
 
 try:
-    from .publish_cmd import publish_commands
+    from gcover.cli.publish_cmd import publish_commands
 
     cli.add_command(publish_commands)
 except ImportError:
     pass
 
-try:
-    from .manage_cmd import manage
-
-    cli.add_command(manage)
-except ImportError:
-    pass
 
 try:
-    from .sde_cmd import sde_commands
+    from gcover.cli.sde_cmd import sde_commands
 
     cli.add_command(sde_commands)
 except ImportError:
-    pass
+    click.echo("Module `sde` not available")
 
 
 def main() -> None:

@@ -9,12 +9,7 @@ import shutil
 
 from loguru import logger
 
-try:
-    import arcpy
-except ImportError:
-    logger.warning("arcpy not available")
-    arcpy = None
-
+from gcover.arcpy_compat import HAS_ARCPY, arcpy
 
 class SDEConnectionManager:
     """Manages SDE connection files and their lifecycle."""

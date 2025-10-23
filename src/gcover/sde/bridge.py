@@ -33,7 +33,7 @@ if not HAS_ARCPY:
 
 
 
-from .connection_manager import SDEConnectionManager
+from gcover.sde.connection_manager import SDEConnectionManager
 
 
 class ReadOnlyError(Exception):

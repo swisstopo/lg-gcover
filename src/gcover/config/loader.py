@@ -11,7 +11,7 @@ from typing import Any
 import yaml
 from rich.console import Console
 
-from .models import AppConfig
+from gcover.config.models import AppConfig
 
 console = Console()
 

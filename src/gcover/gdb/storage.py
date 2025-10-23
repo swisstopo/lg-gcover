@@ -32,7 +32,7 @@ from rich.progress import (
 
 from gcover.config.models import ProxyConfig
 
-from .assets import (
+from gcover.gdb.assets import (
     AssetType,
     BackupGDBAsset,
     GDBAsset,
