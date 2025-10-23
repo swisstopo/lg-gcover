@@ -4,13 +4,13 @@ on:
   push:
     branches: [ main, develop ]
   pull_request:
-    branches: [ main , develop]
+    branches: [ main, develop ]
   workflow_dispatch:
 
 jobs:
   build-windows:
     runs-on: windows-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -27,50 +27,51 @@ jobs:
         python-version: '3.12'
         channels: conda-forge
         channel-priority: strict
+        activate-environment: gcover-build
 
     - name: Install dependencies
-      shell: powershell
+      shell: bash -el {0}
       run: |
         # Install GDAL and other geo packages via conda
-        conda install -y `
-          gdal `
-          geopandas `
-          pyproj `
-          fiona `
-          shapely `
-          pyinstaller `
-          pandas `
-          loguru `
-          rich `
-          click `
-          dateparser `
-          pydantic `
-          pydantic-settings `
-          duckdb `
-          boto3 `
+        conda install -y \
+          gdal \
+          geopandas \
+          pyproj \
+          fiona \
+          shapely \
+          pyinstaller=5.13.2 \
+          pandas \
+          loguru \
+          rich \
+          click \
+          dateparser \
+          pydantic \
+          pydantic-settings \
+          duckdb \
+          boto3 \
           openpyxl
 
     - name: Verify GDAL
-      shell: bash
+      shell: bash -el {0}
       run: |
         python -c "from osgeo import gdal; print(f'GDAL version: {gdal.__version__}')"
 
     - name: List PyInstaller hooks
-      shell: bash
+      shell: bash -el {0}
       run: |
         ls -la *.spec hook-*.py rthook*.py build_gcover.py
 
     - name: Build executable
-      shell: bash
+      shell: bash -el {0}
       run: |
         python build_gcover.py --clean
 
     - name: Test executable
-      shell: cmd
+      shell: bash -el {0}
       run: |
-        dist\gcover.exe --version
-        dist\gcover.exe --help
-        dist\gcover.exe info
+        dist/gcover.exe --version
+        dist/gcover.exe --help
+        dist/gcover.exe info
 
     - name: Get version
       id: get_version
