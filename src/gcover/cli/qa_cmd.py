@@ -1731,7 +1731,9 @@ def extract(
             / timestamp.strftime("%Y%m%d_%H-%M-%S")
         )
         converted_dir = (
-            Path(output) / verification_type / timestamp.strftime("%Y-%m-%d")
+                Path(output)
+                / verification_type
+                / timestamp.strftime("%Y%m%d")  # TODO be consistent!
         )
         logger.debug(f"Output dir: {converted_dir}")
         converted_dir.mkdir(parents=True, exist_ok=True)
