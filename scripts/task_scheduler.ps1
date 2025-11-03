@@ -17,7 +17,7 @@ $env:PYTHON_RICH_FORCE_ASCII = "true"
 $CondaPath = "Y:\conda\envs\gcover-arcgis"
 $OutputDir = "\\v0t0020a.adr.admin.ch\lg\01_PRODUKTION\GIS\TOPGIS\QA\Weekly"
 $InputDir = "\\v0t0020a\topgisprod\10_Production_GC\Administration\QA"
-$LAST_WEEK = (Get-Date).AddDays(-7).ToString("yyyy-MM-dd")
+$LAST_WEEK = (Get-Date).AddDays(-8).ToString("yyyy-MM-dd")
 $LAST_MONTH = (Get-Date).AddDays(-31).ToString("yyyy-MM-dd")
 $TODAY = (Get-Date).ToString("yyyy-MM-dd")
 $LogFile = "$OutputDir\gcover_$TODAY.log"
@@ -44,20 +44,20 @@ Write-Host "Log to: $LogFile"
 
 
 
-Write-Host "--- Processing new Topology assets ---" -ForegroundColor Green
-& gcover   --env production --log-file $LogFile  gdb process-all  --yes  --continue-on-error --type verification_topology --max-workers 1  --since $LAST_WEEK
+Write-Host "--- Processing new Topology QA assets ---" -ForegroundColor Green
+& gcover   --env production --log-file $LogFile  gdb process-all  --yes  --continue-on-error --filter-type verification_topology --max-workers 1  --since $LAST_WEEK
 
 Write-Host "--- Processing new TQA assets ---" -ForegroundColor Green
-& gcover   --env production --log-file $LogFile  gdb process-all  --yes  --continue-on-error --type verification_tqa --max-workers 1  --since $LAST_WEEK
+& gcover   --env production --log-file $LogFile  gdb process-all  --yes  --continue-on-error --filter-type verification_tqa --max-workers 1  --since $LAST_WEEK
 
 Write-Host "--- Processing new Increment assets ---" -ForegroundColor Green
-& gcover   --env production --log-file $LogFile  gdb process-all  --yes  --continue-on-error --type increment --max-workers 1  --since $LAST_MONTH
+& gcover   --env production --log-file $LogFile  gdb process-all  --yes  --continue-on-error --filter-type increment --max-workers 1  --since $LAST_MONTH
 
 Write-Host "--- Processing new Monthly assets ---" -ForegroundColor Green
-& gcover   --env production --log-file $LogFile  gdb process-all  --yes  --continue-on-error --type backup_monthly --max-workers 1  --since $LAST_MONTH
+& gcover   --env production --log-file $LogFile  gdb process-all  --yes  --continue-on-error --filter-type backup_monthly --max-workers 1  --since $LAST_MONTH
 
 Write-Host "--- Processing new Weekly assets ---" -ForegroundColor Green
-& gcover   --env production --log-file $LogFile  gdb process-all  --yes  --continue-on-error --type backup_weekly --max-workers 1  --since $LAST_MONTH
+& gcover   --env production --log-file $LogFile  gdb process-all  --yes  --continue-on-error --filter-type backup_weekly --max-workers 1  --since $LAST_MONTH
 
 
 
