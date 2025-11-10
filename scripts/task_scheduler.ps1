@@ -39,6 +39,8 @@ if (Test-Path $CondaPath) {
 $env:PATH = "$CondaPath;$CondaPath\Scripts;$env:PATH"
 Write-Host "Conda environment activated"  2>&1 | Tee-Object -FilePath $LogFile -Append
 
+Write-Host "--- Check GCOVER Version ---" -ForegroundColor Green
+& gcover   --version
 
 Write-Host "Log to: $LogFile"
 
