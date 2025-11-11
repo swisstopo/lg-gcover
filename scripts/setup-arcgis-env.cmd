@@ -23,12 +23,12 @@ REM ============================================================================
 echo Verification de ArcGIS Pro...
 
 if not exist "%ARCGIS_PRO%" (
-    echo [31mErreur: ArcGIS Pro non trouve a %ARCGIS_PRO%[0m
+    echo [31m]Erreur: ArcGIS Pro non trouve a %ARCGIS_PRO%[0m
     exit /b 1
 )
 
 if not exist "%ARCGIS_PYTHON%" (
-    echo [31mErreur: Environnement Python ArcGIS Pro introuvable[0m
+    echo Erreur: Environnement Python ArcGIS Pro introuvable[0m
     exit /b 1
 )
 
@@ -48,7 +48,7 @@ set FULL_ENV_PATH=%ENV_BASE%\%ENV_NAME%
 REM VÃ©rifier si l'environnement existe
 if exist "%FULL_ENV_PATH%" (
     echo.
-    echo [33mAttention: L'environnement %ENV_NAME% existe deja[0m
+    echo Attention: L'environnement %ENV_NAME% existe deja[0m
     set /p "CONFIRM=Supprimer et recreer? (o/N): "
     
     if /i "!CONFIRM!"=="o" (
@@ -75,16 +75,16 @@ REM Utiliser conda clone
 call conda create --name %ENV_NAME% --clone arcgispro-py3 --prefix "%FULL_ENV_PATH%" -y
 
 if errorlevel 1 (
-    echo [33mClonage conda echoue, tentative de copie manuelle...[0m
+    echo Clonage conda echoue, tentative de copie manuelle...
     xcopy /E /I /H /Y "%ARCGIS_PYTHON%" "%FULL_ENV_PATH%"
     
     if errorlevel 1 (
-        echo [31mEchec de la copie manuelle[0m
+        echo Echec de la copie manuelle
         exit /b 1
     )
 )
 
-echo [32mOK: Environnement clone[0m
+echo [32mOK: Environnement clone
 echo.
 
 REM ============================================================================
@@ -99,7 +99,7 @@ echo Activation de l'environnement...
 call conda activate "%FULL_ENV_PATH%"
 
 if errorlevel 1 (
-    echo [31mEchec de l'activation[0m
+    echo Echec de l'activation
     exit /b 1
 )
 
@@ -112,11 +112,11 @@ echo Verification d'arcpy...
 python -c "import arcpy; print('arcpy version:', arcpy.GetInstallInfo()['Version'])" 2>nul
 
 if errorlevel 1 (
-    echo [31mErreur: arcpy non disponible[0m
+    echo Erreur: arcpy non disponible
     exit /b 1
 )
 
-echo [32mOK: arcpy disponible[0m
+echo [32mOK: arcpy disponible
 echo.
 
 REM Nettoyer les packages conflictuels
@@ -124,9 +124,9 @@ echo Nettoyage des packages conflictuels...
 pip uninstall -y pyarrow fastparquet 2>nul
 
 if errorlevel 1 (
-    echo [32mOK: Aucun package conflictuel trouve[0m
+    echo [32mOK: Aucun package conflictuel trouve
 ) else (
-    echo [32mOK: Packages conflictuels supprimes[0m
+    echo [32mOK: Packages conflictuels supprimes
 )
 
 echo.
@@ -150,7 +150,7 @@ echo Installation des packages Python purs via pip...
 pip install loguru structlog python-dotenv pydantic
 
 echo.
-echo [32mOK: Dependances installees[0m
+echo [32mOK: Dependances installees
 
 REM ============================================================================
 REM Installation de lg-gcover
@@ -167,12 +167,12 @@ if exist "pyproject.toml" (
     pip install -e . --no-deps
     
     if errorlevel 1 (
-        echo [33mAttention: Installation echouee[0m
+        echo Attention: Installation echouee
     ) else (
-        echo [32mOK: lg-gcover installe[0m
+        echo [32mOK: lg-gcover installe
     )
 ) else (
-    echo [33mProjet lg-gcover non trouve[0m
+    echo Projet lg-gcover non trouve
     echo Installez manuellement avec:
     echo   cd chemin\vers\lg-gcover
     echo   pip install -e . --no-deps
@@ -195,7 +195,7 @@ python -c "import loguru; print('  OK: loguru')"
 
 echo.
 echo ================================================================================
-echo [32mSUCCES! Environnement cree[0m
+echo [32mSUCCES! Environnement cree
 echo ================================================================================
 echo.
 echo Nom: %ENV_NAME%
