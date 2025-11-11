@@ -52,6 +52,19 @@ from gcover.cli.main import parse_since
 
 console = Console()
 
+def validate_asset_types(ctx, param, value):
+    if not value:
+        return []
+    raw_values = [v.strip() for v in value.split(",")]
+    valid_values = [t.value for t in AssetType]
+    invalid = [v for v in raw_values if v not in valid_values]
+    if invalid:
+        raise click.BadParameter(
+            f"Invalid asset type(s): {', '.join(invalid)}. "
+            f"Valid options are: {', '.join(valid_values)}"
+        )
+    return raw_values
+
 
 def get_configs(ctx) -> tuple[GDBConfig, GlobalConfig, str, bool]:
     app_config: AppConfig = load_config(
@@ -143,9 +156,9 @@ def init(ctx):
 )
 @click.option(
     "--type",
-    "asset_type",
-    type=click.Choice([t.value for t in AssetType]),
-    help="Filter by asset type",
+    "asset_types",
+    callback=validate_asset_types,
+    help="Comma-separated list of asset types",
 )
 @click.option(
     "--rc", type=click.Choice(["RC1", "RC2"]), help="Filter by release candidate"
@@ -181,7 +194,7 @@ def init(ctx):
 def scan(
     ctx,
     copy_to,
-    asset_type,
+    asset_types,
     rc,
     since,
     latest_only,
@@ -230,7 +243,7 @@ def scan(
 
         # Apply filters using utils function
         filtered_assets = filter_assets_by_criteria(
-            all_assets, asset_type, rc, since_date, latest_only=latest_only
+            all_assets, asset_types, rc, since_date, latest_only=latest_only
         )
 
         assets = remove_duplicate_assets(filtered_assets)
@@ -426,7 +439,7 @@ def scan(
                         manifest_metadata = {
                             "environment": ctx.obj["environment"],
                             "filters": {
-                                "asset_type": asset_type,
+                                "asset_types": asset_types,
                                 "rc": rc,
                                 "since": since,
                                 "latest_only": latest_only,
