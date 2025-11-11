@@ -42,6 +42,31 @@ from gcover.gdb.assets import (
 )
 
 
+def get_content_type(s3_key: str) -> str:
+    """Determin the content-type based on the file's extension."""
+
+    # Mapping des extensions vers les MIME types
+    content_types = {
+        '.zip': 'application/zip',
+        '.json': 'application/json',
+        '.duckdb': 'application/x-duckdb',
+        '.db': 'application/x-duckdb',
+        '.geojson': 'application/geo+json',
+        '.parquet': 'application/vnd.apache.parquet',
+        '.geoparquet': 'application/vnd.apache.parquet',
+        '.fgb': 'application/octet-stream',  # FlatGeobuf
+        '.gpkg': 'application/geopackage+sqlite3',  # GeoPackage (bonus)
+        '.gz': 'application/gzip',
+        '.tar': 'application/x-tar',
+    }
+
+    # Extraire l'extension (en minuscule)
+    extension = Path(s3_key).suffix.lower()
+
+    # Retourner le content-type correspondant ou le défaut
+    return content_types.get(extension, 'application/octet-stream')
+
+
 @dataclass
 class UploadResult:
     """Result of an upload operation"""
@@ -244,7 +269,7 @@ class S3Uploader:
                 "object_key": s3_key,
                 "totp_code": totp_token,
                 "expiration_hours": 24,
-                "content_type": "application/octet-stream",
+                "content_type": get_content_type(s3_key),
                 "check_exists": check_exists,
             }
 
