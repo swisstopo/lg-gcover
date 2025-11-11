@@ -738,7 +738,6 @@ class FileGDBConverter:
                 # Convert to web format
                 if layer_name != "IssueRows" and hasattr(gdf, "geometry"):
                     if convert_to_web:
-                        progress.update(task, description=f"Format: {output_format}")
                         # Determine file extension based on format
                         if output_format == "geoparquet":
                             file_path = output_dir / f"{layer_name}.parquet"
