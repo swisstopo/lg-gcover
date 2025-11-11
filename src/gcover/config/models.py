@@ -206,6 +206,7 @@ class S3Config(BaseModel):
     bucket: str = Field(..., description="S3 bucket name")
     profile: Optional[str] = Field(None, description="AWS profile name")
     region: Optional[str] = Field(None, description="AWS region")
+    public_prefix: Optional[str] = Field("", description="AWS key prefix for public")
 
     # Upload method configuration
     upload_method: Literal["auto", "direct", "presigned"] = Field(
