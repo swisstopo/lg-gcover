@@ -84,7 +84,7 @@ def get_qa_config(ctx):
 @click.option("--no-upload", is_flag=True, help="Skip S3 upload")
 @click.option(
     "--format",
-    type=click.Choice(["geoparquet", "geojson", "both"]),
+    type=click.Choice(["geoparquet", "geojson", "flatgeobuf", "all"]),
     default="geoparquet",
     help="Output format",
 )
