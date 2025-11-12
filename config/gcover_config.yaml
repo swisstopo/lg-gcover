@@ -12,6 +12,7 @@ global:
     profile: "default-aws-profile" # AWS profile name
     # Enhanced S3 upload configuration
     upload_method: "auto" # Options: "auto", "direct", "presigned"
+    public_prefix: "public/"  # AWS S3 key prefix for public part of the bucket
 
     # Lambda presigned URL configuration (optional)
     lambda_endpoint: null # e.g., "https://api.example.com/presigned-url"

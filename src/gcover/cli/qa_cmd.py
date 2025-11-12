@@ -55,6 +55,20 @@ logger.add(
 )
 
 
+def make_s3_prefix(prefix, folder):
+    clean_prefix = prefix.strip('/')
+    clean_folder = folder.strip('/')
+
+    if clean_prefix and clean_folder:
+        return f"{clean_prefix}/{clean_folder}/"
+    elif clean_prefix:
+        return f"{clean_prefix}/"
+    elif clean_folder:
+        return f"{clean_folder}/"
+    else:
+        return "/"
+
+
 @click.group(name="qa")
 def qa_commands():
     """Process and analyze QA test results from FileGDBs"""
@@ -130,6 +144,7 @@ def process_single(
     # Get S3 settings
     s3_bucket = qa_config.get_s3_bucket(global_config)
     s3_profile = qa_config.get_s3_profile(global_config)
+    public_prefix = global_config.s3.public_prefix
 
     if not output_dir:
         output_dir = qa_config.output_dir
@@ -137,6 +152,7 @@ def process_single(
     if verbose:
         console.print(f"[dim]S3 Bucket: {s3_bucket}[/dim]")
         console.print(f"[dim]S3 Profile: {s3_profile or 'default'}[/dim]")
+        console.print(f"[dim]S3 prefix: {public_prefix}[/dim]")
 
     if simplify_tolerance:
         console.print(
@@ -151,6 +167,7 @@ def process_single(
         s3_profile=s3_profile,
         max_workers=global_config.max_workers,
         s3_config=global_config.s3,
+        s3_prefix=make_s3_prefix(public_prefix, "verifications/"),
     )
 
     try:
@@ -302,6 +319,8 @@ def process_all(
     if max_workers:
         global_config.max_workers = max_workers
 
+    public_prefix = global_config.s3.public_prefix
+
     since_date = None
     if since:
         since_date = parse_since(since)
@@ -400,6 +419,7 @@ def process_all(
             s3_profile=s3_profile,
             max_workers=global_config.max_workers,
             s3_config=global_config.s3,
+            s3_prefix=make_s3_prefix(public_prefix, "verifications/"),
         )
         console.print(
             f"\n[blue]Converted assets will be saved in: {qa_config.temp_dir}[/blue]"
