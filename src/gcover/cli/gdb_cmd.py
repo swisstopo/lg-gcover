@@ -15,6 +15,7 @@ from rich import print as rprint
 from rich.console import Console
 from rich.progress import Progress
 from rich.table import Table
+from collections import Counter
 
 # from gcover.gdb.config import  load_config TODO
 from gcover.config import AppConfig, load_config
@@ -949,7 +950,7 @@ def process_all(
         if since:
             # Example usage
             since_date = parse_since(since)
-            print(f"Parsed date: {since_date.strftime('%Y-%m-%d')}")
+            rprint(f"Parsed date: {since_date.strftime('%Y-%m-%d')}")
 
             try:
                 since_date = datetime.strptime(since, "%Y-%m-%d")
@@ -957,9 +958,21 @@ def process_all(
                 rprint(f"[red]Invalid date format: {since}. Use YYYY-MM-DD[/red]")
                 sys.exit(1)
 
+
+       # Count by class type
+        class_counts = Counter(type(asset) for asset in assets)
+
+        # Print results
+        for cls, count in class_counts.items():
+            rprint(f"Found {cls.__name__}: {count}")
+        rprint(f"[yellow]Filtering by: type={filter_type}, rc={filter_rc} and date={since_date}...[/yellow]")
+
+
         for asset in assets:
             # Filter by type
+            logger.debug(f"Asset: {asset.path.name} ({asset.info.asset_type.value})[/dim]")
             if filter_type and asset.info.asset_type.value != filter_type:
+                logger.debug(f"  Not matching {filter_type}")
                 continue
 
             # Filter by RC
@@ -968,16 +981,17 @@ def process_all(
                     ReleaseCandidate.RC1 if filter_rc == "RC1" else ReleaseCandidate.RC2
                 )
                 if asset.info.release_candidate != rc_value:
+                    logger.debug(f"  Not matching {filter_rc}")
                     continue
 
             # Filter by date
             if since_date and asset.info.timestamp < since_date:
+                logger.debug(f"  Not matching {since_date}")
                 continue
 
             # Check if already processed (unless force is specified)
             if not force and manager.metadata_db.asset_exists(asset.path):
-                if verbose:
-                    rprint(f"[dim]Skipping already processed: {asset.path.name}[/dim]")
+                rprint(f"[yellow]Skipping already processed: {asset.path.name}[/yellow]")
                 continue
 
             filtered_assets.append(asset)
