@@ -25,8 +25,7 @@ console = Console()
 
 def verify_asset_uploads(
     db_path: str,
-    s3_bucket: str,
-    s3_profile: str = None,
+    s3_config: str,
     fix_discrepancies: bool = False,
     asset_type: str = None,
     rc_filter: str = None,
@@ -55,8 +54,14 @@ def verify_asset_uploads(
     }
 
     # Connexion S3
+    s3_bucket = s3_config.bucket
     try:
-        s3_uploader = S3Uploader(s3_bucket, s3_profile)
+        s3_uploader = S3Uploader(
+            bucket_name=s3_bucket,
+            lambda_endpoint=s3_config.lambda_endpoint,
+            totp_secret=s3_config.totp_secret,
+            proxy_config=s3_config.proxy,
+        )
         console.print(f"[green]✓ Connexion S3 établie (bucket: {s3_bucket})[/green]")
     except Exception as e:
         console.print(f"[red]✗ Erreur connexion S3: {e}[/red]")
@@ -126,9 +131,16 @@ def verify_asset_uploads(
 
             # Cas 3: Vérification S3
             try:
-                exists_in_s3 = s3_uploader.file_exists(s3_key)
+                # exists_in_s3 = s3_uploader.file_exists(s3_key)
 
-                if exists_in_s3:
+                presigned_data = s3_uploader._get_presigned_url(s3_key, 999)
+
+                if not presigned_data:
+                    raise Exception("Exception geting presinged")
+
+                # Check if file already exists (status 409)
+                status_code = presigned_data.get("status_code")
+                if status_code == 409:
                     results["verified"].append(asset)
                 else:
                     results["missing_in_s3"].append(asset)
@@ -146,6 +158,9 @@ def verify_asset_uploads(
                         )
 
             except Exception as e:
+                import traceback
+
+                console.print(f"[dim]{traceback.format_exc()}[/dim]")
                 results["errors"].append({"asset": asset, "error": str(e)})
 
     return results
@@ -220,6 +235,9 @@ def main(db_path, bucket, profile, environment, asset_type, rc, fix, show_all, v
         bucket = bucket or config.gdb.get_s3_bucket(config.global_)
         profile = profile or config.gdb.get_s3_profile(config.global_)
 
+        s3_config = config.global_.s3
+        print(s3_config)
+
         console.print(f"[dim]Environnement: {environment}[/dim]")
         console.print(f"[dim]Base de données: {db_path}[/dim]")
         console.print(f"[dim]Bucket S3: {bucket}[/dim]")
@@ -246,8 +264,7 @@ def main(db_path, bucket, profile, environment, asset_type, rc, fix, show_all, v
     # Vérification
     results = verify_asset_uploads(
         db_path=db_path,
-        s3_bucket=bucket,
-        s3_profile=profile,
+        s3_config=s3_config,
         fix_discrepancies=fix,
         asset_type=asset_type,
         rc_filter=rc,
