@@ -188,6 +188,9 @@ class GDBAssetManager:
                 logger.info(f"Asset already processed: {asset.path}")
                 return True
 
+
+            ?
+
             # Generate S3 key early (before zipping)
             zip_filename = f"{asset.path.name}.zip"
             s3_key = f"gdb-assets/{asset.info.release_candidate.short_name}/{asset.info.asset_type.value}/{zip_filename}"
@@ -215,7 +218,7 @@ class GDBAssetManager:
 
                 # Upload to S3
                 uploaded = self.s3_uploader.upload_file(zip_path, s3_key)
-                asset.info.uploaded = uploaded
+                asset.info.uploaded = uploaded.success
                 logger.debug(f"Uploaded to s3://{self.bucket_name}/{s3_key}")
 
                 # Update database
