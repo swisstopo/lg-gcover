@@ -2568,9 +2568,16 @@ def export_metadata(
         s3_bucket = qa_config.get_s3_bucket(global_config)
         s3_profile = qa_config.get_s3_profile(global_config)
         public_url = global_config.public_url  # CloudFront URL
+        s3_config = global_config.s3
 
         # Create S3 uploader (using the pattern from manager.py)
-        s3_uploader = S3Uploader(s3_bucket, s3_profile)
+        s3_uploader = S3Uploader(
+            bucket_name=s3_bucket,
+            aws_profile=s3_profile,
+            lambda_endpoint=s3_config.lambda_endpoint,
+            totp_secret=s3_config.totp_secret,
+            proxy_config=s3_config.proxy,
+        )
 
         # Export all tables
         exported_files = _export_duckdb_tables(
