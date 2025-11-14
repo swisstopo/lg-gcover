@@ -997,7 +997,7 @@ def process_all(
             filtered_assets.append(asset)
 
         if not filtered_assets:
-            rprint("[yellow]No assets match the specified criteria[/yellow]")
+            rprint("[yellow]No new assets match the specified criteria[/yellow]")
             return
 
         # Show summary
