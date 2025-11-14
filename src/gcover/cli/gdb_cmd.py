@@ -970,7 +970,7 @@ def process_all(
 
         for asset in assets:
             # Filter by type
-            logger.debug(f"Asset: {asset.path.name} ({asset.info.asset_type.value})[/dim]")
+            logger.debug(f"Asset: {asset.path.name} ({asset.info.asset_type.value})")
             if filter_type and asset.info.asset_type.value != filter_type:
                 logger.debug(f"  Not matching {filter_type}")
                 continue
