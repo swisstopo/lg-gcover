@@ -381,6 +381,7 @@ class GlobalConfig(BaseModel):
     chunk_size: int = 1000
     logging: LoggingConfig = LoggingConfig()
     proxy: Optional[str] = None
+    public_url: Optional[str] = None
 
     @validator("temp_dir", pre=True)
     def parse_temp_dir(cls, v):
