@@ -6,6 +6,7 @@ global:
   proxy: ${GCOVER_PROXY_URL}
   db_path: "data/dev_gdb_metadata.duckdb"
   qa_db_path: "data/dev_verification_stats.duckdb"
+  public_url: ${GCOVER_DEV_PUBLIC_URL}
   logging:
     file:
       path: "logs/test_{datetime}.log" # Include time for test isolation

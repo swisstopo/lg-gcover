@@ -26,15 +26,14 @@ from gcover.cli.gdb_cmd import (
     get_latest_assets_info,
     get_latest_topology_verification_info,
 )
-from gcover.cli.main import confirm_extended
+from gcover.cli.main import confirm_extended, parse_since
 from gcover.config import AppConfig, load_config
 from gcover.gdb.assets import AssetType
 from gcover.gdb.enhanced_qa_stats import EnhancedQAConverter
 from gcover.gdb.manager import GDBAssetManager
 from gcover.gdb.qa_converter import FileGDBConverter
+from gcover.gdb.storage import MetadataDB, S3Uploader
 from gcover.qa.analyzer import QAAnalyzer
-
-from gcover.cli.main import parse_since
 
 OUTPUT_FORMATS = ["csv", "xlsx", "json"]
 GROUP_BY_CHOICES = ["mapsheets", "work_units", "lots"]
@@ -56,8 +55,8 @@ logger.add(
 
 
 def make_s3_prefix(prefix, folder):
-    clean_prefix = prefix.strip('/')
-    clean_folder = folder.strip('/')
+    clean_prefix = prefix.strip("/")
+    clean_folder = folder.strip("/")
 
     if clean_prefix and clean_folder:
         return f"{clean_prefix}/{clean_folder}/"
@@ -69,10 +68,21 @@ def make_s3_prefix(prefix, folder):
         return "/"
 
 
-@click.group(name="qa")
-def qa_commands():
-    """Process and analyze QA test results from FileGDBs"""
-    pass
+def get_configs(ctx):
+    """
+    Helper function to get all configurations.
+
+    Returns:
+        Tuple of (gdb_config, global_config, environment, verbose)
+    """
+    environment = ctx.obj.get("environment")
+    verbose = ctx.obj.get("verbose", False)
+
+    app_config: AppConfig = load_config(environment=environment)
+    gdb_config = app_config.qa  # or app_config.gdb depending on your config structure
+    global_config = app_config.global_
+
+    return gdb_config, global_config, environment, verbose
 
 
 # TODO
@@ -85,6 +95,12 @@ def get_qa_config(ctx):
         console.print(f"[red]Configuration error: {e}[/red]")
         console.print("Make sure your configuration includes QA and global S3 settings")
         raise click.Abort()
+
+
+@click.group(name="qa")
+def qa_commands():
+    """Process and analyze QA test results from FileGDBs"""
+    pass
 
 
 @qa_commands.command("process")
@@ -1751,9 +1767,9 @@ def extract(
             / timestamp.strftime("%Y%m%d_%H-%M-%S")
         )
         converted_dir = (
-                Path(output)
-                / verification_type
-                / timestamp.strftime("%Y%m%d")  # TODO be consistent!
+            Path(output)
+            / verification_type
+            / timestamp.strftime("%Y%m%d")  # TODO be consistent!
         )
         logger.debug(f"Output dir: {converted_dir}")
         converted_dir.mkdir(parents=True, exist_ok=True)
@@ -2480,6 +2496,251 @@ def _display_weekly_summary(
         )
 
     console.print(weekly_table)
+
+
+@qa_commands.command("export-metadata")
+@click.option(
+    "--format",
+    type=click.Choice(["parquet", "json", "both"]),
+    default="both",
+    help="Export format (default: both)",
+)
+@click.option(
+    "--output-dir",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Local output directory for exported files (default: temp_dir/metadata)",
+)
+@click.option(
+    "--no-upload",
+    is_flag=True,
+    help="Skip S3 upload, only create local files",
+)
+@click.option(
+    "--include-duckdb",
+    is_flag=True,
+    help="Also upload the original DuckDB file to S3",
+)
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
+@click.pass_context
+def export_metadata(
+    ctx,
+    format: str,
+    output_dir: Optional[Path],
+    no_upload: bool,
+    include_duckdb: bool,
+    verbose: bool,
+):
+    """
+    Export DuckDB metadata to Parquet/JSON and upload to S3 /public/data/.
+
+    This command exports the QA statistics database to web-friendly formats
+    and uploads them to S3 for public access via CloudFront.
+
+    Examples:
+        gcover qa export-metadata --format both
+        gcover qa export-metadata --format parquet --include-duckdb
+        gcover qa export-metadata --no-upload --output-dir ./exports
+    """
+    if verbose:
+        logger.remove()
+        logger.add(sys.stderr, level="DEBUG")
+        console.print("[dim]Verbose logging enabled[/dim]")
+
+    qa_config, global_config = get_qa_config(ctx)
+
+    # Check if database exists
+    if not qa_config.db_path.exists():
+        console.print(f"[red]Statistics database not found: {qa_config.db_path}[/red]")
+        console.print("Run 'gcover qa process' first to generate statistics.")
+        return
+
+    # Set output directory
+    if output_dir is None:
+        output_dir = Path(qa_config.output_dir) / "metadata"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    console.print(f"[blue]Exporting metadata from: {qa_config.db_path}[/blue]")
+    console.print(f"[dim]Output directory: {output_dir}[/dim]")
+
+    try:
+        # Get S3 settings
+        s3_bucket = qa_config.get_s3_bucket(global_config)
+        s3_profile = qa_config.get_s3_profile(global_config)
+        public_url = global_config.public_url  # CloudFront URL
+        s3_config = global_config.s3
+
+        # Create S3 uploader (using the pattern from manager.py)
+        s3_uploader = S3Uploader(
+            bucket_name=s3_bucket,
+            aws_profile=s3_profile,
+            lambda_endpoint=s3_config.lambda_endpoint,
+            totp_secret=s3_config.totp_secret,
+            proxy_config=s3_config.proxy,
+        )
+
+        # Export all tables
+        exported_files = _export_duckdb_tables(
+            qa_config.db_path, output_dir, format, verbose
+        )
+
+        console.print(
+            f"\n[green]✅ Exported {len(exported_files)} file(s) locally[/green]"
+        )
+
+        # Upload to S3 if requested
+        if not no_upload:
+            console.print("\n[blue]Uploading to S3...[/blue]")
+            uploaded_urls = _upload_metadata_to_s3(
+                s3_uploader,
+                exported_files,
+                s3_bucket,
+                public_url,
+                verbose,
+            )
+
+            # Also upload the original DuckDB file if requested
+            if include_duckdb:
+                duckdb_s3_key = f"public/data/qa_statistics.duckdb"
+                duckdb_uploaded = s3_uploader.upload_file(
+                    qa_config.db_path, duckdb_s3_key
+                )
+
+                if duckdb_uploaded:
+                    duckdb_url = f"{public_url}/public/data/qa_statistics.duckdb"
+                    uploaded_urls.append(("qa_statistics.duckdb", duckdb_url))
+                    console.print(f"[green]✅ Uploaded DuckDB file[/green]")
+
+            # Display URLs
+            console.print(f"\n[bold green]🌐 Files available at:[/bold green]")
+            for filename, url in uploaded_urls:
+                console.print(f"  • {filename}: [link={url}]{url}[/link]")
+
+        else:
+            console.print("\n[yellow]⚠️  Skipped S3 upload (--no-upload)[/yellow]")
+            console.print(f"Files saved locally in: {output_dir}")
+
+    except Exception as e:
+        console.print(f"[red]❌ Export failed: {e}[/red]")
+        if verbose:
+            logger.exception("Full error details:")
+        raise
+
+
+def _export_duckdb_tables(
+    db_path: Path, output_dir: Path, format: str, verbose: bool
+) -> List[Path]:
+    """
+    Export all tables from DuckDB to Parquet and/or JSON.
+
+    Returns:
+        List of exported file paths
+    """
+    import duckdb
+
+    exported_files = []
+
+    with duckdb.connect(str(db_path), read_only=True) as conn:
+        # Get list of all tables
+        tables = conn.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
+        ).fetchall()
+
+        if verbose:
+            console.print(f"[dim]Found {len(tables)} table(s) to export[/dim]")
+
+        for (table_name,) in tables:
+            if verbose:
+                console.print(f"[dim]Exporting table: {table_name}[/dim]")
+
+            # Export to Parquet
+            if format in ["parquet", "both"]:
+                parquet_file = output_dir / f"{table_name}.parquet"
+                conn.execute(
+                    f"COPY (SELECT * FROM {table_name}) TO '{parquet_file}' (FORMAT PARQUET)"
+                )
+                exported_files.append(parquet_file)
+                if verbose:
+                    file_size = parquet_file.stat().st_size / 1024  # KB
+                    console.print(
+                        f"  [green]→ Created {parquet_file.name} ({file_size:.1f} KB)[/green]"
+                    )
+
+            # Export to JSON
+            if format in ["json", "both"]:
+                json_file = output_dir / f"{table_name}.json"
+                conn.execute(
+                    f"COPY (SELECT * FROM {table_name}) TO '{json_file}' (FORMAT JSON, ARRAY true)"
+                )
+                exported_files.append(json_file)
+                if verbose:
+                    file_size = json_file.stat().st_size / 1024  # KB
+                    console.print(
+                        f"  [green]→ Created {json_file.name} ({file_size:.1f} KB)[/green]"
+                    )
+
+        # Also export a metadata summary
+        if format in ["json", "both"]:
+            metadata_file = output_dir / "metadata_summary.json"
+            summary = {
+                "exported_at": datetime.now().isoformat(),
+                "database_path": str(db_path),
+                "tables": [table[0] for table in tables],
+                "table_counts": {},
+            }
+
+            for (table_name,) in tables:
+                count = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+                summary["table_counts"][table_name] = count
+
+            import json
+
+            with open(metadata_file, "w") as f:
+                json.dump(summary, f, indent=2)
+
+            exported_files.append(metadata_file)
+            if verbose:
+                console.print(f"  [green]→ Created metadata_summary.json[/green]")
+
+    return exported_files
+
+
+def _upload_metadata_to_s3(
+    s3_uploader: S3Uploader,
+    files: List[Path],
+    s3_bucket: str,
+    public_url: str,
+    verbose: bool,
+) -> List[tuple]:
+    """
+    Upload exported files to S3 /public/data/ directory.
+
+    Returns:
+        List of (filename, public_url) tuples for uploaded files
+    """
+    uploaded_urls = []
+
+    for file_path in files:
+        # Create S3 key under /public/data/
+        s3_key = f"public/data/{file_path.name}"
+
+        if verbose:
+            console.print(f"[dim]Uploading {file_path.name} to {s3_key}...[/dim]")
+
+        # Upload file
+        success = s3_uploader.upload_file(file_path, s3_key)
+
+        if success:
+            # Construct public URL using CloudFront
+            file_url = f"{public_url}/public/data/{file_path.name}"
+            uploaded_urls.append((file_path.name, file_url))
+
+            if verbose:
+                console.print(f"  [green]✅ Uploaded successfully[/green]")
+        else:
+            console.print(f"  [red]❌ Failed to upload {file_path.name}[/red]")
+
+    return uploaded_urls
 
 
 # Updated stats command with basic enhancements
