@@ -655,6 +655,66 @@ gcover qa aggregate --input data.gpkg --zones-file zones.gpkg --output my_stats 
 
 ```
 
+##### `gcover qa export-metadata`
+
+```bash
+# Export en Parquet et JSON, upload vers S3
+gcover qa export-metadata --format both
+
+# Export seulement en Parquet, avec verbose
+gcover qa export-metadata --format parquet --verbose
+
+# Export + upload du fichier DuckDB original
+gcover qa export-metadata --include-duckdb
+
+# Export local seulement (pas d'upload)
+gcover qa export-metadata --no-upload --output-dir ./my_exports
+
+# Export avec répertoire de sortie personnalisé
+gcover qa export-metadata --format both --output-dir /tmp/qa_metadata
+```
+
+###### Expected output 
+
+```
+Exporting metadata from: /path/to/qa_statistics.duckdb
+Output directory: /tmp/metadata
+
+✅ Exported 2 file(s) locally
+
+Uploading to S3...
+✅ Uploaded DuckDB file
+
+🌐 Files available at:
+  • gdb_assets.parquet: https://cloudfront.url/public/data/gdb_assets.parquet
+  • gdb_assets.json: https://cloudfront.url/public/data/gdb_assets.json
+  • metadata_summary.json: https://cloudfront.url/public/data/metadata_summary.json
+  • qa_statistics.duckdb: https://cloudfront.url/public/data/qa_statistics.duckdb
+```
+
+###### Architecture des fichiers exportés
+
+```
+/public/data/
+├── gdb_assets.parquet          # Table principale en Parquet
+├── gdb_assets.json             # Table principale en JSON
+├── metadata_summary.json       # Métadonnées résumées
+└── qa_statistics.duckdb        # (optionnel) Base DuckDB originale
+```
+
+###### Format du metadata_summary.json
+
+```json
+{
+  "exported_at": "2025-11-14T10:30:00",
+  "database_path": "/path/to/qa_statistics.duckdb",
+  "tables": ["gdb_assets"],
+  "table_counts": {
+    "gdb_assets": 1234
+  }
+}
+```
+
 #### Configuration
 
 QA commands use the same unified configuration system:
@@ -662,6 +722,7 @@ QA commands use the same unified configuration system:
 ```yaml
 # config/gcover_config.yaml
 global:
+  public_url: "https://d1234567890.cloudfront.net"  # Your AWS CloudFront URL
   s3:
     bucket: "gcover-assets-dev"
     profile: "default"
