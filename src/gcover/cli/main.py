@@ -52,16 +52,23 @@ def parse_since(since: str) -> datetime:
 
 
 def _split_bbox(ctx, param, value):
-    # split columns by ',' and remove whitespace
-    try:
-        bbox = list(map(float, [c.strip() for c in value.split(",")]))
-        # validate
-        if len(bbox) != 4:
-            raise ValueError("bbox must have four values")
-    except ValueError as e:
-        raise click.BadOptionUsage("resolution", f"--bbox: {e}")
+    if value is None:
+        return None
+    parts = [p.strip() for p in value.split(',')]
 
-    return tuple(bbox)
+    if len(parts) != 4:
+        raise click.BadParameter(
+            "BBOX must be exactly 4 numbers separated by commas (e.g., 'min_lon,min_lat,max_lon,max_lat')")
+    try:
+        # Convert to floats
+        bbox = tuple(float(part) for part in parts)
+    except ValueError:
+        raise click.BadParameter("All BBOX components must be numbers")
+    minxx, miny, maxx, maxy = bbox
+    if minxx > maxx or miny > maxy:
+        raise click.BadParameter("Invalid BBOX: min coordinates must be less than or equal to max coordinates")
+
+    return bbox
 
 
 def confirm_extended(prompt: str, default=True):
@@ -83,7 +90,10 @@ def confirm_extended(prompt: str, default=True):
     help="Environment (dev/prod)",
 )
 @click.option(
-    "--verbose", "-v", is_flag=True, help="Enable verbose output and debug logging"
+    "--verbose", "-v", is_flag=True, help="Enable verbose output and debug logging", default=False
+)
+@click.option(
+    "--log-info", is_flag=True, help="Display log info"
 )
 @click.option(
     "--log-file",
@@ -115,6 +125,7 @@ def cli(ctx, config, log_file, log_info, env, verbose):
         global_config = app_config.global_
 
         # print(global_config.logging)
+        rprint(f"[cyan]Verbose: {verbose}[/cyan]")
 
         if verbose:
             rprint(f"[cyan]Environment: {environment}[/cyan]")
