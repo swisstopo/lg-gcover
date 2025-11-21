@@ -768,7 +768,7 @@ class ClassificationApplicator:
                 # NOUVEAU: Extraire la valeur depuis l'identifier si disponible
                 identifier_value = idx  # Par défaut: utiliser l'index
 
-                if hasattr(class_obj, 'identifier') and class_obj.identifier:
+                if hasattr(class_obj, "identifier") and class_obj.identifier:
                     try:
                         # Extraire la valeur depuis le ClassIdentifier
                         identifier_key = class_obj.identifier.to_key()
