@@ -244,7 +244,8 @@ layers:
         - style_file: styles/Point Objects_Erraticker.lyrx
           classification_name: Point Objects_Erraticker
           mapfile_name: erratiker
-          filter: KIND IN (14401001,14401002) AND (PRINTED = 1 OR PRINTED IS NULL)
+          # TODO: missing AND (PRINTED = 1 OR PRINTED IS NULL)
+          filter: KIND IN (14401001,14401002)
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -254,6 +255,7 @@ layers:
         - style_file: styles/Point Objects_Orient.lyrx
           classification_name: Point Objects_Orient
           mapfile_name: pnt_orient
+          filter: KIND IN (11901001,12501002,12501003,12501004,12501006,12101006,13601001,13601002 ,13601003,13701001,13701002,13701004,14601004)
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
