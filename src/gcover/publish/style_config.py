@@ -259,7 +259,7 @@ def apply_batch_from_config(
         # Apply each classification
         for i, class_config in enumerate(layer_config.classifications, 1):
             console.print(
-                f"\n  [{i}/{len(layer_config.classifications)}] {class_config.style_file.name}"
+                f"\n  [{i}/{len(layer_config.classifications)}] --- {class_config.style_file.name} ---"
             )
             try:
                 # Load classification from style file

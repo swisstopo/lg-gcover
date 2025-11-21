@@ -93,9 +93,6 @@ def confirm_extended(prompt: str, default=True):
     "--verbose", "-v", is_flag=True, help="Enable verbose output and debug logging", default=False
 )
 @click.option(
-    "--log-info", is_flag=True, help="Display log info"
-)
-@click.option(
     "--log-file",
     type=click.Path(path_type=Path),
     help="Custom log file path (default: auto-generated)",
