@@ -171,7 +171,7 @@ def apply_batch_from_config(
     if layer_name:
         if layer_name not in available_layers:
             # raise ValueError(f"Layer '{layer_name}' not found in GPKG")
-            console.er(f"Layer '{layer_name}' not found in GPKG")
+            console.print(f"[red bold]✗ Layer '{layer_name}' not found in GPKG[/red bold]")
             return {}
         layers_to_process = [layer_name]
     else:
