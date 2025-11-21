@@ -28,6 +28,7 @@ from rich.progress import (
     SpinnerColumn,
     TaskProgressColumn,
     TextColumn,
+    TimeRemainingColumn,
 )
 from rich.prompt import Confirm
 from rich.table import Table
@@ -891,6 +892,7 @@ class ClassificationApplicator:
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             TaskProgressColumn(),
+            TimeRemainingColumn(),
             console=console,
         ) as progress:
             task = progress.add_task(f"Matching features...", total=len(gdf_filtered))
