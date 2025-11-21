@@ -16,13 +16,23 @@ import click
 from loguru import logger
 from rich.console import Console
 
-from gcover.publish.esri_classification_extractor import (ClassificationClass,
-                                            ESRIClassificationExtractor,
-                                            LayerClassification, SymbolType)
-from gcover.publish.symbol_models import CharacterMarkerInfo, FontSymbol, SymbolLayersInfo
-from gcover.publish.symbol_utils import (extract_color_from_cim,
-                           extract_line_style_from_effects,
-                           extract_polygon_symbol_layers, sanitize_font_name)
+from gcover.publish.esri_classification_extractor import (
+    ClassificationClass,
+    ESRIClassificationExtractor,
+    LayerClassification,
+    SymbolType,
+)
+from gcover.publish.symbol_models import (
+    CharacterMarkerInfo,
+    FontSymbol,
+    SymbolLayersInfo,
+)
+from gcover.publish.symbol_utils import (
+    extract_color_from_cim,
+    extract_line_style_from_effects,
+    extract_polygon_symbol_layers,
+    sanitize_font_name,
+)
 from gcover.publish.tooltips_enricher import LayerType
 from gcover.publish.utils import generate_font_image
 
@@ -367,34 +377,32 @@ class MapServerGenerator:
             else:
                 self._add_simple_polygon_style(lines)
 
-
-
     def _add_hatch_fill_style(
-            self,
-            lines: List[str],
-            hatch_info: Dict,
-            class_index: int,
-            fill_index: int,
-            symbol_prefix: str,
+        self,
+        lines: List[str],
+        hatch_info: Dict,
+        class_index: int,
+        fill_index: int,
+        symbol_prefix: str,
     ) -> None:
         """
         Add MapServer STYLE for hatch fill pattern.
 
         Uses the generic "hatchsymbol" with customization in STYLE.
         """
-        rotation = hatch_info['rotation']
-        separation = hatch_info['separation']
-        line_sym = hatch_info['line_symbol']
+        rotation = hatch_info["rotation"]
+        separation = hatch_info["separation"]
+        line_sym = hatch_info["line_symbol"]
 
         # Extract line properties
-        line_color = line_sym['color']
-        line_width = line_sym['width']
-        line_style = line_sym.get('line_style', {})
+        line_color = line_sym["color"]
+        line_width = line_sym["width"]
+        line_style = line_sym.get("line_style", {})
         r, g, b, a = line_color
 
         # Register that we need hatchsymbol (just once)
-        if not any(s.get('type') == 'hatch' for s in self.pattern_symbols):
-            self.pattern_symbols.append({'type': 'hatch'})
+        if not any(s.get("type") == "hatch" for s in self.pattern_symbols):
+            self.pattern_symbols.append({"type": "hatch"})
 
         # Convert to pixels
         separation_px = separation * 1.33
@@ -409,9 +417,9 @@ class MapServerGenerator:
         lines.append(f"      WIDTH {width_px:.2f}")
 
         # Add PATTERN if the line itself is dashed/dotted
-        if line_style.get('type') in ['dash', 'dot'] and line_style.get('pattern'):
-            pattern = line_style['pattern']
-            pattern_str = ' '.join(str(int(p)) for p in pattern)
+        if line_style.get("type") in ["dash", "dot"] and line_style.get("pattern"):
+            pattern = line_style["pattern"]
+            pattern_str = " ".join(str(int(p)) for p in pattern)
             lines.append(f"      PATTERN {pattern_str} END")
 
         if a < 255:
@@ -428,7 +436,7 @@ class MapServerGenerator:
         so we only need one generic hatch symbol definition.
         """
         # Only generate if we actually have hatch fills
-        has_hatch = any(s.get('type') == 'hatch' for s in self.pattern_symbols)
+        has_hatch = any(s.get("type") == "hatch" for s in self.pattern_symbols)
 
         if not has_hatch:
             return []
@@ -685,12 +693,17 @@ class MapServerGenerator:
                     continue
 
                 # Check for full_symbol_layers
-                if hasattr(class_obj, 'full_symbol_layers') and class_obj.full_symbol_layers:
+                if (
+                    hasattr(class_obj, "full_symbol_layers")
+                    and class_obj.full_symbol_layers
+                ):
                     for fill_info in class_obj.full_symbol_layers.fills:
-                        if fill_info.get('type') == 'hatch':
+                        if fill_info.get("type") == "hatch":
                             # Just flag that we need hatch symbol
-                            if not any(s.get('type') == 'hatch' for s in self.pattern_symbols):
-                                self.pattern_symbols.append({'type': 'hatch'})
+                            if not any(
+                                s.get("type") == "hatch" for s in self.pattern_symbols
+                            ):
+                                self.pattern_symbols.append({"type": "hatch"})
                             break
 
     # ========================================================================
@@ -734,7 +747,9 @@ class MapServerGenerator:
         hatch_symbols = self._generate_hatch_pattern_symbols()
         if hatch_symbols:
             lines.append("")
-            lines.append("  # Hatch pattern symbol (customize with ANGLE, SIZE, WIDTH in STYLE)")
+            lines.append(
+                "  # Hatch pattern symbol (customize with ANGLE, SIZE, WIDTH in STYLE)"
+            )
             lines.append("")
             lines.extend(hatch_symbols)
 

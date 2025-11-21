@@ -35,9 +35,12 @@ console = Console()
 
 
 from gcover.publish.symbol_models import ClassIdentifier, SymbolOverrideRegistry
-from gcover.publish.symbol_utils import (analyze_symbol_complexity, extract_full_line_symbol,
-                           extract_full_point_symbol,
-                           extract_polygon_symbol_layers)
+from gcover.publish.symbol_utils import (
+    analyze_symbol_complexity,
+    extract_full_line_symbol,
+    extract_full_point_symbol,
+    extract_polygon_symbol_layers,
+)
 
 console = Console()
 
@@ -2079,6 +2082,7 @@ def extract_lyrx_complete(
 
 # Legacy
 # TODO replace by extract_lyrx_complete
+'''
 def extract_lyrx(
     lyrx_path: Union[str, Path],
     use_arcpy: bool = None,
@@ -2109,6 +2113,7 @@ def extract_lyrx(
                 ClassificationDisplayer.display_classification(classification)
 
     return classifications
+'''
 
 
 def extract_aprx(
@@ -2179,7 +2184,7 @@ def classify(input, no_arcpy, layers, quiet, explore, export, max_label_length):
             input_path,
             use_arcpy=not no_arcpy,
             display=not quiet,
-           #  max_label_length=max_label_length,
+            #  max_label_length=max_label_length,
         )
 
         if quiet:

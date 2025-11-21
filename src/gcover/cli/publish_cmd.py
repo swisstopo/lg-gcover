@@ -6,6 +6,7 @@ Supports multiple tooltip layers, flexible source mappings, and comprehensive co
 
 import os
 import sys
+import time
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -14,16 +15,19 @@ import click
 import geopandas as gpd
 import pandas as pd
 import yaml
-import time
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
+from gcover.cli.main import _split_bbox
 from gcover.config import SDE_INSTANCES, AppConfig, load_config
 from gcover.publish.esri_classification_applicator import ClassificationApplicator
-from gcover.publish.esri_classification_extractor import extract_lyrx, extract_lyrx_complete
+from gcover.publish.esri_classification_extractor import (
+    extract_lyrx,
+    extract_lyrx_complete,
+)
 from gcover.publish.generator import MapServerGenerator
 from gcover.publish.qgis_generator import QGISGenerator
 from gcover.publish.style_config import (
@@ -37,8 +41,6 @@ from gcover.publish.tooltips_enricher import (
     LayerType,
     create_enrichment_config,
 )
-
-from gcover.cli.main import _split_bbox
 
 console = Console()
 
@@ -894,7 +896,9 @@ def mapserver(
         console.print(f"Processing {style_file.name}...")
 
         # Load classifications
-        classifications = extract_lyrx_complete(style_file, display=False)  # TODO switched from extract_lyrx
+        classifications = extract_lyrx_complete(
+            style_file, display=False
+        )  # TODO switched from extract_lyrx
 
         if not classifications:
             console.print(
@@ -1099,7 +1103,9 @@ def qgis(
         console.print(f"Processing {style_file.name}...")
 
         # Load classifications
-        classifications = extract_lyrx_complete(style_file, display=False) # TODO switched from extract_lyrx
+        classifications = extract_lyrx_complete(
+            style_file, display=False
+        )  # TODO switched from extract_lyrx
 
         if not classifications:
             console.print(
