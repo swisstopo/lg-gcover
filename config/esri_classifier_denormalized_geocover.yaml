@@ -35,6 +35,18 @@ layers:
           fields:
             KIND: KIND
             AEXP_STATUS: AEXP_STATUS
+    - gpkg_layer: exploit_polygons
+      layer_type: polygon
+      field_types:
+        KIND: Int64 # `Int64` with capital `I` is a nullable integer...
+      classifications:
+        - style_file: styles/Exploit_Geomat_Plg.lyrx
+          classification_name: Exploit_Geomat_Plg
+          mapfile_name: exploit_geomat_plg
+          symbol_prefix: geomat_plg
+          fields:
+            KIND: KIND
+            AEXP_STATUS: AEXP_STATUS
 
     - gpkg_layer: fossils
       layer_type: point
@@ -213,7 +225,7 @@ layers:
         - style_file: styles/Point_Objects_Bohrung_Fels_nicht_erreicht.lyrx
           classification_name: Point_Objects_Bohrung_Fels_nicht_erreicht
           mapfile_name: bohrung_fels_nicht_erreicht
-          filter: KIND IN 10501001 AND ABOR_DEPTH_BEDR = 999
+          filter: KIND=10501001 AND ABOR_DEPTH_BEDR = 999
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -222,6 +234,7 @@ layers:
         - style_file: styles/Point Objects_Quelle.lyrx
           classification_name: Point Objects_Quelle
           mapfile_name: quelle
+          filter: KIND=12501001
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
