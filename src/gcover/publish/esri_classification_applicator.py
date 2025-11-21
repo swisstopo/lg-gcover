@@ -756,16 +756,38 @@ class ClassificationApplicator:
         return sanitized
 
     def _build_symbol_map(self) -> Dict[str, str]:
-        """Build mapping from class labels to symbol IDs."""
+        """
+        Build mapping from class labels to symbol IDs.
+
+        Uses ClassIdentifier value if available, otherwise falls back to index.
+        """
         symbol_map = {}
 
         for idx, class_obj in enumerate(self.classification.classes):
             if class_obj.visible:
-                identifier = class_obj.identifier
-                if identifier.class_index:
-                    logger.debug(f"Using identifier")
-                    idx = identifier.class_index
-                symbol_id = f"{self.symbol_prefix}_{idx}"
+                # NOUVEAU: Extraire la valeur depuis l'identifier si disponible
+                identifier_value = idx  # Par défaut: utiliser l'index
+
+                if hasattr(class_obj, 'identifier') and class_obj.identifier:
+                    try:
+                        # Extraire la valeur depuis le ClassIdentifier
+                        identifier_key = class_obj.identifier.to_key()
+                        # La dernière partie contient la valeur (après le "::")
+                        identifier_value = identifier_key.split("::")[-1]
+
+                        logger.debug(
+                            f"Using identifier value '{identifier_value}' "
+                            f"for class '{class_obj.label}' (instead of index {idx})"
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Could not extract identifier value for '{class_obj.label}': {e}, "
+                            f"using index {idx}"
+                        )
+                        identifier_value = idx
+
+                # Construire le symbol_id avec la valeur extraite
+                symbol_id = f"{self.symbol_prefix}_{identifier_value}"
                 symbol_map[class_obj.label] = symbol_id
 
         return symbol_map

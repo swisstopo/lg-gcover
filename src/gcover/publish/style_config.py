@@ -117,7 +117,8 @@ class BatchClassificationConfig:
                     fields=class_dict.get("fields"),
                     filter=class_dict.get("filter"),
                     symbol_prefix=class_dict.get("symbol_prefix"),
-                    mapfile_name=class_dict.get("mapfile_name",)
+                    mapfile_name=class_dict.get("mapfile_name"),
+                    identifier_field=class_dict.get("identifier_field")
                 )
             )
 
@@ -195,7 +196,7 @@ def apply_batch_from_config(
         "features_total": 0,
         "features_newly_classified": 0,
     }
-
+    identifier_fields = {}
     # Process each layer
     for layer in layers_to_process:
         layer_config = config.get_layer_config(layer)
@@ -205,6 +206,21 @@ def apply_batch_from_config(
 
         console.print(f"\n[bold blue]Processing layer: {layer}[/bold blue]")
         console.print(f"Applying {len(layer_config.classifications)} classifications")
+
+        logger.debug(layer_config)
+
+        # Extract prefixes and mapfile names from config
+        for class_config in layer_config.classifications:
+                if class_config.classification_name:
+                    # Use classification name as key
+                    key = class_config.classification_name
+                    if class_config.identifier_field:
+                        field_name = class_config.identifier_field
+                        identifier_fields[key] = field_name
+                        logger.debug(
+                            f"Layer '{key}' will use "
+                            f"identifier_field: {field_name}"
+                        )
 
         kwargs = {"layer": layer}
         if bbox:
@@ -248,7 +264,14 @@ def apply_batch_from_config(
             )
             try:
                 # Load classification from style file
-                classifications = extract_lyrx_complete(class_config.style_file, display=False)
+                # TODO
+                # Load classifications
+                classifications = extract_lyrx_complete(
+                    class_config.style_file,
+                    display=False,
+                    identifier_fields=identifier_fields  # ← NEW
+                )  # TODO switched from extract_lyrx
+                #classifications = extract_lyrx_complete(class_config.style_file, display=False)
             except FileNotFoundError as e:
                 logger.error(f"Style .lyrx not found: {class_config.style_file}")
                 if continue_on_error:
