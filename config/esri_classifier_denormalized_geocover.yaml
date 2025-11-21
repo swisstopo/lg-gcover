@@ -84,7 +84,7 @@ layers:
             GMU_CODE: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT
           symbol_prefix: bedrock
           filter: KIND == 14334001
-          identifier_field: GMU_CODE # New
+          identifier_field: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT # New
     - gpkg_layer: linear_objects
       layer_type: line
       field_types:
