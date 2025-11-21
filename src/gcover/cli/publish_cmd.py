@@ -23,7 +23,7 @@ from rich.table import Table
 
 from gcover.config import SDE_INSTANCES, AppConfig, load_config
 from gcover.publish.esri_classification_applicator import ClassificationApplicator
-from gcover.publish.esri_classification_extractor import extract_lyrx
+from gcover.publish.esri_classification_extractor import extract_lyrx, extract_lyrx_complete
 from gcover.publish.generator import MapServerGenerator
 from gcover.publish.qgis_generator import QGISGenerator
 from gcover.publish.style_config import (
@@ -894,7 +894,7 @@ def mapserver(
         console.print(f"Processing {style_file.name}...")
 
         # Load classifications
-        classifications = extract_lyrx(style_file, display=False)
+        classifications = extract_lyrx_complete(style_file, display=False)  # TODO switched from extract_lyrx
 
         if not classifications:
             console.print(
@@ -1099,7 +1099,7 @@ def qgis(
         console.print(f"Processing {style_file.name}...")
 
         # Load classifications
-        classifications = extract_lyrx(style_file, display=False)
+        classifications = extract_lyrx_complete(style_file, display=False) # TODO switched from extract_lyrx
 
         if not classifications:
             console.print(

@@ -1743,7 +1743,10 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
         """Load custom symbol overrides from YAML file."""
         self.override_registry = SymbolOverrideRegistry.from_yaml(yaml_path)
 
-    def _parse_classification_class_enhanced(
+    # TODO: not used --> to deleted
+    # to compare with ESRIClassificationExtractor._parse_classification_class
+    # uses `CIMSymbolParserEnhanced`  instead of `CIMSymbolParser`
+    def _parse_classification_class(
         self, class_obj: Dict[str, Any], layer_path: str, class_index: int
     ) -> Optional[ClassificationClass]:
         """
@@ -1755,6 +1758,7 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
         - Stable identifier (NEW)
         - Complexity metrics (NEW)
         """
+
         try:
             label = class_obj.get("label", "")
             visible = class_obj.get("visible", True)
@@ -2074,6 +2078,7 @@ def extract_lyrx_complete(
 
 
 # Legacy
+# TODO replace by extract_lyrx_complete
 def extract_lyrx(
     lyrx_path: Union[str, Path],
     use_arcpy: bool = None,
@@ -2170,11 +2175,11 @@ def classify(input, no_arcpy, layers, quiet, explore, export, max_label_length):
         # You can optionally display or return structure here
 
     elif input_path.suffix.lower() == ".lyrx":
-        results = extract_lyrx(
+        results = extract_lyrx_complete(  # TODO switched from extract_lyrx
             input_path,
             use_arcpy=not no_arcpy,
             display=not quiet,
-            max_label_length=max_label_length,
+           #  max_label_length=max_label_length,
         )
 
         if quiet:
