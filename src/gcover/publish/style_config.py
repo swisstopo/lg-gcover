@@ -52,6 +52,7 @@ class ClassificationConfig:
     fields: Optional[Dict[str, str]] = None
     filter: Optional[str] = None
     symbol_prefix: Optional[str] = None
+    identifier_field: Optional[str] = None
 
 
 @dataclass
