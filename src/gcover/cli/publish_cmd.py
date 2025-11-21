@@ -104,7 +104,6 @@ def publish_commands(ctx):
     type=click.Path(exists=True, path_type=Path),
     help="Base directory for resolving relative style paths (default: config file directory)",
 )
-@click.option("--debug", is_flag=True, help="Enable debug output")
 @click.option(
     "--dry-run", is_flag=True, help="Parse config without applying classifications"
 )
@@ -115,7 +114,6 @@ def apply_config(
     layer: Optional[str],
     output: Optional[Path],
     styles_dir: Optional[Path],
-    debug: bool,
     dry_run: bool,
     bbox: Optional[tuple],
     continue_on_error: bool,
@@ -156,6 +154,10 @@ def apply_config(
       # Dry run to validate config
       gcover publish apply-config geocover.gpkg config.yaml --dry-run
     """
+    verbose = ctx.obj.get("verbose", False)
+
+    if verbose:
+        console.print("[dim]Verbose logging enabled[/dim]")
     try:
         console.print(f"\n[bold blue]📋 Batch Classification from Config[/bold blue]\n")
 
@@ -218,7 +220,7 @@ def apply_config(
             config=config,
             layer_name=layer,
             output_path=output,
-            debug=debug,
+            debug=verbose,
             bbox=bbox,
             continue_on_error=continue_on_error,
         )
@@ -226,6 +228,34 @@ def apply_config(
         end_time = time.time()
         elapsed = end_time - start_time
         mins, secs = divmod(elapsed, 60)
+
+        # Check if stats is empty (indicating an error occurred)
+        if not stats:
+            error_message = (
+                "No processing statistics available. This usually indicates:\n"
+                "• An error occurred during processing\n"
+                "• No features were found matching your criteria\n"
+                "• There was an issue with the input data or configuration"
+            )
+
+            console.print("\n[bold red]❌ Batch processing failed![/bold red]")
+            console.print(Panel(error_message, title="Error Details", title_align="left", border_style="red"))
+
+            # Rest of troubleshooting table...
+            troubleshooting_table = Table(title="Troubleshooting Tips", show_header=True)
+            troubleshooting_table.add_column("Check", style="cyan")
+            troubleshooting_table.add_column("Action", style="white")
+
+            troubleshooting_table.add_row("Input file", "Verify the GeoPackage exists and is accessible")
+            troubleshooting_table.add_row("Layer name", f"Confirm layer '{layer}' exists in the file")
+            troubleshooting_table.add_row("Configuration", "Check your classification rules are valid")
+            troubleshooting_table.add_row("Bounding box", "Verify bbox coordinates if used")
+            troubleshooting_table.add_row("Debug mode", "Run with --debug for detailed error information")
+
+            console.print(troubleshooting_table)
+            console.print(f"\n[yellow]Processing time: {int(mins)}m {secs:.1f}s[/yellow]")
+
+            sys.exit(1)
 
         # Display final statistics
         console.print("\n[bold green]✅ Batch processing complete![/bold green]\n")
@@ -256,7 +286,7 @@ def apply_config(
 
     except Exception as e:
         logger.error(f"Batch processing failed: {e}")
-        if debug:
+        if verbose:
             import traceback
 
             logger.debug(traceback.format_exc())
