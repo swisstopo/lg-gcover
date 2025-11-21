@@ -158,11 +158,38 @@ class MapServerGenerator:
         # Generate CLASS blocks
         field_names = [f.name for f in classification.fields]
 
-        for i, class_obj in enumerate(classification.classes):
+        for idx, class_obj in enumerate(classification.classes):
             if not class_obj.visible:
                 continue
+            # NOUVEAU: Extraire la valeur depuis l'identifier si disponible
+            identifier_value = idx  # Par défaut: utiliser l'index
 
-            class_block = self.generate_class(class_obj, field_names, i, symbol_prefix)
+            if hasattr(class_obj, "identifier") and class_obj.identifier:
+                try:
+                    # Extraire la valeur depuis le ClassIdentifier
+                    identifier_key = class_obj.identifier.to_key()
+                    # La dernière partie contient la valeur (après le "::")
+                    identifier_value = identifier_key.split("::")[-1]
+
+                    logger.debug(
+                        f"Using identifier value '{identifier_value}' "
+                        f"for class '{class_obj.label}' (instead of index {idx})"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Could not extract identifier value for '{class_obj.label}': {e}, "
+                        f"using index {idx}"
+                    )
+                    identifier_value = idx
+
+            # Construire le symbol_id avec la valeur extraite
+            symbol_id = f"{symbol_prefix}_{identifier_value}"
+
+            logger.debug(f"class idx: {symbol_id}")
+
+            class_block = self.generate_class(
+                class_obj, field_names, identifier_value, symbol_prefix
+            )
             lines.append(class_block)
 
         lines.append("END # LAYER")
