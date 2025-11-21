@@ -31,8 +31,6 @@ from rich.tree import Tree
 # Try to import arcpy - graceful degradation if not available
 from gcover.arcpy_compat import HAS_ARCPY, arcpy
 
-console = Console()
-
 
 from gcover.publish.symbol_models import ClassIdentifier, SymbolOverrideRegistry
 from gcover.publish.symbol_utils import (
