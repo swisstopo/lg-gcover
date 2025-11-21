@@ -37,7 +37,7 @@ from gcover.publish.esri_classification_extractor import (
     ClassificationClass,
     ESRIClassificationExtractor,
     LayerClassification,
-    extract_lyrx,
+    extract_lyrx_complete,
 )
 from gcover.publish.utils import translate_esri_to_pandas
 
@@ -761,6 +761,10 @@ class ClassificationApplicator:
 
         for idx, class_obj in enumerate(self.classification.classes):
             if class_obj.visible:
+                identifier = class_obj.identifier
+                if identifier.class_index:
+                    logger.debug(f"Using identifier")
+                    idx = identifier.class_index
                 symbol_id = f"{self.symbol_prefix}_{idx}"
                 symbol_map[class_obj.label] = symbol_id
 
@@ -1508,7 +1512,7 @@ def apply(
 
         # Extract classifications from style file
         with console.status("[cyan]Loading classification rules...", spinner="dots"):
-            all_classifications = extract_lyrx(
+            all_classifications = extract_lyrx_complete(
                 style_file, use_arcpy=not no_arcpy, display=False
             )
 
@@ -1918,7 +1922,7 @@ def check(
 
         # Load classification
         with console.status("[cyan]Loading classification rules...", spinner="dots"):
-            all_classifications = extract_lyrx(
+            all_classifications = extract_lyrx_complete(
                 style_file, use_arcpy=not no_arcpy, display=False
             )
 

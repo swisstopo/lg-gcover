@@ -26,7 +26,7 @@ from rich.table import Table
 from rich.tree import Tree
 
 from gcover.publish.esri_classification_applicator import ClassificationApplicator
-from gcover.publish.esri_classification_extractor import extract_lyrx
+from gcover.publish.esri_classification_extractor import extract_lyrx_complete
 from gcover.publish.tooltips_enricher import LayerType
 
 console = Console()
@@ -248,7 +248,7 @@ def apply_batch_from_config(
             )
             try:
                 # Load classification from style file
-                classifications = extract_lyrx(class_config.style_file, display=False)
+                classifications = extract_lyrx_complete(class_config.style_file, display=False)
             except FileNotFoundError as e:
                 logger.error(f"Style .lyrx not found: {class_config.style_file}")
                 if continue_on_error:

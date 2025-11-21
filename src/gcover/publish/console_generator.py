@@ -16,7 +16,7 @@ from rich.table import Table
 from rich.tree import Tree
 from rich.text import Text
 
-from gcover.publish.esri_classification_extractor import extract_lyrx
+from gcover.publish.esri_classification_extractor import extract_lyrx_complete
 from gcover.publish.symbol_utils import extract_polygon_symbol_layers
 
 console = Console()
@@ -262,7 +262,7 @@ def inspect_styles_main(
 
         # Extract classifications
         try:
-            classifications = extract_lyrx(style_file, display=False)
+            classifications = extract_lyrx_complete(style_file, display=False)
 
             if not classifications:
                 console.print("[yellow]⚠ No classifications found[/yellow]")

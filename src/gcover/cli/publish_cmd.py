@@ -25,8 +25,7 @@ from gcover.cli.main import _split_bbox
 from gcover.config import SDE_INSTANCES, AppConfig, load_config
 from gcover.publish.esri_classification_applicator import ClassificationApplicator
 from gcover.publish.esri_classification_extractor import (
-    extract_lyrx,
-    extract_lyrx_complete,
+   extract_lyrx_complete,
 )
 from gcover.publish.generator import MapServerGenerator
 from gcover.publish.qgis_generator import QGISGenerator
@@ -203,6 +202,7 @@ def apply_config(
                         console.print(
                             f"  [green]✓ Found: {class_config.style_file.name}[/green]"
                         )
+
 
             if all_valid:
                 console.print("\n[green]✓ Configuration is valid![/green]")
@@ -835,6 +835,8 @@ def mapserver(
         console.print(f"[cyan]Loading configuration from {config_file}[/cyan]")
         config = BatchClassificationConfig(config_file)
 
+        identifier_fields = {}
+
         # Extract prefixes and mapfile names from config
         for layer_config in config.layers:
             for class_config in layer_config.classifications:
@@ -845,6 +847,14 @@ def mapserver(
                         prefix_map[key] = class_config.symbol_prefix
                     if class_config.mapfile_name:
                         mapfile_names[key] = class_config.mapfile_name
+                    if class_config.identifier_field:
+                        field_name = class_config.identifier_field
+                        identifier_fields[key] = field_name
+                        logger.debug(
+                            f"Layer '{key}' will use "
+                            f"identifier_field: {field_name}"
+                        )
+
 
         console.print(
             f"  [green]✓[/green] Extracted prefixes for {len(prefix_map)} classifications"
@@ -897,8 +907,12 @@ def mapserver(
 
         # Load classifications
         classifications = extract_lyrx_complete(
-            style_file, display=False
+            style_file,
+            display=False,
+            identifier_fields=identifier_fields  # ← NEW
         )  # TODO switched from extract_lyrx
+
+
 
         if not classifications:
             console.print(
