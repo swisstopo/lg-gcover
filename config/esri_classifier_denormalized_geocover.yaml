@@ -20,7 +20,7 @@ layers:
           index: 15
           classification_name: Exploit_Geomat_Pt
           mapfile_name: exploit_geomat_pt
-          filter: KIND=10601001
+          # TODO: no filter
           symbol_prefix: geomat_pnt
           fields:
             KIND: KIND
