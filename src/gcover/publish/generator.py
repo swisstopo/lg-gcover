@@ -16,15 +16,26 @@ import click
 from loguru import logger
 from rich.console import Console
 
-from gcover.publish.esri_classification_extractor import (ClassificationClass,
-                                            ESRIClassificationExtractor,
-                                            LayerClassification, SymbolType)
-from gcover.publish.symbol_models import CharacterMarkerInfo, FontSymbol, SymbolLayersInfo
-from gcover.publish.symbol_utils import (extract_color_from_cim,
-                           extract_line_style_from_effects,
-                           extract_polygon_symbol_layers, sanitize_font_name)
+from gcover.publish.esri_classification_extractor import (
+    ClassificationClass,
+    ESRIClassificationExtractor,
+    LayerClassification,
+    SymbolType,
+)
+from gcover.publish.symbol_models import (
+    CharacterMarkerInfo,
+    FontSymbol,
+    SymbolLayersInfo,
+)
+from gcover.publish.symbol_utils import (
+    extract_color_from_cim,
+    extract_line_style_from_effects,
+    extract_polygon_symbol_layers,
+    sanitize_font_name,
+)
 from gcover.publish.tooltips_enricher import LayerType
 from gcover.publish.utils import generate_font_image
+from gcover.config.models import MapserverConnection
 
 console = Console()
 
@@ -75,8 +86,10 @@ class MapServerGenerator:
         self,
         classification,
         layer_name: str,
-        data_path: str = None,
+        layer_type: str,
         symbol_prefix: str = "class",
+        connection: Optional[MapserverConnection] = None,
+        data: Optional[str] = None,
     ) -> str:
         """
         Generate complete MapServer LAYER block.
@@ -90,11 +103,19 @@ class MapServerGenerator:
         Returns:
             Complete LAYER block as string
         """
+        if layer_type:
+            if isinstance(layer_type, LayerType):
+                layer_type = layer_type.name
+
+        else:
+            layer_type = self.layer_type  # e.g. POLYGON
+
         logger.info(f"=== {layer_name} ===")
+
         lines = [
             "LAYER",
             f'  NAME "{layer_name}"',
-            f"  TYPE {self.layer_type}",
+            f"  TYPE {layer_type}",
             "  STATUS ON",
             "",
         ]
@@ -113,13 +134,13 @@ class MapServerGenerator:
         )
 
         # Data source
-        if data_path:
+        if connection:
             lines.extend(
                 [
                     "",
-                    "  CONNECTIONTYPE POSTGIS",
-                    '  CONNECTION "host=postgis port=5432 dbname=geocover user=gcover password=gcover123"',
-                    f'  DATA "geom from (SELECT * from {data_path} where {self.symbol_field.lower()} IS NOT NULL) as blabla using unique gid using srid=2056"',
+                    f"  CONNECTIONTYPE {connection.connection_type.name}",
+                    f'  CONNECTION "{connection.connection}"',
+                    f'  DATA "{data}"',
                 ]
             )
 
@@ -148,11 +169,38 @@ class MapServerGenerator:
         # Generate CLASS blocks
         field_names = [f.name for f in classification.fields]
 
-        for i, class_obj in enumerate(classification.classes):
+        for idx, class_obj in enumerate(classification.classes):
             if not class_obj.visible:
                 continue
+            # NOUVEAU: Extraire la valeur depuis l'identifier si disponible
+            identifier_value = idx  # Par défaut: utiliser l'index
 
-            class_block = self.generate_class(class_obj, field_names, i, symbol_prefix)
+            if hasattr(class_obj, "identifier") and class_obj.identifier:
+                try:
+                    # Extraire la valeur depuis le ClassIdentifier
+                    identifier_key = class_obj.identifier.to_key()
+                    # La dernière partie contient la valeur (après le "::")
+                    identifier_value = identifier_key.split("::")[-1]
+
+                    logger.debug(
+                        f"Using identifier value '{identifier_value}' "
+                        f"for class '{class_obj.label}' (instead of index {idx})"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Could not extract identifier value for '{class_obj.label}': {e}, "
+                        f"using index {idx}"
+                    )
+                    identifier_value = idx
+
+            # Construire le symbol_id avec la valeur extraite
+            symbol_id = f"{symbol_prefix}_{identifier_value}"
+
+            logger.debug(f"class idx: {symbol_id}")
+
+            class_block = self.generate_class(
+                class_obj, field_names, identifier_value, symbol_prefix
+            )
             lines.append(class_block)
 
         lines.append("END # LAYER")
@@ -367,34 +415,32 @@ class MapServerGenerator:
             else:
                 self._add_simple_polygon_style(lines)
 
-
-
     def _add_hatch_fill_style(
-            self,
-            lines: List[str],
-            hatch_info: Dict,
-            class_index: int,
-            fill_index: int,
-            symbol_prefix: str,
+        self,
+        lines: List[str],
+        hatch_info: Dict,
+        class_index: int,
+        fill_index: int,
+        symbol_prefix: str,
     ) -> None:
         """
         Add MapServer STYLE for hatch fill pattern.
 
         Uses the generic "hatchsymbol" with customization in STYLE.
         """
-        rotation = hatch_info['rotation']
-        separation = hatch_info['separation']
-        line_sym = hatch_info['line_symbol']
+        rotation = hatch_info["rotation"]
+        separation = hatch_info["separation"]
+        line_sym = hatch_info["line_symbol"]
 
         # Extract line properties
-        line_color = line_sym['color']
-        line_width = line_sym['width']
-        line_style = line_sym.get('line_style', {})
+        line_color = line_sym["color"]
+        line_width = line_sym["width"]
+        line_style = line_sym.get("line_style", {})
         r, g, b, a = line_color
 
         # Register that we need hatchsymbol (just once)
-        if not any(s.get('type') == 'hatch' for s in self.pattern_symbols):
-            self.pattern_symbols.append({'type': 'hatch'})
+        if not any(s.get("type") == "hatch" for s in self.pattern_symbols):
+            self.pattern_symbols.append({"type": "hatch"})
 
         # Convert to pixels
         separation_px = separation * 1.33
@@ -409,9 +455,9 @@ class MapServerGenerator:
         lines.append(f"      WIDTH {width_px:.2f}")
 
         # Add PATTERN if the line itself is dashed/dotted
-        if line_style.get('type') in ['dash', 'dot'] and line_style.get('pattern'):
-            pattern = line_style['pattern']
-            pattern_str = ' '.join(str(int(p)) for p in pattern)
+        if line_style.get("type") in ["dash", "dot"] and line_style.get("pattern"):
+            pattern = line_style["pattern"]
+            pattern_str = " ".join(str(int(p)) for p in pattern)
             lines.append(f"      PATTERN {pattern_str} END")
 
         if a < 255:
@@ -428,7 +474,7 @@ class MapServerGenerator:
         so we only need one generic hatch symbol definition.
         """
         # Only generate if we actually have hatch fills
-        has_hatch = any(s.get('type') == 'hatch' for s in self.pattern_symbols)
+        has_hatch = any(s.get("type") == "hatch" for s in self.pattern_symbols)
 
         if not has_hatch:
             return []
@@ -685,12 +731,33 @@ class MapServerGenerator:
                     continue
 
                 # Check for full_symbol_layers
-                if hasattr(class_obj, 'full_symbol_layers') and class_obj.full_symbol_layers:
-                    for fill_info in class_obj.full_symbol_layers.fills:
-                        if fill_info.get('type') == 'hatch':
-                            # Just flag that we need hatch symbol
-                            if not any(s.get('type') == 'hatch' for s in self.pattern_symbols):
-                                self.pattern_symbols.append({'type': 'hatch'})
+                if (
+                    hasattr(class_obj, "full_symbol_layers")
+                    and class_obj.full_symbol_layers
+                ):
+                    layers = class_obj.full_symbol_layers
+
+                    # If it's a single SymbolLayersInfo
+                    if isinstance(layers, SymbolLayersInfo):
+                        fills = layers.fills
+                    elif isinstance(layers, list):
+                        # If it's a list of SymbolLayersInfo
+                        fills = []
+                        for l in layers:
+                            if isinstance(l, SymbolLayersInfo):
+                                fills.extend(l.fills)
+                    else:
+                        fills = []
+
+                    for fill_info in fills:
+                        if (
+                            isinstance(fill_info, dict)
+                            and fill_info.get("type") == "hatch"
+                        ):
+                            if not any(
+                                s.get("type") == "hatch" for s in self.pattern_symbols
+                            ):
+                                self.pattern_symbols.append({"type": "hatch"})
                             break
 
     # ========================================================================
@@ -734,7 +801,9 @@ class MapServerGenerator:
         hatch_symbols = self._generate_hatch_pattern_symbols()
         if hatch_symbols:
             lines.append("")
-            lines.append("  # Hatch pattern symbol (customize with ANGLE, SIZE, WIDTH in STYLE)")
+            lines.append(
+                "  # Hatch pattern symbol (customize with ANGLE, SIZE, WIDTH in STYLE)"
+            )
             lines.append("")
             lines.extend(hatch_symbols)
 

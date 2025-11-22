@@ -26,7 +26,7 @@ from rich.table import Table
 from rich.tree import Tree
 
 from gcover.publish.esri_classification_applicator import ClassificationApplicator
-from gcover.publish.esri_classification_extractor import extract_lyrx
+from gcover.publish.esri_classification_extractor import extract_lyrx_complete
 from gcover.publish.tooltips_enricher import LayerType
 
 console = Console()
@@ -52,6 +52,9 @@ class ClassificationConfig:
     fields: Optional[Dict[str, str]] = None
     filter: Optional[str] = None
     symbol_prefix: Optional[str] = None
+    identifier_field: Optional[str] = None
+    data: Optional[str] = None
+
 
 
 @dataclass
@@ -62,6 +65,7 @@ class LayerConfig:
     classifications: List[ClassificationConfig]
     field_types: Optional[Dict[str, str]] = None
     layer_type: Optional[LayerType] = None
+    connection_ref: Optional[str] = None
 
 
 class BatchClassificationConfig:
@@ -100,6 +104,7 @@ class BatchClassificationConfig:
         gpkg_layer = layer_dict["gpkg_layer"]
         layer_type_str = layer_dict.get("layer_type")
         layer_type = LayerType(layer_type_str) if layer_type_str else None
+        connection_ref = layer_dict.get("connection_ref"),
         classifications = []
         field_types = layer_dict.get("field_types", {})
 
@@ -116,7 +121,10 @@ class BatchClassificationConfig:
                     fields=class_dict.get("fields"),
                     filter=class_dict.get("filter"),
                     symbol_prefix=class_dict.get("symbol_prefix"),
-                    mapfile_name=class_dict.get("mapfile_name",)
+                    mapfile_name=class_dict.get("mapfile_name"),
+                    identifier_field=class_dict.get("identifier_field"),
+                    data=class_dict.get("data"),
+
                 )
             )
 
@@ -125,6 +133,7 @@ class BatchClassificationConfig:
             classifications=classifications,
             field_types=field_types,
             layer_type=layer_type,
+            connection_ref=connection_ref,
         )
 
     def get_layer_config(self, gpkg_layer: str) -> Optional[LayerConfig]:
@@ -169,7 +178,7 @@ def apply_batch_from_config(
     if layer_name:
         if layer_name not in available_layers:
             # raise ValueError(f"Layer '{layer_name}' not found in GPKG")
-            console.er(f"Layer '{layer_name}' not found in GPKG")
+            console.print(f"[red bold]✗ Layer '{layer_name}' not found in GPKG[/red bold]")
             return {}
         layers_to_process = [layer_name]
     else:
@@ -194,7 +203,7 @@ def apply_batch_from_config(
         "features_total": 0,
         "features_newly_classified": 0,
     }
-
+    identifier_fields = {}
     # Process each layer
     for layer in layers_to_process:
         layer_config = config.get_layer_config(layer)
@@ -204,6 +213,20 @@ def apply_batch_from_config(
 
         console.print(f"\n[bold blue]Processing layer: {layer}[/bold blue]")
         console.print(f"Applying {len(layer_config.classifications)} classifications")
+
+        logger.debug(layer_config)
+
+        # Extract prefixes and mapfile names from config
+        for class_config in layer_config.classifications:
+            if class_config.classification_name:
+                # Use classification name as key
+                key = class_config.classification_name
+                if class_config.identifier_field:
+                    field_name = class_config.identifier_field
+                    identifier_fields[key] = field_name
+                    logger.debug(
+                        f"Layer '{key}' will use identifier_field: {field_name}"
+                    )
 
         kwargs = {"layer": layer}
         if bbox:
@@ -243,11 +266,18 @@ def apply_batch_from_config(
         # Apply each classification
         for i, class_config in enumerate(layer_config.classifications, 1):
             console.print(
-                f"\n  [{i}/{len(layer_config.classifications)}] {class_config.style_file.name}"
+                f"\n  [{i}/{len(layer_config.classifications)}] --- {class_config.style_file.name} ---"
             )
             try:
                 # Load classification from style file
-                classifications = extract_lyrx(class_config.style_file, display=False)
+                # TODO
+                # Load classifications
+                classifications = extract_lyrx_complete(
+                    class_config.style_file,
+                    display=False,
+                    identifier_fields=identifier_fields,  # ← NEW
+                )  # TODO switched from extract_lyrx
+                # classifications = extract_lyrx_complete(class_config.style_file, display=False)
             except FileNotFoundError as e:
                 logger.error(f"Style .lyrx not found: {class_config.style_file}")
                 if continue_on_error:

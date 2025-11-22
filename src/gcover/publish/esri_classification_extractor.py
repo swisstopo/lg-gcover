@@ -12,7 +12,7 @@ ADD THIS to the existing esri_classification_extractor.py file to enable:
 
 BACKWARDS COMPATIBLE - existing code continues to work.
 """
-
+import sys
 import json
 import zipfile
 from dataclasses import asdict, dataclass, field
@@ -31,13 +31,14 @@ from rich.tree import Tree
 # Try to import arcpy - graceful degradation if not available
 from gcover.arcpy_compat import HAS_ARCPY, arcpy
 
-console = Console()
-
 
 from gcover.publish.symbol_models import ClassIdentifier, SymbolOverrideRegistry
-from gcover.publish.symbol_utils import (analyze_symbol_complexity, extract_full_line_symbol,
-                           extract_full_point_symbol,
-                           extract_polygon_symbol_layers)
+from gcover.publish.symbol_utils import (
+    analyze_symbol_complexity,
+    extract_full_line_symbol,
+    extract_full_point_symbol,
+    extract_polygon_symbol_layers,
+)
 
 console = Console()
 
@@ -637,17 +638,22 @@ class ESRIClassificationExtractor:
             )
 
     def extract_from_lyrx(
-        self, lyrx_path: Union[str, Path]
+        self,
+        lyrx_path: Union[str, Path],
+        identifier_fields: Optional[Dict[str, str]] = None    # ← NOUVEAU
     ) -> List[LayerClassification]:
-        """
+        '''
         Extract classification from .lyrx layer file.
 
         Args:
             lyrx_path: Path to .lyrx file
+            identifier_fields: Optional dictionary mapping layer names to field names
+                             to use as identifiers. Example:
+                             {"Bedrock": "GEOL_MAPPING_UNIT", "Unconsolidated": "SURFACE_TYPE"}
 
         Returns:
             List of LayerClassification objects
-        """
+        '''
         lyrx_path = Path(lyrx_path)
 
         if not lyrx_path.exists():
@@ -656,9 +662,9 @@ class ESRIClassificationExtractor:
         logger.info(f"Extracting classification from {lyrx_path}")
 
         if self.use_arcpy:
-            return self._extract_with_arcpy(lyrx_path)
+            return self._extract_with_arcpy(lyrx_path, identifier_fields=identifier_fields)  # TODO, update
         else:
-            return self._extract_from_json(lyrx_path)
+            return self._extract_from_json(lyrx_path, identifier_fields=identifier_fields)
 
     def extract_from_aprx(
         self, aprx_path: Union[str, Path], layer_names: Optional[List[str]] = None
@@ -800,8 +806,11 @@ class ESRIClassificationExtractor:
 
         return classification
 
-    def _extract_from_json(self, lyrx_path: Path) -> List[LayerClassification]:
-        """Extract by parsing .lyrx JSON directly."""
+    def _extract_from_json(
+            self,
+            lyrx_path: Path,
+            identifier_fields: Optional[Dict[str, str]] = None  # ← NEW
+    ) -> List[LayerClassification]:
         try:
             # .lyrx files are JSON, but sometimes in a ZIP container
             lyrx_data = self._load_lyrx_json(lyrx_path)
@@ -827,8 +836,20 @@ class ESRIClassificationExtractor:
                     # Look for renderer in this layer
                     renderer = self._find_renderer_in_layer(layer_data)
                     if renderer and renderer.get("type") == "CIMUniqueValueRenderer":
+                        # NOUVEAU: Déterminer si cette couche a un identifier_field
+                        layer_name = layer_data.get("name", "Unknown")
+                        identifier_field = None
+                        if identifier_fields and layer_name in identifier_fields:
+                            identifier_field = identifier_fields[layer_name]
+                            logger.info(
+                                f"Layer '{layer_name}' will use "
+                                f"identifier_field: {identifier_field}"
+                            )
+
                         classification = self._parse_unique_value_renderer(
-                            renderer, layer_data.get("name", "Unknown")
+                            renderer,
+                            layer_data.get("name", "Unknown"),
+                            identifier_field=identifier_field  # ← NOUVEAU
                         )
 
                         if classification:
@@ -1017,9 +1038,21 @@ class ESRIClassificationExtractor:
         return None
 
     def _parse_unique_value_renderer(
-        self, renderer: Dict[str, Any], layer_name: str = None
+            self,
+            renderer: Dict[str, Any],
+            layer_name: str = None,
+            layer_path: str = None,
+            identifier_field: Optional[str] = None  # ← NEW
     ) -> Optional[LayerClassification]:
-        """Parse CIMUniqueValueRenderer structure."""
+        '''
+        Parse CIMUniqueValueRenderer structure.
+
+        Args:
+            renderer: CIM renderer dictionary
+            layer_name: Name of the layer
+            layer_path: Full hierarchical path to the layer
+            identifier_field: Optional field name to use for class identification
+        '''
         try:
             # Extract field information
             field_names = renderer.get("fields", [])
@@ -1034,9 +1067,16 @@ class ESRIClassificationExtractor:
 
                 for class_obj in group_classes:
                     # Parse class
-                    classification_class = self._parse_classification_class(class_obj)
+                    classification_class = self._parse_classification_class(  # TODO
+                        class_obj,
+                        layer_path=layer_path or layer_name or "Unknown",
+                        class_index=class_index,
+                        identifier_field=identifier_field,  # ← NEW
+                        field_names=field_names,  # ← NEW
+                    )
                     if classification_class:
                         classes.append(classification_class)
+
 
             # Extract default symbol
             default_symbol = None
@@ -1743,18 +1783,31 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
         """Load custom symbol overrides from YAML file."""
         self.override_registry = SymbolOverrideRegistry.from_yaml(yaml_path)
 
-    def _parse_classification_class_enhanced(
-        self, class_obj: Dict[str, Any], layer_path: str, class_index: int
+    # TODO: not used --> to deleted
+    # to compare with ESRIClassificationExtractor._parse_classification_class
+    # Renamed from _parse_classification_class_enhanced
+    # uses `CIMSymbolParserEnhanced`  instead of `CIMSymbolParser`
+    def _parse_classification_class(
+        self,
+        class_obj: Dict[str, Any],
+        layer_path: str,
+        class_index: int,
+        identifier_field: Optional[str] = None,      # ← NOUVEAU
+        field_names: Optional[List[str]] = None      # ← NOUVEAU
     ) -> Optional[ClassificationClass]:
-        """
+        '''
         ENHANCED version of _parse_classification_class.
 
-        Extracts:
-        - All existing data (backwards compatible)
-        - Complete symbol layers (NEW)
-        - Stable identifier (NEW)
-        - Complexity metrics (NEW)
-        """
+        Args:
+            class_obj: Classification class object from CIM
+            layer_path: Full hierarchical path to the layer
+            class_index: Position of the class in the classification
+            identifier_field: Optional field name to use for class identification
+                             instead of class_index. If specified and the field exists
+                             in field_values, uses its value as identifier.
+            field_names: List of field names corresponding to field_values order
+        '''
+
         try:
             label = class_obj.get("label", "")
             visible = class_obj.get("visible", True)
@@ -1782,13 +1835,36 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
             complexity_metrics = symbol_data["complexity"]
 
             # Create stable identifier (NEW)
+            # Create stable identifier (ENHANCED WITH FIELD-BASED OPTION)
             identifier = None
+            logger.debug('Creating stable ID')
+
             if field_values:
-                # Use first field value set for identifier
+                # NOUVEAU: Essayer d'utiliser identifier_field si fourni
+                identifier_value = None
+
+                if identifier_field and field_names:
+                    # Trouver l'index du champ dans field_names
+                    try:
+                        field_index = field_names.index(identifier_field)
+                        # Extraire la valeur depuis field_values
+                        if field_index < len(field_values[0]):
+                            identifier_value = field_values[0][field_index]
+                            logger.info(
+                                f"Using field '{identifier_field}' value "
+                                f"'{identifier_value}' as identifier"
+                            )
+                    except (ValueError, IndexError) as e:
+                        logger.warning(
+                            f"Could not extract identifier from field '{identifier_field}': {e}. "
+                            f"Falling back to class_index."
+                        )
+
+                # Créer l'identifiant avec la valeur du champ ou class_index
                 identifier = ClassIdentifier.create(
                     layer_path=layer_path,
                     field_values=field_values[0] if field_values else [],
-                    class_index=class_index,
+                    class_index=class_index if identifier_value is None else identifier_value,
                     symbol_dict=raw_symbol,
                     label=label,
                 )
@@ -1810,9 +1886,21 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
             return None
 
     def _parse_unique_value_renderer(
-        self, renderer: Dict[str, Any], layer_name: str = None, layer_path: str = None
+            self,
+            renderer: Dict[str, Any],
+            layer_name: str = None,
+            layer_path: str = None,
+            identifier_field: Optional[str] = None  # ← NEW
     ) -> Optional[LayerClassification]:
-        """Parse CIMUniqueValueRenderer structure."""
+        '''
+        Parse CIMUniqueValueRenderer structure.
+
+        Args:
+            renderer: CIM renderer dictionary
+            layer_name: Name of the layer
+            layer_path: Full hierarchical path to the layer
+            identifier_field: Optional field name to use for class identification
+        '''
         try:
             # Extract field information
             field_names = renderer.get("fields", [])
@@ -1828,10 +1916,13 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
 
                 for class_obj in group_classes:
                     # NEW: Pass layer_path and class_index
+
                     classification_class = self._parse_classification_class(
                         class_obj,
                         layer_path=layer_path or layer_name or "Unknown",
                         class_index=class_index,
+                        identifier_field=identifier_field,  # ← NOUVEAU
+                        field_names=field_names,  # ← NOUVEAU
                     )
                     if classification_class:
                         classes.append(classification_class)
@@ -2024,6 +2115,8 @@ def extract_lyrx_complete(
     display: bool = True,
     export_json: Optional[str] = None,
     generate_override_template_path: Optional[str] = None,
+    identifier_fields: Optional[Dict[str, str]] = None ,
+
 ) -> List[LayerClassification]:
     """
     Convenience function for COMPLETE extraction with all features.
@@ -2048,7 +2141,7 @@ def extract_lyrx_complete(
         logger.info(f"Loaded {len(extractor.override_registry.overrides)} overrides")
 
     # Extract classifications
-    classifications = extractor.extract_from_lyrx(lyrx_path)
+    classifications = extractor.extract_from_lyrx(lyrx_path, identifier_fields=identifier_fields)
 
     # Apply overrides
     for classification in classifications:
@@ -2074,6 +2167,8 @@ def extract_lyrx_complete(
 
 
 # Legacy
+# TODO replace by extract_lyrx_complete
+'''
 def extract_lyrx(
     lyrx_path: Union[str, Path],
     use_arcpy: bool = None,
@@ -2104,6 +2199,7 @@ def extract_lyrx(
                 ClassificationDisplayer.display_classification(classification)
 
     return classifications
+'''
 
 
 def extract_aprx(
@@ -2141,6 +2237,7 @@ def extract_aprx(
 @click.option("--no-arcpy", is_flag=True, help="Force JSON parsing (no arcpy)")
 @click.option("--layers", multiple=True, help="Specific layer names (for .aprx)")
 @click.option("--quiet", is_flag=True, help="Suppress rich display")
+@click.option("--verbose", is_flag=True, help="Be verbose")
 @click.option(
     "--explore",
     is_flag=True,
@@ -2155,9 +2252,19 @@ def extract_aprx(
     default=130,
     help="Maximum label length (default: 40)",
 )
-def classify(input, no_arcpy, layers, quiet, explore, export, max_label_length):
+@click.option("--identifiers", type=(str, str), multiple=True,
+    help='Optional dictionary mapping layer names to field names to use as identifiers. Example: --identifiers Bedrock TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT')
+def classify(input, no_arcpy, layers, quiet, explore, export, verbose, identifiers, max_label_length):
     """Extract ESRI layer classification information from .lyrx or .aprx files."""
+    if verbose:
+        logger.remove()  # Remove all handlers
+        logger.add(sys.stderr, level="DEBUG")  # Add debug handler
+        logger.add('classify.log', level="DEBUG")  # Add debug handler
+        logger.debug("Verbose logging enabled to 'esri_classification_extractor.log'")
+
     input_path = Path(input)
+    identifier_fields = dict(identifiers)
+    click.echo(identifier_fields)
 
     if explore:
         if input_path.suffix.lower() != ".lyrx":
@@ -2170,11 +2277,12 @@ def classify(input, no_arcpy, layers, quiet, explore, export, max_label_length):
         # You can optionally display or return structure here
 
     elif input_path.suffix.lower() == ".lyrx":
-        results = extract_lyrx(
+        results = extract_lyrx_complete(  # TODO switched from extract_lyrx
             input_path,
             use_arcpy=not no_arcpy,
             display=not quiet,
-            max_label_length=max_label_length,
+            identifier_fields=identifier_fields,
+            #  max_label_length=max_label_length,
         )
 
         if quiet:

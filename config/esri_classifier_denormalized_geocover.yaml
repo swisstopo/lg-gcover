@@ -9,6 +9,7 @@ global:
 # Layer configurations
 layers:
     - gpkg_layer: surfaces
+      connection_ref: postgis_wms
       layer_type: polygon
       field_types:
         KIND: Int64 # `Int64` with capital `I` is a nullable integer...
@@ -16,6 +17,7 @@ layers:
         - style_file: styles/Surfaces.lyrx
           classification_name: Surfaces
           mapfile_name: surfaces
+          data: "geom from (SELECT * from surfaces where map_symbol IS NOT NULL) as blabla using unique gid using srid=2056"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -23,6 +25,7 @@ layers:
           # Dummy, for testing filter: "KIND == 12001002"
 
     - gpkg_layer: exploit_points
+      connection_ref: postgis_wms
       layer_type: point
       field_types:
         KIND: Int64 # `Int64` with capital `I` is a nullable integer...
@@ -35,8 +38,22 @@ layers:
           fields:
             KIND: KIND
             AEXP_STATUS: AEXP_STATUS
+    - gpkg_layer: exploit_polygons
+      connection_ref: postgis_wms
+      layer_type: polygon
+      field_types:
+        KIND: Int64 # `Int64` with capital `I` is a nullable integer...
+      classifications:
+        - style_file: styles/Exploit_Geomat_Plg.lyrx
+          classification_name: Exploit_Geomat_Plg
+          mapfile_name: exploit_geomat_plg
+          symbol_prefix: geomat_plg
+          fields:
+            KIND: KIND
+            AEXP_STATUS: AEXP_STATUS
 
     - gpkg_layer: fossils
+      connection_ref: postgis_wms
       layer_type: point
       field_types:
         KIND: Int64
@@ -53,6 +70,7 @@ layers:
             LFOS_STATUS: LFOS_STATUS
           symbol_prefix: fossil
     - gpkg_layer: exploit_geomat_plg
+      connection_ref: postgis_wms
       layer_type: polygon
       field_types:
         KIND: Int64
@@ -67,6 +85,7 @@ layers:
     # Complex case: Multiple classifications for same layer
     # Bedrock example with complex field mapping
     - gpkg_layer: bedrock
+      connection_ref: postgis_wms
       layer_type: polygon
       field_types:
         KIND: Int64
@@ -84,7 +103,9 @@ layers:
             GMU_CODE: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT
           symbol_prefix: bedrock
           filter: KIND == 14334001
+          identifier_field: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT # New
     - gpkg_layer: linear_objects
+      connection_ref: postgis_wms
       layer_type: line
       field_types:
         KIND: Int64
@@ -146,6 +167,7 @@ layers:
             TTEC_STATUS: TTEC_STATUS
           symbol_prefix: linear_ueberschiebung
     - gpkg_layer: point_objects
+      connection_ref: postgis_wms
       layer_type: point
       field_types:
         KIND: Int64
@@ -212,7 +234,7 @@ layers:
         - style_file: styles/Point_Objects_Bohrung_Fels_nicht_erreicht.lyrx
           classification_name: Point_Objects_Bohrung_Fels_nicht_erreicht
           mapfile_name: bohrung_fels_nicht_erreicht
-          filter: KIND IN 10501001 AND ABOR_DEPTH_BEDR = 999
+          filter: KIND=10501001 AND ABOR_DEPTH_BEDR = 999
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -221,6 +243,7 @@ layers:
         - style_file: styles/Point Objects_Quelle.lyrx
           classification_name: Point Objects_Quelle
           mapfile_name: quelle
+          filter: KIND=12501001
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -230,7 +253,8 @@ layers:
         - style_file: styles/Point Objects_Erraticker.lyrx
           classification_name: Point Objects_Erraticker
           mapfile_name: erratiker
-          filter: KIND IN (14401001,14401002) AND (PRINTED = 1 OR PRINTED IS NULL)
+          # TODO: missing AND (PRINTED = 1 OR PRINTED IS NULL)
+          filter: KIND IN (14401001,14401002)
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -240,12 +264,14 @@ layers:
         - style_file: styles/Point Objects_Orient.lyrx
           classification_name: Point Objects_Orient
           mapfile_name: pnt_orient
+          filter: KIND IN (11901001,12501002,12501003,12501004,12501006,12101006,13601001,13601002 ,13601003,13701001,13701002,13701004,14601004)
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
           symbol_prefix: pnt_orient
 
     - gpkg_layer: unco_deposits
+      connection_ref: postgis_wms
       layer_type: polygon
       field_types:
         KIND: Int64
