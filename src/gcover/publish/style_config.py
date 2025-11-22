@@ -47,6 +47,7 @@ class ClassificationConfig:
     """Configuration for a single classification application."""
 
     style_file: Path
+    index: int  # draw index (small=top)
     mapfile_name: Optional[str] = None
     classification_name: Optional[str] = None
     fields: Optional[Dict[str, str]] = None
@@ -66,6 +67,7 @@ class LayerConfig:
     field_types: Optional[Dict[str, str]] = None
     layer_type: Optional[LayerType] = None
     connection_ref: Optional[str] = None
+    template: Optional[str] = None
 
 
 class BatchClassificationConfig:
@@ -104,7 +106,8 @@ class BatchClassificationConfig:
         gpkg_layer = layer_dict["gpkg_layer"]
         layer_type_str = layer_dict.get("layer_type")
         layer_type = LayerType(layer_type_str) if layer_type_str else None
-        connection_ref = layer_dict.get("connection_ref"),
+        connection_ref = layer_dict.get("connection_ref")
+        template = layer_dict.get("template")
         classifications = []
         field_types = layer_dict.get("field_types", {})
 
@@ -117,6 +120,7 @@ class BatchClassificationConfig:
             classifications.append(
                 ClassificationConfig(
                     style_file=style_file,
+                    index= class_dict.get("index", 200),
                     classification_name=class_dict.get("classification_name"),
                     fields=class_dict.get("fields"),
                     filter=class_dict.get("filter"),
@@ -134,6 +138,7 @@ class BatchClassificationConfig:
             field_types=field_types,
             layer_type=layer_type,
             connection_ref=connection_ref,
+            template= template,
         )
 
     def get_layer_config(self, gpkg_layer: str) -> Optional[LayerConfig]:

@@ -8,21 +8,7 @@ global:
     overwrite: false
 # Layer configurations
 layers:
-    - gpkg_layer: surfaces
-      connection_ref: postgis_wms
-      layer_type: polygon
-      field_types:
-        KIND: Int64 # `Int64` with capital `I` is a nullable integer...
-      classifications:
-        - style_file: styles/Surfaces.lyrx
-          classification_name: Surfaces
-          mapfile_name: surfaces
-          data: "geom from (SELECT * from surfaces where map_symbol IS NOT NULL) as blabla using unique gid using srid=2056"
-          fields:
-            # Map GPKG field to classification field (can be complex paths)
-            KIND: KIND
-          symbol_prefix: surfaces
-          # Dummy, for testing filter: "KIND == 12001002"
+
 
     - gpkg_layer: exploit_points
       connection_ref: postgis_wms
@@ -31,6 +17,7 @@ layers:
         KIND: Int64 # `Int64` with capital `I` is a nullable integer...
       classifications:
         - style_file: styles/Exploit_Geomat_Pt.lyrx
+          index: 15
           classification_name: Exploit_Geomat_Pt
           mapfile_name: exploit_geomat_pt
           filter: KIND=10601001
@@ -38,19 +25,7 @@ layers:
           fields:
             KIND: KIND
             AEXP_STATUS: AEXP_STATUS
-    - gpkg_layer: exploit_polygons
-      connection_ref: postgis_wms
-      layer_type: polygon
-      field_types:
-        KIND: Int64 # `Int64` with capital `I` is a nullable integer...
-      classifications:
-        - style_file: styles/Exploit_Geomat_Plg.lyrx
-          classification_name: Exploit_Geomat_Plg
-          mapfile_name: exploit_geomat_plg
-          symbol_prefix: geomat_plg
-          fields:
-            KIND: KIND
-            AEXP_STATUS: AEXP_STATUS
+
 
     - gpkg_layer: fossils
       connection_ref: postgis_wms
@@ -61,6 +36,7 @@ layers:
         LFOS_STATUS: Int64
       classifications:
         - style_file: styles/Fossils.lyrx
+          index: 16
           classification_name: Fossils
           mapfile_name: fossils
           fields:
@@ -69,103 +45,7 @@ layers:
             LFOS_DIVISION: LFOS_DIVISION
             LFOS_STATUS: LFOS_STATUS
           symbol_prefix: fossil
-    - gpkg_layer: exploit_geomat_plg
-      connection_ref: postgis_wms
-      layer_type: polygon
-      field_types:
-        KIND: Int64
-      classifications:
-        - style_file: styles/Exploit_Geomat_Plg.lyrx
-          classification_name: Exploit_Geomat_Plg
-          mapfile_name: exploit_geomat_plg
-          fields:
-            # Map GPKG field to classification field (can be complex paths)
-            KIND: KIND
-          symbol_prefix: geomat_plg
-    # Complex case: Multiple classifications for same layer
-    # Bedrock example with complex field mapping
-    - gpkg_layer: bedrock
-      connection_ref: postgis_wms
-      layer_type: polygon
-      field_types:
-        KIND: Int64
-        RUNC_LITHO: Int64
-        RUNC_CHRONO_T: Int64
-        RUNC_CHRONO_B: Int64
-        RUNC_MORPHOLO: Int64
-        RUNC_GLAC_TYP: Int64
-      classifications:
-        - style_file: styles/Bedrock.lyrx
-          classification_name: Bedrock
-          mapfile_name: bedrock
-          fields:
-            # Map GPKG field to classification field (can be complex paths)
-            GMU_CODE: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT
-          symbol_prefix: bedrock
-          filter: KIND == 14334001
-          identifier_field: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT # New
-    - gpkg_layer: linear_objects
-      connection_ref: postgis_wms
-      layer_type: line
-      field_types:
-        KIND: Int64
-        TTEC_STATUS: Int64
-        TTEC_LIM_TYP: Int64
-        LPRO_LITHO: Int64
-        GGLA_GLAC_TYP: Int64
-      classifications:
-        - style_file: styles/Linear Objects_Moränenwall.lyrx
-          classification_name: Linear Objects_Moränenwall
-          filter: KIND=11301001
-          mapfile_name: linear_moraenenwall
-          fields:
-            KIND: KIND
-            GGLA_GLAC_TYP: GGLA_GLAC_TYP
-          symbol_prefix: moraenenwall
 
-        - style_file: styles/Linear Objects_GeolKontur.lyrx
-          classification_name: Linear Objects_GeolKontur
-          mapfile_name: geolkontur
-          fields:
-                KIND: KIND
-                LGEO_STATUS: LGEO_STATUS
-          symbol_prefix: geolkontur
-          filter: KIND = 13001001
-        - style_file: styles/Linear Objects_Gesteinhorizont.lyrx
-          classification_name: Linear Objects_Gesteinhorizont
-          mapfile_name: gesteinhorizont
-          fields:
-            KIND: KIND
-            LPRO_LITHO: LPRO_LITHO
-          symbol_prefix: gesteinhorizont
-          filter: KIND = 13101001
-        - style_file: styles/Linear Objects_Hilfs_Karto.lyrx
-          classification_name: Linear Objects_Hilfs_Karto
-          mapfile_name: hilfs_karto
-          fields:
-            KIND: KIND
-          symbol_prefix: hilfs_karto
-          filter: KIND IN (15601001, 15601002)
-
-        - style_file: styles/Linear Objects_Bruch.lyrx
-          classification_name: Linear Objects_Bruch
-          mapfile_name: surfaces
-          fields:
-            # Map GPKG field to classification field (can be complex paths)
-            KIND: KIND
-            TTEC_STATUS: TTEC_STATUS
-          symbol_prefix: linear_bruch
-          filter: KIND IN (14901002,14901004,14901005,14901006,14901007,14901008) # definitionExpression
-        - style_file: styles/Linear Objects_Ueberschiebung.lyrx
-          classification_name: Linear Objects_Ueberschiebung
-          mapfile_name: ueberschiebung
-          filter: KIND = 14901001
-          fields:
-            # Map GPKG field to classification field (can be complex paths)
-            KIND: KIND
-            TTEC_LIM_TYP: TTEC_LIM_TYP
-            TTEC_STATUS: TTEC_STATUS
-          symbol_prefix: linear_ueberschiebung
     - gpkg_layer: point_objects
       connection_ref: postgis_wms
       layer_type: point
@@ -187,6 +67,7 @@ layers:
 
       classifications:
         - style_file: styles/Point_Mpla_Planar_Structures.lyrx
+          index: 20
           classification_name: Point_Mpla_Planar_Structures
           mapfile_name: planar_struct
           filter: KIND IN (13801001,13801002, 13801004, 13801003, 13801005, 13801006)
@@ -197,6 +78,7 @@ layers:
             DIP: DIP
           symbol_prefix: planar_struct
         - style_file: styles/Point Objects_Achsenfläche.lyrx
+          index: 21
           classification_name: Point Objects_Achsenfläche
           mapfile_name: achsenflaeche
           filter: KIND=14601006
@@ -206,6 +88,7 @@ layers:
             TDEF_FOLD_TYP: TDEF_FOLD_TYP
           symbol_prefix: achsenflaeche
         - style_file: styles/Point Objects_Orient.lyrx
+          index: 22
           classification_name: Point Objects_Orient
           mapfile_name: pnt_orient
           filter: KIND IN (11901001,12501002,12501003,12501004,12501006,12101006,13601001,13601002 ,13601003,13701001,13701002,13701004,14601004)
@@ -214,6 +97,7 @@ layers:
             KIND: KIND
           symbol_prefix: orient
         - style_file: styles/Point_Objects_Bohrung_Fels_erreicht.lyrx
+          index: 23
           classification_name: Point_Objects_Bohrung_Fels_erreicht
           mapfile_name: bohrung_fels_erreicht
           filter: KIND=10501001 AND ABOR_DEPTH_BEDR<>999
@@ -223,6 +107,7 @@ layers:
             ABOR_FM_A: ABOR_FM_A
           symbol_prefix: bohrung_fels_erreicht
         - style_file: styles/Point_Objects_Sondierung.lyrx
+          index: 24
           classification_name: Point_Objects_Sondierung
           mapfile_name: sondierung
           filter: KIND IN (1051002,10501003,10501004,10501005)
@@ -232,6 +117,7 @@ layers:
             ABOR_DEPTH_BEDR: ABOR_DEPTH_BEDR
 
         - style_file: styles/Point_Objects_Bohrung_Fels_nicht_erreicht.lyrx
+          index: 25
           classification_name: Point_Objects_Bohrung_Fels_nicht_erreicht
           mapfile_name: bohrung_fels_nicht_erreicht
           filter: KIND=10501001 AND ABOR_DEPTH_BEDR = 999
@@ -241,6 +127,7 @@ layers:
             ABOR_DEPTH_BEDR: ABOR_DEPTH_BEDR
           symbol_prefix: bohrung_fels_nicht_erreicht
         - style_file: styles/Point Objects_Quelle.lyrx
+          index: 26
           classification_name: Point Objects_Quelle
           mapfile_name: quelle
           filter: KIND=12501001
@@ -251,6 +138,7 @@ layers:
             HSUR_STATUS: HSUR_STATUS
           symbol_prefix: point_quelle
         - style_file: styles/Point Objects_Erraticker.lyrx
+          index: 27
           classification_name: Point Objects_Erraticker
           mapfile_name: erratiker
           # TODO: missing AND (PRINTED = 1 OR PRINTED IS NULL)
@@ -262,6 +150,7 @@ layers:
             RUNC_PROTECTED: RUNC_PROTECTED
           symbol_prefix: point_erratiker
         - style_file: styles/Point Objects_Orient.lyrx
+          index: 28
           classification_name: Point Objects_Orient
           mapfile_name: pnt_orient
           filter: KIND IN (11901001,12501002,12501003,12501004,12501006,12101006,13601001,13601002 ,13601003,13701001,13701002,13701004,14601004)
@@ -269,6 +158,107 @@ layers:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
           symbol_prefix: pnt_orient
+
+    - gpkg_layer: linear_objects
+      connection_ref: postgis_wms
+      layer_type: line
+      field_types:
+        KIND: Int64
+        TTEC_STATUS: Int64
+        TTEC_LIM_TYP: Int64
+        LPRO_LITHO: Int64
+        GGLA_GLAC_TYP: Int64
+      classifications:
+        - style_file: styles/Linear Objects_Moränenwall.lyrx
+          index: 50
+          classification_name: Linear Objects_Moränenwall
+          filter: KIND=11301001
+          mapfile_name: linear_moraenenwall
+          fields:
+            KIND: KIND
+            GGLA_GLAC_TYP: GGLA_GLAC_TYP
+          symbol_prefix: moraenenwall
+
+        - style_file: styles/Linear Objects_GeolKontur.lyrx
+          index: 51
+          classification_name: Linear Objects_GeolKontur
+          mapfile_name: geolkontur
+          fields:
+                KIND: KIND
+                LGEO_STATUS: LGEO_STATUS
+          symbol_prefix: geolkontur
+          filter: KIND = 13001001
+        - style_file: styles/Linear Objects_Gesteinhorizont.lyrx
+          classification_name: Linear Objects_Gesteinhorizont
+          mapfile_name: gesteinhorizont
+          fields:
+            KIND: KIND
+            LPRO_LITHO: LPRO_LITHO
+          symbol_prefix: gesteinhorizont
+          filter: KIND = 13101001
+        - style_file: styles/Linear Objects_Hilfs_Karto.lyrx
+          index: 52
+          classification_name: Linear Objects_Hilfs_Karto
+          mapfile_name: hilfs_karto
+          fields:
+            KIND: KIND
+          symbol_prefix: hilfs_karto
+          filter: KIND IN (15601001, 15601002)
+
+        - style_file: styles/Linear Objects_Bruch.lyrx
+          index: 53
+          classification_name: Linear Objects_Bruch
+          mapfile_name: linear_bruch
+          fields:
+            # Map GPKG field to classification field (can be complex paths)
+            KIND: KIND
+            TTEC_STATUS: TTEC_STATUS
+          symbol_prefix: linear_bruch
+          filter: KIND IN (14901002,14901004,14901005,14901006,14901007,14901008) # definitionExpression
+        - style_file: styles/Linear Objects_Ueberschiebung.lyrx
+          index: 54
+          classification_name: Linear Objects_Ueberschiebung
+          mapfile_name: linear_ueberschiebung
+          filter: KIND = 14901001
+          fields:
+            # Map GPKG field to classification field (can be complex paths)
+            KIND: KIND
+            TTEC_LIM_TYP: TTEC_LIM_TYP
+            TTEC_STATUS: TTEC_STATUS
+          symbol_prefix: linear_ueberschiebung
+
+    - gpkg_layer: exploit_polygons
+      connection_ref: postgis_wms
+      layer_type: polygon
+      field_types:
+        KIND: Int64 # `Int64` with capital `I` is a nullable integer...
+      classifications:
+        - style_file: styles/Exploit_Geomat_Plg.lyrx
+          index: 89
+          classification_name: Exploit_Geomat_Plg
+          mapfile_name: exploit_geomat_plg
+          symbol_prefix: geomat_plg
+          fields:
+            KIND: KIND
+            AEXP_STATUS: AEXP_STATUS
+
+    - gpkg_layer: surfaces
+      connection_ref: postgis_wms
+      layer_type: polygon
+      field_types:
+        KIND: Int64 # `Int64` with capital `I` is a nullable integer...
+      classifications:
+        - style_file: styles/Surfaces.lyrx
+          index: 87
+          classification_name: Surfaces
+          mapfile_name: surfaces
+          data: "geom from (SELECT * from surfaces where map_symbol IS NOT NULL) as blabla using unique gid using srid=2056"
+          fields:
+            # Map GPKG field to classification field (can be complex paths)
+            KIND: KIND
+          symbol_prefix: surfaces
+          # Dummy, for testing filter: "KIND == 12001002"
+
 
     - gpkg_layer: unco_deposits
       connection_ref: postgis_wms
@@ -282,6 +272,7 @@ layers:
         RUNC_GLAC_TYP: Int64
       classifications:
         - style_file: styles/Unco Deposits_Bachschutt.lyrx
+          index: 90
           classification_name: Unco Deposits_Bachschutt
           mapfile_name: bachschutt
           # filter: RUNC_LITHO NOT IN (15101009, 15101015,15101019, 15101021, 15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101041,15101046, 15101047, 15101048, 15101049, 15101055, 15101058, 15101040)
@@ -293,6 +284,7 @@ layers:
             RUNC_MORPHOLO: RUNC_MORPHOLO
             RUNC_CHRONO_B: RUNC_CHRONO_B # missing
         - style_file: styles/Unco Deposits_Litho__20000.lyrx
+          index: 91
           classification_name: Unco Deposits_Litho_<20000
           mapfile_name: unco_litho
           symbol_prefix: unco_litho
@@ -301,6 +293,7 @@ layers:
             KIND: KIND
             RUNC_LITHO: RUNC_LITHO
         - style_file: styles/Unco Deposits_Chrono_Moräne.lyrx
+          index: 92
           classification_name: Unco Deposits_Chrono_Moräne
           symbol_prefix: unco_chrono_moraene
           mapfile_name: unco_chrono_moraene
@@ -311,6 +304,7 @@ layers:
             RUNC_GLAC_TYP: RUNC_GLAC_TYP
             RUNC_CHRONO_T: RUNC_CHRONO_T # missing
         - style_file: styles/Unco Deposits_Chrono_T.lyrx
+          index: 93
           classification_name: Unco Deposits_Chrono_T
           mapfile_name: unco_chrono_t
           symbol_prefix: unco_chrono_t
@@ -321,6 +315,7 @@ layers:
             RUNC_GLAC_TYP: RUNC_GLAC_TYP
             RUNC_CHRONO_T: RUNC_CHRONO_T # missing
         - style_file: styles/Unco Deposits_Chrono_B.lyrx
+          index: 94
           classification_name: Unco Deposits_Chrono_B
           mapfile_name: unco_chrono_b
           symbol_prefix: unco_chrono_b
@@ -331,3 +326,27 @@ layers:
             RUNC_GLAC_TYP: RUNC_GLAC_TYP
             RUNC_CHRONO_T: RUNC_CHRONO_T
             RUNC_CHRONO_B: RUNC_CHRONO_B
+    # Complex case: Multiple classifications for same layer
+    # Bedrock example with complex field mapping
+    - gpkg_layer: bedrock
+      connection_ref: postgis_wms
+      layer_type: polygon
+      template: templates/bedrock.html
+      field_types:
+        KIND: Int64
+        RUNC_LITHO: Int64
+        RUNC_CHRONO_T: Int64
+        RUNC_CHRONO_B: Int64
+        RUNC_MORPHOLO: Int64
+        RUNC_GLAC_TYP: Int64
+      classifications:
+        - style_file: styles/Bedrock.lyrx
+          index: 100
+          classification_name: Bedrock
+          mapfile_name: bedrock
+          fields:
+            # Map GPKG field to classification field (can be complex paths)
+            GMU_CODE: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT
+          symbol_prefix: bedrock
+          filter: KIND == 14334001
+          identifier_field: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT # New
