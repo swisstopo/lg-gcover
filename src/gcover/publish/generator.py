@@ -35,6 +35,7 @@ from gcover.publish.symbol_utils import (
 )
 from gcover.publish.tooltips_enricher import LayerType
 from gcover.publish.utils import generate_font_image
+from gcover.config.models import MapserverConnection
 
 console = Console()
 
@@ -85,9 +86,10 @@ class MapServerGenerator:
         self,
         classification,
         layer_name: str,
-        data_path: str = None,
         symbol_prefix: str = "class",
         layer_type: Optional[str] = None,
+        connection: Optional[MapserverConnection] = None,
+        data: Optional[str] = None,
     ) -> str:
         """
         Generate complete MapServer LAYER block.
@@ -101,14 +103,17 @@ class MapServerGenerator:
         Returns:
             Complete LAYER block as string
         """
-        if layer_type:
-            self.layer_type = layer_type.name  # e.g. POLYGON
+        if  layer_type and isinstance(layer_type, LayerType):
+            layer_type = layer_type.name
+        else:
+            layer_type = self.layer_type # e.g. POLYGON
 
         logger.info(f"=== {layer_name} ===")
+
         lines = [
             "LAYER",
             f'  NAME "{layer_name}"',
-            f"  TYPE {self.layer_type}",
+            f"  TYPE {layer_type}",
             "  STATUS ON",
             "",
         ]
@@ -127,13 +132,14 @@ class MapServerGenerator:
         )
 
         # Data source
-        if data_path:
+        if connection:
+            logger.info(f"data={data}")
             lines.extend(
                 [
                     "",
-                    "  CONNECTIONTYPE POSTGIS",
-                    '  CONNECTION "host=postgis port=5432 dbname=geocover user=gcover password=gcover123"',
-                    f'  DATA "geom from (SELECT * from {data_path} where {self.symbol_field.lower()} IS NOT NULL) as blabla using unique gid using srid=2056"',
+                    f"  CONNECTIONTYPE {connection.connection_type.name}",
+                    f'  CONNECTION "{connection.connection}"',
+                    f'  DATA "{data}"',
                 ]
             )
 

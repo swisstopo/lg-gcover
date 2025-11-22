@@ -806,18 +806,17 @@ def list_mapsheets(ctx, admin_zones: Optional[Path]):
     required=True,
     help="Output directory for mapfiles",
 )
-@click.option(
-    "--config-file",
-    "-c",
+# YAML configuration file (extracts prefixes and layer names automatically",
+@click.argument(
+    "config-file",
     type=click.Path(exists=True, path_type=Path),
-    help="YAML configuration file (extracts prefixes and layer names automatically)",
+
 )
 @click.option(
-    "--layer-type",
-    "-t",
-    type=click.Choice(["Polygon", "Line", "Point"]),
-    default="Polygon",
-    help="Geometry type",
+    "--connection",
+    type=str,
+    default="postgis_wms",
+    help="Database connection to use (as defined in the main YAML config)",
 )
 @click.option(
     "--data-path", "-d", help="Data source path template (use {layer} placeholder)"
@@ -850,8 +849,7 @@ def mapserver(
     output_dir: Path,
     config_file: Optional[Path],
     styles_dir: Optional[Path],
-    layer_type: str,
-    data_path: Optional[str],
+    connection: str,
     use_symbol_field: bool,
     symbol_field: str,
     prefixes: Optional[str],
@@ -865,19 +863,28 @@ def mapserver(
     \b
     Examples:
       # Using configuration file (recommended)
-      gcover publish mapserver -o output/ -c config/esri_classifier.yaml \\
-        --generate-combined
+      gcover publish mapserver -o output/ --generate-combined \\
+          config/esri_classifier.yaml
 
       # Manual with JSON prefixes
       gcover publish mapserver --style-dir styles/ -o output/ -t Polygon \\
         --use-symbol-field --generate-combined \\
-        --prefixes '{"Bedrock":"bedr","Surfaces":"surf","Fossils":"foss"}'
+        --prefixes '{"Bedrock":"bedr","Surfaces":"surf","Fossils":"foss"}' \\
+        config/esri_classifier.yaml
 
-      # With data path template
-      gcover publish mapserver --styles-dir styles/ -o output/ \\
-        --data-path "geocover.gpkg,layer={layer}" \\
-        --generate-combined
+
     """
+    layer_type = None
+
+    publish_config, global_config = get_publish_config(ctx)
+
+    if connection and connection in global_config.mapserver.connections:
+
+        connections = global_config.mapserver.connections
+        connection_cfg = connections[connection]
+
+
+
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load configuration if provided
@@ -916,9 +923,10 @@ def mapserver(
         style_files = []
         for layer_config in config.layers:
             layer_type = layer_config.layer_type
+            gpkg_layer = layer_config.gpkg_layer
             for class_config in layer_config.classifications:
                 if class_config.style_file not in style_files:
-                    style_files.append((class_config.style_file, layer_type))
+                    style_files.append((class_config.style_file, layer_type, gpkg_layer, class_config.data))
         console.print(
             f"  [green]✓[/green] Found {len(style_files)} style files in config"
         )
@@ -954,8 +962,10 @@ def mapserver(
         symbol_field=symbol_field,
     )
 
-    for style_file, layer_type in style_files:
+    for style_file, layer_type, gpkg_layer,  mapserver_data in style_files:
         console.print(f"Processing {style_file.name} [{layer_type}]...")
+
+
 
         lyrx_path = styles_dir / style_file.name
 
@@ -981,26 +991,28 @@ def mapserver(
             symbol_prefix = prefix_map.get(layer_name, layer_name.lower())
             mapfile_layer_name = mapfile_names.get(layer_name, layer_name)
 
-            # Determine data path
-            layer_data_path = None
-            if data_path:
-                layer_data_path = data_path.replace(
-                    "{layer}", mapfile_layer_name.upper()
-                )
+
+
+            if not mapserver_data:
+                mapserver_data = f"geom from (SELECT * from {gpkg_layer} ) as blabla using unique gid using srid=2056"
 
             # Generate mapfile
             mapfile_content = generator.generate_layer(
                 classification=classification,
                 layer_name=mapfile_layer_name,
-                data_path=layer_data_path,
                 symbol_prefix=symbol_prefix,
+                data=mapserver_data,
                 layer_type=layer_type,
+                connection=connection_cfg,
             )
+
 
             # Save mapfile
             output_file = output_dir / f"{mapfile_layer_name}.map"
             output_file.write_text(mapfile_content)
             generated_files.append(output_file)
+
+
 
             console.print(
                 f"  [green]✓[/green] Generated: {output_file.name} "
