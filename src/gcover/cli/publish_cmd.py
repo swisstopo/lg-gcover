@@ -810,16 +810,13 @@ def list_mapsheets(ctx, admin_zones: Optional[Path]):
 @click.argument(
     "config-file",
     type=click.Path(exists=True, path_type=Path),
-
 )
 @click.option(
     "--connection",
+    "connection_name",
     type=str,
     default="postgis_wms",
     help="Database connection to use (as defined in the main YAML config)",
-)
-@click.option(
-    "--data-path", "-d", help="Data source path template (use {layer} placeholder)"
 )
 @click.option(
     "--use-symbol-field",
@@ -849,11 +846,11 @@ def mapserver(
     output_dir: Path,
     config_file: Optional[Path],
     styles_dir: Optional[Path],
-    connection: str,
     use_symbol_field: bool,
     symbol_field: str,
     prefixes: Optional[str],
     generate_combined: bool,
+    connection_name: Optional[str] = None,
 ):
     """Generate MapServer mapfiles from ESRI style files.
 
@@ -878,12 +875,16 @@ def mapserver(
 
     publish_config, global_config = get_publish_config(ctx)
 
-    if connection and connection in global_config.mapserver.connections:
-
+    try:
         connections = global_config.mapserver.connections
-        connection_cfg = connections[connection]
+    except:
+        raise click.BadParameter(
+            f"Cannot find mapserver connections for environment: {ctx.obj['environment']}"
+        )
 
-
+    if connection_name and connection_name in global_config.mapserver.connections:
+        connections = global_config.mapserver.connections
+        connection = connections[connection_name]
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -924,9 +925,19 @@ def mapserver(
         for layer_config in config.layers:
             layer_type = layer_config.layer_type
             gpkg_layer = layer_config.gpkg_layer
+            connection_ref = layer_config.connection_ref
             for class_config in layer_config.classifications:
                 if class_config.style_file not in style_files:
-                    style_files.append((class_config.style_file, layer_type, gpkg_layer, class_config.data))
+                    params = (
+                        class_config.style_file,
+                        layer_type,
+                        gpkg_layer,
+                        connection_ref,
+                        class_config.data,
+                    )
+                    logger.debug(params)
+                    style_files.append(params)
+
         console.print(
             f"  [green]✓[/green] Found {len(style_files)} style files in config"
         )
@@ -962,10 +973,20 @@ def mapserver(
         symbol_field=symbol_field,
     )
 
-    for style_file, layer_type, gpkg_layer,  mapserver_data in style_files:
+    for (
+        style_file,
+        layer_type,
+        gpkg_layer,
+        connection_ref,
+        mapserver_data,
+    ) in style_files:
         console.print(f"Processing {style_file.name} [{layer_type}]...")
 
+        if connection_ref and connections.get(connection_ref):
+            connection = connections.get(connection_ref)
 
+        if not connection:
+            raise click.Abort("Not connection found. Aborting")
 
         lyrx_path = styles_dir / style_file.name
 
@@ -991,8 +1012,6 @@ def mapserver(
             symbol_prefix = prefix_map.get(layer_name, layer_name.lower())
             mapfile_layer_name = mapfile_names.get(layer_name, layer_name)
 
-
-
             if not mapserver_data:
                 mapserver_data = f"geom from (SELECT * from {gpkg_layer} ) as blabla using unique gid using srid=2056"
 
@@ -1003,16 +1022,13 @@ def mapserver(
                 symbol_prefix=symbol_prefix,
                 data=mapserver_data,
                 layer_type=layer_type,
-                connection=connection_cfg,
+                connection=connection,
             )
-
 
             # Save mapfile
             output_file = output_dir / f"{mapfile_layer_name}.map"
             output_file.write_text(mapfile_content)
             generated_files.append(output_file)
-
-
 
             console.print(
                 f"  [green]✓[/green] Generated: {output_file.name} "

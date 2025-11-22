@@ -86,8 +86,8 @@ class MapServerGenerator:
         self,
         classification,
         layer_name: str,
+        layer_type: str,
         symbol_prefix: str = "class",
-        layer_type: Optional[str] = None,
         connection: Optional[MapserverConnection] = None,
         data: Optional[str] = None,
     ) -> str:
@@ -103,10 +103,12 @@ class MapServerGenerator:
         Returns:
             Complete LAYER block as string
         """
-        if  layer_type and isinstance(layer_type, LayerType):
-            layer_type = layer_type.name
+        if layer_type:
+            if isinstance(layer_type, LayerType):
+                layer_type = layer_type.name
+
         else:
-            layer_type = self.layer_type # e.g. POLYGON
+            layer_type = self.layer_type  # e.g. POLYGON
 
         logger.info(f"=== {layer_name} ===")
 
@@ -133,7 +135,6 @@ class MapServerGenerator:
 
         # Data source
         if connection:
-            logger.info(f"data={data}")
             lines.extend(
                 [
                     "",
