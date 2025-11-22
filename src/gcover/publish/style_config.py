@@ -53,6 +53,8 @@ class ClassificationConfig:
     filter: Optional[str] = None
     symbol_prefix: Optional[str] = None
     identifier_field: Optional[str] = None
+    data: Optional[str] = None
+
 
 
 @dataclass
@@ -63,6 +65,7 @@ class LayerConfig:
     classifications: List[ClassificationConfig]
     field_types: Optional[Dict[str, str]] = None
     layer_type: Optional[LayerType] = None
+    connection_ref: Optional[str] = None
 
 
 class BatchClassificationConfig:
@@ -101,6 +104,7 @@ class BatchClassificationConfig:
         gpkg_layer = layer_dict["gpkg_layer"]
         layer_type_str = layer_dict.get("layer_type")
         layer_type = LayerType(layer_type_str) if layer_type_str else None
+        connection_ref = layer_dict.get("connection_ref"),
         classifications = []
         field_types = layer_dict.get("field_types", {})
 
@@ -119,6 +123,8 @@ class BatchClassificationConfig:
                     symbol_prefix=class_dict.get("symbol_prefix"),
                     mapfile_name=class_dict.get("mapfile_name"),
                     identifier_field=class_dict.get("identifier_field"),
+                    data=class_dict.get("data"),
+
                 )
             )
 
@@ -127,6 +133,7 @@ class BatchClassificationConfig:
             classifications=classifications,
             field_types=field_types,
             layer_type=layer_type,
+            connection_ref=connection_ref,
         )
 
     def get_layer_config(self, gpkg_layer: str) -> Optional[LayerConfig]:

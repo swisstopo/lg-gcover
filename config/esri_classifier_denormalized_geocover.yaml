@@ -9,6 +9,7 @@ global:
 # Layer configurations
 layers:
     - gpkg_layer: surfaces
+      connection_ref: postgis_wms
       layer_type: polygon
       field_types:
         KIND: Int64 # `Int64` with capital `I` is a nullable integer...
@@ -16,6 +17,7 @@ layers:
         - style_file: styles/Surfaces.lyrx
           classification_name: Surfaces
           mapfile_name: surfaces
+          data: "geom from (SELECT * from surfaces where map_symbol IS NOT NULL) as blabla using unique gid using srid=2056"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -23,6 +25,7 @@ layers:
           # Dummy, for testing filter: "KIND == 12001002"
 
     - gpkg_layer: exploit_points
+      connection_ref: postgis_wms
       layer_type: point
       field_types:
         KIND: Int64 # `Int64` with capital `I` is a nullable integer...
@@ -36,6 +39,7 @@ layers:
             KIND: KIND
             AEXP_STATUS: AEXP_STATUS
     - gpkg_layer: exploit_polygons
+      connection_ref: postgis_wms
       layer_type: polygon
       field_types:
         KIND: Int64 # `Int64` with capital `I` is a nullable integer...
@@ -49,6 +53,7 @@ layers:
             AEXP_STATUS: AEXP_STATUS
 
     - gpkg_layer: fossils
+      connection_ref: postgis_wms
       layer_type: point
       field_types:
         KIND: Int64
@@ -65,6 +70,7 @@ layers:
             LFOS_STATUS: LFOS_STATUS
           symbol_prefix: fossil
     - gpkg_layer: exploit_geomat_plg
+      connection_ref: postgis_wms
       layer_type: polygon
       field_types:
         KIND: Int64
@@ -79,6 +85,7 @@ layers:
     # Complex case: Multiple classifications for same layer
     # Bedrock example with complex field mapping
     - gpkg_layer: bedrock
+      connection_ref: postgis_wms
       layer_type: polygon
       field_types:
         KIND: Int64
@@ -98,6 +105,7 @@ layers:
           filter: KIND == 14334001
           identifier_field: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT # New
     - gpkg_layer: linear_objects
+      connection_ref: postgis_wms
       layer_type: line
       field_types:
         KIND: Int64
@@ -159,6 +167,7 @@ layers:
             TTEC_STATUS: TTEC_STATUS
           symbol_prefix: linear_ueberschiebung
     - gpkg_layer: point_objects
+      connection_ref: postgis_wms
       layer_type: point
       field_types:
         KIND: Int64
@@ -262,6 +271,7 @@ layers:
           symbol_prefix: pnt_orient
 
     - gpkg_layer: unco_deposits
+      connection_ref: postgis_wms
       layer_type: polygon
       field_types:
         KIND: Int64
