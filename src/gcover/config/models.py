@@ -9,9 +9,67 @@ import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional, Union
+from enum import Enum, auto
+from dataclasses import dataclass, field
+
 
 from loguru import logger
 from pydantic import BaseModel, Field, field_validator, validator
+
+
+class MapserverConnectionType(Enum):
+    """Enforces the two required MapServer connection types."""
+
+    OGR = auto()
+    POSTGIS = auto()
+
+
+class OgrDriver(Enum):
+    """Supported OGR connection formats (drivers)."""
+
+    GPKG = "GPKG"
+    FILEGDB = "OpenFileGDB"  # Using the open-source driver
+
+
+@dataclass
+class MapserverConnection:
+    """Base class for MapServer data connection configuration."""
+
+    # Required: CONNECTIONTYPE
+    connection_type: MapserverConnectionType
+    # Required: CONNECTION string (datasource name for OGR, connection string for PostGIS)
+    connection: str
+
+
+@dataclass
+class PostgisConnection(MapserverConnection):
+    """Configuration for a reusable PostGIS connection string only."""
+
+    connection_type: MapserverConnectionType = field(
+        default=MapserverConnectionType.POSTGIS, init=False
+    )
+    # The 'data' field is intentionally omitted here
+
+
+@dataclass
+class OgrConnection(MapserverConnection):
+    """Configuration for an OGR connection. OGR still needs 'data'
+    to specify the layer/table name within the file."""
+
+    connection_type: MapserverConnectionType = field(
+        default=MapserverConnectionType.OGR, init=False
+    )
+    ogr_driver: OgrDriver
+    data: Optional[str] = None
+
+
+
+@dataclass
+class MapserverConfig:
+    """Holds all MapServer specific configurations."""
+
+    # Key-value map of connection name -> Connection object
+    connections: Dict[str, Union[OgrConnection, PostgisConnection]]
 
 
 class FileLoggingConfig(BaseModel):
@@ -382,6 +440,7 @@ class GlobalConfig(BaseModel):
     logging: LoggingConfig = LoggingConfig()
     proxy: Optional[str] = None
     public_url: Optional[str] = None
+    mapserver: Optional[MapserverConfig]
 
     @validator("temp_dir", pre=True)
     def parse_temp_dir(cls, v):

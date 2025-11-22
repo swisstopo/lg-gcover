@@ -35,6 +35,7 @@ from gcover.publish.symbol_utils import (
 )
 from gcover.publish.tooltips_enricher import LayerType
 from gcover.publish.utils import generate_font_image
+from gcover.config.models import MapserverConnection
 
 console = Console()
 
@@ -85,8 +86,10 @@ class MapServerGenerator:
         self,
         classification,
         layer_name: str,
-        data_path: str = None,
+        layer_type: str,
         symbol_prefix: str = "class",
+        connection: Optional[MapserverConnection] = None,
+        data: Optional[str] = None,
     ) -> str:
         """
         Generate complete MapServer LAYER block.
@@ -100,11 +103,19 @@ class MapServerGenerator:
         Returns:
             Complete LAYER block as string
         """
+        if layer_type:
+            if isinstance(layer_type, LayerType):
+                layer_type = layer_type.name
+
+        else:
+            layer_type = self.layer_type  # e.g. POLYGON
+
         logger.info(f"=== {layer_name} ===")
+
         lines = [
             "LAYER",
             f'  NAME "{layer_name}"',
-            f"  TYPE {self.layer_type}",
+            f"  TYPE {layer_type}",
             "  STATUS ON",
             "",
         ]
@@ -123,13 +134,13 @@ class MapServerGenerator:
         )
 
         # Data source
-        if data_path:
+        if connection:
             lines.extend(
                 [
                     "",
-                    "  CONNECTIONTYPE POSTGIS",
-                    '  CONNECTION "host=postgis port=5432 dbname=geocover user=gcover password=gcover123"',
-                    f'  DATA "geom from (SELECT * from {data_path} where {self.symbol_field.lower()} IS NOT NULL) as blabla using unique gid using srid=2056"',
+                    f"  CONNECTIONTYPE {connection.connection_type.name}",
+                    f'  CONNECTION "{connection.connection}"',
+                    f'  DATA "{data}"',
                 ]
             )
 
@@ -158,11 +169,38 @@ class MapServerGenerator:
         # Generate CLASS blocks
         field_names = [f.name for f in classification.fields]
 
-        for i, class_obj in enumerate(classification.classes):
+        for idx, class_obj in enumerate(classification.classes):
             if not class_obj.visible:
                 continue
+            # NOUVEAU: Extraire la valeur depuis l'identifier si disponible
+            identifier_value = idx  # Par défaut: utiliser l'index
 
-            class_block = self.generate_class(class_obj, field_names, i, symbol_prefix)
+            if hasattr(class_obj, "identifier") and class_obj.identifier:
+                try:
+                    # Extraire la valeur depuis le ClassIdentifier
+                    identifier_key = class_obj.identifier.to_key()
+                    # La dernière partie contient la valeur (après le "::")
+                    identifier_value = identifier_key.split("::")[-1]
+
+                    logger.debug(
+                        f"Using identifier value '{identifier_value}' "
+                        f"for class '{class_obj.label}' (instead of index {idx})"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Could not extract identifier value for '{class_obj.label}': {e}, "
+                        f"using index {idx}"
+                    )
+                    identifier_value = idx
+
+            # Construire le symbol_id avec la valeur extraite
+            symbol_id = f"{symbol_prefix}_{identifier_value}"
+
+            logger.debug(f"class idx: {symbol_id}")
+
+            class_block = self.generate_class(
+                class_obj, field_names, identifier_value, symbol_prefix
+            )
             lines.append(class_block)
 
         lines.append("END # LAYER")
@@ -697,9 +735,25 @@ class MapServerGenerator:
                     hasattr(class_obj, "full_symbol_layers")
                     and class_obj.full_symbol_layers
                 ):
-                    for fill_info in class_obj.full_symbol_layers.fills:
-                        if fill_info.get("type") == "hatch":
-                            # Just flag that we need hatch symbol
+                    layers = class_obj.full_symbol_layers
+
+                    # If it's a single SymbolLayersInfo
+                    if isinstance(layers, SymbolLayersInfo):
+                        fills = layers.fills
+                    elif isinstance(layers, list):
+                        # If it's a list of SymbolLayersInfo
+                        fills = []
+                        for l in layers:
+                            if isinstance(l, SymbolLayersInfo):
+                                fills.extend(l.fills)
+                    else:
+                        fills = []
+
+                    for fill_info in fills:
+                        if (
+                            isinstance(fill_info, dict)
+                            and fill_info.get("type") == "hatch"
+                        ):
                             if not any(
                                 s.get("type") == "hatch" for s in self.pattern_symbols
                             ):
