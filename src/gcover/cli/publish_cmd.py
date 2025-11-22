@@ -25,7 +25,7 @@ from gcover.cli.main import _split_bbox
 from gcover.config import SDE_INSTANCES, AppConfig, load_config
 from gcover.publish.esri_classification_applicator import ClassificationApplicator
 from gcover.publish.esri_classification_extractor import (
-   extract_lyrx_complete,
+    extract_lyrx_complete,
 )
 from gcover.publish.generator import MapServerGenerator
 from gcover.publish.qgis_generator import QGISGenerator
@@ -205,7 +205,6 @@ def apply_config(
                             f"  [green]✓ Found: {class_config.style_file.name}[/green]"
                         )
 
-
             if all_valid:
                 console.print("\n[green]✓ Configuration is valid![/green]")
             else:
@@ -239,21 +238,42 @@ def apply_config(
             )
 
             console.print("\n[bold red]❌ Batch processing failed![/bold red]")
-            console.print(Panel(error_message, title="Error Details", title_align="left", border_style="red"))
+            console.print(
+                Panel(
+                    error_message,
+                    title="Error Details",
+                    title_align="left",
+                    border_style="red",
+                )
+            )
 
             # Rest of troubleshooting table...
-            troubleshooting_table = Table(title="Troubleshooting Tips", show_header=True)
+            troubleshooting_table = Table(
+                title="Troubleshooting Tips", show_header=True
+            )
             troubleshooting_table.add_column("Check", style="cyan")
             troubleshooting_table.add_column("Action", style="white")
 
-            troubleshooting_table.add_row("Input file", "Verify the GeoPackage exists and is accessible")
-            troubleshooting_table.add_row("Layer name", f"Confirm layer '{layer}' exists in the file")
-            troubleshooting_table.add_row("Configuration", "Check your classification rules are valid")
-            troubleshooting_table.add_row("Bounding box", "Verify bbox coordinates if used")
-            troubleshooting_table.add_row("Debug mode", "Run with --debug for detailed error information")
+            troubleshooting_table.add_row(
+                "Input file", "Verify the GeoPackage exists and is accessible"
+            )
+            troubleshooting_table.add_row(
+                "Layer name", f"Confirm layer '{layer}' exists in the file"
+            )
+            troubleshooting_table.add_row(
+                "Configuration", "Check your classification rules are valid"
+            )
+            troubleshooting_table.add_row(
+                "Bounding box", "Verify bbox coordinates if used"
+            )
+            troubleshooting_table.add_row(
+                "Debug mode", "Run with --debug for detailed error information"
+            )
 
             console.print(troubleshooting_table)
-            console.print(f"\n[yellow]Processing time: {int(mins)}m {secs:.1f}s[/yellow]")
+            console.print(
+                f"\n[yellow]Processing time: {int(mins)}m {secs:.1f}s[/yellow]"
+            )
 
             sys.exit(1)
 
@@ -779,7 +799,6 @@ def list_mapsheets(ctx, admin_zones: Optional[Path]):
 
 @publish_commands.command()
 @click.pass_context
-@click.argument("style_files", nargs=-1, type=click.Path(exists=True, path_type=Path))
 @click.option(
     "--output-dir",
     "-o",
@@ -812,6 +831,11 @@ def list_mapsheets(ctx, admin_zones: Optional[Path]):
     "--symbol-field", default="SYMBOL", help="Name of symbol field (default: SYMBOL)"
 )
 @click.option(
+    "--styles-dir",
+    type=click.Path(exists=True, path_type=Path),
+    help="Base directory for resolving relative style paths (default: config file directory)",
+)
+@click.option(
     "--prefixes",
     "-p",
     help="Layer name to prefix mapping as JSON (overrides config file)",
@@ -823,9 +847,9 @@ def list_mapsheets(ctx, admin_zones: Optional[Path]):
 )
 def mapserver(
     ctx,
-    style_files: tuple,
     output_dir: Path,
     config_file: Optional[Path],
+    styles_dir: Optional[Path],
     layer_type: str,
     data_path: Optional[str],
     use_symbol_field: bool,
@@ -845,12 +869,12 @@ def mapserver(
         --generate-combined
 
       # Manual with JSON prefixes
-      gcover publish mapserver styles/*.lyrx -o output/ -t Polygon \\
+      gcover publish mapserver --style-dir styles/ -o output/ -t Polygon \\
         --use-symbol-field --generate-combined \\
         --prefixes '{"Bedrock":"bedr","Surfaces":"surf","Fossils":"foss"}'
 
       # With data path template
-      gcover publish mapserver styles/*.lyrx -o output/ \\
+      gcover publish mapserver --styles-dir styles/ -o output/ \\
         --data-path "geocover.gpkg,layer={layer}" \\
         --generate-combined
     """
@@ -881,25 +905,23 @@ def mapserver(
                         field_name = class_config.identifier_field
                         identifier_fields[key] = field_name
                         logger.debug(
-                            f"Layer '{key}' will use "
-                            f"identifier_field: {field_name}"
+                            f"Layer '{key}' will use identifier_field: {field_name}"
                         )
-
 
         console.print(
             f"  [green]✓[/green] Extracted prefixes for {len(prefix_map)} classifications"
         )
 
         # If no style files specified, use all from config
-        if not style_files:
-            style_files = []
-            for layer_config in config.layers:
-                for class_config in layer_config.classifications:
-                    if class_config.style_file not in style_files:
-                        style_files.append(class_config.style_file)
-            console.print(
-                f"  [green]✓[/green] Found {len(style_files)} style files in config"
-            )
+        style_files = []
+        for layer_config in config.layers:
+            layer_type = layer_config.layer_type
+            for class_config in layer_config.classifications:
+                if class_config.style_file not in style_files:
+                    style_files.append((class_config.style_file, layer_type))
+        console.print(
+            f"  [green]✓[/green] Found {len(style_files)} style files in config"
+        )
 
     # Override with manual prefixes if provided
     if prefixes:
@@ -919,30 +941,31 @@ def mapserver(
         )
         raise click.Abort()
 
-    # Single generator for all layers (to track symbols across layers)
-    generator = MapServerGenerator(
-        layer_type=layer_type,
-        use_symbol_field=use_symbol_field,
-        symbol_field=symbol_field,
-    )
-
     # Store all classifications for combined symbol file
     all_classifications = []
     generated_files = []
 
     console.print(f"\n[bold blue]🗺️  Generating MapServer Mapfiles[/bold blue]\n")
 
-    for style_file in style_files:
-        console.print(f"Processing {style_file.name}...")
+    # Single generator for all layers (to track symbols across layers)
+    generator = MapServerGenerator(
+        layer_type=layer_type.name,  # TODO remove
+        use_symbol_field=use_symbol_field,
+        symbol_field=symbol_field,
+    )
 
+    for style_file, layer_type in style_files:
+        console.print(f"Processing {style_file.name} [{layer_type}]...")
+
+        lyrx_path = styles_dir / style_file.name
+
+        generator.layer_type = layer_type.name
         # Load classifications
         classifications = extract_lyrx_complete(
-            style_file,
+            lyrx_path,
             display=False,
-            identifier_fields=identifier_fields  # ← NEW
+            identifier_fields=identifier_fields,  # ← NEW
         )  # TODO switched from extract_lyrx
-
-
 
         if not classifications:
             console.print(
@@ -971,6 +994,7 @@ def mapserver(
                 layer_name=mapfile_layer_name,
                 data_path=layer_data_path,
                 symbol_prefix=symbol_prefix,
+                layer_type=layer_type,
             )
 
             # Save mapfile
@@ -989,17 +1013,6 @@ def mapserver(
 
     # Generate combined symbol file if requested
     if generate_combined and all_classifications:
-        console.print("\n[cyan]Generating combined symbol file...[/cyan]")
-
-        # Generate symbol file with all collected symbols
-        symbol_content = generator.generate_symbol_file(
-            classification_list=all_classifications, prefixes=prefix_map
-        )
-
-        symbol_file = output_dir / "symbols.sym"
-        symbol_file.write_text(symbol_content)
-        console.print(f"  [green]✓[/green] Symbol file: {symbol_file}")
-
         # Generate fontset
         fontset_content = generator.generate_fontset()
         fontset_file = output_dir / "fonts.txt"
@@ -1010,6 +1023,16 @@ def mapserver(
         pdf_file = output_dir / "font_characters.pdf"
         if pdf_file.exists():
             console.print(f"  [green]✓[/green] Font symbols PDF: {pdf_file}")
+        console.print("\n[cyan]Generating combined symbol file...[/cyan]")
+
+        # Generate symbol file with all collected symbols
+        symbol_content = generator.generate_symbol_file(
+            classification_list=all_classifications, prefixes=prefix_map
+        )
+
+        symbol_file = output_dir / "symbols.sym"
+        symbol_file.write_text(symbol_content)
+        console.print(f"  [green]✓[/green] Symbol file: {symbol_file}")
 
         console.print(
             f"\n[dim]Tracked {len(generator.symbol_registry)} unique font symbols[/dim]"

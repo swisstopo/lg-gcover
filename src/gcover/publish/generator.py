@@ -87,6 +87,7 @@ class MapServerGenerator:
         layer_name: str,
         data_path: str = None,
         symbol_prefix: str = "class",
+        layer_type: Optional[str] = None,
     ) -> str:
         """
         Generate complete MapServer LAYER block.
@@ -100,6 +101,9 @@ class MapServerGenerator:
         Returns:
             Complete LAYER block as string
         """
+        if layer_type:
+            self.layer_type = layer_type.name  # e.g. POLYGON
+
         logger.info(f"=== {layer_name} ===")
         lines = [
             "LAYER",
@@ -724,9 +728,25 @@ class MapServerGenerator:
                     hasattr(class_obj, "full_symbol_layers")
                     and class_obj.full_symbol_layers
                 ):
-                    for fill_info in class_obj.full_symbol_layers.fills:
-                        if fill_info.get("type") == "hatch":
-                            # Just flag that we need hatch symbol
+                    layers = class_obj.full_symbol_layers
+
+                    # If it's a single SymbolLayersInfo
+                    if isinstance(layers, SymbolLayersInfo):
+                        fills = layers.fills
+                    elif isinstance(layers, list):
+                        # If it's a list of SymbolLayersInfo
+                        fills = []
+                        for l in layers:
+                            if isinstance(l, SymbolLayersInfo):
+                                fills.extend(l.fills)
+                    else:
+                        fills = []
+
+                    for fill_info in fills:
+                        if (
+                            isinstance(fill_info, dict)
+                            and fill_info.get("type") == "hatch"
+                        ):
                             if not any(
                                 s.get("type") == "hatch" for s in self.pattern_symbols
                             ):
