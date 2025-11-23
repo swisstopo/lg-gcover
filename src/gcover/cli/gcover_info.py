@@ -3,10 +3,14 @@
 GPKG Field Manager - A CLI tool to list and rename fields in GeoPackage files.
 """
 
+import shutil
+import tempfile
 import warnings
-from typing import List, Optional, Dict
+from pathlib import Path
+from typing import Dict, List, Optional
 
 import click
+import fiona
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -304,6 +308,100 @@ def process_layer(
                 return None, False
 
 
+def save_modified_layers(
+    modified_layers: Dict[str, gpd.GeoDataFrame], filename: str, new_filename: str
+) -> int:
+    """
+    Save all modified layers to a file.
+    For GPKG with existing file, recreates the entire file to avoid schema conflicts.
+    """
+    success_count = 0
+
+    # Special handling for GPKG when overwriting
+    if (
+        new_filename.endswith(".gpkg")
+        and Path(new_filename).exists()
+        and new_filename == filename
+    ):
+        # Get list of all layers in original file
+        all_layers = fiona.listlayers(new_filename)
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(suffix=".gpkg", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        try:
+            # Copy unmodified layers to temp file
+            for layer_name in all_layers:
+                if layer_name not in modified_layers:
+                    gdf_original = gpd.read_file(
+                        new_filename, layer=layer_name, engine="pyogrio"
+                    )
+                    gdf_original.to_file(
+                        tmp_path,
+                        layer=layer_name,
+                        driver="GPKG",
+                        engine="pyogrio",
+                        mode="a" if Path(tmp_path).stat().st_size > 0 else "w",
+                    )
+
+            # Add modified layers to temp file
+            for layer_name, gdf in modified_layers.items():
+                gdf.to_file(
+                    tmp_path,
+                    layer=layer_name,
+                    driver="GPKG",
+                    engine="pyogrio",
+                    mode="a",
+                )
+                success_count += 1
+                console.print(
+                    f"[green]✓ Successfully saved layer '{layer_name}'[/green]"
+                )
+
+            # Replace original file with temp file
+            shutil.move(tmp_path, new_filename)
+
+        except Exception as e:
+            console.print(f"[red]✗ Error: {e}[/red]")
+            if Path(tmp_path).exists():
+                Path(tmp_path).unlink()
+            raise
+
+    else:
+        # Standard save for new files or non-GPKG
+        for layer_name, gdf in modified_layers.items():
+            try:
+                if new_filename.endswith(".gpkg"):
+                    if Path(new_filename).exists():
+                        gdf.to_file(
+                            filename=new_filename,
+                            layer=layer_name,
+                            driver="GPKG",
+                            engine="pyogrio",
+                            mode="a",
+                        )
+                    else:
+                        gdf.to_file(
+                            new_filename,
+                            layer=layer_name,
+                            driver="GPKG",
+                            engine="pyogrio",
+                        )
+                else:
+                    gdf.to_file(new_filename, engine="pyogrio")
+
+                console.print(
+                    f"[green]✓ Successfully saved layer '{layer_name}'[/green]"
+                )
+                success_count += 1
+
+            except Exception as e:
+                console.print(f"[red]✗ Error saving layer '{layer_name}': {e}[/red]")
+
+    return success_count
+
+
 @click.command()
 @click.argument("filename", type=click.Path(exists=True))
 @click.option(
@@ -382,18 +480,13 @@ def info(filename: str, layer: Optional[str], in_place: bool, spatial_only: bool
 
             # Save all modified layers
             success_count = 0
-            for layer_name, gdf in modified_layers.items():
-                try:
-                    if new_filename.endswith(".gpkg"):
-                        gdf.to_file(new_filename, layer=layer_name, driver="GPKG")
-                    else:
-                        gdf.to_file(new_filename)
-                    console.print(
-                        f"[green]✓ Successfully saved layer '{layer_name}'[/green]"
-                    )
-                    success_count += 1
-                except Exception as e:
-                    console.print(f"[red]Error saving layer '{layer_name}': {e}[/red]")
+            try:
+                success_count = save_modified_layers(
+                    modified_layers, filename, new_filename
+                )
+
+            except Exception as e:
+                console.print(f"[red]Error saving layer '{layer_name}': {e}[/red]")
 
             console.print(
                 f"\n[green]✓ Saved {success_count}/{len(modified_layers)} layers to {new_filename}[/green]"
@@ -446,22 +539,16 @@ def info(filename: str, layer: Optional[str], in_place: bool, spatial_only: bool
 
                         # Save all modified layers
                         success_count = 0
-                        for layer_name, gdf in modified_layers.items():
-                            try:
-                                if new_filename.endswith(".gpkg"):
-                                    gdf.to_file(
-                                        new_filename, layer=layer_name, driver="GPKG"
-                                    )
-                                else:
-                                    gdf.to_file(new_filename)
-                                console.print(
-                                    f"[green]✓ Successfully saved layer '{layer_name}'[/green]"
-                                )
-                                success_count += 1
-                            except Exception as e:
-                                console.print(
-                                    f"[red]Error saving layer '{layer_name}': {e}[/red]"
-                                )
+
+                        try:
+                            success_count = save_modified_layers(
+                                modified_layers, filename, new_filename
+                            )
+
+                        except Exception as e:
+                            console.print(
+                                f"[red]Error saving layer '{layer_name}': {e}[/red]"
+                            )
 
                         console.print(
                             f"\n[green]✓ Saved {success_count}/{len(modified_layers)} layers to {new_filename}[/green]"
