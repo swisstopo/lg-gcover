@@ -146,16 +146,19 @@ def translate_esri_to_pandas(esri_expression):
     - IS NULL → .isna()
     - IS NOT NULL → .notna()
     - IN clause (with or without parentheses)
+    - NOT IN clause
 
     Args:
         esri_expression: ESRI-style filter string
-
     Returns:
         Pandas-compatible query string
     """
     expr = esri_expression
 
-    # Replace IN (case insensitive) first
+    # Replace NOT IN first (before replacing IN alone)
+    expr = re.sub(r"\bNOT\s+IN\b", "not in", expr, flags=re.IGNORECASE)
+
+    # Replace IN (case insensitive)
     expr = re.sub(r"\bIN\b", "in", expr, flags=re.IGNORECASE)
 
     # Handle IN clause without parentheses
