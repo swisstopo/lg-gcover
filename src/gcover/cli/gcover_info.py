@@ -46,7 +46,9 @@ def get_supported_layers(filename: str, spatial_only: bool = False) -> List[str]
             spatial_layers = []
             for layer in layer_names:
                 try:
-                    gdf = gpd.read_file(filename, layer=layer)
+                    gdf = gpd.read_file(
+                        filename, layer=layer, engine="pyogrio", use_arrow=True
+                    )
                     if gdf.geometry.name and not gdf.empty:
                         spatial_layers.append(layer)
                 except Exception:
@@ -157,7 +159,7 @@ def process_layer(
     if gdf is None:
         try:
             console.print(f"\n[bold]Reading layer:[/bold] {layer}")
-            gdf = gpd.read_file(filename, layer=layer)
+            gdf = gpd.read_file(filename, layer=layer, engine="pyogrio", use_arrow=True)
 
             if gdf.empty:
                 console.print("[yellow]Warning: The layer is empty.[/yellow]")
@@ -335,7 +337,7 @@ def save_modified_layers(
             for layer_name in all_layers:
                 if layer_name not in modified_layers:
                     gdf_original = gpd.read_file(
-                        new_filename, layer=layer_name, engine="pyogrio"
+                        new_filename, layer=layer_name, engine="pyogrio", use_arrow=True
                     )
                     gdf_original.to_file(
                         tmp_path,
