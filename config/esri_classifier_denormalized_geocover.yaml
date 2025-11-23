@@ -15,6 +15,10 @@ layers:
       layer_type: point
       field_types:
         KIND: Int64 # `Int64` with capital `I` is a nullable integer...
+        AEXP_STATUS: Int64
+        AEXP_TARG_MAT: Int64
+        AEXP_DEPTH_TOT: Int64
+        GMU_CODE: Int64
       classifications:
         - style_file: styles/Exploit_Geomat_Pt.lyrx
           index: 15
@@ -25,7 +29,6 @@ layers:
           fields:
             KIND: KIND
             AEXP_STATUS: AEXP_STATUS
-
 
     - gpkg_layer: fossils
       connection_ref: postgis_wms
@@ -334,11 +337,14 @@ layers:
       template: templates/bedrock.html
       field_types:
         KIND: Int64
-        RUNC_LITHO: Int64
-        RUNC_CHRONO_T: Int64
-        RUNC_CHRONO_B: Int64
-        RUNC_MORPHOLO: Int64
-        RUNC_GLAC_TYP: Int64
+        RBED_EXOTIC_ELE: Int64
+        CORRELATION: Int64
+        GMU_CODE: Int64
+        chrono_top_code: Int64
+        chrono_base_code: Int64
+        litho_main_code: Int64
+        litho_sec_code: Int64
+        litho_ter_code: Int64
       classifications:
         - style_file: styles/Bedrock.lyrx
           index: 100
@@ -350,3 +356,5 @@ layers:
           symbol_prefix: bedrock
           filter: KIND == 14334001
           identifier_field: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT # New
+
+
