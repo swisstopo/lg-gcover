@@ -156,6 +156,8 @@ def apply_batch_from_config(
     debug: bool = False,
     bbox: Optional[tuple] = None,
     continue_on_error: Optional[bool] = False,
+    overwrite: Optional[bool] = False,
+    preserve_existing: Optional[bool] = True,
 ) -> Dict[str, any]:
     """
     Apply all classifications from config to a GPKG.
@@ -329,8 +331,8 @@ def apply_batch_from_config(
                 gdf_result = applicator.apply_v2(
                     gdf,
                     additional_filter=class_config.filter,
-                    overwrite=False,  # Don't overwrite the field itself
-                    preserve_existing=True,  # But preserve existing non-NULL values
+                    overwrite=overwrite,  # Don't overwrite the field itself
+                    preserve_existing=preserve_existing,  # But preserve existing non-NULL values
                 )
                 # TODO After bedrock classification
                 # console.print(
@@ -402,7 +404,9 @@ def apply_batch_from_config(
         stats["layers_processed"] += 1
 
         # Display layer summary
-        _display_layer_summary(gdf, layer, config.symbol_field, config.label_field)
+        _display_layer_summary(
+            gdf_check, layer, config.symbol_field, config.label_field
+        )
 
     return stats
 

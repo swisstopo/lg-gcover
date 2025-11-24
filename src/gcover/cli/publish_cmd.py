@@ -107,6 +107,7 @@ def publish_commands(ctx):
 @click.option(
     "--dry-run", is_flag=True, help="Parse config without applying classifications"
 )
+@click.option("--overwrite", is_flag=True, help="Overwrite the classification field")
 def apply_config(
     ctx,
     gpkg_file: Path,
@@ -117,6 +118,7 @@ def apply_config(
     dry_run: bool,
     bbox: Optional[tuple],
     continue_on_error: bool,
+    overwrite: bool,
 ):
     """Apply multiple classifications from YAML configuration file.
 
@@ -222,6 +224,8 @@ def apply_config(
             debug=verbose,
             bbox=bbox,
             continue_on_error=continue_on_error,
+            preserve_existing=True,
+            overwrite=overwrite,
         )
 
         end_time = time.time()
@@ -906,7 +910,9 @@ def mapserver(
 
         # Extract prefixes and mapfile names from config
         for layer_config in config.layers:
-            for class_config in  sorted(layer_config.classifications, key=lambda x: x.index):
+            for class_config in sorted(
+                layer_config.classifications, key=lambda x: x.index
+            ):
                 if class_config.classification_name:
                     # Use classification name as key
                     key = class_config.classification_name
@@ -939,7 +945,7 @@ def mapserver(
                         gpkg_layer,
                         connection_ref,
                         class_config.data,
-                        layer_config.template
+                        layer_config.template,
                     )
                     logger.debug(params)
                     style_files.append(params)
@@ -1022,7 +1028,9 @@ def mapserver(
 
             if not mapserver_data:
                 mapserver_data = f"geom from (SELECT * from {gpkg_layer} ) as blabla using unique gid using srid=2056"
-                mapserver_data = f"geom FROM  {gpkg_layer}  USING UNIQUE gid USING SRID=2056"
+                mapserver_data = (
+                    f"geom FROM  {gpkg_layer}  USING UNIQUE gid USING SRID=2056"
+                )
 
             # Generate mapfile
             mapfile_content = generator.generate_layer(
