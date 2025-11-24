@@ -11,6 +11,7 @@ from typing import Dict, List, Optional
 
 import click
 import fiona
+import pyogrio
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -156,16 +157,28 @@ def process_layer(
         - Modified GeoDataFrame (or None if no changes)
         - Boolean indicating whether to go back to layer selection (True) or quit/save (False)
     """
+
     if gdf is None:
         try:
             console.print(f"\n[bold]Reading layer:[/bold] {layer}")
+            schema = pyogrio.read_info(filename, layer=layer)
+            int_columns = [
+                name
+                for name, dtype in zip(schema["fields"], schema["dtypes"])
+                if dtype in ["int32", "int64"]
+            ]
             gdf = gpd.read_file(filename, layer=layer, engine="pyogrio", use_arrow=True)
+            for col in int_columns:
+                gdf[col] = gdf[col].astype("Int64")
 
             if gdf.empty:
                 console.print("[yellow]Warning: The layer is empty.[/yellow]")
                 return None, True
         except Exception as e:
+            import traceback
+
             console.print(f"[red]Error reading layer: {e}[/red]")
+            console.print(traceback.format_exc())
             return None, True
 
     # Display field information
