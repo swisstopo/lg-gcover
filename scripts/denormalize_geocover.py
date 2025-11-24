@@ -79,6 +79,20 @@ LOOKUP_TABLE_MAPPING = {
 }
 
 
+INTEGER_TYPE_COLUMNS = ['AARC_AGE', 'AARC_AGE', 'AARC_AGE', 'AARC_EPOCH', 'AARC_EPOCH', 'AARC_PERIOD', 'AARC_PERIOD', 'AARC_PERIOD', 'AARC_TYPE', 'ABOR_LINK', 'ABOR_MAIN_TAR', 'ABOR_REF_NUMBER', 'ABOR_TARG_MAT', 'ACTIVITY', 'ADMIXTURE', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'CHARACT', 'COMPOSIT', 'CONFINE', 'CONG_SPE', 'DIP', 'DIP', 'DIP', 'DIP', 'DIP', 'DIP', 'DIP', 'DRILL_MO', 'EPOCH', 'FOLD_FOR', 'GALL_AGE', 'GEN_RELA', 'GGLA_GLAC_TYP', 'GGLA_ICE_M_P', 'GGLA_MORAI_MO', 'GGLA_QUAT_STR', 'GGLA_REF_YEAR', 'GINS_MAIN_MOV', 'GLAC_TYPE', 'HCON_COMBI', 'HCON_EPOCH', 'HCON_STATUS', 'HIERA', 'HPAL_REF_YEAR', 'HPAL_REL_AGE', 'HSUB_COMBI', 'HSUR_COMBI', 'HSUR_DIS_LOCA', 'HSUR_FLOW_CON', 'HSUR_STATUS', 'HSUR_TEMP', 'HSUR_TYPE', 'IGNE_AFFINITY', 'IGNE_GRAIN_SI', 'IGNE_TEX', 'LANO_TYPE', 'LFOS_DAT_METH', 'LFOS_DIVISION', 'LFOS_STATUS', 'LGEO_STATUS', 'LRES_MATERIAL', 'LRES_STATUS', 'LTYP_STRATI', 'META_STA', 'META_STR', 'MFOL_FOLD_TYP', 'MFOL_PHASE', 'MORPHOLO', 'MPLA_PHASE', 'MPLA_POLARITY', 'PCOH_WA_TABLE', 'PSLO_TYPE', 'ROCK_SPE', 'ROCK_TYPE', 'SEDI_BEDDING', 'SEDI_BOND_MAT', 'SEDI_MAIN_COM', 'SEDI_SECO_COM', 'SEDI_STR', 'SEDI_TEX', 'STATUS', 'STATUS', 'STATUS', 'STATUS', 'STATUS', 'STRUCTUR', 'SYSTEM', 'TARG_MAT', 'TARG_MAT', 'TDEF_FOLD_FOR', 'TDEF_FOLD_TYP', 'THIN_COVER', 'TTECT_VERTI_MO', 'TTEC_FAULT_MO', 'TTEC_HORIZ_MO', 'TTEC_LIM_TYP', 'TYPE', 'TYPE']
+
+
+def convert_columns_to_int(ori_gdf, columns):
+    """Convert specified columns to nullable integers (Int64)"""
+    new_type = "Int64"
+    gdf = ori_gdf.copy()
+    for col in columns:
+        if col in gdf.columns:
+            gdf[col] = pd.to_numeric(gdf[col], errors="coerce").astype(
+                new_type
+            )
+    return gdf
+
 def extend_line_to_cross_polygon(line, polygon, extension_factor=1.5):
     """
     Extend a line segment to ensure it fully crosses a polygon.
@@ -943,7 +957,7 @@ class GeoCoverDenormalizer:
             "LITHO_SEC",
             "LITHO_TER",
             "CORRELATION",
-        ]
+        ] + INTEGER_TYPE_COLUMNS
 
         for field in integer_fields:
             if field in result_gdf.columns:
