@@ -888,7 +888,9 @@ class GeoCoverDenormalizer:
             "REVISION_YEAR",
             "WU_ID_CREATION",
             "WU_ID",
-            "TREE_LEVEL",  # User requested to omit this
+            "TREE_LEVEL",
+            "SHAPE_Area",
+            "SHAPE_Length", # User requested to omit this
         ]
 
         result_gdf = gdf.copy()
