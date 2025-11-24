@@ -174,6 +174,7 @@ def process_layer(
     # Field management loop
     while True:
         console.print("\n[bold]Options:[/bold]")
+        console.print("  [cyan]a[/cyan] - Add a new field")
         console.print("  [cyan]r[/cyan] - Rename a field")
         console.print("  [cyan]c[/cyan] - Change field type")
         console.print("  [cyan]d[/cyan] - Delete field")
@@ -184,9 +185,41 @@ def process_layer(
 
         choice = Prompt.ask(
             "What would you like to do?",
-            choices=["r", "c", "d", "n", "b", "s", "q"],
+            choices=["a", "r", "c", "d", "n", "b", "s", "q"],
             default="q",
         )
+
+        if choice == "a":
+            # New field
+            new_name = Prompt.ask("Enter new field name")
+            new_type = Prompt.ask(
+                "Enter new type",
+                choices=[
+                    "object",
+                    "string",
+                    "float64",
+                    "int64",
+                    "int32",
+                    "int16",
+                    "int8",
+                    "uint64",
+                    "uint32",
+                    "uint16",
+                    "uint8",
+                    "Int64",
+                    "Int32",
+                    "Int16",
+                    "Int8",
+                ],
+                default="Int64",
+            )
+
+            gdf[new_name] = pd.Series([pd.NA] * len(gdf), dtype=new_type)
+
+            console.print(f"[green]✓ Added new field '{new_name}' [{new_type}][/green]")
+
+            # Show updated field info
+            console.print(get_field_info(gdf))
 
         if choice == "r":
             # Rename field
