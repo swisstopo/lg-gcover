@@ -87,9 +87,11 @@ class MapServerGenerator:
         classification,
         layer_name: str,
         layer_type: str,
+        symbol_field: str,
         symbol_prefix: str = "class",
         connection: Optional[MapserverConnection] = None,
         data: Optional[str] = None,
+        template: Optional[str] = 'empty'
     ) -> str:
         """
         Generate complete MapServer LAYER block.
@@ -110,6 +112,12 @@ class MapServerGenerator:
         else:
             layer_type = self.layer_type  # e.g. POLYGON
 
+        if not symbol_field:
+            symbol_field = self.symbol_field
+
+        if not template:
+            template = 'empty'
+
         logger.info(f"=== {layer_name} ===")
 
         lines = [
@@ -120,6 +128,7 @@ class MapServerGenerator:
             "",
         ]
 
+
         # Metadata
         lines.extend(
             [
@@ -129,6 +138,10 @@ class MapServerGenerator:
                 f'    "wms_abstract" "{layer_name.capitalize()}"',
                 '    "wms_srs"      "EPSG:2056 EPSG:4326 EPSG:3857"',
                 '    "wms_extent" "2350000 1050000 2850000 1250000"',
+                '    "wms_enable_request" "*"',
+                '    "wms_include_items" "all"',
+                '    "gml_include_items" "all"',
+                '    "gml_types" "auto"',
                 "  END",
             ]
         )
@@ -155,12 +168,13 @@ class MapServerGenerator:
         )
 
         # Template
-        lines.extend(["", '  TEMPLATE "empty"', ""])
+        lines.extend(["", f'  TEMPLATE "{template}"', ""])
 
         # CLASSITEM if using symbol field
         if self.use_symbol_field:
-            lines.append(f'  CLASSITEM "{self.symbol_field}"')
             lines.append(f"  # Using CLASSITEM for simplified expressions")
+            lines.append(f'  CLASSITEM "{symbol_field}"')
+
         else:
             lines.append("  # Styled using classification field values")
 

@@ -856,6 +856,8 @@ class ClassificationApplicator:
                         console.print(f"[green]✓ {field} → {dtype}[/green]")
                     except Exception as e:
                         console.print(f"[red]✗ {field}: {e}[/red]")
+                else:
+                    console.print(f"[dim]✗ {field} not found[/dim]")
 
         # Step 3: Extract numeric columns
         numeric_columns = get_numeric_field_names(self.field_types)

@@ -891,7 +891,9 @@ def mapserver(
     # Load configuration if provided
     prefix_map = {}
     mapfile_names = {}
+    mapfiles = []
     config = None
+    symbol_field = None
 
     if config_file:
         console.print(f"[cyan]Loading configuration from {config_file}[/cyan]")
@@ -899,9 +901,12 @@ def mapserver(
 
         identifier_fields = {}
 
+        symbol_field = config.symbol_field.lower()
+        label_field = config.label_field.lower()
+
         # Extract prefixes and mapfile names from config
         for layer_config in config.layers:
-            for class_config in layer_config.classifications:
+            for class_config in  sorted(layer_config.classifications, key=lambda x: x.index):
                 if class_config.classification_name:
                     # Use classification name as key
                     key = class_config.classification_name
@@ -934,6 +939,7 @@ def mapserver(
                         gpkg_layer,
                         connection_ref,
                         class_config.data,
+                        layer_config.template
                     )
                     logger.debug(params)
                     style_files.append(params)
@@ -979,6 +985,7 @@ def mapserver(
         gpkg_layer,
         connection_ref,
         mapserver_data,
+        template,
     ) in style_files:
         console.print(f"Processing {style_file.name} [{layer_type}]...")
 
@@ -1005,6 +1012,7 @@ def mapserver(
             continue
 
         # Process each classification
+
         for classification in classifications:
             layer_name = classification.layer_name or style_file.stem
 
@@ -1014,6 +1022,7 @@ def mapserver(
 
             if not mapserver_data:
                 mapserver_data = f"geom from (SELECT * from {gpkg_layer} ) as blabla using unique gid using srid=2056"
+                mapserver_data = f"geom FROM  {gpkg_layer}  USING UNIQUE gid USING SRID=2056"
 
             # Generate mapfile
             mapfile_content = generator.generate_layer(
@@ -1023,12 +1032,16 @@ def mapserver(
                 data=mapserver_data,
                 layer_type=layer_type,
                 connection=connection,
+                symbol_field=symbol_field,
+                template=template,
             )
 
             # Save mapfile
-            output_file = output_dir / f"{mapfile_layer_name}.map"
+            mapfile = f"{mapfile_layer_name}.map"
+            output_file = output_dir / mapfile
             output_file.write_text(mapfile_content)
             generated_files.append(output_file)
+            mapfiles.append(mapfile)
 
             console.print(
                 f"  [green]✓[/green] Generated: {output_file.name} "
@@ -1066,6 +1079,10 @@ def mapserver(
             f"\n[dim]Tracked {len(generator.symbol_registry)} unique font symbols[/dim]"
         )
         console.print(f"[dim]Used {len(generator.fonts_used)} fonts[/dim]")
+
+        console.print(f"[cyan]Includes for the main mapfile[/cyan]")
+        for mapfile in mapfiles:
+            console.print(f'INCLUDE "layers/{mapfile}"')
 
     # Summary
     console.print(

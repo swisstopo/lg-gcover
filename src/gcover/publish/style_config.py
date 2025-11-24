@@ -28,6 +28,7 @@ from rich.tree import Tree
 from gcover.publish.esri_classification_applicator import ClassificationApplicator
 from gcover.publish.esri_classification_extractor import extract_lyrx_complete
 from gcover.publish.tooltips_enricher import LayerType
+from gcover.publish.utils import save_layer_preserving_types
 
 console = Console()
 
@@ -47,6 +48,7 @@ class ClassificationConfig:
     """Configuration for a single classification application."""
 
     style_file: Path
+    index: int  # draw index (small=top)
     mapfile_name: Optional[str] = None
     classification_name: Optional[str] = None
     fields: Optional[Dict[str, str]] = None
@@ -54,7 +56,6 @@ class ClassificationConfig:
     symbol_prefix: Optional[str] = None
     identifier_field: Optional[str] = None
     data: Optional[str] = None
-
 
 
 @dataclass
@@ -66,6 +67,7 @@ class LayerConfig:
     field_types: Optional[Dict[str, str]] = None
     layer_type: Optional[LayerType] = None
     connection_ref: Optional[str] = None
+    template: Optional[str] = None
 
 
 class BatchClassificationConfig:
@@ -104,7 +106,8 @@ class BatchClassificationConfig:
         gpkg_layer = layer_dict["gpkg_layer"]
         layer_type_str = layer_dict.get("layer_type")
         layer_type = LayerType(layer_type_str) if layer_type_str else None
-        connection_ref = layer_dict.get("connection_ref"),
+        connection_ref = layer_dict.get("connection_ref")
+        template = layer_dict.get("template")
         classifications = []
         field_types = layer_dict.get("field_types", {})
 
@@ -117,6 +120,7 @@ class BatchClassificationConfig:
             classifications.append(
                 ClassificationConfig(
                     style_file=style_file,
+                    index=class_dict.get("index", 200),
                     classification_name=class_dict.get("classification_name"),
                     fields=class_dict.get("fields"),
                     filter=class_dict.get("filter"),
@@ -124,7 +128,6 @@ class BatchClassificationConfig:
                     mapfile_name=class_dict.get("mapfile_name"),
                     identifier_field=class_dict.get("identifier_field"),
                     data=class_dict.get("data"),
-
                 )
             )
 
@@ -134,6 +137,7 @@ class BatchClassificationConfig:
             field_types=field_types,
             layer_type=layer_type,
             connection_ref=connection_ref,
+            template=template,
         )
 
     def get_layer_config(self, gpkg_layer: str) -> Optional[LayerConfig]:
@@ -178,7 +182,9 @@ def apply_batch_from_config(
     if layer_name:
         if layer_name not in available_layers:
             # raise ValueError(f"Layer '{layer_name}' not found in GPKG")
-            console.print(f"[red bold]✗ Layer '{layer_name}' not found in GPKG[/red bold]")
+            console.print(
+                f"[red bold]✗ Layer '{layer_name}' not found in GPKG[/red bold]"
+            )
             return {}
         layers_to_process = [layer_name]
     else:
@@ -244,24 +250,28 @@ def apply_batch_from_config(
             gdf[config.label_field] = None
 
         # Cast fields
-        field_types = layer_config.field_types
-        console.print(f"\n[bold blue]Field types: {field_types}[/bold blue]")
+        field_types = layer_config.field_types or {}
+        if field_types:
+            console.print(f"\n[bold blue]Field types: {field_types}[/bold blue]")
 
-        for field, dtype in field_types.items():
-            if field in gdf.columns:
-                try:
-                    gdf[field] = (
-                        pd.to_numeric(
-                            gdf[field], errors="coerce"
-                        )  # convert safely, invalids become NaN
-                        .dropna()  # optional: drop rows with NaN
-                        .astype(dtype)
-                    )
-                    console.print(
-                        f"Casted [green]{field}[/green] to [green]{dtype}[/green]"
-                    )
-                except Exception as e:
-                    console.print(f"[red]Failed to cast {field} to {dtype}: {e}[/red]")
+            for field, dtype in field_types.items():
+                if field in gdf.columns:
+                    try:
+                        # Handle nullable integer types properly
+                        if dtype.startswith("Int"):  # Int8, Int16, Int32, Int64
+                            gdf[field] = pd.to_numeric(
+                                gdf[field], errors="coerce"
+                            ).astype(dtype)
+                        else:
+                            gdf[field] = gdf[field].astype(dtype)
+
+                        console.print(
+                            f"  Casted [green]{field}[/green] to [green]{dtype}[/green]"
+                        )
+                    except Exception as e:
+                        console.print(
+                            f"  [red]Failed to cast {field} to {dtype}: {e}[/red]"
+                        )
 
         # Apply each classification
         for i, class_config in enumerate(layer_config.classifications, 1):
@@ -367,18 +377,22 @@ def apply_batch_from_config(
 
         # Save layer to output
         console.print(f"\n  [cyan]Saving layer to {output_path}...[/cyan]")
-
         console.print(f"Before save: {gdf[config.symbol_field].notna().sum()} symbols")
 
-        # Check if we need to append or create new
-        if output_path.exists() and layer != layers_to_process[0]:
-            # Append to existing GPKG
-            gdf.to_file(output_path, layer=layer, driver="GPKG", mode="a")
-        else:
-            # Create new GPKG or overwrite
-            gdf.to_file(output_path, layer=layer, driver="GPKG")
+        # Determine if this is the first layer
+        is_first = (layer == layers_to_process[0]) and not output_path.exists()
 
-        gdf_check = gpd.read_file(output_path, layer=layer)
+        # Save with type preservation
+        save_layer_preserving_types(
+            gdf=gdf, output_path=output_path, layer_name=layer, is_first_layer=is_first
+        )
+
+        # Verification
+        gdf_check = gpd.read_file(output_path, layer=layer, engine="pyogrio")
+        console.print(
+            f"After save: {gdf_check[config.symbol_field].notna().sum()} symbols"
+        )
+
         # TODO
         # console.print(
         #    f"After save: {gdf_check[config.symbol_field].notna().sum()} symbols"

@@ -3,8 +3,79 @@ import re
 import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
 from rich.console import Console
+import tempfile
+import shutil
+import geopandas as gpd
+from pathlib import Path
+import fiona
 
 console = Console()
+
+
+def save_layer_preserving_types(
+    gdf: gpd.GeoDataFrame, output_path: Path, layer_name: str, is_first_layer: bool
+) -> None:
+    """
+    Save a layer to GPKG while preserving field types.
+    Recreates the entire GPKG to avoid schema conflicts.
+
+    Args:
+        gdf: GeoDataFrame to save
+        output_path: Output GPKG path
+        layer_name: Name of the layer
+        is_first_layer: True if this is the first layer being written
+    """
+    if output_path.exists() and not is_first_layer:
+        # Get list of existing layers
+        existing_layers = fiona.listlayers(str(output_path))
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(suffix=".gpkg", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+
+        try:
+            # Track if we've written the first layer to temp file
+            first_write = True
+
+            # Copy existing layers to temp file (except the one we're updating)
+            for existing_layer in existing_layers:
+                if existing_layer != layer_name:
+                    gdf_existing = gpd.read_file(
+                        output_path, layer=existing_layer, engine="pyogrio"
+                    )
+                    gdf_existing.to_file(
+                        tmp_path,
+                        layer=existing_layer,
+                        driver="GPKG",
+                        engine="pyogrio",
+                        mode="w"
+                        if first_write
+                        else "a",  # ← Fix: first write must be 'w'
+                    )
+                    first_write = False
+
+            # Add the new/updated layer
+            gdf.to_file(
+                tmp_path,
+                layer=layer_name,
+                driver="GPKG",
+                engine="pyogrio",
+                mode="w"
+                if first_write
+                else "a",  # ← Fix: handle case where this is the only layer
+            )
+
+            # Replace original file
+            shutil.move(str(tmp_path), str(output_path))
+
+        except Exception as e:
+            console.print(f"[red]✗ Error during save: {e}[/red]")
+            if tmp_path.exists():
+                tmp_path.unlink()
+            raise
+    else:
+        # First layer or new file - simple save
+        gdf.to_file(output_path, layer=layer_name, driver="GPKG", engine="pyogrio")
 
 
 def generate_font_image(font_symbol_name, font_name, char_index):
@@ -75,16 +146,19 @@ def translate_esri_to_pandas(esri_expression):
     - IS NULL → .isna()
     - IS NOT NULL → .notna()
     - IN clause (with or without parentheses)
+    - NOT IN clause
 
     Args:
         esri_expression: ESRI-style filter string
-
     Returns:
         Pandas-compatible query string
     """
     expr = esri_expression
 
-    # Replace IN (case insensitive) first
+    # Replace NOT IN first (before replacing IN alone)
+    expr = re.sub(r"\bNOT\s+IN\b", "not in", expr, flags=re.IGNORECASE)
+
+    # Replace IN (case insensitive)
     expr = re.sub(r"\bIN\b", "in", expr, flags=re.IGNORECASE)
 
     # Handle IN clause without parentheses
