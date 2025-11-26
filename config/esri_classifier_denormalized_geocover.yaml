@@ -98,7 +98,7 @@ layers:
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
-          symbol_prefix: orient
+          symbol_prefix: pnt_orient
         - style_file: styles/Point_Objects_Bohrung_Fels_erreicht.lyrx
           index: 23
           classification_name: Point_Objects_Bohrung_Fels_erreicht
@@ -186,6 +186,7 @@ layers:
           index: 51
           classification_name: Linear Objects_GeolKontur
           mapfile_name: geolkontur
+          data: "geom FROM  (select * from geol.geocover_linear_objects where map_symbol in ('geolkontur_1' , 'geolkontur_0')) as a  USING UNIQUE gid USING SRID=2056"
           fields:
                 KIND: KIND
                 LGEO_STATUS: LGEO_STATUS
@@ -240,6 +241,7 @@ layers:
           index: 89
           classification_name: Exploit_Geomat_Plg
           mapfile_name: exploit_geomat_plg
+          data: "geom FROM  geol.geocover_exploit_polygons  USING UNIQUE gid USING SRID=2056"
           symbol_prefix: geomat_plg
           fields:
             KIND: KIND
@@ -255,7 +257,8 @@ layers:
           index: 87
           classification_name: Surfaces
           mapfile_name: surfaces
-          data: "geom from (SELECT * from surfaces where map_symbol IS NOT NULL) as blabla using unique gid using srid=2056"
+          #data: "geom from (SELECT * from surfaces where map_symbol IS NOT NULL) as blabla using unique gid using srid=2056"
+          data: "geom FROM  geol.geocover_surfaces  USING UNIQUE gid USING SRID=2056"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
