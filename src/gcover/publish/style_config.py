@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import click
 import fiona
+import pyogrio
 import geopandas as gpd
 import pandas as pd
 import yaml
@@ -99,7 +100,7 @@ class BatchClassificationConfig:
         for layer_config in self.raw_config.get("layers", []):
             self.layers.append(self._parse_layer_config(layer_config))
 
-        logger.info(f"Loaded config with {len(self.layers)} layers")
+        logger.debug(f"Loaded config with {len(self.layers)} layers")
 
     def _parse_layer_config(self, layer_dict: dict) -> LayerConfig:
         """Parse a single layer configuration."""
@@ -201,7 +202,9 @@ def apply_batch_from_config(
         logger.warning("No layers to process!")
         return {}
 
-    logger.info(f"Processing {len(layers_to_process)} layers: {layers_to_process}")
+    logger.info(
+        f"Processing {len(layers_to_process)} GPKG layers: {','.join(layers_to_process)}"
+    )
 
     # Statistics
     stats = {
@@ -236,12 +239,21 @@ def apply_batch_from_config(
                         f"Layer '{key}' will use identifier_field: {field_name}"
                     )
 
-        kwargs = {"layer": layer}
+        kwargs = {"layer": layer, "engine": "pyogrio", "use_arrow": True}
         if bbox:
             kwargs["bbox"] = bbox
 
         # Load layer
+        schema = pyogrio.read_info(gpkg_path, layer=layer)
+        int_columns = [
+            name
+            for name, dtype in zip(schema["fields"], schema["dtypes"])
+            if dtype in ["int32", "int64"]
+        ]
         gdf = gpd.read_file(gpkg_path, **kwargs)
+        # TODO: force to `Int64`
+        for col in int_columns:
+            gdf[col] = gdf[col].astype("Int64")
 
         stats["features_total"] += len(gdf)
 

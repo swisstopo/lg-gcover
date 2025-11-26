@@ -486,9 +486,11 @@ class ClassificationMatcher:
         # Build reverse mapping (classification_field -> gpkg_field) for easier lookup
         self.reverse_field_mapping = {v: k for k, v in self.field_mapping.items()}
 
-        logger.debug(f"Initialized matcher for {classification.layer_name}")
+        logger.info(
+            f"Initialized matcher for classification '{classification.layer_name}'"
+        )
         logger.debug(f"Classification fields: {self.classification_field_names}")
-        logger.debug(f"Treat zero as null: {treat_zero_as_null}")
+        logger.info(f"Treat zero as null: {treat_zero_as_null}")
         if self.field_mapping:
             logger.debug(f"Field mapping: {self.field_mapping}")
 
@@ -776,10 +778,11 @@ class ClassificationApplicator:
                         # La dernière partie contient la valeur (après le "::")
                         identifier_value = identifier_key.split("::")[-1]
 
-                        logger.debug(
-                            f"Using identifier value '{identifier_value}' "
-                            f"for class '{class_obj.label}' (instead of index {idx})"
-                        )
+                        if identifier_value != idx:
+                            logger.debug(
+                                f"Using identifier value '{identifier_value}' "
+                                f"for class '{class_obj.label}' (instead of index {idx})"
+                            )
                     except Exception as e:
                         logger.warning(
                             f"Could not extract identifier value for '{class_obj.label}': {e}, "
@@ -926,7 +929,7 @@ class ClassificationApplicator:
                     existing_symbol = gdf.loc[idx, self.symbol_field]
 
                     # DEBUG
-                    if idx in list(gdf_filtered.index)[:20]:  # First 20 features
+                    if idx in list(gdf_filtered.index)[:10]:  # First 10 features
                         logger.debug(
                             f"Feature {idx}: existing_symbol={existing_symbol}, type={type(existing_symbol)}, notna={pd.notna(existing_symbol)}"
                         )
@@ -992,7 +995,7 @@ class ClassificationApplicator:
         )
 
         # Check if all filtered features got matched
-        if unmatched_indices:  # Instead of if unmatched_count > 0
+        if len(unmatched_indices) > 0:
             console.print(
                 f"\n[red]⚠️  {len(unmatched_indices)} filtered features have no matching rule![/red]"
             )

@@ -158,6 +158,8 @@ def apply_config(
     """
     verbose = ctx.obj.get("verbose", False)
 
+    logger.info(f"COMMAND START: apply-config")
+
     if verbose:
         console.print("[dim]Verbose logging enabled[/dim]")
     try:
@@ -308,6 +310,13 @@ def apply_config(
         output_file = output or gpkg_file.parent / f"{gpkg_file.stem}_classified.gpkg"
         console.print(f"\n[dim]Output: {output_file}[/dim]")
 
+        logger.info(
+            "SUMMARY: Layers processed {layers_processed} | "
+            "Classifications applied {classifications_applied} | "
+            "Features classified {features_classified} |"
+            "Total features {features_total} |".format(**stats)
+        )
+
     except Exception as e:
         logger.error(f"Batch processing failed: {e}")
         if verbose:
@@ -315,6 +324,8 @@ def apply_config(
 
             logger.debug(traceback.format_exc())
         raise
+    finally:
+        logger.info(f"COMMAND END: apply-config")
 
 
 @publish_commands.command()
@@ -1028,9 +1039,7 @@ def mapserver(
 
             if not mapserver_data:
                 mapserver_data = f"geom from (SELECT * from {gpkg_layer} ) as blabla using unique gid using srid=2056"
-                mapserver_data = (
-                    f"geom FROM  {gpkg_layer}  USING UNIQUE gid USING SRID=2056"
-                )
+                mapserver_data = f"geom FROM  geol.geocover_{gpkg_layer}  USING UNIQUE gid USING SRID=2056"
 
             # Generate mapfile
             mapfile_content = generator.generate_layer(
