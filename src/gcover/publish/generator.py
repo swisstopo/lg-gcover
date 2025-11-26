@@ -37,6 +37,12 @@ from gcover.publish.tooltips_enricher import LayerType
 from gcover.publish.utils import generate_font_image
 from gcover.config.models import MapserverConnection
 
+from gcover.publish.label_extractor_extension import LabelInfo
+from gcover.publish.rotation_extractor_extension import (
+    RotationInfo,
+    format_rotation_for_mapserver,
+)
+
 console = Console()
 
 
@@ -91,7 +97,7 @@ class MapServerGenerator:
         symbol_prefix: str = "class",
         connection: Optional[MapserverConnection] = None,
         data: Optional[str] = None,
-        template: Optional[str] = 'empty'
+        template: Optional[str] = "empty",
     ) -> str:
         """
         Generate complete MapServer LAYER block.
@@ -105,6 +111,9 @@ class MapServerGenerator:
         Returns:
             Complete LAYER block as string
         """
+        label_info = None
+        rotation_field = None
+
         if layer_type:
             if isinstance(layer_type, LayerType):
                 layer_type = layer_type.name
@@ -116,9 +125,24 @@ class MapServerGenerator:
             symbol_field = self.symbol_field
 
         if not template:
-            template = 'empty'
+            template = "empty"
 
         logger.info(f"=== {layer_name} ===")
+
+        try:
+            if classification.label_classes:
+                label_info = classification.label_classes[0]
+                label_item = label_info.get_simple_field_name()
+        except Exception as e:
+            logger.error(f"Error while retrieving labels info")
+
+        try:
+            rotation_info = classification.rotation_info
+            if rotation_info:
+                rotation_field = rotation_info.field_name
+
+        except Exception as e:
+            logger.error(f"Error while retrieving rotation info")
 
         lines = [
             "LAYER",
@@ -128,7 +152,6 @@ class MapServerGenerator:
             "  STATUS ON",
             "",
         ]
-
 
         # Metadata
         lines.extend(
@@ -155,22 +178,25 @@ class MapServerGenerator:
                     f"  CONNECTIONTYPE {connection.connection_type.name}",
                     f'  CONNECTION "{connection.connection}"',
                     f'  DATA "{data}"',
-
                 ]
             )
 
+        # Names are swapped between Mapserver and ESRI
+        # minScale → MAXSCALEDENOM
+        # maxScale → MINSCALEDENOM
         if classification.min_scale:
             lines.extend(
                 [
                     "",
-                   f"MINSCALEDENOM   {classification.min_scale}",
-                ])
+                    f"MAXSCALEDENOM   {classification.min_scale}",
+                ]
+            )
         if classification.max_scale:
             lines.extend(
-                    [
-                     f"MAXCALEDENOM   {classification.min_scale}",
-                    ])
-
+                [
+                    f"MINSCALEDENOM   {classification.min_scale}",
+                ]
+            )
 
         # Projection
         lines.extend(
@@ -194,6 +220,9 @@ class MapServerGenerator:
 
         else:
             lines.append("  # Styled using classification field values")
+
+        if label_item:
+            lines.append(f'  LABELITEM "{label_item.lower()}"')
 
         lines.append("")
 
@@ -230,7 +259,12 @@ class MapServerGenerator:
             logger.debug(f"class idx: {symbol_id}")
 
             class_block = self.generate_class(
-                class_obj, field_names, identifier_value, symbol_prefix
+                class_obj,
+                field_names,
+                identifier_value,
+                symbol_prefix,
+                rotation_info,
+                label_info,
             )
             lines.append(class_block)
 
@@ -244,6 +278,8 @@ class MapServerGenerator:
         field_names: List[str],
         class_index: int,
         symbol_prefix: str = "class",
+        rotation_info: Optional[RotationInfo] = None,
+        label_info: Optional[LabelInfo] = None,
     ) -> str:
         """Generate a single MapServer CLASS block."""
         if not class_obj.visible:
@@ -267,6 +303,24 @@ class MapServerGenerator:
             f"    EXPRESSION {expression}",
         ]
 
+        # Add LABEL
+        if label_info:
+            field = label_info.get_simple_field_name()  # "DIP"
+            color = label_info.font_color.to_rgb_tuple()  # (0, 89, 255)
+
+            lines.extend(
+                [
+                    "    LABEL",
+                    f"        COLOR {' '.join(list(map(str, color)))}",
+                    '         FONT "sans"',
+                    "         TYPE truetype",
+                    f"        SIZE 8",
+                    "         POSITION AUTO",
+                    "         PARTIALS FALSE",
+                    "    END",
+                ]
+            )
+
         # Add STYLE blocks based on layer type
         if self.layer_type == "POLYGON":
             self._add_polygon_styles(lines, class_obj, class_index, symbol_prefix)
@@ -276,7 +330,9 @@ class MapServerGenerator:
             lines.append("    END # STYLE")
         elif self.layer_type == "POINT":
             lines.append("    STYLE")
-            self._add_point_style(lines, class_obj, class_index, symbol_prefix)
+            self._add_point_style(
+                lines, class_obj, class_index, symbol_prefix, rotation_info
+            )
             lines.append("    END # STYLE")
 
         lines.append("  END # CLASS")
@@ -691,7 +747,12 @@ class MapServerGenerator:
     # ========================================================================
 
     def _add_point_style(
-        self, lines: List[str], class_obj, class_index: int, symbol_prefix: str
+        self,
+        lines: List[str],
+        class_obj,
+        class_index: int,
+        symbol_prefix: str,
+        rotation_info: Optional[RotationInfo] = None,
     ):
         """Add point styling from ESRI symbol_info."""
         if hasattr(class_obj, "symbol_info") and class_obj.symbol_info:
@@ -730,6 +791,11 @@ class MapServerGenerator:
                         marker_type = "star"
 
                 lines.append(f'      SYMBOL "{marker_type}"')
+
+            if rotation_info and rotation_info.field_name:
+                lines.append(
+                    f"      ANGLE [{rotation_info.field_name.lower()}]   # lowercase, for PostGIS"
+                )
 
             if hasattr(symbol_info, "size") and symbol_info.size:
                 size = symbol_info.size * 1.33
