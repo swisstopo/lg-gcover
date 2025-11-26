@@ -123,6 +123,7 @@ class MapServerGenerator:
         lines = [
             "LAYER",
             f'  NAME "{layer_name}"',
+            f'   GROUP "ch.swisstopo.geology.gecover"',
             f"  TYPE {layer_type}",
             "  STATUS ON",
             "",
@@ -154,8 +155,22 @@ class MapServerGenerator:
                     f"  CONNECTIONTYPE {connection.connection_type.name}",
                     f'  CONNECTION "{connection.connection}"',
                     f'  DATA "{data}"',
+
                 ]
             )
+
+        if classification.min_scale:
+            lines.extend(
+                [
+                    "",
+                   f"MINSCALEDENOM   {classification.min_scale}",
+                ]
+        if classification.max_scale:
+            lines.extend(
+                    [
+                     f"MAXCALEDENOM   {classification.min_scale}",
+                    ]
+
 
         # Projection
         lines.extend(
@@ -164,6 +179,8 @@ class MapServerGenerator:
                 "  PROJECTION",
                 '    "init=epsg:2056"',
                 "  END",
+                "",
+                "  EXTENT 2350000 1050000 2850000 1250000",
             ]
         )
 

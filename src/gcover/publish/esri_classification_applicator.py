@@ -486,9 +486,11 @@ class ClassificationMatcher:
         # Build reverse mapping (classification_field -> gpkg_field) for easier lookup
         self.reverse_field_mapping = {v: k for k, v in self.field_mapping.items()}
 
-        logger.debug(f"Initialized matcher for {classification.layer_name}")
+        logger.info(
+            f"Initialized matcher for classification '{classification.layer_name}'"
+        )
         logger.debug(f"Classification fields: {self.classification_field_names}")
-        logger.debug(f"Treat zero as null: {treat_zero_as_null}")
+        logger.info(f"Treat zero as null: {treat_zero_as_null}")
         if self.field_mapping:
             logger.debug(f"Field mapping: {self.field_mapping}")
 
@@ -776,10 +778,11 @@ class ClassificationApplicator:
                         # La dernière partie contient la valeur (après le "::")
                         identifier_value = identifier_key.split("::")[-1]
 
-                        logger.debug(
-                            f"Using identifier value '{identifier_value}' "
-                            f"for class '{class_obj.label}' (instead of index {idx})"
-                        )
+                        if identifier_value != idx:
+                            logger.debug(
+                                f"Using identifier value '{identifier_value}' "
+                                f"for class '{class_obj.label}' (instead of index {idx})"
+                            )
                     except Exception as e:
                         logger.warning(
                             f"Could not extract identifier value for '{class_obj.label}': {e}, "
@@ -798,8 +801,8 @@ class ClassificationApplicator:
         self,
         gdf: gpd.GeoDataFrame,
         additional_filter: Optional[str] = None,
-        overwrite: bool = False,
-        preserve_existing: bool = True,
+        overwrite: Optional[bool] = False,
+        preserve_existing: Optional[bool] = True,
     ) -> gpd.GeoDataFrame:  # NEW PARAMETER
         """
         Apply classification to GeoDataFrame.
@@ -819,18 +822,37 @@ class ClassificationApplicator:
             )
             return gdf
 
-        # Initialize fields if they don't exist
-        if not symbol_exists or overwrite:  # TODO erase everything
-            gdf[self.symbol_field] = None
-            # TODO
-            gdf[self.symbol_field] = np.nan  # or pd.NA
-            gdf[col] = gdf[col].astype("Int64")
+        # Check if fields exist
+        symbol_exists = self.symbol_field in gdf.columns
+        label_exists = self.label_field and self.label_field in gdf.columns
 
+        if symbol_exists and not overwrite and not preserve_existing:
+            logger.warning(
+                f"Field '{self.symbol_field}' exists. Use overwrite=True or preserve_existing=True"
+            )
+            return gdf
+
+        # Initialize or cast fields
+        if not symbol_exists or overwrite:
+            # Initialize as string dtype to store symbol IDs like 'fossil_8'
+            gdf[self.symbol_field] = pd.Series(dtype="string", index=gdf.index)
             logger.info(f"Created new field: {self.symbol_field}")
+        else:
+            # Field exists - cast to string to ensure dtype compatibility
+            gdf[self.symbol_field] = gdf[self.symbol_field].astype("string")
+            logger.debug(f"Cast existing field '{self.symbol_field}' to string dtype")
 
-        if self.label_field and not label_exists:
-            gdf[self.label_field] = None
-            logger.info(f"Created new field: {self.label_field}")
+        if self.label_field:
+            if not label_exists or overwrite:
+                # Initialize as string dtype to store label names
+                gdf[self.label_field] = pd.Series(dtype="string", index=gdf.index)
+                logger.info(f"Created new field: {self.label_field}")
+            else:
+                # Field exists - cast to string
+                gdf[self.label_field] = gdf[self.label_field].astype("string")
+                logger.debug(
+                    f"Cast existing field '{self.label_field}' to string dtype"
+                )
 
         # TODO
         # Check required fields
@@ -886,6 +908,7 @@ class ClassificationApplicator:
         preserved_count = 0
         symbols = []
         labels = []
+        unmatched_indices = []
         console.print(f"   Matching {len(gdf_filtered)} features...")
 
         # Create progress bar
@@ -906,7 +929,7 @@ class ClassificationApplicator:
                     existing_symbol = gdf.loc[idx, self.symbol_field]
 
                     # DEBUG
-                    if idx in list(gdf_filtered.index)[:20]:  # First 20 features
+                    if idx in list(gdf_filtered.index)[:10]:  # First 10 features
                         logger.debug(
                             f"Feature {idx}: existing_symbol={existing_symbol}, type={type(existing_symbol)}, notna={pd.notna(existing_symbol)}"
                         )
@@ -934,6 +957,7 @@ class ClassificationApplicator:
                     symbols.append(symbol_id)
                     labels.append(matched_label)
                     matched_count += 1
+
                 else:
                     # Leave as NULL (or keep existing if preserve_existing)
                     if preserve_existing and symbol_exists:
@@ -943,7 +967,8 @@ class ClassificationApplicator:
                     else:
                         symbols.append(None)
                         labels.append(None)
-                    unmatched_count += 1
+                        unmatched_indices.append(idx)
+                        unmatched_count += 1
 
                 # Update progress with stats every 100 features
                 if (matched_count + unmatched_count + preserved_count) % 100 == 0:
@@ -959,22 +984,62 @@ class ClassificationApplicator:
         console.print(f"  • Matched: {matched_count}")
         console.print(f"  • Unmatched: {unmatched_count}")
         console.print(f"  • Preserved: {preserved_count}")
-        console.print(f"  • Total: {len(gdf_filtered)}")
+        console.print(f"  • Total filtered: {len(gdf_filtered)}")
 
-        # Update the dataframe
-        # gdf.loc[gdf_filtered.index, self.symbol_field] = symbols
-        # cast to int TODO
-        gdf.loc[gdf_filtered.index, self.symbol_field] = pd.Series(
-            symbols, index=gdf_filtered.index
-        ).astype("str")
-        # TODO
-        gdf.loc[gdf_filtered.index, self.symbol_field] = pd.Series(
-            symbols, index=gdf_filtered.index
-        ).apply(
-            lambda val: str(int(float(val)))
-            if str(val).replace(".", "", 1).isdigit() and float(val).is_integer()
-            else str(val)
+        # CRITICAL LOGGING: Track classification results
+        logger.info(
+            f"CLASSIFICATION_RESULT | Classification={self.classification.layer_name} | "
+            f"Filter={additional_filter or 'None'} | "
+            f"Filtered={len(gdf_filtered)} | Matched={matched_count} | "
+            f"Unmatched={unmatched_count} | Preserved={preserved_count}"
         )
+
+        # Check if all filtered features got matched
+        if len(unmatched_indices) > 0:
+            console.print(
+                f"\n[red]⚠️  {len(unmatched_indices)} filtered features have no matching rule![/red]"
+            )
+
+            logger.warning(
+                f"UNMATCHED_IN_FILTER | Classification={self.classification.layer_name} | "
+                f"Filter={additional_filter or 'None'} | Count={len(unmatched_indices)}"
+            )
+
+            # Log details
+            debug_fields = self.matcher.required_gpkg_fields
+
+            logger.warning(f"  Unmatched features (no classification rule matched):")
+            for idx in unmatched_indices[:10]:
+                feature = gdf_filtered.loc[idx]
+                attrs = {
+                    field: feature.get(field)
+                    for field in debug_fields
+                    if field in feature.index
+                }
+                logger.warning(f"    Feature [{idx}]: {attrs}")
+
+            if len(unmatched_indices) > 10:
+                logger.warning(
+                    f"    ... and {len(unmatched_indices) - 10} more unmatched features"
+                )
+
+            # Console output (if verbose/debug)
+            if self.debug:
+                console.print(f"[yellow]  First 5 unmatched features:[/yellow]")
+                for idx in unmatched_indices[:5]:
+                    feature = gdf_filtered.loc[idx]
+                    attrs = {
+                        field: feature.get(field)
+                        for field in debug_fields
+                        if field in feature.index
+                    }
+                    console.print(f"    [{idx}]: {attrs}")
+
+        # Update the original (unfiltered) dataframe
+        gdf.loc[gdf_filtered.index, self.symbol_field] = pd.Series(
+            symbols, index=gdf_filtered.index
+        )
+        # TODO gdf.loc[gdf_filtered.index, self.symbol_field] = symbols
 
         if self.label_field:
             gdf.loc[gdf_filtered.index, self.label_field] = labels
