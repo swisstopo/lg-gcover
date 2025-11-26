@@ -40,6 +40,11 @@ from gcover.publish.symbol_utils import (
     extract_full_point_symbol,
     extract_polygon_symbol_layers,
 )
+from gcover.publish.label_extractor_extension import (
+    LabelInfo,
+    CIMLabelParser,
+    LabelInfoDisplayer
+)
 
 console = Console()
 
@@ -159,6 +164,7 @@ class FieldInfo:
     type: Optional[str] = None
 
 
+
 @dataclass
 class LayerClassification:
     """Complete classification information for a layer."""
@@ -186,6 +192,7 @@ class LayerClassification:
     max_scale: Optional[float] = None
     visibility: bool = True
 
+    label_classes: Optional[List[LabelInfo]] = None
     raw_renderer: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -866,6 +873,24 @@ class ESRIClassificationExtractor:
                             # Extract additional layer properties
                             self._extract_layer_properties(classification, layer_data)
 
+                            # Extract labels
+                            label_classes = layer_data.get('labelClasses', [])
+                            if label_classes:
+                                try:
+                                    label_infos = CIMLabelParser.parse_label_classes(
+                                        label_classes
+                                    )
+                                    classification.label_classes = label_infos
+
+                                    logger.info(
+                                        f"Extracted {len(label_infos)} label class(es) "
+                                        f"for layer {classification.layer_name}"
+                                    )
+                                except Exception as e:
+                                    logger.warning(
+                                        f"Could not parse label classes for "
+                                        f"{classification.layer_name}: {e}")
+
                             # Extract parent group from path
                             if "/" in layer_path:
                                 classification.parent_group = "/".join(
@@ -1075,7 +1100,7 @@ class ESRIClassificationExtractor:
                     classification_class = self._parse_classification_class(  # TODO
                         class_obj,
                         layer_path=layer_path or layer_name or "Unknown",
-                        class_index=class_index,
+                        class_index=len(classes), #class_index,
                         identifier_field=identifier_field,  # ← NEW
                         field_names=field_names,  # ← NEW
                     )
@@ -1238,6 +1263,14 @@ class ClassificationDisplayer:
                 )
 
             console.print(table)
+
+        # Display labels
+        if classification.label_classes:
+            console.print("\n[bold yellow]Label Classes:[/bold yellow]")
+            LabelInfoDisplayer.display_label_infos(
+                classification.label_classes,
+                console
+            )
 
     @staticmethod
     def display_grouped_classifications(classifications: List[LayerClassification]):
