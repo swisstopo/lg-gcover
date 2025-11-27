@@ -17,7 +17,7 @@ from gcover.schema.serializer import (save_esri_schema_to_file,
                                       serialize_esri_schema_to_dict)
 from gcover.schema.simple_transformer import transform_esri_flat_json
 
-from gcover.arcpy_compat import HAS_ARCPY
+from gcover.arcpy_compat import HAS_ARCPY, arcpy
 
 console = Console()
 
