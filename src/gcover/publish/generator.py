@@ -10,7 +10,7 @@ and sophisticated polygon styling.
 import json
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 import click
 from loguru import logger
@@ -98,6 +98,8 @@ class MapServerGenerator:
         connection: Optional[MapserverConnection] = None,
         data: Optional[str] = None,
         template: Optional[str] = "empty",
+        layer_group: Optional[str] = None,
+        map_label: Optional[Union[None, bool, str]] = None,
     ) -> str:
         """
         Generate complete MapServer LAYER block.
@@ -147,7 +149,7 @@ class MapServerGenerator:
         lines = [
             "LAYER",
             f'  NAME "{layer_name}"',
-            f'   GROUP "ch.swisstopo.geology.gecover"',
+            f'   GROUP "ch.swisstopo.geology.geocover-{layer_group}"',
             f"  TYPE {layer_type}",
             "  STATUS ON",
             "",
@@ -161,7 +163,7 @@ class MapServerGenerator:
                 f'    "wms_title"    "{layer_name.capitalize()}"',
                 f'    "wms_abstract" "{layer_name.capitalize()}"',
                 '    "wms_srs"      "EPSG:2056 EPSG:4326 EPSG:3857"',
-                '    "wms_extent" "2350000 1050000 2850000 1250000"',
+                '    "wms_extent" "2350000 1050000 2850000 1350000"',
                 '    "wms_enable_request" "*"',
                 '    "wms_include_items" "all"',
                 '    "gml_include_items" "all"',
@@ -206,7 +208,7 @@ class MapServerGenerator:
                 '    "init=epsg:2056"',
                 "  END",
                 "",
-                "  EXTENT 2350000 1050000 2850000 1250000",
+                "  EXTENT 2350000 1050000 2850000 1350000",
             ]
         )
 
@@ -221,8 +223,12 @@ class MapServerGenerator:
         else:
             lines.append("  # Styled using classification field values")
 
-        if label_item:
+
+
+        if label_item and map_label is None:
             lines.append(f'  LABELITEM "{label_item.lower()}"')
+        elif isinstance(classification.map_label, str):
+            lines.append(f'  LABELITEM "{map_label.lower()}"')
 
         lines.append("")
 
@@ -265,6 +271,7 @@ class MapServerGenerator:
                 symbol_prefix,
                 rotation_info,
                 label_info,
+                map_label,
             )
             lines.append(class_block)
 
@@ -280,6 +287,7 @@ class MapServerGenerator:
         symbol_prefix: str = "class",
         rotation_info: Optional[RotationInfo] = None,
         label_info: Optional[LabelInfo] = None,
+        map_label: Optional[Union[None, bool, str]] = None,
     ) -> str:
         """Generate a single MapServer CLASS block."""
         if not class_obj.visible:
@@ -294,7 +302,7 @@ class MapServerGenerator:
 
         # Sanitize class name
         class_name = class_obj.label.replace('"', '\\"')
-        logger.info(f"  {class_name}")
+        logger.debug(f"  {class_name}")
 
         # Build CLASS block
         lines = [
@@ -304,7 +312,7 @@ class MapServerGenerator:
         ]
 
         # Add LABEL
-        if label_info:
+        if label_info and map_label is not False:
             field = label_info.get_simple_field_name()  # "DIP"
             color = label_info.font_color.to_rgb_tuple()  # (0, 89, 255)
 
@@ -626,11 +634,14 @@ class MapServerGenerator:
         lines.append(f"      WIDTH {width_px:.2f}")
 
         # Handle line style
+        # TODO: no SYMBOL dotted or dashed!
         line_style_info = outline_info["line_style"]
         if line_style_info["type"] == "dash":
-            lines.append('      SYMBOL "dashed"')
+            # lines.append('      SYMBOL "dashed"')
+            lines.append('       PATTERN 5 3 END')
         elif line_style_info["type"] == "dot":
-            lines.append('      SYMBOL "dotted"')
+            #lines.append('      SYMBOL "dotted"')
+            lines.append('       PATTERN 1 3 END')
 
         lines.append("    END # STYLE")
 
@@ -713,9 +724,10 @@ class MapServerGenerator:
         ):
             line_style = symbol_info.line_style
             if line_style == "dash":
-                lines.append('      SYMBOL "dashed"')
+                lines.append('       PATTERN 5 3 END')
             elif line_style == "dot":
-                lines.append('      SYMBOL "dotted"')
+                lines.append('       PATTERN 1 3 END')
+
 
     def _add_truetype_line_marker(
         self, lines: List[str], symbol_info, font_symbol_name: str
@@ -988,7 +1000,9 @@ class MapServerGenerator:
 
     def _generate_line_pattern_symbols(self) -> List[str]:
         """Generate line pattern symbols (dashed, dotted)."""
-        return [
+        # TODO
+        return ["# No dash SYMBOL"]
+        '''return [
             "  SYMBOL",
             '    NAME "dashed"',
             "    TYPE SIMPLE",
@@ -1000,7 +1014,7 @@ class MapServerGenerator:
             "    TYPE SIMPLE",
             "    PATTERN 2 4 END",
             "  END",
-        ]
+        ]'''
 
     def _generate_font_symbols_from_classifications(
         self, classification_list: List, prefixes: Dict
