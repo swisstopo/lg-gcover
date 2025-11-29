@@ -43,7 +43,14 @@ from gcover.publish.symbol_utils import (
 from gcover.publish.label_extractor_extension import (
     LabelInfo,
     CIMLabelParser,
-    LabelInfoDisplayer
+    LabelInfoDisplayer,
+)
+
+from gcover.publish.rotation_extractor_extension import (
+    RotationInfo,
+    CIMRotationParser,
+    RotationInfoDisplayer,
+    format_rotation_for_mapserver,
 )
 
 console = Console()
@@ -164,7 +171,6 @@ class FieldInfo:
     type: Optional[str] = None
 
 
-
 @dataclass
 class LayerClassification:
     """Complete classification information for a layer."""
@@ -191,8 +197,11 @@ class LayerClassification:
     min_scale: Optional[float] = None
     max_scale: Optional[float] = None
     visibility: bool = True
+    map_label: Union[None, bool, str] = None
+
 
     label_classes: Optional[List[LabelInfo]] = None
+    rotation_info: Optional[RotationInfo] = None
     raw_renderer: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -874,7 +883,7 @@ class ESRIClassificationExtractor:
                             self._extract_layer_properties(classification, layer_data)
 
                             # Extract labels
-                            label_classes = layer_data.get('labelClasses', [])
+                            label_classes = layer_data.get("labelClasses", [])
                             if label_classes:
                                 try:
                                     label_infos = CIMLabelParser.parse_label_classes(
@@ -889,7 +898,8 @@ class ESRIClassificationExtractor:
                                 except Exception as e:
                                     logger.warning(
                                         f"Could not parse label classes for "
-                                        f"{classification.layer_name}: {e}")
+                                        f"{classification.layer_name}: {e}"
+                                    )
 
                             # Extract parent group from path
                             if "/" in layer_path:
@@ -1015,6 +1025,7 @@ class ESRIClassificationExtractor:
         classification.min_scale = layer_data.get("minScale")
         classification.max_scale = layer_data.get("maxScale")
         classification.visibility = layer_data.get("visibility", True)
+        classification.map_label = layer_data.get("map_label", None)
 
         # Extract from featureTable
         feature_table = layer_data.get("featureTable", {})
@@ -1100,7 +1111,7 @@ class ESRIClassificationExtractor:
                     classification_class = self._parse_classification_class(  # TODO
                         class_obj,
                         layer_path=layer_path or layer_name or "Unknown",
-                        class_index=len(classes), #class_index,
+                        class_index=len(classes),  # class_index,
                         identifier_field=identifier_field,  # ← NEW
                         field_names=field_names,  # ← NEW
                     )
@@ -1114,7 +1125,7 @@ class ESRIClassificationExtractor:
                     renderer["defaultSymbol"].get("symbol", {})
                 )
 
-            return LayerClassification(
+            classification = LayerClassification(
                 renderer_type="CIMUniqueValueRenderer",
                 fields=fields,
                 classes=classes,
@@ -1123,6 +1134,26 @@ class ESRIClassificationExtractor:
                 layer_name=layer_name,
                 raw_renderer=renderer,
             )
+
+            visual_variables = renderer.get("visualVariables", [])
+            if visual_variables:
+                try:
+                    rotation_info = CIMRotationParser.parse_rotation_variables(
+                        visual_variables
+                    )
+                    if rotation_info:
+                        classification.rotation_info = rotation_info
+
+                        logger.info(
+                            f"Extracted rotation on field "
+                            f"{rotation_info.get_simple_field_name()} "
+                            f"({rotation_info.rotation_type}) "
+                            f"for layer {layer_name}"
+                        )
+                except Exception as e:
+                    logger.warning(f"Could not parse rotation for {layer_name}: {e}")
+
+            return classification
 
         except Exception as e:
             logger.error(f"Error parsing unique value renderer: {e}")
@@ -1135,6 +1166,7 @@ class ESRIClassificationExtractor:
         try:
             label = class_obj.get("label", "")
             visible = class_obj.get("visible", True)
+
 
             # Parse field values
             field_values = []
@@ -1172,6 +1204,7 @@ class ESRIClassificationExtractor:
                         class_index=class_index,
                         symbol_dict=raw_symbol,
                         label=label,
+
                     )
                 except Exception as e:
                     logger.debug(f"Could not create identifier: {e}")
@@ -1268,8 +1301,13 @@ class ClassificationDisplayer:
         if classification.label_classes:
             console.print("\n[bold yellow]Label Classes:[/bold yellow]")
             LabelInfoDisplayer.display_label_infos(
-                classification.label_classes,
-                console
+                classification.label_classes, console
+            )
+        # Display rotation
+        if classification.rotation_info:
+            console.print("\n[bold yellow]Symbol Rotation:[/bold yellow]")
+            RotationInfoDisplayer.display_rotation_info(
+                classification.rotation_info, console
             )
 
     @staticmethod
@@ -1798,6 +1836,7 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
         self,
         use_arcpy: bool = None,
         override_registry: Optional[SymbolOverrideRegistry] = None,
+
     ):
         """
         Initialize extractor with optional override registry.
@@ -1807,6 +1846,7 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
             override_registry: Optional custom symbol override registry
         """
         super().__init__()
+        self.class_count = 0
         # Call parent __init__ (existing code)
         if use_arcpy is None:
             self.use_arcpy = HAS_ARCPY
@@ -1844,6 +1884,7 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
                              in field_values, uses its value as identifier.
             field_names: List of field names corresponding to field_values order
         """
+        self.class_count += 1
 
         try:
             label = class_obj.get("label", "")
@@ -1886,10 +1927,16 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
                         # Extraire la valeur depuis field_values
                         if field_index < len(field_values[0]):
                             identifier_value = field_values[0][field_index]
-                            logger.info(
-                                f"Using field '{identifier_field}' value "
-                                f"'{identifier_value}' as identifier"
-                            )
+                            if self.class_count < 10:
+                                logger.info(
+                                  f"Using field '{identifier_field}' value "
+                                  f"'{identifier_value}' as identifier"
+                                )
+                            elif self.class_count == 10:
+                                logger.info(
+                                    f"more classes..."
+                                )
+
                     except (ValueError, IndexError) as e:
                         logger.warning(
                             f"Could not extract identifier from field '{identifier_field}': {e}. "
@@ -1973,7 +2020,7 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
                     renderer["defaultSymbol"].get("symbol", {})
                 )
 
-            return LayerClassification(
+            classification = LayerClassification(
                 renderer_type="CIMUniqueValueRenderer",
                 fields=fields,
                 classes=classes,
@@ -1982,6 +2029,26 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
                 layer_name=layer_name,
                 raw_renderer=renderer,
             )
+
+            visual_variables = renderer.get("visualVariables", [])
+            if visual_variables:
+                try:
+                    rotation_info = CIMRotationParser.parse_rotation_variables(
+                        visual_variables
+                    )
+                    if rotation_info:
+                        classification.rotation_info = rotation_info
+
+                        logger.info(
+                            f"Extracted rotation on field "
+                            f"{rotation_info.get_simple_field_name()} "
+                            f"({rotation_info.rotation_type}) "
+                            f"for layer {layer_name}"
+                        )
+                except Exception as e:
+                    logger.warning(f"Could not parse rotation for {layer_name}: {e}")
+
+            return classification
 
         except Exception as e:
             logger.error(f"Error parsing unique value renderer: {e}")
