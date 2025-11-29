@@ -46,17 +46,20 @@ class FontSymbol:
 
 @dataclass
 class ClassificationConfig:
-    """Configuration for a single classification application."""
+    """Configuration for a single classification application, currently a .lyrx file"""
 
     style_file: Path
     index: int  # draw index (small=top)
     mapfile_name: Optional[str] = None
+    mapfile_group: Optional[str] = None
+    map_label: Optional[Union[None, bool, str]] = None,
     classification_name: Optional[str] = None
     fields: Optional[Dict[str, str]] = None
     filter: Optional[str] = None
     symbol_prefix: Optional[str] = None
     identifier_field: Optional[str] = None
     data: Optional[str] = None
+    active: Optional[bool] = True
 
 
 @dataclass
@@ -127,8 +130,11 @@ class BatchClassificationConfig:
                     filter=class_dict.get("filter"),
                     symbol_prefix=class_dict.get("symbol_prefix"),
                     mapfile_name=class_dict.get("mapfile_name"),
+                    mapfile_group=class_dict.get("mapfile_group"),
+                    map_label=class_dict.get("map_label"),
                     identifier_field=class_dict.get("identifier_field"),
                     data=class_dict.get("data"),
+                    active=class_dict.get("active", True)
                 )
             )
 

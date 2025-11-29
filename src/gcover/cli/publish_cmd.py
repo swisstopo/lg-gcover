@@ -906,6 +906,9 @@ def mapserver(
     # Load configuration if provided
     prefix_map = {}
     mapfile_names = {}
+    mapfile_groups = {}
+    mapfile_labels = {}
+    active_classes = {}
     mapfiles = []
     config = None
     symbol_field = None
@@ -927,10 +930,15 @@ def mapserver(
                 if class_config.classification_name:
                     # Use classification name as key
                     key = class_config.classification_name
+                    mapfile_labels[key] = class_config.map_label
+                    active_classes[key] = class_config.active
                     if class_config.symbol_prefix:
                         prefix_map[key] = class_config.symbol_prefix
+                    if class_config.mapfile_group:
+                        mapfile_groups[key] = class_config.mapfile_group
                     if class_config.mapfile_name:
                         mapfile_names[key] = class_config.mapfile_name
+
                     if class_config.identifier_field:
                         field_name = class_config.identifier_field
                         identifier_fields[key] = field_name
@@ -938,9 +946,11 @@ def mapserver(
                             f"Layer '{key}' will use identifier_field: {field_name}"
                         )
 
+
         console.print(
             f"  [green]✓[/green] Extracted prefixes for {len(prefix_map)} classifications"
         )
+
 
         # If no style files specified, use all from config
         style_files = []
@@ -1036,6 +1046,16 @@ def mapserver(
             # Get prefix and mapfile name from config if available
             symbol_prefix = prefix_map.get(layer_name, layer_name.lower())
             mapfile_layer_name = mapfile_names.get(layer_name, layer_name)
+            mapfile_layer_group = mapfile_groups.get(layer_name, None)
+            mapfile_label = mapfile_labels.get(layer_name, None)
+            is_active = active_classes.get(layer_name)
+
+            if not is_active:
+                console.print(
+                    f"  [bold orange1]Skipping {layer_name} (inactive)[/bold orange1]"              )
+                continue
+
+
 
             if not mapserver_data:
                 mapserver_data = f"geom from (SELECT * from {gpkg_layer} ) as blabla using unique gid using srid=2056"
@@ -1045,12 +1065,14 @@ def mapserver(
             mapfile_content = generator.generate_layer(
                 classification=classification,
                 layer_name=mapfile_layer_name,
+                layer_group=mapfile_layer_group,
                 symbol_prefix=symbol_prefix,
                 data=mapserver_data,
                 layer_type=layer_type,
                 connection=connection,
                 symbol_field=symbol_field,
                 template=template,
+                map_label= mapfile_label
             )
 
             # Save mapfile
@@ -1098,7 +1120,7 @@ def mapserver(
         console.print(f"[dim]Used {len(generator.fonts_used)} fonts[/dim]")
 
         console.print(f"[cyan]Includes for the main mapfile[/cyan]")
-        for mapfile in mapfiles:
+        for mapfile in reversed(mapfiles): # TOP: drawn first...
             console.print(f'INCLUDE "layers/{mapfile}"')
 
     # Summary
