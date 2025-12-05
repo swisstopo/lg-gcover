@@ -225,7 +225,14 @@ class MapServerGenerator:
         if classification.max_scale:
             lines.extend(
                 [
+                    "",
                     f"MINSCALEDENOM   {classification.min_scale}",
+                ]
+            )
+        if classification.max_scale:
+            lines.extend(
+                [
+                    f"MAXCALEDENOM   {classification.min_scale}",
                 ]
             )
 

@@ -1,4 +1,7 @@
 
+import json
+from loguru import logger
+import pandas as pd
 
 
 
@@ -41,10 +44,10 @@ def _arcgis_table_to_df(table_name, input_fields=None, query=""):
 
 def _transform_table_data(df, table_name, column_type_mapping):
     """Apply data transformations specific to table types."""
-    from gcover.config import EXCLUDED_FIELDS
+    from gcover.config import DEFAULT_EXCLUDED_FIELDS
 
     # Remove excluded fields
-    df = df.drop(columns=EXCLUDED_FIELDS, errors="ignore")
+    df = df.drop(columns=DEFAULT_EXCLUDED_FIELDS, errors="ignore")
 
     # Sort hierarchical tables
     sort_keys = ["GEOLCODE", "PARENT_REF"]
