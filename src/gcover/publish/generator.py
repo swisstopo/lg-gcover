@@ -91,7 +91,7 @@ class MapServerGenerator:
         symbol_prefix: str = "class",
         connection: Optional[MapserverConnection] = None,
         data: Optional[str] = None,
-        template: Optional[str] = 'empty'
+        template: Optional[str] = "empty",
     ) -> str:
         """
         Generate complete MapServer LAYER block.
@@ -116,7 +116,7 @@ class MapServerGenerator:
             symbol_field = self.symbol_field
 
         if not template:
-            template = 'empty'
+            template = "empty"
 
         logger.info(f"=== {layer_name} ===")
 
@@ -128,7 +128,6 @@ class MapServerGenerator:
             "  STATUS ON",
             "",
         ]
-
 
         # Metadata
         lines.extend(
@@ -155,7 +154,6 @@ class MapServerGenerator:
                     f"  CONNECTIONTYPE {connection.connection_type.name}",
                     f'  CONNECTION "{connection.connection}"',
                     f'  DATA "{data}"',
-
                 ]
             )
 
@@ -163,14 +161,15 @@ class MapServerGenerator:
             lines.extend(
                 [
                     "",
-                   f"MINSCALEDENOM   {classification.min_scale}",
+                    f"MINSCALEDENOM   {classification.min_scale}",
                 ]
+            )
         if classification.max_scale:
             lines.extend(
-                    [
-                     f"MAXCALEDENOM   {classification.min_scale}",
-                    ]
-
+                [
+                    f"MAXCALEDENOM   {classification.min_scale}",
+                ]
+            )
 
         # Projection
         lines.extend(
