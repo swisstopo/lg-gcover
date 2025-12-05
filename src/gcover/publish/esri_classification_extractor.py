@@ -16,6 +16,7 @@ BACKWARDS COMPATIBLE - existing code continues to work.
 import sys
 import json
 import zipfile
+import difflib
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -673,10 +674,20 @@ class ESRIClassificationExtractor:
         """
         lyrx_path = Path(lyrx_path)
 
-        if not lyrx_path.exists():
-            raise FileNotFoundError(f"Layer file not found: {lyrx_path}")
 
-        logger.info(f"Extracting classification from {lyrx_path}")
+        if not lyrx_path.exists():
+            parent_dir = lyrx_path.parent
+            candidates = [str(p.name) for p in parent_dir.glob("*.lyrx") if p != lyrx_path]
+            matches = difflib.get_close_matches(str(lyrx_path.name), candidates, n=1, cutoff=0.8)
+            if matches:
+                lyrx_path = lyrx_path.parent / matches[0]
+                logger.info(f"Alternative .lyrx file: {lyrx_path}")
+            else:
+                logger.error(f"Original file not found: {lyrx_path.name}")
+                logger.debug(f"Candidates: {candidates}")
+                raise FileNotFoundError(f"Layer file not found: {lyrx_path}")
+        else:
+            logger.info(f"Extracting classification from {lyrx_path}")
 
         if self.use_arcpy:
             return self._extract_with_arcpy(

@@ -72,6 +72,9 @@ class LayerConfig:
     layer_type: Optional[LayerType] = None
     connection_ref: Optional[str] = None
     template: Optional[str] = None
+    max_scale: Optional[bool | int] = None  # None, False, True, ou int
+
+
 
 
 class BatchClassificationConfig:
@@ -114,6 +117,7 @@ class BatchClassificationConfig:
         template = layer_dict.get("template")
         classifications = []
         field_types = layer_dict.get("field_types", {})
+        max_scale = layer_dict.get("scale", None)
 
         for class_dict in layer_dict.get("classifications", []):
             # Resolve style file path
@@ -135,6 +139,7 @@ class BatchClassificationConfig:
                     identifier_field=class_dict.get("identifier_field"),
                     data=class_dict.get("data"),
                     active=class_dict.get("active", True)
+
                 )
             )
 
@@ -145,6 +150,7 @@ class BatchClassificationConfig:
             layer_type=layer_type,
             connection_ref=connection_ref,
             template=template,
+            max_scale=max_scale,
         )
 
     def get_layer_config(self, gpkg_layer: str) -> Optional[LayerConfig]:

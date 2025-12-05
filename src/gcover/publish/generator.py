@@ -84,6 +84,35 @@ class MapServerGenerator:
         self.pattern_symbols: List[Dict] = []
         self.symbol_registry: Dict[FontSymbol, str] = {}
 
+    def render_maxscale(self, layer_scale: Optional[bool | int],
+                        style_scale: Optional[int]) -> Optional[str]:
+        """
+        Retourne la ligne MAXSCALEDENOM ou None
+
+        Cas 1: yaml=None,   style=None   → None (pas de scale)
+        Cas 2: yaml=None,   style=20000  → "MAXSCALEDENOM 20000" (utilise style)
+        Cas 3: yaml=False,  style=None   → None (désactivé explicitement)
+        Cas 4: yaml=False,  style=20000  → None (override: désactivé)
+        Cas 5: yaml=True,   style=None   → None (veut le style, mais n'existe pas)
+        Cas 6: yaml=True,   style=20000  → "MAXSCALEDENOM 20000" (utilise style)
+        Cas 7: yaml=50000,  style=None   → "MAXSCALEDENOM 50000" (override)
+        Cas 8: yaml=50000,  style=20000  → "MAXSCALEDENOM 50000" (override)
+        """
+
+        # YAML désactive explicitement
+        if layer_scale is False:
+            return None
+
+        # YAML définit une valeur spécifique
+        if isinstance(layer_scale, int):
+            return f"  MAXSCALEDENOM {yaml_scale}"
+
+        # YAML = None ou True → utilise le style si disponible
+        if style_scale is not None:
+            return f"  MAXSCALEDENOM {style_scale}"
+
+        return None
+
     # ========================================================================
     # LAYER AND CLASS GENERATION
     # ========================================================================
@@ -100,6 +129,7 @@ class MapServerGenerator:
         template: Optional[str] = "empty",
         layer_group: Optional[str] = None,
         map_label: Optional[Union[None, bool, str]] = None,
+        layer_max_scale: Optional[bool | int] = None
     ) -> str:
         """
         Generate complete MapServer LAYER block.
@@ -186,13 +216,12 @@ class MapServerGenerator:
         # Names are swapped between Mapserver and ESRI
         # minScale → MAXSCALEDENOM
         # maxScale → MINSCALEDENOM
-        if classification.min_scale:
-            lines.extend(
-                [
-                    "",
-                    f"MAXSCALEDENOM   {classification.min_scale}",
-                ]
-            )
+
+        max_scale = self.render_maxscale(layer_max_scale,classification.min_scale )
+        if max_scale:
+            console.print(f"Using `maxscaledenom`: {classification.min_scale}")
+            lines.extend(["", max_scale])
+
         if classification.max_scale:
             lines.extend(
                 [

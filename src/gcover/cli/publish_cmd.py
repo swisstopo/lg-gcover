@@ -967,6 +967,7 @@ def mapserver(
                         connection_ref,
                         class_config.data,
                         layer_config.template,
+                        layer_config.max_scale
                     )
                     logger.debug(params)
                     style_files.append(params)
@@ -1013,6 +1014,7 @@ def mapserver(
         connection_ref,
         mapserver_data,
         template,
+        layer_max_scale
     ) in style_files:
         console.print(f"Processing {style_file.name} [{layer_type}]...")
 
@@ -1072,7 +1074,8 @@ def mapserver(
                 connection=connection,
                 symbol_field=symbol_field,
                 template=template,
-                map_label= mapfile_label
+                map_label= mapfile_label,
+                layer_max_scale=layer_max_scale
             )
 
             # Save mapfile

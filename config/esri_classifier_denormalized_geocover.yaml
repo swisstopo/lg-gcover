@@ -79,6 +79,9 @@ layers:
           mapfile_name: planar_struct
           mapfile_group: point_features
           filter: KIND IN (13801001,13801002, 13801004, 13801003, 13801005, 13801006)
+          # Convert angles..
+          data: "geom from (SELECT geom, gid, map_symbol, dip::int, (450 - azimuth::int) % 360 AS map_angle FROM geol.geocover_point_objects WHERE azimuth >=0 AND azimuth <=360) AS angle_data USING UNIQUE id USING SRID=..."
+
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -93,6 +96,7 @@ layers:
           # Only a few 100s features
           data: "geom FROM geol.geocover_point_objects USING UNIQUE gid USING SRID=2056 WHERE map_symbol ILIKE 'achsen%'"
           map_label: False
+          max_scale: 20000
           filter: KIND=14601006
           fields:
             # Map GPKG field to classification field (can be complex paths)
