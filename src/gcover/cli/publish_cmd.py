@@ -23,17 +23,27 @@ from rich.table import Table
 
 from gcover.cli.main import _split_bbox
 from gcover.config import SDE_INSTANCES, AppConfig, load_config
-from gcover.publish.esri_classification_applicator import \
-    ClassificationApplicator
-from gcover.publish.esri_classification_extractor import extract_lyrx_complete
+from gcover.publish.esri_classification_applicator import ClassificationApplicator
+from gcover.publish.esri_classification_extractor import (
+    extract_lyrx_complete,
+    explore_layer_structure,
+    export_classifications_to_csv,
+    ClassificationJSONEncoder,
+)
 from gcover.publish.generator import MapServerGenerator
 from gcover.publish.qgis_generator import QGISGenerator
-from gcover.publish.style_config import (BatchClassificationConfig,
-                                         apply_batch_from_config)
-from gcover.publish.tooltips_enricher import (EnhancedTooltipsEnricher,
-                                              EnrichmentConfig, LayerMapping,
-                                              LayerType,
-                                              create_enrichment_config)
+from gcover.publish.style_config import (
+    BatchClassificationConfig,
+    apply_batch_from_config,
+)
+from gcover.publish.tooltips_enricher import (
+    EnhancedTooltipsEnricher,
+    EnrichmentConfig,
+    LayerMapping,
+    LayerType,
+    create_enrichment_config,
+)
+
 
 console = Console()
 
@@ -63,6 +73,99 @@ def publish_commands(ctx):
     ctx.obj.setdefault("environment", "development")
     ctx.obj.setdefault("verbose", False)
     ctx.obj.setdefault("config_path", None)
+
+
+@publish_commands.command()
+@click.pass_context
+@click.argument("input", type=click.Path(exists=True, path_type=Path))
+@click.option("--use-arcpy", is_flag=True, help="Force JSON parsing (no arcpy)")
+@click.option("--quiet", is_flag=True, help="Suppress rich display")
+@click.option(
+    "--explore",
+    is_flag=True,
+    help="Explore layer structure (show all layers and groups)",
+)
+@click.option(
+    "--export", type=click.Choice(["json", "csv"]), help="Export results to file"
+)
+@click.option(
+    "--max-label-length",
+    type=int,
+    default=130,
+    help="Maximum label length (default: 40)",
+)
+@click.option(
+    "--head",
+    type=int,
+    default=None,
+    help="Display only the first n rows",
+)
+def extract_classification(
+    ctx,
+    input,
+    use_arcpy,
+    quiet,
+    explore,
+    export,
+    max_label_length,
+    head,
+):
+    """Extract ESRI layer classification information from .lyrx files."""
+    logger.info(f"COMMAND START: apply-config")
+    verbose = ctx.obj.get("verbose", False)
+
+    if verbose and quiet:
+        console.print(
+            "[red]Error: options `--verbose` and `--quiet`are mutually exclusive[/red]"
+        )
+        raise click.Abort()
+
+    input_path = Path(input)
+
+    if explore:
+        if input_path.suffix.lower() != ".lyrx":
+            console.print(
+                "[red]Error: --explore only supports .lyrx files currently[/red]"
+            )
+            raise click.Abort()
+
+        structure = explore_layer_structure(input_path, use_arcpy=use_arcpy)
+        # You can optionally display or return structure here
+
+    elif input_path.suffix.lower() == ".lyrx":
+        results = extract_lyrx_complete(  # TODO switched from extract_lyrx
+            input_path,
+            use_arcpy=use_arcpy,
+            display=not quiet,
+            head=head,
+            #  max_label_length=max_label_length,
+        )
+
+        if quiet:
+            console.print(f"Extracted {len(results)} layer classifications")
+
+        if export:
+            export_path = input_path.with_suffix(f".classifications.{export}")
+
+            if export == "json":
+                export_data = [to_serializable_dict(c) for c in results]
+                with open(export_path, "w", encoding="utf-8") as f:
+                    json.dump(
+                        export_data,
+                        f,
+                        indent=2,
+                        ensure_ascii=False,
+                        cls=ClassificationJSONEncoder,
+                    )
+                console.print(f"[green]Exported to {export_path}[/green]")
+
+            elif export == "csv":
+                export_classifications_to_csv(results, export_path)
+                console.print(f"[green]Exported to {export_path}[/green]")
+
+    else:
+        console.print("[red]Error: Input must be .lyrx[/red]")
+        raise click.Abort()
 
 
 @publish_commands.command()
