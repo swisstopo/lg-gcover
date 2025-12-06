@@ -23,23 +23,17 @@ from rich.table import Table
 
 from gcover.cli.main import _split_bbox
 from gcover.config import SDE_INSTANCES, AppConfig, load_config
-from gcover.publish.esri_classification_applicator import ClassificationApplicator
-from gcover.publish.esri_classification_extractor import (
-    extract_lyrx_complete,
-)
+from gcover.publish.esri_classification_applicator import \
+    ClassificationApplicator
+from gcover.publish.esri_classification_extractor import extract_lyrx_complete
 from gcover.publish.generator import MapServerGenerator
 from gcover.publish.qgis_generator import QGISGenerator
-from gcover.publish.style_config import (
-    BatchClassificationConfig,
-    apply_batch_from_config,
-)
-from gcover.publish.tooltips_enricher import (
-    EnhancedTooltipsEnricher,
-    EnrichmentConfig,
-    LayerMapping,
-    LayerType,
-    create_enrichment_config,
-)
+from gcover.publish.style_config import (BatchClassificationConfig,
+                                         apply_batch_from_config)
+from gcover.publish.tooltips_enricher import (EnhancedTooltipsEnricher,
+                                              EnrichmentConfig, LayerMapping,
+                                              LayerType,
+                                              create_enrichment_config)
 
 console = Console()
 
@@ -284,38 +278,43 @@ def apply_config(
             sys.exit(1)
 
         # Display final statistics
-        console.print("\n[bold green]✅ Batch processing complete![/bold green]\n")
+        # vectorized stats are print in this file
+        if stats.get("features_newly_classified"):
+            console.print("\n[bold green]✅ Batch processing complete![/bold green]\n")
 
-        summary_table = Table(title="Processing Statistics", show_header=True)
-        summary_table.add_column("Metric", style="cyan")
-        summary_table.add_column("Value", style="green", justify="right")
+            summary_table = Table(title="Processing Statistics", show_header=True)
+            summary_table.add_column("Metric", style="cyan")
+            summary_table.add_column("Value", style="green", justify="right")
 
-        summary_table.add_row("Layers processed", str(stats["layers_processed"]))
-        summary_table.add_row(
-            "Classifications applied", str(stats["classifications_applied"])
-        )
-        summary_table.add_row(
-            "Features newly classified", str(stats["features_newly_classified"])
-        )
-        summary_table.add_row("Features classified", str(stats["features_classified"]))
-        summary_table.add_row("Total features", str(stats["features_total"]))
+            summary_table.add_row("Layers processed", str(stats["layers_processed"]))
+            summary_table.add_row(
+                "Classifications applied", str(stats["classifications_applied"])
+            )
+            summary_table.add_row(
+                "Features newly classified", str(stats["features_newly_classified"])
+            )
+            summary_table.add_row(
+                "Features classified", str(stats["features_classified"])
+            )
+            summary_table.add_row("Total features", str(stats["features_total"]))
 
-        if stats["features_total"] > 0:
-            pct = stats["features_classified"] / stats["features_total"] * 100
-            summary_table.add_row("Coverage", f"{pct:.1f}%")
-        summary_table.add_row("Processing time", f"{int(mins)}m {secs:.1f}s")
+            if stats["features_total"] > 0:
+                pct = stats["features_classified"] / stats["features_total"] * 100
+                summary_table.add_row("Coverage", f"{pct:.1f}%")
+            summary_table.add_row("Processing time", f"{int(mins)}m {secs:.1f}s")
 
-        console.print(summary_table)
+            console.print(summary_table)
 
-        output_file = output or gpkg_file.parent / f"{gpkg_file.stem}_classified.gpkg"
-        console.print(f"\n[dim]Output: {output_file}[/dim]")
-
-        logger.info(
-            "SUMMARY: Layers processed {layers_processed} | "
-            "Classifications applied {classifications_applied} | "
-            "Features classified {features_classified} |"
-            "Total features {features_total} |".format(**stats)
-        )
+            logger.info(
+                "SUMMARY: Layers processed {layers_processed} | "
+                "Classifications applied {classifications_applied} | "
+                "Features classified {features_classified} |"
+                "Total features {features_total} |".format(**stats)
+            )
+            output_file = (
+                output or gpkg_file.parent / f"{gpkg_file.stem}_classified.gpkg"
+            )
+            console.print(f"\n[dim]Output: {output_file}[/dim]")
 
     except Exception as e:
         logger.error(f"Batch processing failed: {e}")
@@ -946,11 +945,9 @@ def mapserver(
                             f"Layer '{key}' will use identifier_field: {field_name}"
                         )
 
-
         console.print(
             f"  [green]✓[/green] Extracted prefixes for {len(prefix_map)} classifications"
         )
-
 
         # If no style files specified, use all from config
         style_files = []
@@ -967,7 +964,7 @@ def mapserver(
                         connection_ref,
                         class_config.data,
                         layer_config.template,
-                        layer_config.max_scale
+                        layer_config.max_scale,
                     )
                     logger.debug(params)
                     style_files.append(params)
@@ -1014,7 +1011,7 @@ def mapserver(
         connection_ref,
         mapserver_data,
         template,
-        layer_max_scale
+        layer_max_scale,
     ) in style_files:
         console.print(f"Processing {style_file.name} [{layer_type}]...")
 
@@ -1054,10 +1051,9 @@ def mapserver(
 
             if not is_active:
                 console.print(
-                    f"  [bold orange1]Skipping {layer_name} (inactive)[/bold orange1]"              )
+                    f"  [bold orange1]Skipping {layer_name} (inactive)[/bold orange1]"
+                )
                 continue
-
-
 
             if not mapserver_data:
                 mapserver_data = f"geom from (SELECT * from {gpkg_layer} ) as blabla using unique gid using srid=2056"
@@ -1074,8 +1070,8 @@ def mapserver(
                 connection=connection,
                 symbol_field=symbol_field,
                 template=template,
-                map_label= mapfile_label,
-                layer_max_scale=layer_max_scale
+                map_label=mapfile_label,
+                layer_max_scale=layer_max_scale,
             )
 
             # Save mapfile
@@ -1123,7 +1119,7 @@ def mapserver(
         console.print(f"[dim]Used {len(generator.fonts_used)} fonts[/dim]")
 
         console.print(f"[cyan]Includes for the main mapfile[/cyan]")
-        for mapfile in reversed(mapfiles): # TOP: drawn first...
+        for mapfile in reversed(mapfiles):  # TOP: drawn first...
             console.print(f'INCLUDE "layers/{mapfile}"')
 
     # Summary

@@ -15,9 +15,9 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import click
 import fiona
-import pyogrio
 import geopandas as gpd
 import pandas as pd
+import pyogrio
 import yaml
 from loguru import logger
 from rich.console import Console
@@ -26,10 +26,13 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from rich.tree import Tree
 
-from gcover.publish.esri_classification_applicator import ClassificationApplicator
+from gcover.publish.esri_classification_applicator import \
+    ClassificationApplicator
 from gcover.publish.esri_classification_extractor import extract_lyrx_complete
 from gcover.publish.tooltips_enricher import LayerType
 from gcover.publish.utils import save_layer_preserving_types
+from gcover.publish.vectorized_classification import \
+    apply_batch_from_config_vectorized
 
 console = Console()
 
@@ -52,7 +55,7 @@ class ClassificationConfig:
     index: int  # draw index (small=top)
     mapfile_name: Optional[str] = None
     mapfile_group: Optional[str] = None
-    map_label: Optional[Union[None, bool, str]] = None,
+    map_label: Optional[Union[None, bool, str]] = (None,)
     classification_name: Optional[str] = None
     fields: Optional[Dict[str, str]] = None
     filter: Optional[str] = None
@@ -73,8 +76,6 @@ class LayerConfig:
     connection_ref: Optional[str] = None
     template: Optional[str] = None
     max_scale: Optional[bool | int] = None  # None, False, True, ou int
-
-
 
 
 class BatchClassificationConfig:
@@ -138,8 +139,7 @@ class BatchClassificationConfig:
                     map_label=class_dict.get("map_label"),
                     identifier_field=class_dict.get("identifier_field"),
                     data=class_dict.get("data"),
-                    active=class_dict.get("active", True)
-
+                    active=class_dict.get("active", True),
                 )
             )
 
@@ -161,6 +161,7 @@ class BatchClassificationConfig:
         return None
 
 
+# Then replace the function call or add a flag:
 def apply_batch_from_config(
     gpkg_path: Path,
     config: BatchClassificationConfig,
@@ -169,8 +170,9 @@ def apply_batch_from_config(
     debug: bool = False,
     bbox: Optional[tuple] = None,
     continue_on_error: Optional[bool] = False,
+    use_vectorized: bool = True,  # NEW FLAG
+    preserve_existing: Optional[bool] = True,  # TODO remove?
     overwrite: Optional[bool] = False,
-    preserve_existing: Optional[bool] = True,
 ) -> Dict[str, any]:
     """
     Apply all classifications from config to a GPKG.
@@ -217,6 +219,19 @@ def apply_batch_from_config(
     logger.info(
         f"Processing {len(layers_to_process)} GPKG layers: {','.join(layers_to_process)}"
     )
+
+    if use_vectorized:
+        return apply_batch_from_config_vectorized(
+            gpkg_path=gpkg_path,
+            config=config,
+            layer_name=layer_name,
+            output_path=output_path,
+            debug=debug,
+            bbox=bbox,
+            continue_on_error=continue_on_error,
+        )
+
+    # Iterative
 
     # Statistics
     stats = {
