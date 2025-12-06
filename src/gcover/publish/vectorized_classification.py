@@ -813,6 +813,7 @@ def apply_batch_from_config_vectorized(
                 if class_config.classification_name:
                     for c in classifications:
                         # if c.layer_name == class_config.classification_name:
+                        logger.info(f"Looking for : {c.layer_name}")
                         matches = difflib.get_close_matches(
                             class_config.classification_name,
                             [c.layer_name],
@@ -944,11 +945,11 @@ def apply_batch_from_config_vectorized(
         if not report.is_complete
     ]
     if incomplete_layers:
+        console.print("[red]⚠️  Incomplete layers:[/red]")
         console.print(
-            f"\n[red]⚠️  Incomplete layers:\n    ✗ {'\n    ✗ '.join(incomplete_layers)}[/red]"
+            "\n".join(f"[red]   ✗ {layer}[/red]" for layer in incomplete_layers)
         )
         console.print(
             "[red]   Review the unclassified patterns above to identify missing rules.[/red]"
         )
-
     return global_stats
