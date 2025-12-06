@@ -1241,9 +1241,10 @@ class ClassificationDisplayer:
     """Display extracted classification information using rich."""
 
     @staticmethod
-    def display_classification(classification: LayerClassification):
+    def display_classification(classification: LayerClassification, head=None):
         """Display a single layer classification."""
         console.print()
+        insert_ellipsis = False
 
         # Build title with hierarchy info
         title_parts = []
@@ -1266,6 +1267,16 @@ class ClassificationDisplayer:
             for field in classification.fields:
                 console.print(f"  • {field.name}")
 
+        total_rows = len(classification.classes)
+        rows_to_display = classification.classes
+
+        # 1. Determine which rows to include
+        if head and isinstance(head, int) and head > 0:
+
+            # Display only the first n rows
+            rows_to_display = classification.classes[:head]
+            insert_ellipsis = total_rows > head
+
         # Display classes in a table
         if classification.classes:
             table = Table(title="Classification Classes", show_header=True)
@@ -1277,7 +1288,7 @@ class ClassificationDisplayer:
             table.add_column("Symbol Info", style="green", width=50)
             table.add_column("Visible", style="yellow", width=8)
 
-            for class_obj in classification.classes:
+            for class_obj in rows_to_display:
                 # Format field values
                 values_str = ""
                 for fv in class_obj.field_values:
@@ -1305,6 +1316,16 @@ class ClassificationDisplayer:
                     symbol_str,
                     "✓" if class_obj.visible else "✗",
                 )
+            # 3. Add Ellipsis at the end for 'head' mode
+            if insert_ellipsis:
+                    table.add_row(
+                        "[dim]...[/dim]",
+                        "[dim]...[/dim]",
+                        "[dim]...[/dim]",
+                        "[dim]...[/dim]",
+                        "[dim]...[/dim]",
+                        style="dim"
+                    )
 
             console.print(table)
 
@@ -2232,6 +2253,7 @@ def extract_lyrx_complete(
     export_json: Optional[str] = None,
     generate_override_template_path: Optional[str] = None,
     identifier_fields: Optional[Dict[str, str]] = None,
+    head: Optional[int] = None
 ) -> List[LayerClassification]:
     """
     Convenience function for COMPLETE extraction with all features.
@@ -2270,7 +2292,7 @@ def extract_lyrx_complete(
             ClassificationDisplayer.display_grouped_classifications(classifications)
         else:
             for classification in classifications:
-                ClassificationDisplayer.display_classification(classification)
+                ClassificationDisplayer.display_classification(classification, head)
 
     # Export complete JSON if requested
     if export_json:
@@ -2370,6 +2392,12 @@ def extract_aprx(
     help="Maximum label length (default: 40)",
 )
 @click.option(
+    "--head",
+    type=int,
+    default=None,
+    help="Display only the first n rows",
+)
+@click.option(
     "--identifiers",
     type=(str, str),
     multiple=True,
@@ -2385,6 +2413,7 @@ def classify(
     verbose,
     identifiers,
     max_label_length,
+    head,
 ):
     """Extract ESRI layer classification information from .lyrx or .aprx files."""
     if verbose:
@@ -2413,6 +2442,7 @@ def classify(
             use_arcpy=not no_arcpy,
             display=not quiet,
             identifier_fields=identifier_fields,
+            head=head,
             #  max_label_length=max_label_length,
         )
 
