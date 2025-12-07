@@ -280,6 +280,101 @@ def normalize_join_column(
     return result
 
 
+def extract_filter_fields(filter_expr: str) -> List[str]:
+    """
+    Extract field names referenced in a filter expression.
+    
+    Handles ESRI SQL-style expressions like:
+    - "KIND IN (1,2,3)"
+    - "PRINTED = 1 OR PRINTED IS NULL"
+    - "RUNC_LITHO NOT IN (15101009, 15101010)"
+    
+    Returns:
+        List of unique field names found in the expression
+    """
+    if not filter_expr:
+        return []
+    
+    # Common SQL keywords to exclude
+    sql_keywords = {
+        'IN', 'NOT', 'AND', 'OR', 'IS', 'NULL', 'LIKE', 'BETWEEN',
+        'TRUE', 'FALSE', 'SELECT', 'FROM', 'WHERE', 'ORDER', 'BY',
+        'ASC', 'DESC', 'LIMIT', 'OFFSET', 'GROUP', 'HAVING',
+    }
+    
+    # Pattern to find potential field names (word characters, may include dots for qualified names)
+    # Matches: FIELD, TABLE.FIELD, but not numbers or quoted strings
+    import re
+    
+    # Remove string literals first (both single and double quoted)
+    cleaned = re.sub(r"'[^']*'", '', filter_expr)
+    cleaned = re.sub(r'"[^"]*"', '', cleaned)
+    
+    # Find all word sequences (potential field names)
+    # Allows for qualified names like TOPGIS_GC.GC_FOSSILS.KIND
+    potential_fields = re.findall(r'\b([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\b', cleaned)
+    
+    # Filter out SQL keywords and pure numbers
+    fields = []
+    for field in potential_fields:
+        # Check each part of qualified name
+        parts = field.split('.')
+        base_name = parts[-1].upper()  # Last part is the actual field name
+        
+        if base_name not in sql_keywords and not base_name.isdigit():
+            fields.append(field)
+    
+    return list(set(fields))  # Unique fields
+
+
+def validate_filter_fields(
+    filter_expr: str,
+    available_columns: List[str],
+    layer_name: str = "unknown",
+) -> Tuple[bool, List[str], List[str]]:
+    """
+    Validate that all fields in a filter expression exist in the DataFrame.
+    
+    Args:
+        filter_expr: The filter expression to validate
+        available_columns: List of column names in the GDF
+        layer_name: Name of layer for logging
+        
+    Returns:
+        Tuple of (is_valid, found_fields, missing_fields)
+    """
+    if not filter_expr:
+        return True, [], []
+    
+    filter_fields = extract_filter_fields(filter_expr)
+    
+    # Normalize column names for case-insensitive comparison
+    available_upper = {col.upper(): col for col in available_columns}
+    
+    found = []
+    missing = []
+    
+    for field in filter_fields:
+        # Try exact match first
+        if field in available_columns:
+            found.append(field)
+        # Try case-insensitive match
+        elif field.upper() in available_upper:
+            found.append(available_upper[field.upper()])
+        else:
+            missing.append(field)
+    
+    is_valid = len(missing) == 0
+    
+    if missing:
+        logger.warning(
+            f"Filter for '{layer_name}' references missing fields: {missing}. "
+            f"Available: {list(available_columns)[:10]}{'...' if len(available_columns) > 10 else ''}"
+        )
+    
+    return is_valid, found, missing
+
+
 class VectorizedClassificationApplicator:
     """
     Apply ESRI UniqueValue classification rules using vectorized pandas operations.
@@ -430,15 +525,29 @@ class VectorizedClassificationApplicator:
         
         # Apply filter if provided
         if additional_filter:
-            pandas_filter = translate_esri_to_pandas(additional_filter)
-            try:
-                mask = gdf.eval(pandas_filter)
-                target_indices = gdf.index[mask]
-                logger.info(f"Filter '{additional_filter}' → {len(target_indices)}/{total_features} features")
-            except Exception as e:
-                logger.error(f"Filter evaluation failed: {e}")
-                logger.warning(f"Falling back to all features")
+            # Validate filter fields first
+            is_valid, found_fields, missing_fields = validate_filter_fields(
+                additional_filter,
+                gdf.columns.tolist(),
+                layer_name=classification_name,
+            )
+            
+            if not is_valid:
+                console.print(f"[yellow]⚠️  Skipping filter - missing fields: {missing_fields}[/yellow]")
+                console.print(f"[dim]   Filter was: {additional_filter[:80]}{'...' if len(additional_filter) > 80 else ''}[/dim]")
                 target_indices = gdf.index
+            else:
+                pandas_filter = translate_esri_to_pandas(additional_filter)
+                try:
+                    mask = gdf.eval(pandas_filter)
+                    target_indices = gdf.index[mask]
+                    logger.info(f"Filter '{additional_filter}' → {len(target_indices)}/{total_features} features")
+                except Exception as e:
+                    logger.error(f"Filter evaluation failed: {e}")
+                    console.print(f"[red]⚠️  Filter evaluation failed: {e}[/red]")
+                    console.print(f"[dim]   Filter was: {additional_filter}[/dim]")
+                    console.print(f"[yellow]   Falling back to all features[/yellow]")
+                    target_indices = gdf.index
         else:
             target_indices = gdf.index
         
@@ -803,7 +912,6 @@ def apply_batch_from_config_vectorized(
                     try:
                         if dtype.lower().startswith('int'):
                             gdf[field] = pd.to_numeric(gdf[field], errors='coerce')
-                            # round floats before casting to Int64
                             gdf[field] = gdf[field].round().astype(dtype.capitalize())
                         else:
                             gdf[field] = gdf[field].astype(dtype)
@@ -848,9 +956,17 @@ def apply_batch_from_config_vectorized(
                         raise ValueError("Ambiguous classification")
                     continue
                 
+                # Use definition_expression from .lyrx as default, allow YAML override
+                filter_expr = class_config.filter or classification.definition_expression
+                
+                if filter_expr:
+                    filter_source = "YAML" if class_config.filter else ".lyrx"
+                    filter_display = filter_expr[:60] + ('...' if len(filter_expr) > 60 else '')
+                    console.print(f"      Filter ({filter_source}): [dim]{filter_display}[/dim]")
+                
                 classifications_to_apply.append((
                     classification,
-                    class_config.filter,
+                    filter_expr,
                     class_config.symbol_prefix,
                     class_config.fields,  # field_mapping: gpkg_field -> classification_field
                     getattr(class_config, 'identifier_field', None),  # identifier_field for symbol ID
