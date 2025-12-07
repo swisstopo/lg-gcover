@@ -673,6 +673,7 @@ class ESRIClassificationExtractor:
             List of LayerClassification objects
         """
         lyrx_path = Path(lyrx_path)
+        alternative_lyrx = False
 
 
         if not lyrx_path.exists():
@@ -681,13 +682,15 @@ class ESRIClassificationExtractor:
             matches = difflib.get_close_matches(str(lyrx_path.name), candidates, n=1, cutoff=0.8)
             if matches:
                 lyrx_path = lyrx_path.parent / matches[0]
-                logger.info(f"Alternative .lyrx file: {lyrx_path}")
+                logger.debug(f"Alternative .lyrx file: {lyrx_path}")
+                alternative_lyrx = True
             else:
                 logger.error(f"Original file not found: {lyrx_path.name}")
                 logger.debug(f"Candidates: {candidates}")
                 raise FileNotFoundError(f"Layer file not found: {lyrx_path}")
         else:
-            logger.info(f"Extracting classification from {lyrx_path}")
+            logger.debug(f"Extracting classification from {lyrx_path}")
+        console.print(f"Extracting from: {lyrx_path} ({'alternative' if alternative_lyrx else 'original'})")
 
         if self.use_arcpy:
             return self._extract_with_arcpy(
@@ -902,7 +905,7 @@ class ESRIClassificationExtractor:
                                     )
                                     classification.label_classes = label_infos
 
-                                    logger.info(
+                                    logger.debug(
                                         f"Extracted {len(label_infos)} label class(es) "
                                         f"for layer {classification.layer_name}"
                                     )

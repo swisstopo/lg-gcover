@@ -301,11 +301,12 @@ class VectorizedClassificationApplicator:
         
         # Check for duplicate rules
         self._check_duplicate_rules()
-        
-        logger.info(f"Initialized vectorized applicator for '{classification.layer_name}'")
-        logger.info(f"  Fields: {self.classification_field_names}")
-        logger.info(f"  Rules: {len(self.lookup_df)} value combinations")
-        logger.info(f"  Symbol prefix: {self.symbol_prefix}")
+        msg =f"Initialized vectorized applicator for '{classification.layer_name}'"
+        console.print(msg)
+        logger.debug(msg)
+        console.print(f"  Fields: {self.classification_field_names}")
+        console.print(f"  Rules: {len(self.lookup_df)} value combinations")
+        console.print(f"  Symbol prefix: {self.symbol_prefix}")
         if self.identifier_field:
             logger.info(f"  Identifier field: {self.identifier_field}")
     
@@ -494,7 +495,7 @@ class VectorizedClassificationApplicator:
         )
         
         # Log summary
-        logger.info(f"Classification '{classification_name}': "
+        logger.debug(f"Classification '{classification_name}': "
                    f"filtered={filtered_count}, matched={matched_count}, "
                    f"new={newly_classified}, preserved={preserved_count}")
         
@@ -596,8 +597,8 @@ def apply_batch_classifications_vectorized(
     """
     total_features = len(gdf)
     all_stats: List[ClassificationStats] = []
-    
-    console.print(f"\n[bold blue]🎨 Classifying layer: {layer_name}[/bold blue]")
+    console.print("")
+    console.print(f"[bold blue]🎨 Classifying layer: {layer_name}[/bold blue]")
     console.print(f"  Features: {total_features:,}")
     console.print(f"  Classifications to apply: {len(classifications)}")
     
@@ -673,7 +674,7 @@ def apply_batch_classifications_vectorized(
     
     # Log final status
     if report.is_complete:
-        logger.success(f"Layer '{layer_name}': 100% classified ({total_features:,} features)")
+        logger.debug(f"[SUCCESS] Layer '{layer_name}': 100% classified ({total_features:,} features)")
     else:
         logger.error(f"Layer '{layer_name}': {final_unclassified:,} features UNCLASSIFIED "
                     f"({report.coverage_pct:.1f}% coverage)")
@@ -784,7 +785,7 @@ def apply_batch_from_config_vectorized(
                 if class_config.classification_name:
                     for c in classifications:
                         # if c.layer_name == class_config.classification_name:
-                        logger.info(f"Looking for : {c.layer_name}")
+                        logger.debug(f"Looking for classification: {c.layer_name}")
                         matches = difflib.get_close_matches(
                                 class_config.classification_name,
                                 [c.layer_name],

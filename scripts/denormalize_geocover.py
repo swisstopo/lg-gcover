@@ -1376,6 +1376,9 @@ def denormalize_geocover(
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             rc_version = "RC2" if "2030-12-31" in str(gdb_path) else "RC1"
             output = Path(f"geocover_denormalized_{rc_version}_{timestamp}.gpkg")
+        if not ouput.endswith('.gpkg'):
+            console.print(f"[red]⚠️  Wrong file extension. Only GPKG is supported: {output}[/red]")
+            click.Abort()
 
         # Write results to single GPKG
         console.print(f"\n[green]💾 Writing results to:[/green] {output}")
