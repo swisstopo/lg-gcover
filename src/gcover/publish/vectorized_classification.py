@@ -80,6 +80,7 @@ class LayerClassificationReport:
     classification_stats: List[ClassificationStats] = field(default_factory=list)
     unclassified_patterns: Dict[Tuple, int] = field(default_factory=dict)
     unclassified_sample_indices: List[Any] = field(default_factory=list)
+    analysis_field_names: List[str] = field(default_factory=list)  # Field names for patterns
     
     @property
     def coverage_pct(self) -> float:
@@ -123,13 +124,49 @@ class LayerClassificationReport:
         # Unclassified patterns (the important QA info)
         if self.unclassified_patterns:
             console.print(f"\n[red]⚠️  Unclassified feature patterns (top 15):[/red]")
+            
+            # Show field names header
+            if self.analysis_field_names:
+                field_header = " | ".join(self.analysis_field_names)
+                console.print(f"[dim]   Fields: {field_header}[/dim]")
+                console.print()
+            
             sorted_patterns = sorted(self.unclassified_patterns.items(), key=lambda x: -x[1])
+            
+            # Build a nice table for patterns
+            pattern_table = Table(show_header=True, box=None, padding=(0, 1))
+            pattern_table.add_column("Count", justify="right", style="yellow")
+            
+            # Add a column for each field
+            for fname in self.analysis_field_names:
+                pattern_table.add_column(fname, style="cyan", max_width=15)
+            
+            # If no field names, just show raw pattern
+            if not self.analysis_field_names:
+                pattern_table.add_column("Pattern", style="cyan")
+            
             for pattern, count in sorted_patterns[:15]:
-                console.print(f"  {pattern}: {count} features")
+                if self.analysis_field_names and isinstance(pattern, tuple):
+                    # Show each field value in its own column
+                    row = [str(count)]
+                    for val in pattern:
+                        # Highlight NULL values
+                        if val == '<NULL>':
+                            row.append("[dim]<NULL>[/dim]")
+                        else:
+                            row.append(str(val))
+                    # Pad if pattern is shorter than field names
+                    while len(row) < len(self.analysis_field_names) + 1:
+                        row.append("")
+                    pattern_table.add_row(*row)
+                else:
+                    pattern_table.add_row(str(count), str(pattern))
+            
+            console.print(pattern_table)
             
             if len(sorted_patterns) > 15:
                 remaining = sum(c for _, c in sorted_patterns[15:])
-                console.print(f"  ... and {len(sorted_patterns) - 15} more patterns ({remaining} features)")
+                console.print(f"\n  [dim]... and {len(sorted_patterns) - 15} more patterns ({remaining} features)[/dim]")
 
 
 def build_lookup_table(
@@ -513,7 +550,7 @@ def analyze_unclassified_features(
     symbol_field: str,
     analysis_fields: List[str],
     max_patterns: int = 50,
-) -> Tuple[Dict[Tuple, int], List[Any]]:
+) -> Tuple[Dict[Tuple, int], List[Any], List[str]]:
     """
     Analyze unclassified features to identify patterns.
     
@@ -524,7 +561,7 @@ def analyze_unclassified_features(
         max_patterns: Maximum patterns to return
         
     Returns:
-        Tuple of (pattern_counts dict, sample_indices list)
+        Tuple of (pattern_counts dict, sample_indices list, field_names list)
     """
     # Find unclassified features
     unclassified_mask = gdf[symbol_field].isna() | \
@@ -534,14 +571,14 @@ def analyze_unclassified_features(
     unclassified_df = gdf.loc[unclassified_mask]
     
     if len(unclassified_df) == 0:
-        return {}, []
+        return {}, [], []
     
     # Filter to fields that exist
     existing_fields = [f for f in analysis_fields if f in gdf.columns]
     
     if not existing_fields:
         # No analysis fields available, just return count
-        return {('unknown',): len(unclassified_df)}, unclassified_df.index[:10].tolist()
+        return {('unknown',): len(unclassified_df)}, unclassified_df.index[:10].tolist(), ['unknown']
     
     # Group by value combinations
     # Normalize values for grouping
@@ -564,7 +601,7 @@ def analyze_unclassified_features(
     # Sample indices
     sample_indices = unclassified_df.index[:20].tolist()
     
-    return pattern_dict, sample_indices
+    return pattern_dict, sample_indices, existing_fields
 
 
 def apply_batch_classifications_vectorized(
@@ -654,7 +691,7 @@ def apply_batch_classifications_vectorized(
             analysis_fields.update(f.name for f in classification.fields)
         analysis_fields = list(analysis_fields)
     
-    unclassified_patterns, sample_indices = analyze_unclassified_features(
+    unclassified_patterns, sample_indices, pattern_field_names = analyze_unclassified_features(
         gdf, symbol_field, analysis_fields
     )
     
@@ -667,6 +704,7 @@ def apply_batch_classifications_vectorized(
         classification_stats=all_stats,
         unclassified_patterns=unclassified_patterns,
         unclassified_sample_indices=sample_indices,
+        analysis_field_names=pattern_field_names,
     )
     
     # Display report
@@ -765,7 +803,8 @@ def apply_batch_from_config_vectorized(
                     try:
                         if dtype.lower().startswith('int'):
                             gdf[field] = pd.to_numeric(gdf[field], errors='coerce')
-                            gdf[field] = gdf[field].astype(dtype.capitalize())
+                            # round floats before casting to Int64
+                            gdf[field] = gdf[field].round().astype(dtype.capitalize())
                         else:
                             gdf[field] = gdf[field].astype(dtype)
                         console.print(f"  [green]✓ {field} → {dtype}[/green]")
