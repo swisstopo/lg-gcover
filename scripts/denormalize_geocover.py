@@ -1075,15 +1075,25 @@ class GeoCoverDenormalizer:
                         )
 
                     cleaned_gdf = self.clean_metadata_columns(gdf, remove_metadata)
+
+                    # Use only the dominant geometry (TODO: Why it is mixed)
+                    if hasattr(cleaned_gdf, "geometry") and not cleaned_gdf.empty:
+                        geom_types = cleaned_gdf.geometry.geom_type.value_counts()
+                        logger.debug(f"{table_name} geometry types: {dict(geom_types)}")
+
+                        # find the most common geometry type
+                        dominant_type = geom_types.idxmax()
+
+                        # filter GeoDataFrame to only that type
+                        cleaned_gdf = cleaned_gdf[cleaned_gdf.geometry.geom_type == dominant_type]
+
                     results[table_name] = cleaned_gdf
 
                     # Log some basic info to verify correctness
                     logger.debug(
                         f"{table_name}: {len(cleaned_gdf)} features, {len(cleaned_gdf.columns)} columns"
                     )
-                    if hasattr(cleaned_gdf, "geometry") and not cleaned_gdf.empty:
-                        geom_types = cleaned_gdf.geometry.geom_type.value_counts()
-                        logger.debug(f"{table_name} geometry types: {dict(geom_types)}")
+
 
                     progress.update(
                         task_id, completed=100, description=f"✅ {table_name} complete"
@@ -1376,7 +1386,7 @@ def denormalize_geocover(
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             rc_version = "RC2" if "2030-12-31" in str(gdb_path) else "RC1"
             output = Path(f"geocover_denormalized_{rc_version}_{timestamp}.gpkg")
-        if not ouput.endswith('.gpkg'):
+        if not str(output).endswith('.gpkg'):
             console.print(f"[red]⚠️  Wrong file extension. Only GPKG is supported: {output}[/red]")
             click.Abort()
 
