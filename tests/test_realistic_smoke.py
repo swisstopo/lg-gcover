@@ -54,6 +54,51 @@ def test_data_exists():
         pytest.skip("Test data directory not found - skipping realistic tests")
     return test_data_path
 
+@pytest.fixture
+def test_styles_dir_exists():
+    """Check if test data directory exists."""
+    test_styles_path = Path("tests/data/styles")
+    if not test_styles_path.exists():
+        pytest.skip("Test style directory not found - skipping realistic tests")
+    return test_styles_path
+
+
+# Collect all .lyrx files under tests/data/styles
+styles_dir = Path(__file__).parent / "data" / "styles"
+lyrx_files = list(styles_dir.glob("*.lyrx"))
+output_formats= ['csv', 'json']
+
+@pytest.mark.parametrize("lyrx_file", lyrx_files)
+def test_publish_export_classification_with_test_env(runner, lyrx_file):
+    """Test gdb scan command with test environment for each .lyrx file."""
+    result = runner.invoke(
+        cli,
+        ["--env", "test", "publish", "extract-classification", str(lyrx_file)]
+    )
+
+    # Command should succeed
+    assert result.exit_code == 0, f"Command failed with output: {result.output}"
+
+    # Check for expected patterns in output
+    output = result.output
+    assert "Layer Classification" in output
+
+
+@pytest.mark.parametrize("output_format", output_formats)
+def test_publish_export_classification_format_with_test_env(runner, output_format):
+    """Test gdb scan command with test environment for each .lyrx file."""
+    lyrx_path = 'tests/data/styles/Linear_Objects.lyrx'
+    result = runner.invoke(
+        cli,
+        ["--env", "test", "publish", "extract-classification", '--export',output_format , lyrx_path]
+    )
+
+    # Command should succeed
+    assert result.exit_code == 0, f"Command failed with output: {result.output}"
+
+    # Check for expected patterns in output
+    output = result.output
+    assert lyrx_path.replace('.lyrx', f'.classifications.{output_format}') in output
 
 def test_gdb_scan_with_test_env(runner, test_data_exists):
     """Test gdb scan command with test environment."""
