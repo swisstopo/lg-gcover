@@ -1513,11 +1513,15 @@ def export_classifications_to_csv(
             # ENHANCED: Add full_symbol_layers info
             if class_obj.full_symbol_layers:
                 layers = class_obj.full_symbol_layers
-                fill_types = [f.get("type", "unknown") for f in layers.fills]
-                row["fill_layer_types"] = ", ".join(fill_types)
-                row["fill_layer_count"] = len(layers.fills)
-                row["has_outline"] = layers.outline is not None
-                row["char_marker_count"] = len(layers.character_markers)
+                fill_layer_types = None
+                fill_types = []
+                if hasattr(layers, 'fills'):
+                    fill_types = [f.get("type", "unknown") for f in layers.fills]
+                    fill_layer_types = ", ".join(fill_types)
+                row["fill_layer_types"] = fill_layer_types
+                row["fill_layer_count"] = len(fill_types)
+                row["has_outline"] = layers.get('outline')
+                row["char_marker_count"] = len(layers.get('character_markers', []))
 
             rows.append(row)
 
