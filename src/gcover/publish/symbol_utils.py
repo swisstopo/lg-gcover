@@ -3,14 +3,44 @@ ENHANCED utility functions for extracting symbol information from ESRI CIM forma
 
 BACKWARDS COMPATIBLE - all existing functions maintained.
 NEW: Complete extraction of CIMHatchFill, CIMPictureFill, and other complex patterns.
+FIXED: CIMCharacterMarker now handles all placement types (not just InsidePolygon).
 """
 
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
-from gcover.publish.symbol_models import (CharacterMarkerInfo, GradientFillInfo,
-                            HatchFillInfo, PictureFillInfo, SymbolLayersInfo)
+from gcover.publish.symbol_models import (
+    CharacterMarkerInfo,
+    GradientFillInfo,
+    HatchFillInfo,
+    PictureFillInfo,
+    SymbolLayersInfo,
+)
+
+
+# =============================================================================
+# NEW: Extended Character Marker Info with placement type
+# =============================================================================
+
+
+@dataclass
+class CharacterMarkerInfoExtended(CharacterMarkerInfo):
+    """
+    Extended character marker info with placement type.
+    
+    Placement types:
+    - "inside_polygon": Grid pattern inside polygon (CIMMarkerPlacementInsidePolygon)
+    - "along_line": Markers along polygon boundary (CIMMarkerPlacementAlongLineSameSize)
+    - "on_vertices": Markers at vertices (CIMMarkerPlacementOnVertices)
+    - "at_extremities": Markers at start/end (CIMMarkerPlacementAtExtremities)
+    """
+    placement_type: str = "inside_polygon"
+    placement_template: Optional[List[float]] = None  # For along_line spacing
+    angle_to_line: bool = False  # Rotate marker to follow line direction
+    offset_along_line: float = 0.0
+
 
 # =============================================================================
 # EXISTING FUNCTIONS (maintained for compatibility)
@@ -87,18 +117,44 @@ def extract_line_style_from_effects(effects: List[Dict]) -> Dict:
 def extract_character_marker_info(layer: Dict) -> Optional[CharacterMarkerInfo]:
     """
     Extract character marker information from CIMCharacterMarker layer.
+    
+    ENHANCED: Now handles multiple placement types:
+    - CIMMarkerPlacementInsidePolygon (grid pattern fill)
+    - CIMMarkerPlacementAlongLineSameSize (markers along boundary)
+    - CIMMarkerPlacementOnVertices (markers at polygon vertices)
+    - CIMMarkerPlacementAtExtremities (markers at start/end)
+    - CIMMarkerPlacementOnLine (markers on line at intervals)
 
     Args:
         layer: CIM character marker layer dictionary
 
     Returns:
-        CharacterMarkerInfo object or None if not a valid pattern fill
+        CharacterMarkerInfo object or None if invalid
     """
     placement = layer.get("markerPlacement", {})
+    placement_type = placement.get("type", "")
 
-    # Only handle CIMMarkerPlacementInsidePolygon (pattern fills)
-    if placement.get("type") != "CIMMarkerPlacementInsidePolygon":
-        return None
+    # Map CIM placement types to our simplified types
+    SUPPORTED_PLACEMENTS = {
+        "CIMMarkerPlacementInsidePolygon": "inside_polygon",
+        "CIMMarkerPlacementAlongLineSameSize": "along_line",
+        "CIMMarkerPlacementOnVertices": "on_vertices",
+        "CIMMarkerPlacementAtExtremities": "at_extremities",
+        "CIMMarkerPlacementOnLine": "on_line",
+        "CIMMarkerPlacementAlongLineVariableSize": "along_line_variable",
+        "CIMMarkerPlacementPolygonCenter": "polygon_center",
+    }
+
+    if placement_type not in SUPPORTED_PLACEMENTS:
+        # Log but still try to extract - might be useful
+        if placement_type:
+            logger.warning(
+                f"Unknown marker placement type: {placement_type}. "
+                f"Attempting extraction anyway."
+            )
+        # If no placement at all, it might be a simple point marker
+        if not placement_type:
+            logger.debug("No placement type - treating as simple marker")
 
     # Extract color from nested symbol
     color = (128, 128, 128, 255)
@@ -108,20 +164,108 @@ def extract_character_marker_info(layer: Dict) -> Optional[CharacterMarkerInfo]:
             if nested_layer.get("type") == "CIMSolidFill":
                 color = extract_color_from_cim(nested_layer.get("color"))
                 break
+            elif nested_layer.get("type") == "CIMSolidStroke":
+                # Some markers use stroke instead of fill
+                color = extract_color_from_cim(nested_layer.get("color"))
+                break
 
-    # Extract rotation
+    # Extract rotation (can be at layer level or in placement)
     rotation = layer.get("rotation", 0.0)
+
+    # Extract placement-specific properties
+    offset_x = 0.0
+    offset_y = 0.0
+    step_x = 10.0
+    step_y = 10.0
+
+    if placement_type == "CIMMarkerPlacementInsidePolygon":
+        # Grid pattern inside polygon
+        offset_x = placement.get("offsetX", 0.0)
+        offset_y = placement.get("offsetY", 0.0)
+        step_x = placement.get("stepX", 10.0)
+        step_y = placement.get("stepY", 10.0)
+
+    elif placement_type in ("CIMMarkerPlacementAlongLineSameSize", 
+                            "CIMMarkerPlacementOnLine",
+                            "CIMMarkerPlacementAlongLineVariableSize"):
+        # Along-line placement
+        offset_along_line = placement.get("offsetAlongLine", 0.0)
+        placement_template = placement.get("placementTemplate", [])
+        angle_to_line = placement.get("angleToLine", False)
+        
+        # Use offset_along_line as offset_x for compatibility
+        offset_x = offset_along_line
+        
+        # Use placement_template[0] as step_x if available
+        if placement_template:
+            step_x = placement_template[0]
+
+    elif placement_type == "CIMMarkerPlacementOnVertices":
+        # At vertices - no step needed
+        step_x = 0.0
+        step_y = 0.0
 
     return CharacterMarkerInfo(
         character_index=layer.get("characterIndex", 0),
         font_family=layer.get("fontFamilyName", "GeoFonts1"),
         size=layer.get("size", 8),
         color=color,
-        offset_x=placement.get("offsetX", 0.0),
-        offset_y=placement.get("offsetY", 0.0),
-        step_x=placement.get("stepX", 10.0),
-        step_y=placement.get("stepY", 10.0),
+        offset_x=offset_x,
+        offset_y=offset_y,
+        step_x=step_x,
+        step_y=step_y,
         rotation=rotation,
+    )
+
+
+def extract_character_marker_info_extended(layer: Dict) -> Optional[CharacterMarkerInfoExtended]:
+    """
+    Extract FULL character marker information including placement details.
+    
+    Use this when you need placement type information for MapServer/QGIS generation.
+
+    Args:
+        layer: CIM character marker layer dictionary
+
+    Returns:
+        CharacterMarkerInfoExtended object with full placement details
+    """
+    # Get basic info first
+    basic_info = extract_character_marker_info(layer)
+    if not basic_info:
+        return None
+
+    placement = layer.get("markerPlacement", {})
+    placement_type = placement.get("type", "")
+
+    # Map to simplified type
+    PLACEMENT_MAP = {
+        "CIMMarkerPlacementInsidePolygon": "inside_polygon",
+        "CIMMarkerPlacementAlongLineSameSize": "along_line",
+        "CIMMarkerPlacementOnVertices": "on_vertices",
+        "CIMMarkerPlacementAtExtremities": "at_extremities",
+        "CIMMarkerPlacementOnLine": "on_line",
+        "CIMMarkerPlacementAlongLineVariableSize": "along_line_variable",
+        "CIMMarkerPlacementPolygonCenter": "polygon_center",
+    }
+
+    simplified_type = PLACEMENT_MAP.get(placement_type, "unknown")
+
+    return CharacterMarkerInfoExtended(
+        character_index=basic_info.character_index,
+        font_family=basic_info.font_family,
+        size=basic_info.size,
+        color=basic_info.color,
+        offset_x=basic_info.offset_x,
+        offset_y=basic_info.offset_y,
+        step_x=basic_info.step_x,
+        step_y=basic_info.step_y,
+        rotation=basic_info.rotation,
+        # Extended fields
+        placement_type=simplified_type,
+        placement_template=placement.get("placementTemplate"),
+        angle_to_line=placement.get("angleToLine", False),
+        offset_along_line=placement.get("offsetAlongLine", 0.0),
     )
 
 
@@ -151,10 +295,10 @@ def extract_polygon_symbol_layers(raw_symbol: Dict) -> SymbolLayersInfo:
     Now extracts:
     - Outline stroke (with dash patterns)
     - Solid fill layers
-    - Hatch fill patterns (CIMHatchFill) ⭐ NEW
-    - Character marker patterns
-    - Picture fills (CIMPictureFill) ⭐ NEW
-    - Gradient fills (CIMGradientFill) ⭐ NEW
+    - Hatch fill patterns (CIMHatchFill)
+    - Character marker patterns (ALL placement types)
+    - Picture fills (CIMPictureFill)
+    - Gradient fills (CIMGradientFill)
 
     Maintains proper layer ordering for correct rendering.
 
@@ -199,7 +343,7 @@ def extract_polygon_symbol_layers(raw_symbol: Dict) -> SymbolLayersInfo:
 
             elif layer_type == "CIMVectorMarker":
                 # Vector markers in polygons (rare but possible)
-                logger.debug(f"CIMVectorMarker in polygon - partial support")
+                _extract_vector_marker(layer, result)
 
             else:
                 logger.warning(f"Unsupported polygon layer type: {layer_type}")
@@ -211,7 +355,7 @@ def extract_polygon_symbol_layers(raw_symbol: Dict) -> SymbolLayersInfo:
 
 
 # =============================================================================
-# INTERNAL EXTRACTION FUNCTIONS (NEW)
+# INTERNAL EXTRACTION FUNCTIONS
 # =============================================================================
 
 
@@ -238,7 +382,7 @@ def _extract_solid_fill(layer: Dict, result: SymbolLayersInfo):
 
 def _extract_hatch_fill(layer: Dict, result: SymbolLayersInfo):
     """
-    ⭐ NEW: Extract CIMHatchFill pattern.
+    Extract CIMHatchFill pattern.
 
     Hatch fills are diagonal line patterns defined by:
     - rotation: Angle of the lines
@@ -290,15 +434,70 @@ def _extract_hatch_fill(layer: Dict, result: SymbolLayersInfo):
 
 
 def _extract_character_marker(layer: Dict, result: SymbolLayersInfo):
-    """Extract CIMCharacterMarker pattern fill."""
+    """
+    Extract CIMCharacterMarker pattern fill.
+    
+    FIXED: Now handles all placement types, not just CIMMarkerPlacementInsidePolygon.
+    """
     marker_info = extract_character_marker_info(layer)
     if marker_info:
         result.add_character_marker(marker_info)
+        
+        # Log placement type for debugging
+        placement = layer.get("markerPlacement", {})
+        placement_type = placement.get("type", "unknown")
+        logger.debug(
+            f"Extracted character marker: {marker_info.font_family} "
+            f"char={marker_info.character_index}, placement={placement_type}"
+        )
+    else:
+        # This shouldn't happen anymore with the updated extract_character_marker_info
+        logger.warning(
+            f"Failed to extract character marker from layer: "
+            f"{layer.get('fontFamilyName', 'unknown')} char={layer.get('characterIndex', '?')}"
+        )
+
+
+def _extract_vector_marker(layer: Dict, result: SymbolLayersInfo):
+    """
+    Extract CIMVectorMarker in polygon context.
+    
+    Vector markers are custom geometric shapes defined by marker graphics.
+    """
+    placement = layer.get("markerPlacement", {})
+    placement_type = placement.get("type", "")
+    
+    # Extract color from marker graphics
+    color = (128, 128, 128, 255)
+    marker_graphics = layer.get("markerGraphics", [])
+    
+    for graphic in marker_graphics:
+        graphic_symbol = graphic.get("symbol", {})
+        if graphic_symbol:
+            for nested_layer in graphic_symbol.get("symbolLayers", []):
+                if nested_layer.get("type") == "CIMSolidFill":
+                    color = extract_color_from_cim(nested_layer.get("color"))
+                    break
+                elif nested_layer.get("type") == "CIMSolidStroke":
+                    color = extract_color_from_cim(nested_layer.get("color"))
+                    break
+    
+    # Add as a special fill type
+    result.fills.append({
+        "type": "vector_marker",
+        "color": color,
+        "size": layer.get("size", 8.0),
+        "rotation": layer.get("rotation", 0.0),
+        "placement_type": placement_type,
+    })
+    result.layer_order.append(f"fill_{len(result.fills) - 1}")
+    
+    logger.debug(f"Extracted vector marker: size={layer.get('size', 8.0)}, placement={placement_type}")
 
 
 def _extract_picture_fill(layer: Dict, result: SymbolLayersInfo):
     """
-    ⭐ NEW: Extract CIMPictureFill.
+    Extract CIMPictureFill.
 
     Picture fills use images (typically SVG or raster) as fill patterns.
     """
@@ -330,7 +529,7 @@ def _extract_picture_fill(layer: Dict, result: SymbolLayersInfo):
 
 def _extract_gradient_fill(layer: Dict, result: SymbolLayersInfo):
     """
-    ⭐ NEW: Extract CIMGradientFill.
+    Extract CIMGradientFill.
 
     Gradient fills have multiple color stops.
     """
@@ -367,7 +566,7 @@ def _extract_gradient_fill(layer: Dict, result: SymbolLayersInfo):
 
 
 # =============================================================================
-# NEW: Advanced Extraction Utilities
+# Advanced Extraction Utilities
 # =============================================================================
 
 
@@ -406,26 +605,28 @@ def extract_full_line_symbol(symbol_obj: Dict) -> Dict[str, Any]:
             placement = layer.get("markerPlacement", {})
             placement_type = placement.get("type", "")
 
-            if placement_type == "CIMMarkerPlacementAlongLineSameSize":
-                # Extract color from nested symbol
-                color = (0, 0, 0, 255)
-                nested_symbol = layer.get("symbol", {})
-                if nested_symbol:
-                    for nested_layer in nested_symbol.get("symbolLayers", []):
-                        if nested_layer.get("type") == "CIMSolidFill":
-                            color = extract_color_from_cim(nested_layer.get("color"))
-                            break
+            # Extract color from nested symbol
+            color = (0, 0, 0, 255)
+            nested_symbol = layer.get("symbol", {})
+            if nested_symbol:
+                for nested_layer in nested_symbol.get("symbolLayers", []):
+                    if nested_layer.get("type") == "CIMSolidFill":
+                        color = extract_color_from_cim(nested_layer.get("color"))
+                        break
 
-                result["markers"].append(
-                    {
-                        "character_index": layer.get("characterIndex", 0),
-                        "font_family": layer.get("fontFamilyName", "Arial"),
-                        "size": layer.get("size", 8),
-                        "color": color,
-                        "rotation": layer.get("rotation", 0.0),
-                        "placement": "along_line",
-                    }
-                )
+            result["markers"].append(
+                {
+                    "character_index": layer.get("characterIndex", 0),
+                    "font_family": layer.get("fontFamilyName", "Arial"),
+                    "size": layer.get("size", 8),
+                    "color": color,
+                    "rotation": layer.get("rotation", 0.0),
+                    "placement": placement_type or "along_line",
+                    "angle_to_line": placement.get("angleToLine", False),
+                    "placement_template": placement.get("placementTemplate", []),
+                    "offset_along_line": placement.get("offsetAlongLine", 0.0),
+                }
+            )
 
     return result
 
@@ -522,6 +723,18 @@ def analyze_symbol_complexity(symbol_layers: SymbolLayersInfo) -> Dict[str, Any]
     Returns:
         Dictionary with complexity metrics
     """
+    if symbol_layers is None:
+        return {
+            "layer_count": 0,
+            "has_hatch": False,
+            "has_multiple_fills": False,
+            "has_character_markers": False,
+            "has_picture_fill": False,
+            "has_gradient": False,
+            "has_boundary_markers": False,
+            "complexity_score": 0,
+        }
+
     metrics = {
         "layer_count": len(symbol_layers.fills) + (1 if symbol_layers.outline else 0),
         "has_hatch": False,
@@ -529,6 +742,8 @@ def analyze_symbol_complexity(symbol_layers: SymbolLayersInfo) -> Dict[str, Any]
         "has_character_markers": len(symbol_layers.character_markers) > 0,
         "has_picture_fill": False,
         "has_gradient": False,
+        "has_boundary_markers": False,  # NEW: markers along polygon boundary
+        "has_vector_markers": False,
         "complexity_score": 0,
     }
 
@@ -541,6 +756,15 @@ def analyze_symbol_complexity(symbol_layers: SymbolLayersInfo) -> Dict[str, Any]
             metrics["has_picture_fill"] = True
         elif fill_type == "gradient":
             metrics["has_gradient"] = True
+        elif fill_type == "character":
+            # Check if it's a boundary marker vs fill pattern
+            marker_info = fill.get("marker_info")
+            if marker_info and hasattr(marker_info, "step_x"):
+                # Small step values usually mean boundary markers
+                if marker_info.step_x < 5:
+                    metrics["has_boundary_markers"] = True
+        elif fill_type == "vector_marker":
+            metrics["has_vector_markers"] = True
 
     # Calculate complexity score
     score = 0
@@ -553,10 +777,14 @@ def analyze_symbol_complexity(symbol_layers: SymbolLayersInfo) -> Dict[str, Any]
         score += 20
     if metrics["has_character_markers"]:
         score += 15
+    if metrics["has_boundary_markers"]:
+        score += 25  # Boundary markers are harder to replicate
     if metrics["has_picture_fill"]:
         score += 25
     if metrics["has_gradient"]:
         score += 20
+    if metrics["has_vector_markers"]:
+        score += 15
 
     # Multiple fills increase complexity
     if metrics["has_multiple_fills"]:
@@ -583,7 +811,7 @@ def should_use_override(symbol_layers: SymbolLayersInfo, threshold: int = 70) ->
 
 
 # =============================================================================
-# NEW: Symbol Comparison and Diffing
+# Symbol Comparison and Diffing
 # =============================================================================
 
 
@@ -623,13 +851,13 @@ def compare_symbols(
 
     # Compare character markers
     if len(old_symbol.character_markers) != len(new_symbol.character_markers):
-        changes.append(f"Character marker count changed")
+        changes.append("Character marker count changed")
 
     return {"changed": len(changes) > 0, "changes": changes}
 
 
 # =============================================================================
-# NEW: Export Utilities for Debugging
+# Export Utilities for Debugging
 # =============================================================================
 
 
@@ -639,6 +867,9 @@ def export_symbol_to_dict(symbol_layers: SymbolLayersInfo) -> Dict[str, Any]:
 
     Useful for debugging, JSON export, or custom symbol definitions.
     """
+    if symbol_layers is None:
+        return {"outline": None, "fills": [], "layer_order": [], "complexity": {}}
+
     result = {
         "outline": symbol_layers.outline,
         "fills": [],
@@ -677,6 +908,11 @@ def print_symbol_summary(symbol_layers: SymbolLayersInfo, name: str = "Symbol"):
     Useful for debugging during development.
     """
     print(f"\n=== {name} ===")
+
+    if symbol_layers is None:
+        print("Symbol: None")
+        print("=" * (len(name) + 8) + "\n")
+        return
 
     # Outline
     if symbol_layers.outline:
@@ -718,9 +954,41 @@ def print_symbol_summary(symbol_layers: SymbolLayersInfo, name: str = "Symbol"):
             num_stops = len(fill.get("colors", []))
             print(f"  {i + 1}. Gradient: {grad_type}, {num_stops} stops")
 
+        elif fill_type == "vector_marker":
+            size = fill.get("size", 8)
+            placement = fill.get("placement_type", "unknown")
+            print(f"  {i + 1}. VectorMarker: size={size}, placement={placement}")
+
+    # Character markers (legacy list)
+    if symbol_layers.character_markers:
+        print(f"\nCharacter Markers ({len(symbol_layers.character_markers)}):")
+        for i, marker in enumerate(symbol_layers.character_markers):
+            print(
+                f"  {i + 1}. {marker.font_family} #{marker.character_index} "
+                f"(size={marker.size}, step={marker.step_x}x{marker.step_y})"
+            )
+
     # Complexity
     metrics = analyze_symbol_complexity(symbol_layers)
     print(f"\nComplexity Score: {metrics['complexity_score']}/100")
+    
+    flags = []
+    if metrics["has_hatch"]:
+        flags.append("hatch")
+    if metrics["has_character_markers"]:
+        flags.append("char_markers")
+    if metrics["has_boundary_markers"]:
+        flags.append("boundary_markers")
+    if metrics["has_picture_fill"]:
+        flags.append("picture")
+    if metrics["has_gradient"]:
+        flags.append("gradient")
+    if metrics["has_vector_markers"]:
+        flags.append("vector_markers")
+    
+    if flags:
+        print(f"Features: {', '.join(flags)}")
+    
     if should_use_override(symbol_layers):
         print("⚠️  Recommend custom override for this symbol")
 
