@@ -6,14 +6,52 @@ Consolidates all previous config approaches into one clean system
 
 import os
 from pathlib import Path
+from functools import lru_cache
 
 from gcover.config.loader import debug_config_loading, load_config
-from gcover.config.models import (AppConfig, GDBConfig, GlobalConfig, QAConfig, S3Config,
-                     SchemaConfig, SDEConfig)
+from gcover.config.models import (
+    AppConfig,
+    GDBConfig,
+    GlobalConfig,
+    QAConfig,
+    S3Config,
+    SchemaConfig,
+    SDEConfig,
+)
+
 
 # Paths
-CONFIG_DIR = Path.home() / ".gcover"
-CONFIG_DIR.mkdir(exist_ok=True)
+@lru_cache(maxsize=1)
+def get_config_dir() -> Path:
+    """
+    Get gcover config directory.
+
+    Resolution order:
+    1. GCOVER_CONFIG_DIR environment variable
+    2. XDG_CONFIG_HOME/gcover (Linux standard)
+    3. ~/.gcover (if home exists)
+    4. /tmp/gcover (container fallback)
+    """
+    if env_dir := os.environ.get("GCOVER_CONFIG_DIR"):
+        config_dir = Path(env_dir)
+    elif xdg_config := os.environ.get("XDG_CONFIG_HOME"):
+        config_dir = Path(xdg_config) / "gcover"
+    else:
+        try:
+            home = Path.home()
+            if home.exists() and os.access(home, os.W_OK):
+                config_dir = home / ".gcover"
+            else:
+                raise OSError("Home not writable")
+        except (OSError, RuntimeError):
+            # RuntimeError: Could not determine home directory
+            config_dir = Path("/tmp/gcover")
+
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir
+
+
+CONFIG_DIR = get_config_dir()
 
 # SDE Instance mapping
 SDE_INSTANCES = {

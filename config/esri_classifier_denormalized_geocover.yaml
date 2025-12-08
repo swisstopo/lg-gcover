@@ -69,6 +69,7 @@ layers:
         MPLA_POLARITY: Int64
         TDEF_FOLD_TYP: Int64
         AEXP_STATUS: Int64
+        ABOR_DEPTH_BEDR: Int64
 
 
 
@@ -196,6 +197,8 @@ layers:
         TTEC_LIM_TYP: Int64
         LPRO_LITHO: Int64
         GGLA_GLAC_TYP: Int64
+        LGEO_STATUS: Int64
+        TTEC_META_STA: Int64
       classifications:
         - style_file: styles/Linear Objects_Moränenwall.lyrx
           index: 50

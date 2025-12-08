@@ -80,9 +80,9 @@ def get_field_info(gdf: gpd.GeoDataFrame) -> Table:
     )
 
     table.add_column("Index", style="dim", width=6)
-    table.add_column("Field Name", style="cyan", width=20)
-    table.add_column("Data Type", style="green", width=15)
-    table.add_column("Nullable", style="yellow", width=10)
+    table.add_column("Field Name", style="cyan", width=30)
+    table.add_column("Data Type", style="green", width=5)
+    table.add_column("Nullable", style="yellow", width=5)
     table.add_column("Sample Value", style="white", width=SAMPLE_VALUE_COLUMN_WIDTH)
 
     for i, (col_name, col_type) in enumerate(gdf.dtypes.items()):
