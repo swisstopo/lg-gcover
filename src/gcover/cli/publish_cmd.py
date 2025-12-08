@@ -15,6 +15,7 @@ from importlib.resources import files
 import click
 import geopandas as gpd
 import pandas as pd
+import json
 import yaml
 from loguru import logger
 from rich.console import Console
@@ -30,6 +31,7 @@ from gcover.publish.esri_classification_extractor import (
     explore_layer_structure,
     export_classifications_to_csv,
     ClassificationJSONEncoder,
+    to_serializable_dict,
 )
 from gcover.publish.generator import MapServerGenerator
 from gcover.publish.qgis_generator import QGISGenerator
