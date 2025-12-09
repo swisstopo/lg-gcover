@@ -10,10 +10,12 @@ import time
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from importlib.resources import files
 
 import click
 import geopandas as gpd
 import pandas as pd
+import json
 import yaml
 from loguru import logger
 from rich.console import Console
@@ -26,12 +28,21 @@ from gcover.config import SDE_INSTANCES, AppConfig, load_config
 from gcover.publish.esri_classification_applicator import ClassificationApplicator
 from gcover.publish.esri_classification_extractor import (
     extract_lyrx_complete,
+    explore_layer_structure,
+    export_classifications_to_csv,
+    ClassificationJSONEncoder,
+    to_serializable_dict,
 )
 from gcover.publish.generator import MapServerGenerator
 from gcover.publish.qgis_generator import QGISGenerator
 from gcover.publish.style_config import (
     BatchClassificationConfig,
     apply_batch_from_config,
+)
+from gcover.publish.merge_sources import (
+    GDBMerger,
+    MergeConfig,
+    create_merge_config,
 )
 from gcover.publish.tooltips_enricher import (
     EnhancedTooltipsEnricher,
@@ -40,6 +51,8 @@ from gcover.publish.tooltips_enricher import (
     LayerType,
     create_enrichment_config,
 )
+
+DEFAULT_ZONES_PATH = files("gcover.data").joinpath("administrative_zones.gpkg")
 
 console = Console()
 
@@ -69,6 +82,99 @@ def publish_commands(ctx):
     ctx.obj.setdefault("environment", "development")
     ctx.obj.setdefault("verbose", False)
     ctx.obj.setdefault("config_path", None)
+
+
+@publish_commands.command()
+@click.pass_context
+@click.argument("input", type=click.Path(exists=True, path_type=Path))
+@click.option("--use-arcpy", is_flag=True, help="Force JSON parsing (no arcpy)")
+@click.option("--quiet", is_flag=True, help="Suppress rich display")
+@click.option(
+    "--explore",
+    is_flag=True,
+    help="Explore layer structure (show all layers and groups)",
+)
+@click.option(
+    "--export", type=click.Choice(["json", "csv"]), help="Export results to file"
+)
+@click.option(
+    "--max-label-length",
+    type=int,
+    default=130,
+    help="Maximum label length (default: 40)",
+)
+@click.option(
+    "--head",
+    type=int,
+    default=None,
+    help="Display only the first n rows",
+)
+def extract_classification(
+    ctx,
+    input,
+    use_arcpy,
+    quiet,
+    explore,
+    export,
+    max_label_length,
+    head,
+):
+    """Extract ESRI layer classification information from .lyrx files."""
+    logger.info(f"COMMAND START: apply-config")
+    verbose = ctx.obj.get("verbose", False)
+
+    if verbose and quiet:
+        console.print(
+            "[red]Error: options `--verbose` and `--quiet`are mutually exclusive[/red]"
+        )
+        raise click.Abort()
+
+    input_path = Path(input)
+
+    if explore:
+        if input_path.suffix.lower() != ".lyrx":
+            console.print(
+                "[red]Error: --explore only supports .lyrx files currently[/red]"
+            )
+            raise click.Abort()
+
+        structure = explore_layer_structure(input_path, use_arcpy=use_arcpy)
+        # You can optionally display or return structure here
+
+    elif input_path.suffix.lower() == ".lyrx":
+        results = extract_lyrx_complete(  # TODO switched from extract_lyrx
+            input_path,
+            use_arcpy=use_arcpy,
+            display=not quiet,
+            head=head,
+            #  max_label_length=max_label_length,
+        )
+
+        if quiet:
+            console.print(f"Extracted {len(results)} layer classifications")
+
+        if export:
+            export_path = input_path.with_suffix(f".classifications.{export}")
+
+            if export == "json":
+                export_data = [to_serializable_dict(c) for c in results]
+                with open(export_path, "w", encoding="utf-8") as f:
+                    json.dump(
+                        export_data,
+                        f,
+                        indent=2,
+                        ensure_ascii=False,
+                        cls=ClassificationJSONEncoder,
+                    )
+                console.print(f"[green]Exported to {export_path}[/green]")
+
+            elif export == "csv":
+                export_classifications_to_csv(results, export_path)
+                console.print(f"[green]Exported to {export_path}[/green]")
+
+    else:
+        console.print("[red]Error: Input must be .lyrx[/red]")
+        raise click.Abort()
 
 
 @publish_commands.command()
@@ -284,38 +390,43 @@ def apply_config(
             sys.exit(1)
 
         # Display final statistics
-        console.print("\n[bold green]✅ Batch processing complete![/bold green]\n")
+        # vectorized stats are print in this file
+        if stats.get("features_newly_classified"):
+            console.print("\n[bold green]✅ Batch processing complete![/bold green]\n")
 
-        summary_table = Table(title="Processing Statistics", show_header=True)
-        summary_table.add_column("Metric", style="cyan")
-        summary_table.add_column("Value", style="green", justify="right")
+            summary_table = Table(title="Processing Statistics", show_header=True)
+            summary_table.add_column("Metric", style="cyan")
+            summary_table.add_column("Value", style="green", justify="right")
 
-        summary_table.add_row("Layers processed", str(stats["layers_processed"]))
-        summary_table.add_row(
-            "Classifications applied", str(stats["classifications_applied"])
-        )
-        summary_table.add_row(
-            "Features newly classified", str(stats["features_newly_classified"])
-        )
-        summary_table.add_row("Features classified", str(stats["features_classified"]))
-        summary_table.add_row("Total features", str(stats["features_total"]))
+            summary_table.add_row("Layers processed", str(stats["layers_processed"]))
+            summary_table.add_row(
+                "Classifications applied", str(stats["classifications_applied"])
+            )
+            summary_table.add_row(
+                "Features newly classified", str(stats["features_newly_classified"])
+            )
+            summary_table.add_row(
+                "Features classified", str(stats["features_classified"])
+            )
+            summary_table.add_row("Total features", str(stats["features_total"]))
 
-        if stats["features_total"] > 0:
-            pct = stats["features_classified"] / stats["features_total"] * 100
-            summary_table.add_row("Coverage", f"{pct:.1f}%")
-        summary_table.add_row("Processing time", f"{int(mins)}m {secs:.1f}s")
+            if stats["features_total"] > 0:
+                pct = stats["features_classified"] / stats["features_total"] * 100
+                summary_table.add_row("Coverage", f"{pct:.1f}%")
+            summary_table.add_row("Processing time", f"{int(mins)}m {secs:.1f}s")
 
-        console.print(summary_table)
+            console.print(summary_table)
 
-        output_file = output or gpkg_file.parent / f"{gpkg_file.stem}_classified.gpkg"
-        console.print(f"\n[dim]Output: {output_file}[/dim]")
-
-        logger.info(
-            "SUMMARY: Layers processed {layers_processed} | "
-            "Classifications applied {classifications_applied} | "
-            "Features classified {features_classified} |"
-            "Total features {features_total} |".format(**stats)
-        )
+            logger.info(
+                "SUMMARY: Layers processed {layers_processed} | "
+                "Classifications applied {classifications_applied} | "
+                "Features classified {features_classified} |"
+                "Total features {features_total} |".format(**stats)
+            )
+            output_file = (
+                output or gpkg_file.parent / f"{gpkg_file.stem}_classified.gpkg"
+            )
+            console.print(f"\n[dim]Output: {output_file}[/dim]")
 
     except Exception as e:
         logger.error(f"Batch processing failed: {e}")
@@ -456,6 +567,7 @@ def create_classification_config(ctx, output_path: Path, example: str):
     "--admin-zones",
     "-a",
     type=click.Path(exists=True, path_type=Path),
+    default=DEFAULT_ZONES_PATH,
     help="Path to administrative_zones.gpkg",
 )
 @click.option(
@@ -765,6 +877,7 @@ def create_config(output: Path, example_sources: bool):
     "--admin-zones",
     "-a",
     type=click.Path(exists=True, path_type=Path),
+    default=DEFAULT_ZONES_PATH,
     help="Path to administrative_zones.gpkg (uses default if not specified)",
 )
 def list_mapsheets(ctx, admin_zones: Optional[Path]):
@@ -906,6 +1019,9 @@ def mapserver(
     # Load configuration if provided
     prefix_map = {}
     mapfile_names = {}
+    mapfile_groups = {}
+    mapfile_labels = {}
+    active_classes = {}
     mapfiles = []
     config = None
     symbol_field = None
@@ -927,10 +1043,15 @@ def mapserver(
                 if class_config.classification_name:
                     # Use classification name as key
                     key = class_config.classification_name
+                    mapfile_labels[key] = class_config.map_label
+                    active_classes[key] = class_config.active
                     if class_config.symbol_prefix:
                         prefix_map[key] = class_config.symbol_prefix
+                    if class_config.mapfile_group:
+                        mapfile_groups[key] = class_config.mapfile_group
                     if class_config.mapfile_name:
                         mapfile_names[key] = class_config.mapfile_name
+
                     if class_config.identifier_field:
                         field_name = class_config.identifier_field
                         identifier_fields[key] = field_name
@@ -957,6 +1078,7 @@ def mapserver(
                         connection_ref,
                         class_config.data,
                         layer_config.template,
+                        layer_config.max_scale,
                     )
                     logger.debug(params)
                     style_files.append(params)
@@ -1003,6 +1125,7 @@ def mapserver(
         connection_ref,
         mapserver_data,
         template,
+        layer_max_scale,
     ) in style_files:
         console.print(f"Processing {style_file.name} [{layer_type}]...")
 
@@ -1036,6 +1159,15 @@ def mapserver(
             # Get prefix and mapfile name from config if available
             symbol_prefix = prefix_map.get(layer_name, layer_name.lower())
             mapfile_layer_name = mapfile_names.get(layer_name, layer_name)
+            mapfile_layer_group = mapfile_groups.get(layer_name, None)
+            mapfile_label = mapfile_labels.get(layer_name, None)
+            is_active = active_classes.get(layer_name)
+
+            if not is_active:
+                console.print(
+                    f"  [bold orange1]Skipping {layer_name} (inactive)[/bold orange1]"
+                )
+                continue
 
             if not mapserver_data:
                 mapserver_data = f"geom from (SELECT * from {gpkg_layer} ) as blabla using unique gid using srid=2056"
@@ -1045,12 +1177,15 @@ def mapserver(
             mapfile_content = generator.generate_layer(
                 classification=classification,
                 layer_name=mapfile_layer_name,
+                layer_group=mapfile_layer_group,
                 symbol_prefix=symbol_prefix,
                 data=mapserver_data,
                 layer_type=layer_type,
                 connection=connection,
                 symbol_field=symbol_field,
                 template=template,
+                map_label=mapfile_label,
+                layer_max_scale=layer_max_scale,
             )
 
             # Save mapfile
@@ -1098,7 +1233,7 @@ def mapserver(
         console.print(f"[dim]Used {len(generator.fonts_used)} fonts[/dim]")
 
         console.print(f"[cyan]Includes for the main mapfile[/cyan]")
-        for mapfile in mapfiles:
+        for mapfile in reversed(mapfiles):  # TOP: drawn first...
             console.print(f'INCLUDE "layers/{mapfile}"')
 
     # Summary
@@ -1568,3 +1703,490 @@ def show_sample_data(layer_name: str, sample_gdf: gpd.GeoDataFrame):
         table.add_row(*values)
 
     console.print(table)
+
+
+@publish_commands.command()
+@click.pass_context
+@click.option(
+    "--rc1",
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to RC1 (legacy complete) FileGDB",
+)
+@click.option(
+    "--rc2",
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to RC2 (work-in-progress) FileGDB",
+)
+@click.option(
+    "--custom-sources-dir",
+    "-d",
+    type=click.Path(exists=True, path_type=Path),
+    help="Directory containing custom source GDBs (Saas.gdb, etc.)",
+)
+@click.option(
+    "--admin-zones",
+    "-a",
+    type=click.Path(exists=True, path_type=Path),
+    default=DEFAULT_ZONES_PATH,
+    required=True,
+    help="Path to administrative_zones.gpkg with mapsheet boundaries",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    required=True,
+    help="Output path (.gdb for FileGDB, .gpkg for GeoPackage)",
+)
+@click.option(
+    "--format",
+    "-f",
+    "output_format",
+    type=click.Choice(["auto", "gdb", "gpkg"]),
+    default="auto",
+    help="Output format (auto=detect from extension, gdb=FileGDB, gpkg=GeoPackage)",
+)
+@click.option(
+    "--source-column",
+    "-s",
+    type=click.Choice(["SOURCE_RC", "SOURCE_QA"]),
+    default="SOURCE_RC",
+    help="Column indicating source assignment (default: SOURCE_RC for publication)",
+)
+@click.option(
+    "--mapsheets-layer",
+    default="mapsheets_sources_only",
+    help="Layer name in admin_zones containing mapsheet boundaries",
+)
+@click.option(
+    "--mapsheets",
+    "-m",
+    help="Comma-separated mapsheet numbers to process (default: all)",
+)
+@click.option(
+    "--reference-source",
+    "-r",
+    type=click.Choice(["RC1", "RC2"]),
+    default="RC2",
+    help="Source for reference tables (default: RC2)",
+)
+@click.option(
+    "--layers",
+    "-l",
+    multiple=True,
+    help="Specific spatial layers to process (default: all standard layers)",
+)
+@click.option(
+    "--skip-tables",
+    is_flag=True,
+    help="Skip copying non-spatial reference tables",
+)
+@click.option(
+    "--force-2d",
+    is_flag=True,
+    help="Force 2D geometries (drop Z coordinates) - useful if 3D causes issues",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be processed without executing",
+)
+def merge(
+        ctx,
+        rc1: Optional[Path],
+        rc2: Optional[Path],
+        custom_sources_dir: Optional[Path],
+        admin_zones: Path,
+        output: Path,
+        output_format: str,
+        source_column: str,
+        mapsheets_layer: str,
+        mapsheets: Optional[str],
+        reference_source: str,
+        layers: tuple,
+        skip_tables: bool,
+        force_2d: bool,
+        dry_run: bool,
+):
+    """
+    Merge multiple FileGDB sources into a single publication GDB.
+
+    Clips features from different source databases (RC1, RC2, custom GDBs)
+    based on mapsheet boundaries defined in administrative zones, then
+    merges them into a single output suitable for publication.
+
+    Source assignments are read from the admin_zones file, where each mapsheet
+    has a SOURCE_RC (or SOURCE_QA) column indicating which GDB to use:
+
+    \b
+    - RC1: Legacy complete dataset (before a certain date)
+    - RC2: Work-in-progress dataset (current editing)
+    - Custom names (e.g., Saas.gdb): Specific overrides from custom sources
+
+    \b
+    Output formats:
+    - .gdb: ESRI FileGDB (may have issues with 3D geometries)
+    - .gpkg: GeoPackage (recommended for better compatibility)
+
+    \b
+    Examples:
+      # Basic merge with RC1 and RC2 to GPKG (recommended)
+      gcover publish merge \\
+        --rc1 /path/to/RC1_2016.gdb \\
+        --rc2 /path/to/RC2_2030.gdb \\
+        --admin-zones /path/to/administrative_zones.gpkg \\
+        --output /path/to/merged_geocover.gpkg
+
+      # Force FileGDB output with 2D geometries
+      gcover publish merge \\
+        --rc1 /path/to/RC1.gdb \\
+        --rc2 /path/to/RC2.gdb \\
+        --admin-zones admin.gpkg \\
+        --output merged.gdb \\
+        --force-2d
+
+      # Include custom source overrides
+      gcover publish merge \\
+        --rc1 /path/to/RC1.gdb \\
+        --rc2 /path/to/RC2.gdb \\
+        --custom-sources-dir /path/to/custom_gdbs/ \\
+        --admin-zones admin.gpkg \\
+        --output merged.gpkg
+
+      # For QA dataset (using SOURCE_QA column)
+      gcover publish merge \\
+        --rc1 /path/to/RC1.gdb \\
+        --rc2 /path/to/RC2.gdb \\
+        --admin-zones admin.gpkg \\
+        --source-column SOURCE_QA \\
+        --output qa_merged.gpkg
+
+      # Process specific mapsheets only
+      gcover publish merge \\
+        --rc1 /path/to/RC1.gdb \\
+        --rc2 /path/to/RC2.gdb \\
+        --admin-zones admin.gpkg \\
+        --mapsheets "55,25,173" \\
+        --output partial_merge.gpkg
+
+      # Dry run to preview sources
+      gcover publish merge \\
+        --rc1 /path/to/RC1.gdb \\
+        --rc2 /path/to/RC2.gdb \\
+        --admin-zones admin.gpkg \\
+        --output test.gpkg \\
+        --dry-run
+    """
+
+    verbose = ctx.obj.get("verbose", False)
+
+    # Validate at least one source is provided
+    if not rc1 and not rc2 and not custom_sources_dir:
+        console.print("[red]Error: At least one source must be specified (--rc1, --rc2, or --custom-sources-dir)[/red]")
+        raise click.Abort()
+
+    # Handle output format
+    if output_format == "auto":
+        # Detect from extension
+        ext = output.suffix.lower()
+        if ext == ".gpkg":
+            output_format = "gpkg"
+        elif ext == ".gdb":
+            output_format = "gdb"
+        else:
+            console.print(f"[yellow]Unknown extension '{ext}', defaulting to GPKG[/yellow]")
+            output = output.with_suffix(".gpkg")
+            output_format = "gpkg"
+    elif output_format == "gpkg" and not output.suffix.lower() == ".gpkg":
+        output = output.with_suffix(".gpkg")
+    elif output_format == "gdb" and not output.suffix.lower() == ".gdb":
+        output = output.with_suffix(".gdb")
+
+    # Parse mapsheet numbers
+    mapsheet_numbers = None
+    if mapsheets:
+        try:
+            mapsheet_numbers = [int(x.strip()) for x in mapsheets.split(",")]
+        except ValueError:
+            console.print(f"[red]Error: Invalid mapsheet format '{mapsheets}'. Use comma-separated numbers.[/red]")
+            raise click.Abort()
+
+    # Build configuration
+    config = MergeConfig(
+        rc1_path=rc1,
+        rc2_path=rc2,
+        custom_sources_dir=custom_sources_dir,
+        admin_zones_path=admin_zones,
+        mapsheets_layer=mapsheets_layer,
+        source_column=source_column,
+        output_path=output,
+        reference_source=reference_source,
+        mapsheet_numbers=mapsheet_numbers,
+        preserve_z=not force_2d,  # If force_2d, don't preserve Z
+    )
+
+    # Override layers if specified
+    if layers:
+        config.spatial_layers = list(layers)
+
+    # Skip tables if requested
+    if skip_tables:
+        config.non_spatial_tables = []
+
+    console.print(f"\n[bold blue]🔀 GeoCover Source Merger[/bold blue]\n")
+
+    # Display configuration
+    _display_merge_config(config, dry_run)
+
+    if dry_run:
+        # Show mapsheet assignments preview
+        _preview_merge(config)
+        console.print("\n[yellow]Dry run completed. Remove --dry-run to execute merge.[/yellow]")
+        return
+
+    # Confirm before processing
+    if not click.confirm("\nProceed with merge?"):
+        console.print("Merge cancelled.")
+        return
+
+    # Execute merge
+    try:
+        from gcover.arcpy_compat import HAS_ARCPY, arcpy
+        if HAS_ARCPY:
+            from gcover.publish.merge_sources_arcpy import GDBMergerArcPy
+            merger = GDBMergerArcPy(config)
+            logger.info("Using arcpy-based merger for optimal FileGDB handling")
+        else:
+            logger.info("Using geopandas-based merger")
+            merger = GDBMerger(config)
+
+        stats = merger.merge()
+
+        if stats.errors:
+            console.print(f"\n[yellow]⚠ Merge completed with {len(stats.errors)} error(s)[/yellow]")
+        else:
+            console.print("\n[bold green]🎉 Merge completed successfully![/bold green]")
+
+    except Exception as e:
+        console.print(f"[red]Merge failed: {e}[/red]")
+        if verbose:
+            import traceback
+            console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise click.Abort()
+
+
+def _display_merge_config(config: MergeConfig, dry_run: bool) -> None:
+    """Display merge configuration summary."""
+
+    title = "🔍 Merge Configuration (Dry Run)" if dry_run else "⚙️  Merge Configuration"
+
+    table = Table(title=title, show_header=True, header_style="bold magenta")
+    table.add_column("Setting", style="cyan")
+    table.add_column("Value", style="green")
+
+    # Sources
+    if config.rc1_path:
+        status = "✓" if config.rc1_path.exists() else "✗"
+        table.add_row("RC1 Source", f"{status} {config.rc1_path}")
+    else:
+        table.add_row("RC1 Source", "[dim]Not specified[/dim]")
+
+    if config.rc2_path:
+        status = "✓" if config.rc2_path.exists() else "✗"
+        table.add_row("RC2 Source", f"{status} {config.rc2_path}")
+    else:
+        table.add_row("RC2 Source", "[dim]Not specified[/dim]")
+
+    if config.custom_sources_dir:
+        if config.custom_sources_dir.exists():
+            gdb_count = len(list(config.custom_sources_dir.glob("*.gdb")))
+            table.add_row("Custom Sources", f"✓ {config.custom_sources_dir} ({gdb_count} GDBs)")
+        else:
+            table.add_row("Custom Sources", f"✗ {config.custom_sources_dir}")
+
+    # Admin zones
+    table.add_row("Admin Zones", str(config.admin_zones_path))
+    table.add_row("Mapsheets Layer", config.mapsheets_layer)
+    table.add_row("Source Column", config.source_column)
+
+    # Filtering
+    if config.mapsheet_numbers:
+        table.add_row("Mapsheet Filter", f"{len(config.mapsheet_numbers)} mapsheets specified")
+    else:
+        table.add_row("Mapsheet Filter", "All mapsheets")
+
+    # Processing
+    table.add_row("Spatial Layers", str(len(config.spatial_layers)))
+    table.add_row("Reference Tables", str(len(config.non_spatial_tables)))
+    table.add_row("Reference Source", config.reference_source)
+
+    # Geometry handling
+    z_mode = "Preserve Z (3D)" if config.preserve_z else "Force 2D"
+    table.add_row("Z Coordinates", z_mode)
+
+    # Output
+    output_format = config.output_path.suffix.upper().replace(".", "")
+    table.add_row("Output", f"{config.output_path} ({output_format})")
+
+    console.print(table)
+
+
+def _preview_merge(config: MergeConfig) -> None:
+    """Preview merge operation without executing."""
+
+    console.print("\n[cyan]Loading mapsheet assignments...[/cyan]")
+
+    try:
+        # Load mapsheets
+        gdf = gpd.read_file(
+            config.admin_zones_path,
+            layer=config.mapsheets_layer
+        )
+
+        if config.mapsheet_numbers:
+            gdf = gdf[gdf[config.mapsheet_nbr_column].isin(config.mapsheet_numbers)]
+
+        # Group by source
+        source_counts = gdf[config.source_column].value_counts()
+
+        console.print("\n[bold]Source Assignments:[/bold]")
+
+        table = Table(show_header=True)
+        table.add_column("Source", style="cyan")
+        table.add_column("Mapsheets", justify="right", style="yellow")
+        table.add_column("Status", style="green")
+
+        for source_name, count in source_counts.items():
+            # Check if source exists
+            status = "?"
+            if source_name == "RC1" and config.rc1_path:
+                status = "✓ Available" if config.rc1_path.exists() else "✗ Missing"
+            elif source_name == "RC2" and config.rc2_path:
+                status = "✓ Available" if config.rc2_path.exists() else "✗ Missing"
+            elif config.custom_sources_dir:
+                custom_path = config.custom_sources_dir / f"{source_name}"
+                if not custom_path.suffix:
+                    custom_path = config.custom_sources_dir / f"{source_name}.gdb"
+                status = "✓ Available" if custom_path.exists() else "✗ Missing"
+            else:
+                status = "✗ No source configured"
+
+            table.add_row(source_name, str(count), status)
+
+        table.add_row("[bold]TOTAL[/bold]", f"[bold]{len(gdf)}[/bold]", "")
+
+        console.print(table)
+
+        # Show sample mapsheets per source
+        console.print("\n[bold]Sample Mapsheets by Source:[/bold]")
+        for source_name in source_counts.index[:5]:  # First 5 sources
+            source_mapsheets = gdf[gdf[config.source_column] == source_name]
+            sample = source_mapsheets[config.mapsheet_nbr_column].head(5).tolist()
+            sample_str = ", ".join(map(str, sample))
+            if len(source_mapsheets) > 5:
+                sample_str += f" ... (+{len(source_mapsheets) - 5} more)"
+            console.print(f"  • {source_name}: {sample_str}")
+
+    except Exception as e:
+        console.print(f"[red]Error loading preview: {e}[/red]")
+
+
+@publish_commands.command()
+@click.pass_context
+@click.option(
+    "--admin-zones",
+    "-a",
+    type=click.Path(exists=True, path_type=Path),
+    default=DEFAULT_ZONES_PATH,
+    help="Path to administrative_zones.gpkg (uses default if not specified)",
+)
+@click.option(
+    "--source-column",
+    "-s",
+    type=click.Choice(["SOURCE_RC", "SOURCE_QA"]),
+    default="SOURCE_RC",
+    help="Column to display (default: SOURCE_RC)",
+)
+@click.option(
+    "--layer",
+    "-l",
+    default="mapsheets_sources_only",
+    help="Layer name containing mapsheets",
+)
+def list_sources(
+        ctx,
+        admin_zones: Optional[Path],
+        source_column: str,
+        layer: str,
+):
+    """
+    List mapsheets and their source assignments.
+
+    Shows which source (RC1, RC2, or custom GDB) is assigned to each mapsheet
+    for the merge operation.
+
+    \b
+    Examples:
+      # List SOURCE_RC assignments (for publication)
+      gcover publish list-sources --admin-zones admin.gpkg
+
+      # List SOURCE_QA assignments (for QA dataset)
+      gcover publish list-sources --admin-zones admin.gpkg -s SOURCE_QA
+    """
+
+    if not admin_zones:
+        try:
+            from importlib.resources import files
+            admin_zones = files("gcover.data").joinpath("administrative_zones.gpkg")
+        except:
+            console.print("[red]Error: Could not find default administrative_zones.gpkg[/red]")
+            console.print("Please specify path with --admin-zones")
+            raise click.Abort()
+
+    try:
+        gdf = gpd.read_file(admin_zones, layer=layer)
+
+        if source_column not in gdf.columns:
+            console.print(f"[red]Error: Column '{source_column}' not found in layer '{layer}'[/red]")
+            console.print(f"Available columns: {list(gdf.columns)}")
+            raise click.Abort()
+
+        console.print(f"\n[bold]Mapsheet Source Assignments ({source_column})[/bold]")
+        console.print(f"[dim]Layer: {layer} in {admin_zones}[/dim]\n")
+
+        # Summary by source
+        source_counts = gdf[source_column].value_counts()
+
+        summary_table = Table(title="Summary by Source", show_header=True)
+        summary_table.add_column("Source", style="cyan")
+        summary_table.add_column("Count", justify="right", style="yellow")
+        summary_table.add_column("Percentage", justify="right", style="green")
+
+        total = len(gdf)
+        for source, count in source_counts.items():
+            pct = count / total * 100
+            summary_table.add_row(source, str(count), f"{pct:.1f}%")
+
+        console.print(summary_table)
+
+        # Detailed list
+        console.print("\n[bold]Detailed Mapsheet List:[/bold]\n")
+
+        detail_table = Table(show_header=True)
+        detail_table.add_column("Map #", justify="right", style="cyan")
+        detail_table.add_column("Title", style="green")
+        detail_table.add_column("Source", style="yellow")
+
+        for _, row in gdf.sort_values("MSH_MAP_NBR").iterrows():
+            detail_table.add_row(
+                str(row.get("MSH_MAP_NBR", "?")),
+                str(row.get("MSH_MAP_TITLE", "?"))[:30],
+                str(row[source_column])
+            )
+
+        console.print(detail_table)
+        console.print(f"\n[dim]Total: {total} mapsheets[/dim]")
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise click.Abort()

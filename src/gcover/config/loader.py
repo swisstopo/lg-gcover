@@ -22,15 +22,18 @@ class ConfigManager:
     def __init__(self):
         self._config: AppConfig | None = None
         self._secrets_loaded = False
+        self.verbose = False
 
     def load_config(
         self,
         config_path: Path | None = None,
         environment: str = "development",
         load_secrets: bool = True,
+        verbose: bool = False,
     ) -> AppConfig:
         """Load configuration with separate environment files and secret management"""
         console.print(f"[blue]Environment: {environment}[/blue]")
+        self.verbose = verbose
 
         # 1. Load secrets first (from .env files and environment)
         if load_secrets and not self._secrets_loaded:
@@ -74,7 +77,8 @@ class ConfigManager:
 
             for env_file in env_files:
                 if env_file.exists():
-                    console.log(f"🔐 Loading secrets from: [blue]{env_file}[/blue]")
+                    if self.verbose:
+                        console.log(f"🔐 Loading secrets from: [blue]{env_file}[/blue]")
 
                     load_dotenv(
                         env_file, override=False
@@ -83,7 +87,8 @@ class ConfigManager:
             # Always try to load from default .env
             default_env = Path(".env")
             if default_env.exists():
-                console.log(f"🔐 Loading secrets from: {default_env}")
+                if self.verbose:
+                    console.log(f"🔐 Loading secrets from: {default_env}")
                 load_dotenv(default_env, override=False)
 
         except ImportError:
@@ -161,11 +166,12 @@ class ConfigManager:
                     )
 
                     # Log avec masquage intelligent basé sur le nom de la VARIABLE
-                    if self._is_secret_field(env_var):
-                        console.log(f"🔐 Secret substituted: {env_var} -> ***")
-                    else:
-                        console.log(
-                            f"🔐 Secret substituted: {env_var} -> {processed_value}"
+                    if  self.verbose:
+                        if self._is_secret_field(env_var):
+                            console.log(f"🔐 Secret substituted: {env_var} -> ***")
+                        else:
+                            console.log(
+                                f"🔐 Secret substituted: {env_var} -> {processed_value}"
                         )
                 else:
                     # Si processed_value est None, garder la variable non remplacée
@@ -292,7 +298,8 @@ class ConfigManager:
         if config_path is None:
             config_path = self._find_base_config_file()
 
-        console.log(f"🔧 Loading base config: {config_path}")
+        if self.verbose:
+            console.log(f"🔧 Loading base config: {config_path}")
 
         with open(config_path, "r") as f:
             # Handle both single YAML and multi-document YAML
@@ -319,7 +326,8 @@ class ConfigManager:
 
         for env_path in env_paths:
             if env_path.exists():
-                console.log(f"🔧 Loading environment config: {env_path}")
+                if self.verbose:
+                    console.log(f"🔧 Loading environment config: {env_path}")
 
                 with open(env_path, "r") as f:
                     env_config = yaml.safe_load(f)
@@ -393,7 +401,8 @@ class ConfigManager:
             else:
                 # Override or add new key
                 base[key] = value
-                console.log(f"🔧 Override: {key} = {self._safe_log_value(key, value)}")
+                if self.verbose:
+                    console.log(f"🔧 Override: {key} = {self._safe_log_value(key, value)}")
 
     def _safe_log_value(self, key: str, value: any) -> str:
         """
@@ -446,7 +455,8 @@ class ConfigManager:
                 config_path = env_var[len(prefix) :].lower().split("_")
                 self._set_nested_value(config_section, config_path, value)
                 safe_value = "***" if self._is_secret_field(config_path[-1]) else value
-                console.log(f"🔧 Env override: {env_var} = {safe_value}")
+                if self.verbose:
+                    console.log(f"🔧 Env override: {env_var} = {safe_value}")
 
     def _set_nested_value(self, config: dict, path: list[str], value: str) -> None:
         """Set a nested configuration value"""
@@ -493,9 +503,10 @@ def load_config(
     config_path: Path | None = None,
     environment: str = "development",
     load_secrets: bool = True,
+    verbose: bool = False,
 ) -> AppConfig:
     """Load configuration with separate environment files"""
-    return _config_manager.load_config(config_path, environment, load_secrets)
+    return _config_manager.load_config(config_path, environment, load_secrets, verbose)
 
 
 def get_config() -> AppConfig:

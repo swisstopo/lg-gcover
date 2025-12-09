@@ -10,7 +10,7 @@ and sophisticated polygon styling.
 import json
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 import click
 from loguru import logger
@@ -36,6 +36,12 @@ from gcover.publish.symbol_utils import (
 from gcover.publish.tooltips_enricher import LayerType
 from gcover.publish.utils import generate_font_image
 from gcover.config.models import MapserverConnection
+
+from gcover.publish.label_extractor_extension import LabelInfo
+from gcover.publish.rotation_extractor_extension import (
+    RotationInfo,
+    format_rotation_for_mapserver,
+)
 
 console = Console()
 
@@ -78,6 +84,35 @@ class MapServerGenerator:
         self.pattern_symbols: List[Dict] = []
         self.symbol_registry: Dict[FontSymbol, str] = {}
 
+    def render_maxscale(self, layer_scale: Optional[bool | int],
+                        style_scale: Optional[int]) -> Optional[str]:
+        """
+        Retourne la ligne MAXSCALEDENOM ou None
+
+        Cas 1: yaml=None,   style=None   → None (pas de scale)
+        Cas 2: yaml=None,   style=20000  → "MAXSCALEDENOM 20000" (utilise style)
+        Cas 3: yaml=False,  style=None   → None (désactivé explicitement)
+        Cas 4: yaml=False,  style=20000  → None (override: désactivé)
+        Cas 5: yaml=True,   style=None   → None (veut le style, mais n'existe pas)
+        Cas 6: yaml=True,   style=20000  → "MAXSCALEDENOM 20000" (utilise style)
+        Cas 7: yaml=50000,  style=None   → "MAXSCALEDENOM 50000" (override)
+        Cas 8: yaml=50000,  style=20000  → "MAXSCALEDENOM 50000" (override)
+        """
+
+        # YAML désactive explicitement
+        if layer_scale is False:
+            return None
+
+        # YAML définit une valeur spécifique
+        if isinstance(layer_scale, int):
+            return f"  MAXSCALEDENOM {yaml_scale}"
+
+        # YAML = None ou True → utilise le style si disponible
+        if style_scale is not None:
+            return f"  MAXSCALEDENOM {style_scale}"
+
+        return None
+
     # ========================================================================
     # LAYER AND CLASS GENERATION
     # ========================================================================
@@ -92,6 +127,9 @@ class MapServerGenerator:
         connection: Optional[MapserverConnection] = None,
         data: Optional[str] = None,
         template: Optional[str] = "empty",
+        layer_group: Optional[str] = None,
+        map_label: Optional[Union[None, bool, str]] = None,
+        layer_max_scale: Optional[bool | int] = None
     ) -> str:
         """
         Generate complete MapServer LAYER block.
@@ -105,6 +143,9 @@ class MapServerGenerator:
         Returns:
             Complete LAYER block as string
         """
+        label_info = None
+        rotation_field = None
+
         if layer_type:
             if isinstance(layer_type, LayerType):
                 layer_type = layer_type.name
@@ -120,10 +161,25 @@ class MapServerGenerator:
 
         logger.info(f"=== {layer_name} ===")
 
+        try:
+            if classification.label_classes:
+                label_info = classification.label_classes[0]
+                label_item = label_info.get_simple_field_name()
+        except Exception as e:
+            logger.error(f"Error while retrieving labels info")
+
+        try:
+            rotation_info = classification.rotation_info
+            if rotation_info:
+                rotation_field = rotation_info.field_name
+
+        except Exception as e:
+            logger.error(f"Error while retrieving rotation info")
+
         lines = [
             "LAYER",
             f'  NAME "{layer_name}"',
-            f'   GROUP "ch.swisstopo.geology.gecover"',
+            f'   GROUP "ch.swisstopo.geology.geocover-{layer_group}"',
             f"  TYPE {layer_type}",
             "  STATUS ON",
             "",
@@ -137,7 +193,7 @@ class MapServerGenerator:
                 f'    "wms_title"    "{layer_name.capitalize()}"',
                 f'    "wms_abstract" "{layer_name.capitalize()}"',
                 '    "wms_srs"      "EPSG:2056 EPSG:4326 EPSG:3857"',
-                '    "wms_extent" "2350000 1050000 2850000 1250000"',
+                '    "wms_extent" "2350000 1050000 2850000 1350000"',
                 '    "wms_enable_request" "*"',
                 '    "wms_include_items" "all"',
                 '    "gml_include_items" "all"',
@@ -157,7 +213,16 @@ class MapServerGenerator:
                 ]
             )
 
-        if classification.min_scale:
+        # Names are swapped between Mapserver and ESRI
+        # minScale → MAXSCALEDENOM
+        # maxScale → MINSCALEDENOM
+
+        max_scale = self.render_maxscale(layer_max_scale,classification.min_scale )
+        if max_scale:
+            console.print(f"Using `maxscaledenom`: {classification.min_scale}")
+            lines.extend(["", max_scale])
+
+        if classification.max_scale:
             lines.extend(
                 [
                     "",
@@ -179,7 +244,7 @@ class MapServerGenerator:
                 '    "init=epsg:2056"',
                 "  END",
                 "",
-                "  EXTENT 2350000 1050000 2850000 1250000",
+                "  EXTENT 2350000 1050000 2850000 1350000",
             ]
         )
 
@@ -193,6 +258,13 @@ class MapServerGenerator:
 
         else:
             lines.append("  # Styled using classification field values")
+
+
+
+        if label_item and map_label is None:
+            lines.append(f'  LABELITEM "{label_item.lower()}"')
+        elif isinstance(classification.map_label, str):
+            lines.append(f'  LABELITEM "{map_label.lower()}"')
 
         lines.append("")
 
@@ -229,7 +301,13 @@ class MapServerGenerator:
             logger.debug(f"class idx: {symbol_id}")
 
             class_block = self.generate_class(
-                class_obj, field_names, identifier_value, symbol_prefix
+                class_obj,
+                field_names,
+                identifier_value,
+                symbol_prefix,
+                rotation_info,
+                label_info,
+                map_label,
             )
             lines.append(class_block)
 
@@ -243,6 +321,9 @@ class MapServerGenerator:
         field_names: List[str],
         class_index: int,
         symbol_prefix: str = "class",
+        rotation_info: Optional[RotationInfo] = None,
+        label_info: Optional[LabelInfo] = None,
+        map_label: Optional[Union[None, bool, str]] = None,
     ) -> str:
         """Generate a single MapServer CLASS block."""
         if not class_obj.visible:
@@ -257,7 +338,7 @@ class MapServerGenerator:
 
         # Sanitize class name
         class_name = class_obj.label.replace('"', '\\"')
-        logger.info(f"  {class_name}")
+        logger.debug(f"  {class_name}")
 
         # Build CLASS block
         lines = [
@@ -265,6 +346,24 @@ class MapServerGenerator:
             f'    NAME "{class_name}"',
             f"    EXPRESSION {expression}",
         ]
+
+        # Add LABEL
+        if label_info and map_label is not False:
+            field = label_info.get_simple_field_name()  # "DIP"
+            color = label_info.font_color.to_rgb_tuple()  # (0, 89, 255)
+
+            lines.extend(
+                [
+                    "    LABEL",
+                    f"        COLOR {' '.join(list(map(str, color)))}",
+                    '         FONT "sans"',
+                    "         TYPE truetype",
+                    f"        SIZE 8",
+                    "         POSITION AUTO",
+                    "         PARTIALS FALSE",
+                    "    END",
+                ]
+            )
 
         # Add STYLE blocks based on layer type
         if self.layer_type == "POLYGON":
@@ -275,7 +374,9 @@ class MapServerGenerator:
             lines.append("    END # STYLE")
         elif self.layer_type == "POINT":
             lines.append("    STYLE")
-            self._add_point_style(lines, class_obj, class_index, symbol_prefix)
+            self._add_point_style(
+                lines, class_obj, class_index, symbol_prefix, rotation_info
+            )
             lines.append("    END # STYLE")
 
         lines.append("  END # CLASS")
@@ -569,11 +670,14 @@ class MapServerGenerator:
         lines.append(f"      WIDTH {width_px:.2f}")
 
         # Handle line style
+        # TODO: no SYMBOL dotted or dashed!
         line_style_info = outline_info["line_style"]
         if line_style_info["type"] == "dash":
-            lines.append('      SYMBOL "dashed"')
+            # lines.append('      SYMBOL "dashed"')
+            lines.append('       PATTERN 5 3 END')
         elif line_style_info["type"] == "dot":
-            lines.append('      SYMBOL "dotted"')
+            #lines.append('      SYMBOL "dotted"')
+            lines.append('       PATTERN 1 3 END')
 
         lines.append("    END # STYLE")
 
@@ -656,9 +760,10 @@ class MapServerGenerator:
         ):
             line_style = symbol_info.line_style
             if line_style == "dash":
-                lines.append('      SYMBOL "dashed"')
+                lines.append('       PATTERN 5 3 END')
             elif line_style == "dot":
-                lines.append('      SYMBOL "dotted"')
+                lines.append('       PATTERN 1 3 END')
+
 
     def _add_truetype_line_marker(
         self, lines: List[str], symbol_info, font_symbol_name: str
@@ -690,7 +795,12 @@ class MapServerGenerator:
     # ========================================================================
 
     def _add_point_style(
-        self, lines: List[str], class_obj, class_index: int, symbol_prefix: str
+        self,
+        lines: List[str],
+        class_obj,
+        class_index: int,
+        symbol_prefix: str,
+        rotation_info: Optional[RotationInfo] = None,
     ):
         """Add point styling from ESRI symbol_info."""
         if hasattr(class_obj, "symbol_info") and class_obj.symbol_info:
@@ -729,6 +839,11 @@ class MapServerGenerator:
                         marker_type = "star"
 
                 lines.append(f'      SYMBOL "{marker_type}"')
+
+            if rotation_info and rotation_info.field_name:
+                lines.append(
+                    f"      ANGLE [{rotation_info.field_name.lower()}]   # lowercase, for PostGIS"
+                )
 
             if hasattr(symbol_info, "size") and symbol_info.size:
                 size = symbol_info.size * 1.33
@@ -921,7 +1036,9 @@ class MapServerGenerator:
 
     def _generate_line_pattern_symbols(self) -> List[str]:
         """Generate line pattern symbols (dashed, dotted)."""
-        return [
+        # TODO
+        return ["# No dash SYMBOL"]
+        '''return [
             "  SYMBOL",
             '    NAME "dashed"',
             "    TYPE SIMPLE",
@@ -933,7 +1050,7 @@ class MapServerGenerator:
             "    TYPE SIMPLE",
             "    PATTERN 2 4 END",
             "  END",
-        ]
+        ]'''
 
     def _generate_font_symbols_from_classifications(
         self, classification_list: List, prefixes: Dict
