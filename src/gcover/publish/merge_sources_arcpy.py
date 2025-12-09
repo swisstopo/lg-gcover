@@ -268,14 +268,18 @@ class GDBMergerArcPy:
         Returns:
             Path to the dissolved clip feature class
         """
-        # Check cache first
+        # Sanitize cache key for use in feature class names
+        # Remove/replace invalid characters: . / \ spaces etc.
+        safe_key = cache_key.replace(".", "_").replace("/", "_").replace("\\", "_").replace(" ", "_")
+        
+        # Check cache first (use original key for lookup)
         if cache_key in self._clip_fc_cache:
             cached_path = self._clip_fc_cache[cache_key]
             if arcpy.Exists(cached_path):
                 self._log_debug(f"  Using cached clip geometry: {cache_key}")
                 return cached_path
         
-        self._log_debug(f"  Creating clip geometry for {len(mapsheet_numbers)} mapsheets")
+        self._log_debug(f"  Creating clip geometry for {len(mapsheet_numbers)} mapsheets (safe_key: {safe_key})")
         start_time = time.time()
         
         # Build the full path to the layer in the GPKG
@@ -285,8 +289,8 @@ class GDBMergerArcPy:
         numbers_str = ",".join(str(n) for n in mapsheet_numbers)
         where_clause = f"{self.config.mapsheet_nbr_column} IN ({numbers_str})"
         
-        # Make a feature layer with selection
-        layer_name = f"mapsheets_selection_{cache_key}"
+        # Make a feature layer with selection (use safe_key in layer name)
+        layer_name = f"mapsheets_sel_{safe_key}"
         if arcpy.Exists(layer_name):
             arcpy.management.Delete(layer_name)
             
@@ -298,30 +302,39 @@ class GDBMergerArcPy:
         
         if selected_count == 0:
             self._log_warning(f"No mapsheets found for: {where_clause}")
+            arcpy.management.Delete(layer_name)
             return None
         
-        # Copy to scratch and dissolve
+        # Copy to scratch and dissolve (use safe_key in FC names)
         temp_fc = arcpy.CreateScratchName(
-            prefix=f"clip_{cache_key}_", 
+            prefix=f"clip_{safe_key}_", 
             suffix="", 
             data_type="FeatureClass", 
             workspace=arcpy.env.scratchGDB
         )
+        
+        self._log_debug(f"  Temp FC: {temp_fc}")
         
         # Copy selected features to scratch
         arcpy.management.CopyFeatures(layer_name, temp_fc)
-        self._log_debug(f"  Copied to: {temp_fc}")
+        self._log_debug(f"  Copied features to temp FC")
         
-        # Dissolve to single polygon
+        # Verify the temp_fc was created
+        if not arcpy.Exists(temp_fc):
+            self._log_error(f"  Failed to create temp feature class: {temp_fc}")
+            arcpy.management.Delete(layer_name)
+            return None
+        
+        # Dissolve to single polygon (use safe_key in FC name)
         dissolved_fc = arcpy.CreateScratchName(
-            prefix=f"dissolved_{cache_key}_", 
+            prefix=f"diss_{safe_key}_", 
             suffix="", 
             data_type="FeatureClass", 
             workspace=arcpy.env.scratchGDB
         )
         
+        self._log_debug(f"  Dissolving to: {dissolved_fc}")
         arcpy.management.Dissolve(temp_fc, dissolved_fc)
-        self._log_debug(f"  Dissolved to: {dissolved_fc}")
         
         # Cleanup temp feature class
         arcpy.management.Delete(temp_fc)
