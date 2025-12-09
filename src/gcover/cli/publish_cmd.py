@@ -1951,7 +1951,15 @@ def merge(
 
     # Execute merge
     try:
-        merger = GDBMerger(config)
+        from gcover.arcpy_compat import HAS_ARCPY, arcpy
+        if HAS_ARCPY:
+            from gcover.publish.merge_sources_arcpy import GDBMergerArcPy
+            merger = GDBMergerArcPy(config)
+            logger.info("Using arcpy-based merger for optimal FileGDB handling")
+        else:
+            logger.info("Using geopandas-based merger")
+            merger = GDBMerger(config)
+
         stats = merger.merge()
 
         if stats.errors:
