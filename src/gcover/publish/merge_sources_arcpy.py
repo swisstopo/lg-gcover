@@ -13,6 +13,7 @@ Falls back to geopandas implementation when arcpy is not available.
 
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+import time
 import warnings
 
 from loguru import logger
@@ -44,19 +45,46 @@ class GDBMergerArcPy:
     compared to the geopandas-based merger.
     """
     
-    def __init__(self, config: MergeConfig):
+    def __init__(self, config: MergeConfig, verbose: bool = False):
         if not HAS_ARCPY:
             raise ImportError("arcpy is required for GDBMergerArcPy")
             
         self.config = config
+        self.verbose = verbose
         self.sources: Dict[str, SourceConfig] = {}
         self.stats = MergeStats()
+        self._clip_fc_cache: Dict[str, str] = {}  # Cache for clip geometries
         
+        self._log_debug("Initializing GDBMergerArcPy")
         self._setup_sources()
         self._setup_workspace()
         
+    def _log_debug(self, message: str) -> None:
+        """Log debug message if verbose mode is enabled."""
+        if self.verbose:
+            console.print(f"  [dim]DEBUG: {message}[/dim]")
+        logger.debug(message)
+        
+    def _log_info(self, message: str) -> None:
+        """Log info message."""
+        if self.verbose:
+            console.print(f"  [cyan]INFO: {message}[/cyan]")
+        logger.info(message)
+        
+    def _log_warning(self, message: str) -> None:
+        """Log warning message."""
+        console.print(f"  [yellow]⚠ {message}[/yellow]")
+        logger.warning(message)
+        
+    def _log_error(self, message: str) -> None:
+        """Log error message."""
+        console.print(f"  [red]✗ {message}[/red]")
+        logger.error(message)
+        
     def _setup_sources(self) -> None:
         """Configure available source databases."""
+        
+        self._log_debug("Setting up sources...")
         
         if self.config.rc1_path and self.config.rc1_path.exists():
             self.sources["RC1"] = SourceConfig(
@@ -64,6 +92,7 @@ class GDBMergerArcPy:
                 path=self.config.rc1_path,
                 source_type=SourceType.RC1
             )
+            self._log_debug(f"  Registered RC1: {self.config.rc1_path}")
             
         if self.config.rc2_path and self.config.rc2_path.exists():
             self.sources["RC2"] = SourceConfig(
@@ -71,6 +100,7 @@ class GDBMergerArcPy:
                 path=self.config.rc2_path,
                 source_type=SourceType.RC2
             )
+            self._log_debug(f"  Registered RC2: {self.config.rc2_path}")
             
         if self.config.custom_sources_dir and self.config.custom_sources_dir.exists():
             for gdb_path in self.config.custom_sources_dir.glob("*.gdb"):
@@ -80,14 +110,25 @@ class GDBMergerArcPy:
                     path=gdb_path,
                     source_type=SourceType.CUSTOM
                 )
+                self._log_debug(f"  Registered custom source: {gdb_path}")
+                
+        self._log_info(f"Configured {len(self.sources)} source(s)")
                 
     def _setup_workspace(self) -> None:
         """Set up arcpy workspace and environment."""
         
+        self._log_debug("Setting up arcpy environment...")
+        
         arcpy.env.overwriteOutput = True
         arcpy.env.preserveGlobalIds = True
         
-        # Use first available source as template
+        # Ensure scratch workspace exists
+        if not arcpy.env.scratchGDB:
+            arcpy.env.scratchWorkspace = str(Path.home() / "arcpy_scratch")
+            
+        self._log_debug(f"  scratchGDB: {arcpy.env.scratchGDB}")
+        
+        # Use first available source as template for workspace
         template_path = None
         for source in self.sources.values():
             if source.path.exists():
@@ -96,6 +137,7 @@ class GDBMergerArcPy:
                 
         if template_path:
             arcpy.env.workspace = str(template_path)
+            self._log_debug(f"  workspace: {template_path}")
             
     def _resolve_source_path(self, source_name: str) -> Optional[Path]:
         """Resolve source name to actual GDB path."""
@@ -119,23 +161,29 @@ class GDBMergerArcPy:
         
         output_path = self.config.output_path
         
+        self._log_info(f"Creating output GDB: {output_path}")
+        
         if output_path.exists():
-            logger.warning(f"Deleting existing output: {output_path}")
+            self._log_warning(f"Deleting existing output: {output_path}")
             arcpy.management.Delete(str(output_path))
             
         # Create new FileGDB
+        start_time = time.time()
         arcpy.management.CreateFileGDB(
             out_folder_path=str(output_path.parent),
             out_name=output_path.name
         )
+        elapsed = time.time() - start_time
         
-        logger.info(f"Created output GDB: {output_path}")
+        self._log_debug(f"  Created in {elapsed:.2f}s")
         
     def _create_feature_dataset(self, name: str = "GC_ROCK_BODIES") -> str:
         """Create feature dataset in output GDB."""
         
         output_path = self.config.output_path
         feature_dataset_path = str(output_path / name)
+        
+        self._log_info(f"Creating feature dataset: {name}")
         
         if not arcpy.Exists(feature_dataset_path):
             # Get spatial reference from first source
@@ -146,6 +194,8 @@ class GDBMergerArcPy:
                     source_fc = str(source.path / "GC_ROCK_BODIES" / layer_name)
                     if arcpy.Exists(source_fc):
                         sr = arcpy.Describe(source_fc).spatialReference
+                        self._log_debug(f"  Using spatial reference from: {source_fc}")
+                        self._log_debug(f"  SR: {sr.name} (WKID: {sr.factoryCode})")
                         break
                 if sr:
                     break
@@ -156,55 +206,132 @@ class GDBMergerArcPy:
                     out_name=name,
                     spatial_reference=sr
                 )
+                self._log_debug(f"  Feature dataset created")
+            else:
+                self._log_warning("Could not determine spatial reference for feature dataset")
                 
         return feature_dataset_path
     
-    def _load_mapsheets(self) -> Dict[str, List[int]]:
-        """Load mapsheets grouped by source."""
+    def _load_mapsheets_arcpy(self) -> Dict[str, List[int]]:
+        """Load mapsheets grouped by source using arcpy."""
         
-        import geopandas as gpd
+        self._log_info(f"Loading mapsheets from: {self.config.admin_zones_path}")
+        self._log_debug(f"  Layer: {self.config.mapsheets_layer}")
+        self._log_debug(f"  Source column: {self.config.source_column}")
         
-        gdf = gpd.read_file(
-            self.config.admin_zones_path,
-            layer=self.config.mapsheets_layer
-        )
+        # Build the full path to the layer in the GPKG
+        gpkg_layer = f"{self.config.admin_zones_path}/{self.config.mapsheets_layer}"
         
+        if not arcpy.Exists(gpkg_layer):
+            self._log_error(f"Layer not found: {gpkg_layer}")
+            raise ValueError(f"Mapsheets layer not found: {gpkg_layer}")
+        
+        # Build where clause for mapsheet filter
+        where_clause = None
         if self.config.mapsheet_numbers:
-            gdf = gdf[gdf[self.config.mapsheet_nbr_column].isin(self.config.mapsheet_numbers)]
-            
-        # Group by source
+            numbers_str = ",".join(str(n) for n in self.config.mapsheet_numbers)
+            where_clause = f"{self.config.mapsheet_nbr_column} IN ({numbers_str})"
+            self._log_debug(f"  Filter: {where_clause}")
+        
+        # Read mapsheets and group by source
         grouped = {}
-        for source_name in gdf[self.config.source_column].unique():
-            mask = gdf[self.config.source_column] == source_name
-            grouped[source_name] = gdf[mask][self.config.mapsheet_nbr_column].tolist()
+        total_count = 0
+        
+        fields = [self.config.mapsheet_nbr_column, self.config.source_column]
+        
+        with arcpy.da.SearchCursor(gpkg_layer, fields, where_clause) as cursor:
+            for row in cursor:
+                mapsheet_nbr = row[0]
+                source_name = row[1]
+                
+                if source_name not in grouped:
+                    grouped[source_name] = []
+                grouped[source_name].append(mapsheet_nbr)
+                total_count += 1
+        
+        self._log_info(f"Loaded {total_count} mapsheets across {len(grouped)} sources")
+        
+        for source_name, mapsheets in grouped.items():
+            self._log_debug(f"  {source_name}: {len(mapsheets)} mapsheets")
             
-        self.stats.mapsheets_processed = len(gdf)
+        self.stats.mapsheets_processed = total_count
         return grouped
     
-    def _get_mapsheet_geometry(self, mapsheet_numbers: List[int]) -> str:
-        """Get union geometry for mapsheets as a temporary feature class."""
+    def _create_clip_geometry_arcpy(self, mapsheet_numbers: List[int], cache_key: str) -> str:
+        """
+        Create clip geometry for mapsheets using native arcpy functions.
         
-        import geopandas as gpd
-        import tempfile
+        Args:
+            mapsheet_numbers: List of mapsheet numbers to include
+            cache_key: Key for caching the result
+            
+        Returns:
+            Path to the dissolved clip feature class
+        """
+        # Check cache first
+        if cache_key in self._clip_fc_cache:
+            cached_path = self._clip_fc_cache[cache_key]
+            if arcpy.Exists(cached_path):
+                self._log_debug(f"  Using cached clip geometry: {cache_key}")
+                return cached_path
         
-        # Read mapsheets
-        gdf = gpd.read_file(
-            self.config.admin_zones_path,
-            layer=self.config.mapsheets_layer
+        self._log_debug(f"  Creating clip geometry for {len(mapsheet_numbers)} mapsheets")
+        start_time = time.time()
+        
+        # Build the full path to the layer in the GPKG
+        gpkg_layer = f"{self.config.admin_zones_path}/{self.config.mapsheets_layer}"
+        
+        # Create where clause for selection
+        numbers_str = ",".join(str(n) for n in mapsheet_numbers)
+        where_clause = f"{self.config.mapsheet_nbr_column} IN ({numbers_str})"
+        
+        # Make a feature layer with selection
+        layer_name = f"mapsheets_selection_{cache_key}"
+        if arcpy.Exists(layer_name):
+            arcpy.management.Delete(layer_name)
+            
+        arcpy.management.MakeFeatureLayer(gpkg_layer, layer_name, where_clause)
+        
+        # Get count of selected features
+        selected_count = int(arcpy.management.GetCount(layer_name)[0])
+        self._log_debug(f"  Selected {selected_count} mapsheet polygons")
+        
+        if selected_count == 0:
+            self._log_warning(f"No mapsheets found for: {where_clause}")
+            return None
+        
+        # Copy to scratch and dissolve
+        temp_fc = arcpy.CreateScratchName(
+            prefix=f"clip_{cache_key}_", 
+            suffix="", 
+            data_type="FeatureClass", 
+            workspace=arcpy.env.scratchGDB
         )
         
-        # Filter to specified mapsheets
-        gdf = gdf[gdf[self.config.mapsheet_nbr_column].isin(mapsheet_numbers)]
-        
-        # Create temporary feature class
-        temp_fc = arcpy.CreateScratchName("clip_", "", "FeatureClass", arcpy.env.scratchGDB)
-        
-        # Convert geopandas to feature class
-        gdf.to_file(temp_fc, driver="OpenFileGDB")
+        # Copy selected features to scratch
+        arcpy.management.CopyFeatures(layer_name, temp_fc)
+        self._log_debug(f"  Copied to: {temp_fc}")
         
         # Dissolve to single polygon
-        dissolved_fc = arcpy.CreateScratchName("dissolved_", "", "FeatureClass", arcpy.env.scratchGDB)
+        dissolved_fc = arcpy.CreateScratchName(
+            prefix=f"dissolved_{cache_key}_", 
+            suffix="", 
+            data_type="FeatureClass", 
+            workspace=arcpy.env.scratchGDB
+        )
+        
         arcpy.management.Dissolve(temp_fc, dissolved_fc)
+        self._log_debug(f"  Dissolved to: {dissolved_fc}")
+        
+        # Cleanup temp feature class
+        arcpy.management.Delete(temp_fc)
+        arcpy.management.Delete(layer_name)
+        
+        elapsed = time.time() - start_time
+        self._log_debug(f"  Clip geometry created in {elapsed:.2f}s")
+        
+        # Cache the result
+        self._clip_fc_cache[cache_key] = dissolved_fc
         
         return dissolved_fc
     
@@ -226,17 +353,37 @@ class GDBMergerArcPy:
             source_fc = str(source_path / feature_dataset / actual_layer)
         else:
             source_fc = str(source_path / actual_layer)
+        
+        self._log_debug(f"  Processing {source_name}:{actual_layer}")
+        self._log_debug(f"    Source FC: {source_fc}")
             
         if not arcpy.Exists(source_fc):
-            logger.debug(f"Layer not found: {source_fc}")
+            self._log_debug(f"    Layer not found, skipping")
             return 0
+        
+        # Get source feature count
+        source_count = int(arcpy.management.GetCount(source_fc)[0])
+        self._log_debug(f"    Source features: {source_count}")
             
-        # Get clip geometry
-        clip_fc = self._get_mapsheet_geometry(mapsheet_numbers)
+        # Get clip geometry (use source_name as cache key)
+        clip_fc = self._create_clip_geometry_arcpy(mapsheet_numbers, source_name)
+        
+        if clip_fc is None:
+            self._log_warning(f"    No clip geometry for {source_name}")
+            return 0
         
         try:
+            start_time = time.time()
+            
             # Clip features
-            clipped_fc = arcpy.CreateScratchName("clipped_", "", "FeatureClass", arcpy.env.scratchGDB)
+            clipped_fc = arcpy.CreateScratchName(
+                prefix=f"clipped_{actual_layer}_{source_name}_", 
+                suffix="", 
+                data_type="FeatureClass", 
+                workspace=arcpy.env.scratchGDB
+            )
+            
+            self._log_debug(f"    Clipping to: {clipped_fc}")
             
             arcpy.analysis.Clip(
                 in_features=source_fc,
@@ -247,30 +394,37 @@ class GDBMergerArcPy:
             # Count clipped features
             count = int(arcpy.management.GetCount(clipped_fc)[0])
             
+            clip_time = time.time() - start_time
+            self._log_debug(f"    Clipped {count} features in {clip_time:.2f}s")
+            
             if count > 0:
                 # Add source tracking field if not exists
-                if "_MERGE_SOURCE" not in [f.name for f in arcpy.ListFields(clipped_fc)]:
+                existing_fields = [f.name for f in arcpy.ListFields(clipped_fc)]
+                if "_MERGE_SOURCE" not in existing_fields:
                     arcpy.management.AddField(clipped_fc, "_MERGE_SOURCE", "TEXT", field_length=50)
+                    self._log_debug(f"    Added _MERGE_SOURCE field")
                     
                 # Update source field
                 arcpy.management.CalculateField(
                     clipped_fc, "_MERGE_SOURCE", f"'{source_name}'", "PYTHON3"
                 )
                 
-                # Append to output
+                # Append to output or create new
                 if arcpy.Exists(output_fc):
+                    self._log_debug(f"    Appending to existing output")
                     arcpy.management.Append(clipped_fc, output_fc, "NO_TEST")
                 else:
+                    self._log_debug(f"    Creating output: {output_fc}")
                     arcpy.management.CopyFeatures(clipped_fc, output_fc)
                     
-            # Cleanup
+            # Cleanup clipped features
             arcpy.management.Delete(clipped_fc)
-            arcpy.management.Delete(clip_fc)
             
             return count
             
         except arcpy.ExecuteError as e:
-            logger.error(f"ArcPy error clipping {layer_name}: {e}")
+            self._log_error(f"ArcPy error clipping {layer_name}: {e}")
+            self._log_debug(f"    Full error: {arcpy.GetMessages(2)}")
             return 0
     
     def _copy_table(self, table_name: str, source_path: Path) -> bool:
@@ -279,92 +433,152 @@ class GDBMergerArcPy:
         source_table = str(source_path / table_name)
         output_table = str(self.config.output_path / table_name)
         
+        self._log_debug(f"  Copying table: {table_name}")
+        self._log_debug(f"    From: {source_table}")
+        self._log_debug(f"    To: {output_table}")
+        
         if not arcpy.Exists(source_table):
-            logger.warning(f"Table not found: {source_table}")
+            self._log_warning(f"Table not found: {source_table}")
             return False
             
         try:
+            start_time = time.time()
             arcpy.management.Copy(source_table, output_table)
+            
+            # Get row count
+            row_count = int(arcpy.management.GetCount(output_table)[0])
+            elapsed = time.time() - start_time
+            
+            self._log_debug(f"    Copied {row_count} rows in {elapsed:.2f}s")
             return True
+            
         except arcpy.ExecuteError as e:
-            logger.error(f"Error copying table {table_name}: {e}")
+            self._log_error(f"Error copying table {table_name}: {e}")
             return False
+    
+    def _cleanup_scratch(self) -> None:
+        """Clean up scratch workspace."""
+        
+        self._log_debug("Cleaning up scratch workspace...")
+        
+        # Delete cached clip geometries
+        for cache_key, fc_path in self._clip_fc_cache.items():
+            try:
+                if arcpy.Exists(fc_path):
+                    arcpy.management.Delete(fc_path)
+                    self._log_debug(f"  Deleted: {fc_path}")
+            except:
+                pass
+                
+        self._clip_fc_cache.clear()
     
     def merge(self) -> MergeStats:
         """Execute the merge operation using arcpy."""
         
         console.print("\n[bold blue]🔀 Starting ArcPy GDB Merge[/bold blue]\n")
         
-        # Create output GDB
-        self._create_output_gdb()
+        total_start_time = time.time()
         
-        # Create feature dataset
-        feature_dataset = self._create_feature_dataset()
-        
-        # Load mapsheet assignments
-        mapsheets_by_source = self._load_mapsheets()
-        
-        # Display summary
-        self._display_source_summary(mapsheets_by_source)
-        
-        # Process spatial layers
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=console
-        ) as progress:
+        try:
+            # Create output GDB
+            self._create_output_gdb()
             
-            layers_task = progress.add_task(
-                "[cyan]Processing spatial layers...",
-                total=len(self.config.spatial_layers)
-            )
+            # Create feature dataset
+            feature_dataset = self._create_feature_dataset()
             
-            for layer_name in self.config.spatial_layers:
-                actual_layer = layer_name.split("/")[-1]
-                progress.update(layers_task, description=f"[cyan]Processing {actual_layer}...")
+            # Load mapsheet assignments
+            mapsheets_by_source = self._load_mapsheets_arcpy()
+            
+            # Display summary
+            self._display_source_summary(mapsheets_by_source)
+            
+            # Process spatial layers
+            console.print("\n[cyan]Processing spatial layers...[/cyan]")
+            
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                console=console,
+                transient=not self.verbose  # Keep progress visible in verbose mode
+            ) as progress:
                 
-                # Determine output location
-                if "/" in layer_name:
-                    output_fc = str(self.config.output_path / "GC_ROCK_BODIES" / actual_layer)
-                else:
-                    output_fc = str(self.config.output_path / actual_layer)
+                layers_task = progress.add_task(
+                    "[cyan]Processing spatial layers...",
+                    total=len(self.config.spatial_layers)
+                )
                 
-                layer_total = 0
-                
-                for source_name, mapsheet_numbers in mapsheets_by_source.items():
-                    source_path = self._resolve_source_path(source_name)
-                    if source_path is None:
-                        continue
+                for layer_name in self.config.spatial_layers:
+                    actual_layer = layer_name.split("/")[-1]
+                    progress.update(layers_task, description=f"[cyan]Processing {actual_layer}...")
+                    
+                    layer_start_time = time.time()
+                    
+                    # Determine output location
+                    if "/" in layer_name:
+                        output_fc = str(self.config.output_path / "GC_ROCK_BODIES" / actual_layer)
+                    else:
+                        output_fc = str(self.config.output_path / actual_layer)
+                    
+                    self._log_debug(f"Layer: {layer_name}")
+                    self._log_debug(f"  Output: {output_fc}")
+                    
+                    layer_total = 0
+                    
+                    for source_name, mapsheet_numbers in mapsheets_by_source.items():
+                        source_path = self._resolve_source_path(source_name)
+                        if source_path is None:
+                            self._log_warning(f"Source not found: {source_name}")
+                            continue
+                            
+                        count = self._clip_and_append_layer(
+                            layer_name, source_path, mapsheet_numbers, output_fc, source_name
+                        )
                         
-                    count = self._clip_and_append_layer(
-                        layer_name, source_path, mapsheet_numbers, output_fc, source_name
-                    )
+                        layer_total += count
+                        self.stats.features_per_source[source_name] = \
+                            self.stats.features_per_source.get(source_name, 0) + count
                     
-                    layer_total += count
-                    self.stats.features_per_source[source_name] = \
-                        self.stats.features_per_source.get(source_name, 0) + count
-                
-                if layer_total > 0:
-                    self.stats.features_per_layer[layer_name] = layer_total
-                    self.stats.layers_processed += 1
+                    layer_elapsed = time.time() - layer_start_time
                     
-                progress.advance(layers_task)
-        
-        # Copy non-spatial tables
-        if self.config.non_spatial_tables:
-            console.print("\n[cyan]Copying reference tables...[/cyan]")
+                    if layer_total > 0:
+                        self.stats.features_per_layer[layer_name] = layer_total
+                        self.stats.layers_processed += 1
+                        console.print(f"  [green]✓[/green] {actual_layer}: {layer_total:,} features ({layer_elapsed:.1f}s)")
+                    else:
+                        console.print(f"  [yellow]○[/yellow] {actual_layer}: no features")
+                        
+                    progress.advance(layers_task)
             
-            ref_path = self._resolve_source_path(self.config.reference_source)
-            if ref_path:
-                for table_name in self.config.non_spatial_tables:
-                    if self._copy_table(table_name, ref_path):
-                        self.stats.tables_copied += 1
-                        console.print(f"  [green]✓[/green] {table_name}")
-        
-        # Display results
-        self._display_results()
+            # Copy non-spatial tables
+            if self.config.non_spatial_tables:
+                console.print("\n[cyan]Copying reference tables...[/cyan]")
+                
+                ref_path = self._resolve_source_path(self.config.reference_source)
+                if ref_path:
+                    self._log_info(f"Reference source: {ref_path}")
+                    
+                    for table_name in self.config.non_spatial_tables:
+                        if self._copy_table(table_name, ref_path):
+                            self.stats.tables_copied += 1
+                            console.print(f"  [green]✓[/green] {table_name}")
+                        else:
+                            console.print(f"  [yellow]○[/yellow] {table_name}: not found")
+                else:
+                    self._log_warning(f"Reference source not found: {self.config.reference_source}")
+            
+            # Cleanup
+            self._cleanup_scratch()
+            
+            # Display results
+            total_elapsed = time.time() - total_start_time
+            self._display_results(total_elapsed)
+            
+        except Exception as e:
+            self._log_error(f"Merge failed: {e}")
+            self._cleanup_scratch()
+            raise
         
         return self.stats
     
@@ -374,16 +588,23 @@ class GDBMergerArcPy:
         table = Table(title="Source Assignments", show_header=True)
         table.add_column("Source", style="cyan")
         table.add_column("Mapsheets", justify="right", style="yellow")
+        table.add_column("Sample", style="dim")
         table.add_column("Status", style="green")
         
         for source_name, mapsheets in mapsheets_by_source.items():
             source_path = self._resolve_source_path(source_name)
             status = "✓ Found" if source_path else "✗ Missing"
-            table.add_row(source_name, str(len(mapsheets)), status)
+            
+            # Show sample of mapsheet numbers
+            sample = ", ".join(str(n) for n in sorted(mapsheets)[:5])
+            if len(mapsheets) > 5:
+                sample += f" ... (+{len(mapsheets) - 5})"
+                
+            table.add_row(source_name, str(len(mapsheets)), sample, status)
             
         console.print(table)
     
-    def _display_results(self) -> None:
+    def _display_results(self, elapsed_time: float = 0) -> None:
         """Display merge results."""
         
         console.print("\n[bold green]✅ Merge Complete![/bold green]\n")
@@ -399,18 +620,36 @@ class GDBMergerArcPy:
         total_features = sum(self.stats.features_per_layer.values())
         table.add_row("Total features", f"{total_features:,}")
         
+        if elapsed_time > 0:
+            mins, secs = divmod(elapsed_time, 60)
+            table.add_row("Processing time", f"{int(mins)}m {secs:.1f}s")
+        
         console.print(table)
+        
+        # Features by source
+        if self.stats.features_per_source:
+            console.print("\n[bold]Features by Source:[/bold]")
+            for source, count in sorted(self.stats.features_per_source.items(), key=lambda x: -x[1]):
+                console.print(f"  • {source}: {count:,}")
+        
+        # Features by layer (if verbose)
+        if self.verbose and self.stats.features_per_layer:
+            console.print("\n[bold]Features by Layer:[/bold]")
+            for layer, count in sorted(self.stats.features_per_layer.items()):
+                layer_short = layer.split("/")[-1]
+                console.print(f"  • {layer_short}: {count:,}")
         
         console.print(f"\n[dim]Output: {self.config.output_path}[/dim]")
 
 
-def create_merger(config: MergeConfig, prefer_arcpy: bool = True):
+def create_merger(config: MergeConfig, prefer_arcpy: bool = True, verbose: bool = False):
     """
     Create appropriate merger based on available libraries.
     
     Args:
         config: Merge configuration
         prefer_arcpy: If True, use arcpy when available
+        verbose: Enable verbose logging
         
     Returns:
         GDBMergerArcPy or GDBMergerGeopandas instance
@@ -418,7 +657,7 @@ def create_merger(config: MergeConfig, prefer_arcpy: bool = True):
     
     if prefer_arcpy and HAS_ARCPY:
         logger.info("Using arcpy-based merger for optimal FileGDB handling")
-        return GDBMergerArcPy(config)
+        return GDBMergerArcPy(config, verbose=verbose)
     else:
         logger.info("Using geopandas-based merger")
         return GDBMergerGeopandas(config)
