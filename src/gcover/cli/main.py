@@ -112,7 +112,7 @@ def cli(ctx, config, log_file, log_info, env, verbose):
 
     try:
         # Load centralized configuration
-        app_config: AppConfig = load_config(environment=environment)
+        app_config: AppConfig = load_config(environment=environment, verbose=verbose)
 
         # ctx.obj["config_manager"] = config_manager
         ctx.obj["config_path"] = config
