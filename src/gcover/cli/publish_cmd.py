@@ -2272,7 +2272,7 @@ def writeback(
     click.echo(f"Classification DB: {classification_db}")
     click.echo(f"Attributes: {', '.join(attributes)}")
 
-    from gcover.publish.writeback import update_filegdb_layer, load_layer_mapping_from_config, build_uuid_lookup, list_gpkg_layers, list_filegdb_layers, get_matching_layers_from_config, get_matching_layers_auto
+    from gcover.publish.writeback import update_filegdb_layer, extract_layer_name, load_layer_mapping_from_config, build_uuid_lookup, list_gpkg_layers, list_filegdb_layers, get_matching_layers_from_config, get_matching_layers_auto
 
     if dryrun:
         click.secho("=== DRYRUN MODE ===", fg="yellow", bold=True)
