@@ -179,7 +179,7 @@ def update_filegdb_layer(
 
     Returns stats dict with counts.
     """
-    arcpy = _ensure_arcpy()
+
 
     fc_path = str(gdb_path / feature_dataset / layer)
 

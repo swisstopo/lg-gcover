@@ -305,6 +305,7 @@ layers:
             AEXP_STATUS: AEXP_STATUS
 
     - gpkg_layer: surfaces
+      gcover_layer: GC_ROCK_BODIES/GC_SURFACES
       connection_ref: postgis_wms
       layer_type: polygon
       field_types:
