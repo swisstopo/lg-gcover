@@ -8,9 +8,8 @@ global:
     overwrite: False
 # Layer configurations
 layers:
-
-
     - gpkg_layer: exploit_points
+      gcover_layer: GC_ROCK_BODIES/GC_EXPLOIT_GEOMAT_PT
       connection_ref: postgis_wms
       layer_type: point
       field_types:
@@ -33,6 +32,7 @@ layers:
             AEXP_STATUS: AEXP_STATUS
 
     - gpkg_layer: fossils
+      gcover_layer: GC_ROCK_BODIES/GC_FOSSILS
       connection_ref: postgis_wms
       layer_type: point
       field_types:
@@ -54,6 +54,7 @@ layers:
           symbol_prefix: fossil
 
     - gpkg_layer: point_objects
+      gcover_layer: GC_ROCK_BODIES/GC_POINT_OBJECTS
       connection_ref: postgis_wms
       layer_type: point
       field_types:
@@ -70,8 +71,6 @@ layers:
         TDEF_FOLD_TYP: Int64
         AEXP_STATUS: Int64
         ABOR_DEPTH_BEDR: Int64
-
-
 
       classifications:
         - style_file: styles/Point_Mpla_Planar_Structures.lyrx
@@ -189,6 +188,7 @@ layers:
           symbol_prefix: pnt_orient
 
     - gpkg_layer: linear_objects
+      gcover_layer: GC_ROCK_BODIES/GC_LINEAR_OBJECTS
       connection_ref: postgis_wms
       layer_type: line
       field_types:
@@ -286,6 +286,7 @@ layers:
           symbol_prefix: linear_ueberschiebung
 
     - gpkg_layer: exploit_polygons
+      gcover_layer: GC_ROCK_BODIES/GC_EXPLOIT_GEOMAT_PLG
       connection_ref: postgis_wms
       layer_type: polygon
       field_types:
@@ -325,6 +326,7 @@ layers:
 
 
     - gpkg_layer: unco_deposits
+      gcover_layer: GC_ROCK_BODIES/GC_UNCO_DESPOSIT
       connection_ref: postgis_wms
       layer_type: polygon
       field_types:
@@ -403,6 +405,7 @@ layers:
     # Complex case: Multiple classifications for same layer
     # Bedrock example with complex field mapping
     - gpkg_layer: bedrock
+      gcover_layer: GC_ROCK_BODIES/GC_BEDROCK
       connection_ref: postgis_wms
       layer_type: polygon
       template: templates/bedrock.html

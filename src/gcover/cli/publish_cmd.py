@@ -2190,3 +2190,206 @@ def list_sources(
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise click.Abort()
+
+
+@publish_commands.command()
+@click.pass_context
+@click.argument("filegdb", type=click.Path(exists=True, path_type=Path))
+@click.argument("classification_db", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "-a", "--attribute",
+    "attributes",
+    multiple=True,
+    required=True,
+    help="Attribute(s) to copy (can be specified multiple times)"
+)
+@click.option(
+    "-c", "--config-file",
+    type=click.Path(exists=True, path_type=Path),
+    help="YAML config file with layer mapping (same format as apply-config)"
+)
+@click.option(
+    "--uuid-field",
+    default="UUID",
+    show_default=True,
+    help="UUID field name for joining"
+)
+@click.option(
+    "--feature-dataset",
+    default="GC_ROCK_BODIES",
+    show_default=True,
+    help="Feature dataset in FileGDB containing target layers"
+)
+@click.option(
+    "--layer",
+    "layers",
+    multiple=True,
+    help="Specific layer(s) to process (default: all from config or auto-detect)"
+)
+@click.option(
+    "--dryrun", "-n",
+    is_flag=True,
+    help="Show what would be updated without making changes"
+)
+def writeback(
+        ctx,
+        filegdb: Path,
+        classification_db: Path,
+        attributes: tuple[str, ...],
+        config_file: Optional[Path],
+        uuid_field: str,
+        feature_dataset: str,
+        layers: tuple[str, ...],
+        dryrun: bool,
+):
+    """
+    Write back classification attributes from CLASSIFICATION_DB to FILEGDB.
+
+    Uses layer mapping from YAML config file (same format as apply-config),
+    or auto-detects matching layers by name.
+
+    \b
+    Examples:
+        # Write back using config file for layer mapping
+        python writeback_classification.py data.gdb classified.gpkg \\
+            -a SYMBOL -a LABEL \\
+            -c config/esri_classifier.yaml
+
+        # Auto-detect layers (no config)
+        python writeback_classification.py data.gdb classified.gpkg \\
+            -a class_id -a class_label
+
+        # Dryrun on specific layer
+        python writeback_classification.py data.gdb classified.gpkg \\
+            -a SYMBOL --layer GC_BEDROCK -n
+    """
+    verbose = ctx.obj.get("verbose", False)
+
+
+    attributes = list(attributes)
+
+    click.echo(f"Source FileGDB: {filegdb}")
+    click.echo(f"Classification DB: {classification_db}")
+    click.echo(f"Attributes: {', '.join(attributes)}")
+
+    from gcover.publish.writeback import update_filegdb_layer, load_layer_mapping_from_config, build_uuid_lookup, list_gpkg_layers, list_filegdb_layers, get_matching_layers_from_config, get_matching_layers_auto
+
+    if dryrun:
+        click.secho("=== DRYRUN MODE ===", fg="yellow", bold=True)
+
+    # Load layer mapping from config if provided
+    config_mapping = {}
+    if config_file:
+        click.echo(f"Config file: {config_file}")
+        config_mapping = load_layer_mapping_from_config(config_file)
+        click.echo(f"  Loaded {len(config_mapping)} layer mappings from config")
+
+    # List available layers
+    gpkg_layers = list_gpkg_layers(classification_db)
+    click.echo(f"\nGPKG layers: {len(gpkg_layers)}")
+    gdb_layers = list_filegdb_layers(filegdb, feature_dataset)
+
+
+    click.echo(f"FileGDB layers in {feature_dataset}: {len(gdb_layers)}")
+
+    # Find matching layers
+    if layers:
+        # Use specified layers - try to find matching GDB layer for each
+        matches = []
+        gdb_lookup = {lyr.upper(): lyr for lyr in gdb_layers}
+        for lyr in layers:
+            gpkg_lyr = lyr
+            # Check if it's in config mapping
+            if config_mapping and lyr in config_mapping:
+                gdb_lyr = extract_layer_name(config_mapping[lyr])
+            else:
+                gdb_lyr = extract_layer_name(lyr)
+
+            # Find in GDB
+            if gdb_lyr in gdb_layers:
+                matches.append((gpkg_lyr, gdb_lyr))
+            elif gdb_lyr.upper() in gdb_lookup:
+                matches.append((gpkg_lyr, gdb_lookup[gdb_lyr.upper()]))
+            else:
+                click.secho(f"  Warning: Layer {lyr} not found in FileGDB", fg="yellow")
+    elif config_mapping:
+        # Use config mapping
+        matches = get_matching_layers_from_config(config_mapping, gpkg_layers, gdb_layers)
+    else:
+        # Auto-detect
+        matches = get_matching_layers_auto(gpkg_layers, gdb_layers)
+
+    if not matches:
+        click.secho("No matching layers found!", fg="red")
+        raise SystemExit(1)
+
+    click.echo(f"Matching layers: {len(matches)}")
+    for gpkg_lyr, gdb_lyr in matches:
+        if gpkg_lyr != gdb_lyr:
+            click.echo(f"  • {gpkg_lyr} → {gdb_lyr}")
+        else:
+            click.echo(f"  • {gpkg_lyr}")
+
+    # Process each matching layer
+    total_stats = {"matched": 0, "updated": 0, "skipped": 0, "not_found": 0}
+
+    for gpkg_layer, gdb_layer in matches:
+        click.echo(f"\n{'─' * 50}")
+        click.echo(f"Processing: {gpkg_layer} → {gdb_layer}")
+
+        # Build lookup from classification DB
+        try:
+            uuid_lookup = build_uuid_lookup(
+                classification_db, gpkg_layer, uuid_field, attributes
+            )
+        except Exception as e:
+            click.secho(f"  Error reading {gpkg_layer}: {e}", fg="red")
+            continue
+
+        click.echo(f"  Classification records: {len(uuid_lookup)}")
+
+        if not uuid_lookup:
+            click.secho("  No records with UUID, skipping", fg="yellow")
+            continue
+
+        # Update FileGDB
+        try:
+            stats = update_filegdb_layer(
+                filegdb,
+                feature_dataset,
+                gdb_layer,
+                uuid_lookup,
+                uuid_field,
+                attributes,
+                dryrun=dryrun
+            )
+        except Exception as e:
+            click.secho(f"  Error updating {gdb_layer}: {e}", fg="red")
+            if verbose:
+                import traceback
+                traceback.print_exc()
+            continue
+
+        # Report
+        click.echo(f"  Matched: {stats['matched']}")
+        if stats["updated"]:
+            click.secho(f"  Updated: {stats['updated']}", fg="green")
+        if stats["skipped"]:
+            click.echo(f"  Skipped (no change): {stats['skipped']}")
+        if stats["not_found"]:
+            click.secho(f"  Not in classification: {stats['not_found']}", fg="yellow")
+
+        # Accumulate
+        for k in total_stats:
+            total_stats[k] += stats[k]
+
+    # Summary
+    click.echo(f"\n{'═' * 50}")
+    click.secho("SUMMARY", bold=True)
+    click.echo(f"Total matched: {total_stats['matched']}")
+    click.echo(f"Total updated: {total_stats['updated']}")
+    click.echo(f"Total skipped: {total_stats['skipped']}")
+    click.echo(f"Total not found: {total_stats['not_found']}")
+
+    if dryrun:
+        click.secho("\nNo changes made (dryrun mode)", fg="yellow")
