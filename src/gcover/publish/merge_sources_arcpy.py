@@ -540,21 +540,22 @@ class GDBMergerArcPy:
             self._log_error(f"Error copying table {table_name}: {e}")
             self._log_debug(f"    ArcPy messages: {arcpy.GetMessages()}")
             return False
-    
+
     def _cleanup_scratch(self) -> None:
         """Clean up scratch workspace."""
-        
+
         self._log_debug("Cleaning up scratch workspace...")
-        
+
         # Delete cached clip geometries
         for cache_key, fc_path in self._clip_fc_cache.items():
             try:
                 if arcpy.Exists(fc_path):
                     arcpy.management.Delete(fc_path)
                     self._log_debug(f"  Deleted: {fc_path}")
-            except:
-                pass
-                
+            except (arcpy.ExecuteError, RuntimeError, Exception) as e:
+                # Scratch workspace may be auto-cleaned by arcpy, ignore errors
+                self._log_debug(f"  Could not delete {fc_path} (probably already cleaned): {e}")
+
         self._clip_fc_cache.clear()
     
     def _cleanup_output_gdb(self) -> None:
