@@ -365,10 +365,23 @@ class GDBMergerArcPy:
         source_path: Path,
         mapsheet_numbers: List[int],
         output_fc: str,
-        source_name: str
-    ) -> int:
-        """Clip layer from source and append to output."""
+        source_name: str,
+        append_mode: bool = False
+    ) -> Tuple[int, bool]:
+        """
+        Clip layer from source and append to output.
         
+        Args:
+            layer_name: Full layer path (e.g., "GC_ROCK_BODIES/GC_BEDROCK")
+            source_path: Path to source GDB
+            mapsheet_numbers: List of mapsheet numbers to clip to
+            output_fc: Output feature class path
+            source_name: Name of source for tracking
+            append_mode: If True, append to existing FC. If False, create new FC.
+            
+        Returns:
+            Tuple of (feature_count, fc_was_created)
+        """
         import os
         
         actual_layer = layer_name.split("/")[-1]
@@ -384,10 +397,11 @@ class GDBMergerArcPy:
         self._log_debug(f"  Processing {source_name}:{actual_layer}")
         self._log_debug(f"    Source FC: {source_fc}")
         self._log_debug(f"    Output FC: {output_fc}")
+        self._log_debug(f"    Append mode: {append_mode}")
             
         if not arcpy.Exists(source_fc):
-            self._log_debug(f"    Layer not found, skipping")
-            return 0
+            self._log_debug(f"    Layer not found in source, skipping")
+            return 0, False
         
         # Get source feature count
         source_count = int(arcpy.management.GetCount(source_fc)[0])
@@ -398,7 +412,7 @@ class GDBMergerArcPy:
         
         if clip_fc is None:
             self._log_warning(f"    No clip geometry for {source_name}")
-            return 0
+            return 0, False
         
         try:
             start_time = time.time()
@@ -428,6 +442,8 @@ class GDBMergerArcPy:
             clip_time = time.time() - start_time
             self._log_debug(f"    Clipped {count} features in {clip_time:.2f}s")
             
+            fc_was_created = False
+            
             if count > 0:
                 # Add source tracking field if not exists
                 existing_fields = [f.name for f in arcpy.ListFields(clipped_fc)]
@@ -440,18 +456,13 @@ class GDBMergerArcPy:
                     clipped_fc, "_MERGE_SOURCE", f"'{source_name}'", "PYTHON3"
                 )
                 
-                # Check if output FC already exists - normalize path for comparison
-                output_fc_normalized = os.path.normpath(output_fc)
-                output_exists = arcpy.Exists(output_fc_normalized)
-                self._log_debug(f"    Output exists check ({output_fc_normalized}): {output_exists}")
-                
-                if output_exists:
+                if append_mode:
                     # Append to existing FC
-                    self._log_debug(f"    Appending {count} features to existing output")
+                    self._log_debug(f"    Appending {count} features to existing FC")
                     try:
                         arcpy.management.Append(
                             inputs=clipped_fc, 
-                            target=output_fc_normalized, 
+                            target=output_fc, 
                             schema_type="NO_TEST"
                         )
                         self._log_debug(f"    Append successful")
@@ -460,26 +471,21 @@ class GDBMergerArcPy:
                         self._log_debug(f"    ArcPy messages: {arcpy.GetMessages()}")
                         count = 0
                 else:
-                    # Create new FC by copying - ensure parent feature dataset exists
-                    self._log_debug(f"    Creating new output FC: {output_fc_normalized}")
-                    arcpy.management.CopyFeatures(clipped_fc, output_fc_normalized)
-                    
-                    # Verify it was created at the expected path
-                    if arcpy.Exists(output_fc_normalized):
-                        self._log_debug(f"    Created successfully")
-                    else:
-                        self._log_error(f"    Failed to create output FC at expected path!")
-                        count = 0
+                    # Create new FC by copying
+                    self._log_debug(f"    Creating new output FC")
+                    arcpy.management.CopyFeatures(clipped_fc, output_fc)
+                    fc_was_created = True
+                    self._log_debug(f"    Created FC successfully")
                     
             # Cleanup clipped features
             arcpy.management.Delete(clipped_fc)
             
-            return count
+            return count, fc_was_created
             
         except arcpy.ExecuteError as e:
             self._log_error(f"ArcPy error clipping {layer_name}: {e}")
             self._log_debug(f"    Full error: {arcpy.GetMessages(2)}")
-            return 0
+            return 0, False
     
     def _copy_table(self, table_name: str, source_path: Path) -> bool:
         """Copy a non-spatial table from source to output."""
@@ -584,37 +590,22 @@ class GDBMergerArcPy:
                     self._log_debug(f"  Output FC: {output_fc}")
                     
                     layer_total = 0
+                    layer_fc_created = False  # Track if we've created the output FC for this layer
                     
                     for source_name, mapsheet_numbers in mapsheets_by_source.items():
                         source_path = self._resolve_source_path(source_name)
                         if source_path is None:
                             self._log_warning(f"Source not found: {source_name}")
                             continue
-                            
-                        count = self._clip_and_append_layer(
-                            layer_name, source_path, mapsheet_numbers, output_fc, source_name
+                        
+                        # Clip and get count
+                        count, fc_was_created = self._clip_and_append_layer(
+                            layer_name, source_path, mapsheet_numbers, output_fc, source_name,
+                            append_mode=layer_fc_created  # If FC already created, use append
                         )
                         
-                        layer_total += count
-                        self.stats.features_per_source[source_name] = \
-                            self.stats.features_per_source.get(source_name, 0) + count
-                    
-                    layer_elapsed = time.time() - layer_start_time
-                    
-                    if layer_total > 0:
-                        self.stats.features_per_layer[layer_name] = layer_total
-                        self.stats.layers_processed += 1
-                        console.print(f"  [green]✓[/green] {actual_layer}: {layer_total:,} features ({layer_elapsed:.1f}s)")
-                    else:
-                        console.print(f"  [yellow]○[/yellow] {actual_layer}: no features")
-                        
-                    progress.advance(layers_task)
-                            self._log_warning(f"Source not found: {source_name}")
-                            continue
-                            
-                        count = self._clip_and_append_layer(
-                            layer_name, source_path, mapsheet_numbers, output_fc, source_name
-                        )
+                        if fc_was_created:
+                            layer_fc_created = True
                         
                         layer_total += count
                         self.stats.features_per_source[source_name] = \
