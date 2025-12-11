@@ -23,6 +23,8 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
+from gcover.config import DEFAULT_EXCLUDED_FIELDS
+
 from gcover.cli.main import _split_bbox
 from gcover.config import SDE_INSTANCES, AppConfig, load_config
 from gcover.publish.esri_classification_applicator import ClassificationApplicator
@@ -87,7 +89,6 @@ def publish_commands(ctx):
 @publish_commands.command()
 @click.pass_context
 @click.argument("input", type=click.Path(exists=True, path_type=Path))
-@click.option("--use-arcpy", is_flag=True, help="Force JSON parsing (no arcpy)")
 @click.option("--quiet", is_flag=True, help="Suppress rich display")
 @click.option(
     "--explore",
@@ -112,7 +113,6 @@ def publish_commands(ctx):
 def extract_classification(
     ctx,
     input,
-    use_arcpy,
     quiet,
     explore,
     export,
@@ -122,6 +122,7 @@ def extract_classification(
     """Extract ESRI layer classification information from .lyrx files."""
     logger.info(f"COMMAND START: apply-config")
     verbose = ctx.obj.get("verbose", False)
+    use_arcpy = False
 
     if verbose and quiet:
         console.print(
@@ -138,7 +139,7 @@ def extract_classification(
             )
             raise click.Abort()
 
-        structure = explore_layer_structure(input_path, use_arcpy=use_arcpy)
+        structure = explore_layer_structure(input_path)
         # You can optionally display or return structure here
 
     elif input_path.suffix.lower() == ".lyrx":
@@ -1787,6 +1788,11 @@ def show_sample_data(layer_name: str, sample_gdf: gpd.GeoDataFrame):
     help="Force 2D geometries (drop Z coordinates) - useful if 3D causes issues",
 )
 @click.option(
+    "--exclude-metadata",
+    is_flag=True,
+    help="Exclude metadata fields (CREATED_USER, LAST_EDITED_DATE, GlobalID, etc.)",
+)
+@click.option(
     "--dry-run",
     is_flag=True,
     help="Show what would be processed without executing",
@@ -1806,6 +1812,7 @@ def merge(
         layers: tuple,
         skip_tables: bool,
         force_2d: bool,
+        exclude_metadata: bool,
         dry_run: bool,
 ):
     """
@@ -1923,6 +1930,7 @@ def merge(
         reference_source=reference_source,
         mapsheet_numbers=mapsheet_numbers,
         preserve_z=not force_2d,  # If force_2d, don't preserve Z
+        exclude_fields=DEFAULT_EXCLUDED_FIELDS if exclude_metadata else None,
     )
 
     # Override layers if specified
@@ -1933,7 +1941,15 @@ def merge(
     if skip_tables:
         config.non_spatial_tables = []
 
+    verbose = ctx.obj.get("verbose", False)
+
     console.print(f"\n[bold blue]🔀 GeoCover Source Merger[/bold blue]\n")
+
+    if exclude_metadata:
+        console.print(f"[dim]Excluding metadata fields: {', '.join(DEFAULT_EXCLUDED_FIELDS)}[/dim]")
+
+    if verbose:
+        console.print("[dim]Verbose mode enabled[/dim]")
 
     # Display configuration
     _display_merge_config(config, dry_run)
@@ -1949,16 +1965,18 @@ def merge(
         console.print("Merge cancelled.")
         return
 
-    # Execute merge
+    # Execute merge - try arcpy first if available
     try:
-        from gcover.arcpy_compat import HAS_ARCPY, arcpy
-        if HAS_ARCPY:
+        from gcover.arcpy_compat import HAS_ARCPY
+
+        if HAS_ARCPY and output.suffix.lower() == ".gdb":
+            console.print("[cyan]Using arcpy-based merger (optimal for FileGDB)[/cyan]")
             from gcover.publish.merge_sources_arcpy import GDBMergerArcPy
-            merger = GDBMergerArcPy(config)
-            logger.info("Using arcpy-based merger for optimal FileGDB handling")
+            merger = GDBMergerArcPy(config, verbose=verbose)
         else:
-            logger.info("Using geopandas-based merger")
-            merger = GDBMerger(config)
+            if output.suffix.lower() == ".gdb":
+                console.print("[yellow]arcpy not available, using geopandas-based merger[/yellow]")
+            merger = GDBMerger(config, verbose=verbose)
 
         stats = merger.merge()
 
@@ -2097,7 +2115,6 @@ def _preview_merge(config: MergeConfig) -> None:
     "--admin-zones",
     "-a",
     type=click.Path(exists=True, path_type=Path),
-    default=DEFAULT_ZONES_PATH,
     help="Path to administrative_zones.gpkg (uses default if not specified)",
 )
 @click.option(

@@ -180,10 +180,13 @@ class GDBMergerArcPy:
     def _create_feature_dataset(self, name: str = "GC_ROCK_BODIES") -> str:
         """Create feature dataset in output GDB."""
         
-        output_path = self.config.output_path
-        feature_dataset_path = str(output_path / name)
+        import os
+        
+        output_gdb = str(self.config.output_path)
+        feature_dataset_path = os.path.join(output_gdb, name)
         
         self._log_info(f"Creating feature dataset: {name}")
+        self._log_debug(f"  Full path: {feature_dataset_path}")
         
         if not arcpy.Exists(feature_dataset_path):
             # Get spatial reference from first source
@@ -191,7 +194,7 @@ class GDBMergerArcPy:
             for source in self.sources.values():
                 for layer in self.config.spatial_layers:
                     layer_name = layer.split("/")[-1]
-                    source_fc = str(source.path / "GC_ROCK_BODIES" / layer_name)
+                    source_fc = os.path.join(str(source.path), "GC_ROCK_BODIES", layer_name)
                     if arcpy.Exists(source_fc):
                         sr = arcpy.Describe(source_fc).spatialReference
                         self._log_debug(f"  Using spatial reference from: {source_fc}")
@@ -202,13 +205,21 @@ class GDBMergerArcPy:
                     
             if sr:
                 arcpy.management.CreateFeatureDataset(
-                    out_dataset_path=str(output_path),
+                    out_dataset_path=output_gdb,
                     out_name=name,
                     spatial_reference=sr
                 )
                 self._log_debug(f"  Feature dataset created")
+                
+                # Verify it was created
+                if arcpy.Exists(feature_dataset_path):
+                    self._log_debug(f"  Verified: feature dataset exists")
+                else:
+                    self._log_error(f"  Feature dataset creation failed!")
             else:
                 self._log_warning("Could not determine spatial reference for feature dataset")
+        else:
+            self._log_debug(f"  Feature dataset already exists")
                 
         return feature_dataset_path
     
@@ -358,17 +369,21 @@ class GDBMergerArcPy:
     ) -> int:
         """Clip layer from source and append to output."""
         
+        import os
+        
         actual_layer = layer_name.split("/")[-1]
         
-        # Source feature class path
+        # Source feature class path - use os.path.join for proper Windows paths
+        source_gdb = str(source_path)
         if "/" in layer_name:
             feature_dataset = layer_name.split("/")[0]
-            source_fc = str(source_path / feature_dataset / actual_layer)
+            source_fc = os.path.join(source_gdb, feature_dataset, actual_layer)
         else:
-            source_fc = str(source_path / actual_layer)
+            source_fc = os.path.join(source_gdb, actual_layer)
         
         self._log_debug(f"  Processing {source_name}:{actual_layer}")
         self._log_debug(f"    Source FC: {source_fc}")
+        self._log_debug(f"    Output FC: {output_fc}")
             
         if not arcpy.Exists(source_fc):
             self._log_debug(f"    Layer not found, skipping")
@@ -388,15 +403,18 @@ class GDBMergerArcPy:
         try:
             start_time = time.time()
             
-            # Clip features
+            # Sanitize source_name for use in FC names
+            safe_source = source_name.replace(".", "_").replace("/", "_").replace("\\", "_").replace(" ", "_")
+            
+            # Clip features to scratch
             clipped_fc = arcpy.CreateScratchName(
-                prefix=f"clipped_{actual_layer}_{source_name}_", 
+                prefix=f"clp_{actual_layer[:10]}_{safe_source[:10]}_", 
                 suffix="", 
                 data_type="FeatureClass", 
                 workspace=arcpy.env.scratchGDB
             )
             
-            self._log_debug(f"    Clipping to: {clipped_fc}")
+            self._log_debug(f"    Clipping to scratch: {clipped_fc}")
             
             arcpy.analysis.Clip(
                 in_features=source_fc,
@@ -422,13 +440,36 @@ class GDBMergerArcPy:
                     clipped_fc, "_MERGE_SOURCE", f"'{source_name}'", "PYTHON3"
                 )
                 
-                # Append to output or create new
-                if arcpy.Exists(output_fc):
-                    self._log_debug(f"    Appending to existing output")
-                    arcpy.management.Append(clipped_fc, output_fc, "NO_TEST")
+                # Check if output FC already exists - normalize path for comparison
+                output_fc_normalized = os.path.normpath(output_fc)
+                output_exists = arcpy.Exists(output_fc_normalized)
+                self._log_debug(f"    Output exists check ({output_fc_normalized}): {output_exists}")
+                
+                if output_exists:
+                    # Append to existing FC
+                    self._log_debug(f"    Appending {count} features to existing output")
+                    try:
+                        arcpy.management.Append(
+                            inputs=clipped_fc, 
+                            target=output_fc_normalized, 
+                            schema_type="NO_TEST"
+                        )
+                        self._log_debug(f"    Append successful")
+                    except arcpy.ExecuteError as append_err:
+                        self._log_error(f"    Append failed: {append_err}")
+                        self._log_debug(f"    ArcPy messages: {arcpy.GetMessages()}")
+                        count = 0
                 else:
-                    self._log_debug(f"    Creating output: {output_fc}")
-                    arcpy.management.CopyFeatures(clipped_fc, output_fc)
+                    # Create new FC by copying - ensure parent feature dataset exists
+                    self._log_debug(f"    Creating new output FC: {output_fc_normalized}")
+                    arcpy.management.CopyFeatures(clipped_fc, output_fc_normalized)
+                    
+                    # Verify it was created at the expected path
+                    if arcpy.Exists(output_fc_normalized):
+                        self._log_debug(f"    Created successfully")
+                    else:
+                        self._log_error(f"    Failed to create output FC at expected path!")
+                        count = 0
                     
             # Cleanup clipped features
             arcpy.management.Delete(clipped_fc)
@@ -488,6 +529,8 @@ class GDBMergerArcPy:
     def merge(self) -> MergeStats:
         """Execute the merge operation using arcpy."""
         
+        import os
+        
         console.print("\n[bold blue]🔀 Starting ArcPy GDB Merge[/bold blue]\n")
         
         total_start_time = time.time()
@@ -498,6 +541,7 @@ class GDBMergerArcPy:
             
             # Create feature dataset
             feature_dataset = self._create_feature_dataset()
+            self._log_debug(f"Feature dataset path: {feature_dataset}")
             
             # Load mapsheet assignments
             mapsheets_by_source = self._load_mapsheets_arcpy()
@@ -528,20 +572,43 @@ class GDBMergerArcPy:
                     
                     layer_start_time = time.time()
                     
-                    # Determine output location
+                    # Determine output location using os.path.join for proper path format
+                    output_gdb = str(self.config.output_path)
                     if "/" in layer_name:
-                        output_fc = str(self.config.output_path / "GC_ROCK_BODIES" / actual_layer)
+                        # Layer is in a feature dataset
+                        output_fc = os.path.join(output_gdb, "GC_ROCK_BODIES", actual_layer)
                     else:
-                        output_fc = str(self.config.output_path / actual_layer)
+                        output_fc = os.path.join(output_gdb, actual_layer)
                     
                     self._log_debug(f"Layer: {layer_name}")
-                    self._log_debug(f"  Output: {output_fc}")
+                    self._log_debug(f"  Output FC: {output_fc}")
                     
                     layer_total = 0
                     
                     for source_name, mapsheet_numbers in mapsheets_by_source.items():
                         source_path = self._resolve_source_path(source_name)
                         if source_path is None:
+                            self._log_warning(f"Source not found: {source_name}")
+                            continue
+                            
+                        count = self._clip_and_append_layer(
+                            layer_name, source_path, mapsheet_numbers, output_fc, source_name
+                        )
+                        
+                        layer_total += count
+                        self.stats.features_per_source[source_name] = \
+                            self.stats.features_per_source.get(source_name, 0) + count
+                    
+                    layer_elapsed = time.time() - layer_start_time
+                    
+                    if layer_total > 0:
+                        self.stats.features_per_layer[layer_name] = layer_total
+                        self.stats.layers_processed += 1
+                        console.print(f"  [green]✓[/green] {actual_layer}: {layer_total:,} features ({layer_elapsed:.1f}s)")
+                    else:
+                        console.print(f"  [yellow]○[/yellow] {actual_layer}: no features")
+                        
+                    progress.advance(layers_task)
                             self._log_warning(f"Source not found: {source_name}")
                             continue
                             
