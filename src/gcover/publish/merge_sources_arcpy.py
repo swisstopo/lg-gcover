@@ -471,9 +471,18 @@ class GDBMergerArcPy:
                         self._log_debug(f"    ArcPy messages: {arcpy.GetMessages()}")
                         count = 0
                 else:
-                    # Create new FC by copying
+                    # Create new FC - use FeatureClassToFeatureClass to avoid copying relationship classes
                     self._log_debug(f"    Creating new output FC")
-                    arcpy.management.CopyFeatures(clipped_fc, output_fc)
+                    
+                    # Parse output path to get folder and name
+                    output_dir = os.path.dirname(output_fc)
+                    output_name = os.path.basename(output_fc)
+                    
+                    arcpy.conversion.FeatureClassToFeatureClass(
+                        in_features=clipped_fc,
+                        out_path=output_dir,
+                        out_name=output_name
+                    )
                     fc_was_created = True
                     self._log_debug(f"    Created FC successfully")
                     
@@ -488,22 +497,37 @@ class GDBMergerArcPy:
             return 0, False
     
     def _copy_table(self, table_name: str, source_path: Path) -> bool:
-        """Copy a non-spatial table from source to output."""
+        """Copy a non-spatial table from source to output using TableToTable to avoid relationship class issues."""
         
-        source_table = str(source_path / table_name)
-        output_table = str(self.config.output_path / table_name)
+        import os
+        
+        source_table = os.path.join(str(source_path), table_name)
+        output_gdb = str(self.config.output_path)
         
         self._log_debug(f"  Copying table: {table_name}")
         self._log_debug(f"    From: {source_table}")
-        self._log_debug(f"    To: {output_table}")
+        self._log_debug(f"    To: {output_gdb}")
         
         if not arcpy.Exists(source_table):
             self._log_warning(f"Table not found: {source_table}")
             return False
+        
+        # Check if table already exists in output
+        output_table = os.path.join(output_gdb, table_name)
+        if arcpy.Exists(output_table):
+            self._log_debug(f"    Table already exists, skipping")
+            return True
             
         try:
             start_time = time.time()
-            arcpy.management.Copy(source_table, output_table)
+            
+            # Use TableToTable_conversion instead of Copy to avoid copying relationship classes
+            # This copies only the table data without relationship class metadata
+            arcpy.conversion.TableToTable(
+                in_rows=source_table,
+                out_path=output_gdb,
+                out_name=table_name
+            )
             
             # Get row count
             row_count = int(arcpy.management.GetCount(output_table)[0])
@@ -514,6 +538,7 @@ class GDBMergerArcPy:
             
         except arcpy.ExecuteError as e:
             self._log_error(f"Error copying table {table_name}: {e}")
+            self._log_debug(f"    ArcPy messages: {arcpy.GetMessages()}")
             return False
     
     def _cleanup_scratch(self) -> None:
@@ -531,6 +556,114 @@ class GDBMergerArcPy:
                 pass
                 
         self._clip_fc_cache.clear()
+    
+    def _cleanup_output_gdb(self) -> None:
+        """
+        Clean up the output GDB by removing duplicate feature classes and relationship classes.
+        
+        This handles cases where arcpy auto-creates duplicates (FC_1, FC_2, etc.) or
+        copies relationship classes/junction tables we don't want.
+        """
+        import os
+        import re
+        
+        output_gdb = str(self.config.output_path)
+        self._log_info("Cleaning up output GDB...")
+        
+        # Get list of expected layer names (without duplicates)
+        expected_spatial = set()
+        for layer_path in self.config.spatial_layers:
+            layer_name = layer_path.split("/")[-1]
+            expected_spatial.add(layer_name)
+        
+        expected_tables = set(self.config.non_spatial_tables)
+        
+        self._log_debug(f"  Expected spatial layers: {expected_spatial}")
+        self._log_debug(f"  Expected tables: {expected_tables}")
+        
+        # Pattern to match duplicates like GC_BEDROCK_1, GC_BEDROCK_2, etc.
+        duplicate_pattern = re.compile(r'^(.+)_(\d+)$')
+        
+        # Also pattern for relationship class junction tables
+        # These typically have names like GC_UN_DEP_COMPOSIT_GC_COMPOS
+        relationship_pattern = re.compile(r'^GC_\w+_GC_\w+$')
+        
+        items_to_delete = []
+        
+        # Walk through the GDB
+        arcpy.env.workspace = output_gdb
+        
+        # Check feature datasets
+        for fds in arcpy.ListDatasets(feature_type='Feature') or []:
+            fds_path = os.path.join(output_gdb, fds)
+            
+            # Check feature classes in this dataset
+            for fc in arcpy.ListFeatureClasses(feature_dataset=fds) or []:
+                match = duplicate_pattern.match(fc)
+                if match:
+                    base_name = match.group(1)
+                    if base_name in expected_spatial:
+                        # This is a duplicate (e.g., GC_BEDROCK_1 when GC_BEDROCK exists)
+                        fc_path = os.path.join(fds_path, fc)
+                        items_to_delete.append(fc_path)
+                        self._log_debug(f"  Will delete duplicate FC: {fc}")
+            
+            # Check for duplicate feature datasets (GC_ROCK_BODIES_1, etc.)
+            fds_match = duplicate_pattern.match(fds)
+            if fds_match and fds_match.group(1) == "GC_ROCK_BODIES":
+                fds_path = os.path.join(output_gdb, fds)
+                items_to_delete.append(fds_path)
+                self._log_debug(f"  Will delete duplicate feature dataset: {fds}")
+        
+        # Check standalone feature classes
+        for fc in arcpy.ListFeatureClasses() or []:
+            match = duplicate_pattern.match(fc)
+            if match:
+                base_name = match.group(1)
+                if base_name in expected_spatial:
+                    fc_path = os.path.join(output_gdb, fc)
+                    items_to_delete.append(fc_path)
+                    self._log_debug(f"  Will delete duplicate standalone FC: {fc}")
+        
+        # Check tables
+        for table in arcpy.ListTables() or []:
+            # Check for duplicates of expected tables
+            match = duplicate_pattern.match(table)
+            if match:
+                base_name = match.group(1)
+                if base_name in expected_tables:
+                    table_path = os.path.join(output_gdb, table)
+                    items_to_delete.append(table_path)
+                    self._log_debug(f"  Will delete duplicate table: {table}")
+            
+            # Check for relationship class junction tables (unless they're expected)
+            if relationship_pattern.match(table) and table not in expected_tables:
+                table_path = os.path.join(output_gdb, table)
+                items_to_delete.append(table_path)
+                self._log_debug(f"  Will delete relationship table: {table}")
+        
+        # Check relationship classes and delete them
+        for rc in arcpy.ListDatasets(feature_type='RelationshipClass') or []:
+            rc_path = os.path.join(output_gdb, rc)
+            items_to_delete.append(rc_path)
+            self._log_debug(f"  Will delete relationship class: {rc}")
+        
+        # Delete items
+        deleted_count = 0
+        for item_path in items_to_delete:
+            try:
+                if arcpy.Exists(item_path):
+                    arcpy.management.Delete(item_path)
+                    deleted_count += 1
+                    self._log_debug(f"  Deleted: {item_path}")
+            except arcpy.ExecuteError as e:
+                self._log_warning(f"  Could not delete {item_path}: {e}")
+        
+        if deleted_count > 0:
+            console.print(f"  [yellow]Cleaned up {deleted_count} duplicate/unwanted items[/yellow]")
+        
+        # Reset workspace
+        arcpy.env.workspace = None
     
     def merge(self) -> MergeStats:
         """Execute the merge operation using arcpy."""
@@ -639,7 +772,11 @@ class GDBMergerArcPy:
                 else:
                     self._log_warning(f"Reference source not found: {self.config.reference_source}")
             
-            # Cleanup
+            # Clean up duplicates and relationship classes from output GDB
+            console.print("\n[cyan]Cleaning up output GDB...[/cyan]")
+            self._cleanup_output_gdb()
+            
+            # Cleanup scratch workspace
             self._cleanup_scratch()
             
             # Display results
