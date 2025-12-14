@@ -43,6 +43,8 @@ except ImportError:
     load_gpkg_with_validation = None
 
 
+
+
 # Configure rich console
 console = Console()
 
@@ -53,6 +55,9 @@ logger.add(
     format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
     level="INFO",
 )
+
+# Define the attributes you want to transfer from mapsheets_gdf
+MAPSHEET_ATTRIBUTES = ["MSH_MAP_TITLE", "MSH_MAP_NBR"]
 
 # Field domain mapping for coded domain decoding
 FIELD_DOMAIN_MAPPING = {
@@ -1221,6 +1226,11 @@ def create_summary_table(results: Dict[str, gpd.GeoDataFrame]) -> Table:
     help="Remove metadata columns (dates, origins, revisions, etc.)",
 )
 @click.option(
+    "--add-mapsheet-metadata",
+    is_flag=True,
+    help=f"Add mapsheet attributes ({",".join(MAPSHEET_ATTRIBUTES)})",
+)
+@click.option(
     "--split-layer",
     is_flag=True,
     help="Split layers on mapsheet border",
@@ -1244,6 +1254,7 @@ def denormalize_geocover(
     split_layer: bool,
     overwrite: bool,
     dry_run: bool,
+    add_mapsheet_metadata: bool
 ):
     """
     Denormalize GeoCover geodatabase tables with their lookup relationships.
@@ -1271,6 +1282,8 @@ def denormalize_geocover(
             border_style="blue",
         )
     )
+    if add_mapsheet_metadata and not split_layer:
+        click.Abort("You must use --split-layer with --add-mapsheet-metadata")
 
     # Validate input
     if not gdb_path.exists():
@@ -1339,8 +1352,19 @@ def denormalize_geocover(
                 console.print(f"   Input : {original_feat_nb} features")
                 console.print(f"   Mapsheets: {len(mapsheets_gdf)}")
 
+
+
                 try:
-                    if not (input_gdf.geom_type == "Point").all():
+                    # 1. Check if the layer contains only POINT geometries
+                    is_point_layer = (input_gdf.geom_type == "Point").all()
+                    original_feat_nb = len(input_gdf)  # Define this to track changes
+
+                    if not is_point_layer:
+                        # --- A. Splitting (Lines/Polygons) ---
+                        console.print(f"    Splitting {name} geometries...")
+
+                        # Assuming 'split_features_by_mapsheets' returns the split GeoDataFrame
+                        # The resulting GeoDataFrame (splitted_gdf) might still not have the map sheet attributes
                         splitted_gdf = split_features_by_mapsheets(
                             input_gdf=input_gdf,
                             mapsheets_gdf=mapsheets_gdf,
@@ -1348,18 +1372,53 @@ def denormalize_geocover(
                             progress_bar=True,
                             area_threshold=0.1,
                         )
-                        splitted_gdf.to_file("splitted.gpkg")
-                        results[name] = splitted_gdf
-                        splitted_feat_nb = len(splitted_gdf)
+                        if add_mapsheet_metadata:
+                          # --- B. Spatial Join to transfer attributes to the split features ---
+                          # Perform an inner spatial join to transfer the attributes from mapsheets_gdf
+                          # Use 'intersects' for lines/polygons. 'left' join ensures all split pieces are kept.
+                          final_gdf = splitted_gdf.sjoin(
+                            mapsheets_gdf[MAPSHEET_ATTRIBUTES + [mapsheets_gdf.geometry.name]],
+                            how="left",
+                            op="intersects"  # Use 'intersects' for lines and polygons
+                          )
 
+                          # Clean up the join
+                          # Drop the redundant 'index_right' column added by sjoin
+                          final_gdf = final_gdf.drop(columns=["index_right"])
+                        else:
+                            final_gdf = splitted_gdf.copy()
+
+                        splitted_feat_nb = len(final_gdf)
                         diff = splitted_feat_nb - original_feat_nb
                         sign = "+" if diff > 0 else ""
                         console.print(
-                            f"[dim]  After split: {splitted_feat_nb} features ([bold]{sign}{diff}[/bold])[/dim]"
+                            f"[dim]  After split & join: {splitted_feat_nb} features ([bold]{sign}{diff}[/bold])[/dim]"
                         )
 
                     else:
-                        console.print("    Ignoring POINT geometries")
+                        if add_mapsheet_metadata:
+                          # --- C. Direct Spatial Join (Points) ---
+                          console.print(f"    Performing spatial join on POINT geometries...")
+
+                          # Use 'within' or 'intersects' for points
+                          # 'within' is more strict, 'intersects' is generally safe.
+                          final_gdf = input_gdf.sjoin(
+                            mapsheets_gdf[MAPSHEET_ATTRIBUTES + [mapsheets_gdf.geometry.name]],
+                            how="left",
+                            op="within"  # Use 'within' or 'intersects' for points
+                          )
+
+                          # Drop the redundant 'index_right' column added by sjoin
+                          final_gdf = final_gdf.drop(columns=["index_right"])
+                        else:
+                            final_gdf = input_gdf.copy()
+
+                        console.print("    Ignoring POINT geometries for splitting")
+
+                    # --- D. Final steps for both paths ---
+                    results[name] = final_gdf
+                    final_gdf.to_file(f"processed_{name}.gpkg", driver="GPKG")
+
 
                 except Exception as e:
                     logger.error(e)
