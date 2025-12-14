@@ -180,10 +180,13 @@ class GDBMergerArcPy:
     def _create_feature_dataset(self, name: str = "GC_ROCK_BODIES") -> str:
         """Create feature dataset in output GDB."""
         
-        output_path = self.config.output_path
-        feature_dataset_path = str(output_path / name)
+        import os
+        
+        output_gdb = str(self.config.output_path)
+        feature_dataset_path = os.path.join(output_gdb, name)
         
         self._log_info(f"Creating feature dataset: {name}")
+        self._log_debug(f"  Full path: {feature_dataset_path}")
         
         if not arcpy.Exists(feature_dataset_path):
             # Get spatial reference from first source
@@ -191,7 +194,7 @@ class GDBMergerArcPy:
             for source in self.sources.values():
                 for layer in self.config.spatial_layers:
                     layer_name = layer.split("/")[-1]
-                    source_fc = str(source.path / "GC_ROCK_BODIES" / layer_name)
+                    source_fc = os.path.join(str(source.path), "GC_ROCK_BODIES", layer_name)
                     if arcpy.Exists(source_fc):
                         sr = arcpy.Describe(source_fc).spatialReference
                         self._log_debug(f"  Using spatial reference from: {source_fc}")
@@ -202,13 +205,21 @@ class GDBMergerArcPy:
                     
             if sr:
                 arcpy.management.CreateFeatureDataset(
-                    out_dataset_path=str(output_path),
+                    out_dataset_path=output_gdb,
                     out_name=name,
                     spatial_reference=sr
                 )
                 self._log_debug(f"  Feature dataset created")
+                
+                # Verify it was created
+                if arcpy.Exists(feature_dataset_path):
+                    self._log_debug(f"  Verified: feature dataset exists")
+                else:
+                    self._log_error(f"  Feature dataset creation failed!")
             else:
                 self._log_warning("Could not determine spatial reference for feature dataset")
+        else:
+            self._log_debug(f"  Feature dataset already exists")
                 
         return feature_dataset_path
     
@@ -354,25 +365,43 @@ class GDBMergerArcPy:
         source_path: Path,
         mapsheet_numbers: List[int],
         output_fc: str,
-        source_name: str
-    ) -> int:
-        """Clip layer from source and append to output."""
+        source_name: str,
+        append_mode: bool = False
+    ) -> Tuple[int, bool]:
+        """
+        Clip layer from source and append to output.
+        
+        Args:
+            layer_name: Full layer path (e.g., "GC_ROCK_BODIES/GC_BEDROCK")
+            source_path: Path to source GDB
+            mapsheet_numbers: List of mapsheet numbers to clip to
+            output_fc: Output feature class path
+            source_name: Name of source for tracking
+            append_mode: If True, append to existing FC. If False, create new FC.
+            
+        Returns:
+            Tuple of (feature_count, fc_was_created)
+        """
+        import os
         
         actual_layer = layer_name.split("/")[-1]
         
-        # Source feature class path
+        # Source feature class path - use os.path.join for proper Windows paths
+        source_gdb = str(source_path)
         if "/" in layer_name:
             feature_dataset = layer_name.split("/")[0]
-            source_fc = str(source_path / feature_dataset / actual_layer)
+            source_fc = os.path.join(source_gdb, feature_dataset, actual_layer)
         else:
-            source_fc = str(source_path / actual_layer)
+            source_fc = os.path.join(source_gdb, actual_layer)
         
         self._log_debug(f"  Processing {source_name}:{actual_layer}")
         self._log_debug(f"    Source FC: {source_fc}")
+        self._log_debug(f"    Output FC: {output_fc}")
+        self._log_debug(f"    Append mode: {append_mode}")
             
         if not arcpy.Exists(source_fc):
-            self._log_debug(f"    Layer not found, skipping")
-            return 0
+            self._log_debug(f"    Layer not found in source, skipping")
+            return 0, False
         
         # Get source feature count
         source_count = int(arcpy.management.GetCount(source_fc)[0])
@@ -383,20 +412,23 @@ class GDBMergerArcPy:
         
         if clip_fc is None:
             self._log_warning(f"    No clip geometry for {source_name}")
-            return 0
+            return 0, False
         
         try:
             start_time = time.time()
             
-            # Clip features
+            # Sanitize source_name for use in FC names
+            safe_source = source_name.replace(".", "_").replace("/", "_").replace("\\", "_").replace(" ", "_")
+            
+            # Clip features to scratch
             clipped_fc = arcpy.CreateScratchName(
-                prefix=f"clipped_{actual_layer}_{source_name}_", 
+                prefix=f"clp_{actual_layer[:10]}_{safe_source[:10]}_", 
                 suffix="", 
                 data_type="FeatureClass", 
                 workspace=arcpy.env.scratchGDB
             )
             
-            self._log_debug(f"    Clipping to: {clipped_fc}")
+            self._log_debug(f"    Clipping to scratch: {clipped_fc}")
             
             arcpy.analysis.Clip(
                 in_features=source_fc,
@@ -410,6 +442,8 @@ class GDBMergerArcPy:
             clip_time = time.time() - start_time
             self._log_debug(f"    Clipped {count} features in {clip_time:.2f}s")
             
+            fc_was_created = False
+            
             if count > 0:
                 # Add source tracking field if not exists
                 existing_fields = [f.name for f in arcpy.ListFields(clipped_fc)]
@@ -422,41 +456,78 @@ class GDBMergerArcPy:
                     clipped_fc, "_MERGE_SOURCE", f"'{source_name}'", "PYTHON3"
                 )
                 
-                # Append to output or create new
-                if arcpy.Exists(output_fc):
-                    self._log_debug(f"    Appending to existing output")
-                    arcpy.management.Append(clipped_fc, output_fc, "NO_TEST")
+                if append_mode:
+                    # Append to existing FC
+                    self._log_debug(f"    Appending {count} features to existing FC")
+                    try:
+                        arcpy.management.Append(
+                            inputs=clipped_fc, 
+                            target=output_fc, 
+                            schema_type="NO_TEST"
+                        )
+                        self._log_debug(f"    Append successful")
+                    except arcpy.ExecuteError as append_err:
+                        self._log_error(f"    Append failed: {append_err}")
+                        self._log_debug(f"    ArcPy messages: {arcpy.GetMessages()}")
+                        count = 0
                 else:
-                    self._log_debug(f"    Creating output: {output_fc}")
-                    arcpy.management.CopyFeatures(clipped_fc, output_fc)
+                    # Create new FC - use FeatureClassToFeatureClass to avoid copying relationship classes
+                    self._log_debug(f"    Creating new output FC")
+                    
+                    # Parse output path to get folder and name
+                    output_dir = os.path.dirname(output_fc)
+                    output_name = os.path.basename(output_fc)
+                    
+                    arcpy.conversion.FeatureClassToFeatureClass(
+                        in_features=clipped_fc,
+                        out_path=output_dir,
+                        out_name=output_name
+                    )
+                    fc_was_created = True
+                    self._log_debug(f"    Created FC successfully")
                     
             # Cleanup clipped features
             arcpy.management.Delete(clipped_fc)
             
-            return count
+            return count, fc_was_created
             
         except arcpy.ExecuteError as e:
             self._log_error(f"ArcPy error clipping {layer_name}: {e}")
             self._log_debug(f"    Full error: {arcpy.GetMessages(2)}")
-            return 0
+            return 0, False
     
     def _copy_table(self, table_name: str, source_path: Path) -> bool:
-        """Copy a non-spatial table from source to output."""
+        """Copy a non-spatial table from source to output using TableToTable to avoid relationship class issues."""
         
-        source_table = str(source_path / table_name)
-        output_table = str(self.config.output_path / table_name)
+        import os
+        
+        source_table = os.path.join(str(source_path), table_name)
+        output_gdb = str(self.config.output_path)
         
         self._log_debug(f"  Copying table: {table_name}")
         self._log_debug(f"    From: {source_table}")
-        self._log_debug(f"    To: {output_table}")
+        self._log_debug(f"    To: {output_gdb}")
         
         if not arcpy.Exists(source_table):
             self._log_warning(f"Table not found: {source_table}")
             return False
+        
+        # Check if table already exists in output
+        output_table = os.path.join(output_gdb, table_name)
+        if arcpy.Exists(output_table):
+            self._log_debug(f"    Table already exists, skipping")
+            return True
             
         try:
             start_time = time.time()
-            arcpy.management.Copy(source_table, output_table)
+            
+            # Use TableToTable_conversion instead of Copy to avoid copying relationship classes
+            # This copies only the table data without relationship class metadata
+            arcpy.conversion.TableToTable(
+                in_rows=source_table,
+                out_path=output_gdb,
+                out_name=table_name
+            )
             
             # Get row count
             row_count = int(arcpy.management.GetCount(output_table)[0])
@@ -467,26 +538,138 @@ class GDBMergerArcPy:
             
         except arcpy.ExecuteError as e:
             self._log_error(f"Error copying table {table_name}: {e}")
+            self._log_debug(f"    ArcPy messages: {arcpy.GetMessages()}")
             return False
-    
+
     def _cleanup_scratch(self) -> None:
         """Clean up scratch workspace."""
-        
+
         self._log_debug("Cleaning up scratch workspace...")
-        
+
         # Delete cached clip geometries
         for cache_key, fc_path in self._clip_fc_cache.items():
             try:
                 if arcpy.Exists(fc_path):
                     arcpy.management.Delete(fc_path)
                     self._log_debug(f"  Deleted: {fc_path}")
-            except:
-                pass
-                
+            except (arcpy.ExecuteError, RuntimeError, Exception) as e:
+                # Scratch workspace may be auto-cleaned by arcpy, ignore errors
+                self._log_debug(f"  Could not delete {fc_path} (probably already cleaned): {e}")
+
         self._clip_fc_cache.clear()
+    
+    def _cleanup_output_gdb(self) -> None:
+        """
+        Clean up the output GDB by removing duplicate feature classes and relationship classes.
+        
+        This handles cases where arcpy auto-creates duplicates (FC_1, FC_2, etc.) or
+        copies relationship classes/junction tables we don't want.
+        """
+        import os
+        import re
+        
+        output_gdb = str(self.config.output_path)
+        self._log_info("Cleaning up output GDB...")
+        
+        # Get list of expected layer names (without duplicates)
+        expected_spatial = set()
+        for layer_path in self.config.spatial_layers:
+            layer_name = layer_path.split("/")[-1]
+            expected_spatial.add(layer_name)
+        
+        expected_tables = set(self.config.non_spatial_tables)
+        
+        self._log_debug(f"  Expected spatial layers: {expected_spatial}")
+        self._log_debug(f"  Expected tables: {expected_tables}")
+        
+        # Pattern to match duplicates like GC_BEDROCK_1, GC_BEDROCK_2, etc.
+        duplicate_pattern = re.compile(r'^(.+)_(\d+)$')
+        
+        # Also pattern for relationship class junction tables
+        # These typically have names like GC_UN_DEP_COMPOSIT_GC_COMPOS
+        relationship_pattern = re.compile(r'^GC_\w+_GC_\w+$')
+        
+        items_to_delete = []
+        
+        # Walk through the GDB
+        arcpy.env.workspace = output_gdb
+        
+        # Check feature datasets
+        for fds in arcpy.ListDatasets(feature_type='Feature') or []:
+            fds_path = os.path.join(output_gdb, fds)
+            
+            # Check feature classes in this dataset
+            for fc in arcpy.ListFeatureClasses(feature_dataset=fds) or []:
+                match = duplicate_pattern.match(fc)
+                if match:
+                    base_name = match.group(1)
+                    if base_name in expected_spatial:
+                        # This is a duplicate (e.g., GC_BEDROCK_1 when GC_BEDROCK exists)
+                        fc_path = os.path.join(fds_path, fc)
+                        items_to_delete.append(fc_path)
+                        self._log_debug(f"  Will delete duplicate FC: {fc}")
+            
+            # Check for duplicate feature datasets (GC_ROCK_BODIES_1, etc.)
+            fds_match = duplicate_pattern.match(fds)
+            if fds_match and fds_match.group(1) == "GC_ROCK_BODIES":
+                fds_path = os.path.join(output_gdb, fds)
+                items_to_delete.append(fds_path)
+                self._log_debug(f"  Will delete duplicate feature dataset: {fds}")
+        
+        # Check standalone feature classes
+        for fc in arcpy.ListFeatureClasses() or []:
+            match = duplicate_pattern.match(fc)
+            if match:
+                base_name = match.group(1)
+                if base_name in expected_spatial:
+                    fc_path = os.path.join(output_gdb, fc)
+                    items_to_delete.append(fc_path)
+                    self._log_debug(f"  Will delete duplicate standalone FC: {fc}")
+        
+        # Check tables
+        for table in arcpy.ListTables() or []:
+            # Check for duplicates of expected tables
+            match = duplicate_pattern.match(table)
+            if match:
+                base_name = match.group(1)
+                if base_name in expected_tables:
+                    table_path = os.path.join(output_gdb, table)
+                    items_to_delete.append(table_path)
+                    self._log_debug(f"  Will delete duplicate table: {table}")
+            
+            # Check for relationship class junction tables (unless they're expected)
+            if relationship_pattern.match(table) and table not in expected_tables:
+                table_path = os.path.join(output_gdb, table)
+                items_to_delete.append(table_path)
+                self._log_debug(f"  Will delete relationship table: {table}")
+        
+        # Check relationship classes and delete them
+        for rc in arcpy.ListDatasets(feature_type='RelationshipClass') or []:
+            rc_path = os.path.join(output_gdb, rc)
+            items_to_delete.append(rc_path)
+            self._log_debug(f"  Will delete relationship class: {rc}")
+        
+        # Delete items
+        deleted_count = 0
+        for item_path in items_to_delete:
+            try:
+                if arcpy.Exists(item_path):
+                    arcpy.management.Delete(item_path)
+                    deleted_count += 1
+                    self._log_debug(f"  Deleted: {item_path}")
+            except arcpy.ExecuteError as e:
+                self._log_warning(f"  Could not delete {item_path}: {e}")
+        
+        if deleted_count > 0:
+            console.print(f"  [yellow]Cleaned up {deleted_count} duplicate/unwanted items[/yellow]")
+        
+        # Reset workspace
+        arcpy.env.workspace = None
     
     def merge(self) -> MergeStats:
         """Execute the merge operation using arcpy."""
+        
+        import os
         
         console.print("\n[bold blue]🔀 Starting ArcPy GDB Merge[/bold blue]\n")
         
@@ -498,6 +681,7 @@ class GDBMergerArcPy:
             
             # Create feature dataset
             feature_dataset = self._create_feature_dataset()
+            self._log_debug(f"Feature dataset path: {feature_dataset}")
             
             # Load mapsheet assignments
             mapsheets_by_source = self._load_mapsheets_arcpy()
@@ -528,26 +712,34 @@ class GDBMergerArcPy:
                     
                     layer_start_time = time.time()
                     
-                    # Determine output location
+                    # Determine output location using os.path.join for proper path format
+                    output_gdb = str(self.config.output_path)
                     if "/" in layer_name:
-                        output_fc = str(self.config.output_path / "GC_ROCK_BODIES" / actual_layer)
+                        # Layer is in a feature dataset
+                        output_fc = os.path.join(output_gdb, "GC_ROCK_BODIES", actual_layer)
                     else:
-                        output_fc = str(self.config.output_path / actual_layer)
+                        output_fc = os.path.join(output_gdb, actual_layer)
                     
                     self._log_debug(f"Layer: {layer_name}")
-                    self._log_debug(f"  Output: {output_fc}")
+                    self._log_debug(f"  Output FC: {output_fc}")
                     
                     layer_total = 0
+                    layer_fc_created = False  # Track if we've created the output FC for this layer
                     
                     for source_name, mapsheet_numbers in mapsheets_by_source.items():
                         source_path = self._resolve_source_path(source_name)
                         if source_path is None:
                             self._log_warning(f"Source not found: {source_name}")
                             continue
-                            
-                        count = self._clip_and_append_layer(
-                            layer_name, source_path, mapsheet_numbers, output_fc, source_name
+                        
+                        # Clip and get count
+                        count, fc_was_created = self._clip_and_append_layer(
+                            layer_name, source_path, mapsheet_numbers, output_fc, source_name,
+                            append_mode=layer_fc_created  # If FC already created, use append
                         )
+                        
+                        if fc_was_created:
+                            layer_fc_created = True
                         
                         layer_total += count
                         self.stats.features_per_source[source_name] = \
@@ -581,7 +773,11 @@ class GDBMergerArcPy:
                 else:
                     self._log_warning(f"Reference source not found: {self.config.reference_source}")
             
-            # Cleanup
+            # Clean up duplicates and relationship classes from output GDB
+            console.print("\n[cyan]Cleaning up output GDB...[/cyan]")
+            self._cleanup_output_gdb()
+            
+            # Cleanup scratch workspace
             self._cleanup_scratch()
             
             # Display results

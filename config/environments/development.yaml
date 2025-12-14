@@ -2,7 +2,7 @@
 
 
 global:
-  log_level: DEBUG
+  log_level: INFO
   proxy: ${GCOVER_PROXY_URL}
   db_path: "data/dev_gdb_metadata.duckdb"
   qa_db_path: "data/dev_verification_stats.duckdb"

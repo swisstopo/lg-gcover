@@ -104,6 +104,10 @@ DEFAULT_EXCLUDED_FIELDS = {
     "LAST_UPDATE",
     "CREATED_USER",
     "LAST_USER",
+    "GlobalID",
+    "OBJECTID",
+    "Shape_Length",
+    "Shape_Area",
 }
 
 __all__ = [

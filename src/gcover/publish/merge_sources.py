@@ -32,6 +32,8 @@ from shapely.geometry import (
 from shapely.ops import linemerge
 from shapely import make_valid
 
+from loguru import logger
+
 # Suppress pandas fragmentation warnings
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 
@@ -358,6 +360,10 @@ class MergeConfig:
     clip_buffer: float = 0.0  # Small buffer for edge handling
     preserve_z: bool = True
     
+    # Fields to exclude from output (metadata fields, etc.)
+    # Set to None to keep all fields, or provide a list like DEFAULT_EXCLUDED_FIELDS
+    exclude_fields: Optional[List[str]] = None
+    
 
 @dataclass
 class MergeStats:
@@ -376,16 +382,21 @@ class GDBMerger:
     Merges multiple FileGDB sources into a single output based on mapsheet boundaries.
     """
     
-    def __init__(self, config: MergeConfig):
+    def __init__(self, config: MergeConfig, verbose: bool = False):
         self.config = config
+        self.verbose = verbose
         self.sources: Dict[str, SourceConfig] = {}
         self.mapsheets_gdf: Optional[gpd.GeoDataFrame] = None
         self.stats = MergeStats()
         
+        logger.debug("Initializing GDBMerger (geopandas)")
         self._setup_sources()
-        
+    
+
     def _setup_sources(self) -> None:
         """Configure available source databases."""
+        
+        logger.debug("Setting up sources...")
         
         # Standard sources
         if self.config.rc1_path and self.config.rc1_path.exists():
@@ -394,7 +405,7 @@ class GDBMerger:
                 path=self.config.rc1_path,
                 source_type=SourceType.RC1
             )
-            logger.debug(f"Registered RC1 source: {self.config.rc1_path}")
+            logger.debug(f"  Registered RC1 source: {self.config.rc1_path}")
             
         if self.config.rc2_path and self.config.rc2_path.exists():
             self.sources["RC2"] = SourceConfig(
@@ -402,7 +413,7 @@ class GDBMerger:
                 path=self.config.rc2_path,
                 source_type=SourceType.RC2
             )
-            logger.debug(f"Registered RC2 source: {self.config.rc2_path}")
+            logger.debug(f"  Registered RC2 source: {self.config.rc2_path}")
             
         # Custom sources from directory
         if self.config.custom_sources_dir and self.config.custom_sources_dir.exists():
@@ -413,17 +424,23 @@ class GDBMerger:
                     path=gdb_path,
                     source_type=SourceType.CUSTOM
                 )
-                logger.debug(f"Registered custom source: {gdb_path}")
+                logger.debug(f"  Registered custom source: {gdb_path}")
+                
+        logger.info(f"Configured {len(self.sources)} source(s)")
                 
     def _load_mapsheets(self) -> gpd.GeoDataFrame:
         """Load mapsheets with source assignments."""
         
         logger.info(f"Loading mapsheets from {self.config.admin_zones_path}")
+        logger.debug(f"  Layer: {self.config.mapsheets_layer}")
+        logger.debug(f"  Source column: {self.config.source_column}")
         
         gdf = gpd.read_file(
             self.config.admin_zones_path,
             layer=self.config.mapsheets_layer
         )
+        
+        logger.debug(f"  Loaded {len(gdf)} total mapsheets")
         
         # Verify required columns
         required_cols = [self.config.source_column, self.config.mapsheet_nbr_column]
@@ -588,12 +605,15 @@ class GDBMerger:
             # Get bounding box for efficient reading
             bounds = source_mapsheets.total_bounds
             bbox = tuple(bounds)
+            logger.debug(f"  {source_name}: bbox={bbox}")
             
             # Read layer from source
             gdf = self._read_layer(source_path, layer_name, bbox=bbox)
             if gdf is None or gdf.empty:
-                logger.debug(f"No features in {layer_name} from {source_name}")
+                logger.debug(f"  {source_name}: no features in {layer_name}")
                 continue
+            
+            logger.debug(f"  {source_name}: read {len(gdf)} features")
             
             # Store CRS from first successful read
             if layer_crs is None and gdf.crs is not None:
@@ -612,7 +632,7 @@ class GDBMerger:
                 self.stats.features_per_source[source_name] = \
                     self.stats.features_per_source.get(source_name, 0) + feature_count
                     
-                logger.debug(f"  {source_name}: {feature_count} features")
+                logger.debug(f"  {source_name}: {feature_count} features after clip")
                 
             if progress and task_id:
                 progress.advance(task_id)
@@ -634,6 +654,7 @@ class GDBMerger:
                 result = gpd.GeoDataFrame(result, geometry="geometry")
         
         # Final normalization to ensure consistent geometry types
+        logger.debug(f"  Normalizing {len(result)} features to {expected_type}")
         result = normalize_geodataframe_geometries(
             result,
             target_type=expected_type,
@@ -681,7 +702,11 @@ class GDBMerger:
     def merge(self) -> MergeStats:
         """Execute the merge operation."""
         
+        import time
+        
         console.print("\n[bold blue]🔀 Starting GDB Merge Operation[/bold blue]\n")
+        
+        total_start_time = time.time()
         
         # Validate configuration
         self._validate_config()
@@ -698,12 +723,15 @@ class GDBMerger:
         # Process spatial layers
         merged_layers = {}
         
+        console.print("\n[cyan]Processing spatial layers...[/cyan]")
+        
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             TaskProgressColumn(),
-            console=console
+            console=console,
+            transient=not self.verbose
         ) as progress:
             
             # Main task for layers
@@ -713,15 +741,24 @@ class GDBMerger:
             )
             
             for layer_name in self.config.spatial_layers:
+                layer_start = time.time()
+                actual_layer = layer_name.split("/")[-1]
+                
                 progress.update(
                     layers_task, 
-                    description=f"[cyan]Processing {layer_name.split('/')[-1]}..."
+                    description=f"[cyan]Processing {actual_layer}..."
                 )
                 
                 merged = self._merge_spatial_layer(layer_name, mapsheets_by_source)
+                
+                layer_elapsed = time.time() - layer_start
+                
                 if merged is not None and not merged.empty:
                     merged_layers[layer_name] = merged
                     self.stats.layers_processed += 1
+                    console.print(f"  [green]✓[/green] {actual_layer}: {len(merged):,} features ({layer_elapsed:.1f}s)")
+                else:
+                    console.print(f"  [yellow]○[/yellow] {actual_layer}: no features")
                     
                 progress.advance(layers_task)
         
@@ -730,11 +767,13 @@ class GDBMerger:
         self._save_merged_layers(merged_layers)
         
         # Copy non-spatial tables
-        console.print("[cyan]Copying reference tables...[/cyan]")
-        self._copy_reference_tables()
+        if self.config.non_spatial_tables:
+            console.print("\n[cyan]Copying reference tables...[/cyan]")
+            self._copy_reference_tables()
         
         # Display results
-        self._display_results()
+        total_elapsed = time.time() - total_start_time
+        self._display_results(total_elapsed)
         
         return self.stats
     
@@ -806,6 +845,14 @@ class GDBMerger:
         else:
             driver = "OpenFileGDB"  # Default to FileGDB
         
+        logger.info(f"Output format: {driver}")
+        
+        # Get fields to exclude
+        exclude_fields = self.config.exclude_fields or []
+        if exclude_fields:
+            logger.info(f"Excluding {len(exclude_fields)} metadata fields")
+            logger.debug(f"  Fields to exclude: {exclude_fields}")
+        
         first_layer = True
         
         for layer_name, gdf in merged_layers.items():
@@ -819,6 +866,8 @@ class GDBMerger:
                 # Get expected geometry type
                 expected_type = get_expected_geometry_type(layer_name)
                 
+                logger.debug(f"Saving {actual_layer}: {len(gdf)} features, type={expected_type}")
+                
                 # Ensure geometries are normalized
                 gdf_to_save = normalize_geodataframe_geometries(
                     gdf, 
@@ -829,6 +878,13 @@ class GDBMerger:
                 if gdf_to_save.empty:
                     logger.warning(f"No valid geometries to save for {actual_layer}")
                     continue
+                
+                # Remove excluded fields (but keep geometry column)
+                if exclude_fields:
+                    cols_to_drop = [col for col in exclude_fields if col in gdf_to_save.columns and col != "geometry"]
+                    if cols_to_drop:
+                        logger.debug(f"  Dropping {len(cols_to_drop)} excluded fields: {cols_to_drop}")
+                        gdf_to_save = gdf_to_save.drop(columns=cols_to_drop)
                 
                 # Map to GDAL geometry type names for OpenFileGDB
                 gdal_geom_types = {
@@ -842,7 +898,7 @@ class GDBMerger:
                 
                 # Determine actual geometry type in data
                 actual_types = gdf_to_save.geometry.geom_type.unique()
-                logger.debug(f"Layer {actual_layer} has geometry types: {actual_types}")
+                logger.debug(f"  Geometry types in data: {list(actual_types)}")
                 
                 # Try to save with pyogrio for better control
                 try:
@@ -853,7 +909,10 @@ class GDBMerger:
                         # For FileGDB, we need to delete existing if present
                         if output_path.exists():
                             import shutil
+                            logger.debug(f"  Removing existing: {output_path}")
                             shutil.rmtree(output_path)
+                    
+                    logger.debug(f"  Writing with pyogrio (promote_to_multi=True)")
                     
                     # Write with pyogrio
                     pyogrio.write_dataframe(
@@ -869,7 +928,7 @@ class GDBMerger:
                     
                 except ImportError:
                     # Fallback to geopandas
-                    logger.debug("pyogrio not available, using geopandas")
+                    logger.debug("  pyogrio not available, using geopandas")
                     
                     # For geopandas, handle mode differently
                     mode = "w" if first_layer else "a"
@@ -966,7 +1025,7 @@ class GDBMerger:
                     logger.warning(f"Could not save table {table_name}: {e}")
                     self.stats.warnings.append(f"Table {table_name} not copied: {e}")
     
-    def _display_results(self) -> None:
+    def _display_results(self, elapsed_time: float = 0) -> None:
         """Display merge results summary."""
         
         console.print("\n[bold green]✅ Merge Complete![/bold green]\n")
@@ -983,16 +1042,20 @@ class GDBMerger:
         total_features = sum(self.stats.features_per_layer.values())
         table.add_row("Total features", f"{total_features:,}")
         
+        if elapsed_time > 0:
+            mins, secs = divmod(elapsed_time, 60)
+            table.add_row("Processing time", f"{int(mins)}m {secs:.1f}s")
+        
         console.print(table)
         
         # Features by source
         if self.stats.features_per_source:
             console.print("\n[bold]Features by Source:[/bold]")
-            for source, count in sorted(self.stats.features_per_source.items()):
+            for source, count in sorted(self.stats.features_per_source.items(), key=lambda x: -x[1]):
                 console.print(f"  • {source}: {count:,}")
                 
-        # Features by layer
-        if self.stats.features_per_layer:
+        # Features by layer (if verbose)
+        if self.verbose and self.stats.features_per_layer:
             console.print("\n[bold]Features by Layer:[/bold]")
             for layer, count in sorted(self.stats.features_per_layer.items()):
                 layer_short = layer.split("/")[-1]
