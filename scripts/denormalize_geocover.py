@@ -43,6 +43,8 @@ except ImportError:
     load_gpkg_with_validation = None
 
 
+os.environ['OGR_GEOMETRY_ACCEPT_UNCLOSED_RING'] = 'NO'
+os.environ['METHOD'] = 'ONLY_CCW'
 
 
 # Configure rich console
@@ -55,6 +57,8 @@ logger.add(
     format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
     level="INFO",
 )
+
+console.print("[yellow]Removed some OGR warnings (CCW, unclosed rings)[/yellow]")
 
 # Define the attributes you want to transfer from mapsheets_gdf
 MAPSHEET_ATTRIBUTES = ["MSH_MAP_TITLE", "MSH_MAP_NBR"]
