@@ -11,6 +11,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple, Union
 import warnings
+import os
 
 import geopandas as gpd
 import numpy as np
@@ -32,12 +33,29 @@ from shapely.geometry import (
 from shapely.ops import linemerge
 from shapely import make_valid
 
-from loguru import logger
 
-# Suppress pandas fragmentation warnings
-warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
+from gcover.core.geometry import load_gpkg_with_validation, validate_and_repair_geometries
 
 console = Console()
+
+has_pyarrow = False
+try:
+    import pyarrow
+    console.print("PyArrow version:", pyarrow.__version__)
+    has_pyarrow = True
+except ImportError:
+    console.print("[red]PyArrow not installed[/red]")
+
+
+from loguru import logger
+
+
+
+console.print("[yellow]Suppressing some OGR warning (unclosed rings, only CCW, etc.[/yellow]")
+# Suppress pandas fragmentation warnings
+warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
+os.environ['OGR_GEOMETRY_ACCEPT_UNCLOSED_RING'] = 'NO'
+os.environ['METHOD'] = 'ONLY_CCW'
 
 
 # =============================================================================
@@ -506,13 +524,19 @@ class GDBMerger:
         """Read a layer from a FileGDB."""
         
         actual_layer = self._get_layer_path(gdb_path, layer_name)
-        
+
+
+
         try:
             read_kwargs = {"layer": actual_layer}
             if bbox:
                 read_kwargs["bbox"] = bbox
+            if has_pyarrow:
+                pass
+                #read_kwargs["use_arrow"] = True
                 
             gdf = gpd.read_file(gdb_path, **read_kwargs)
+            gdf = validate_and_repair_geometries(gdf)
             return gdf
             
         except Exception as e:
@@ -739,7 +763,8 @@ class GDBMerger:
                 "[cyan]Processing spatial layers...",
                 total=len(self.config.spatial_layers)
             )
-            
+
+
             for layer_name in self.config.spatial_layers:
                 layer_start = time.time()
                 actual_layer = layer_name.split("/")[-1]

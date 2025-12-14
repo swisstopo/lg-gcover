@@ -9,6 +9,7 @@ This package provides tools for working with geological vector data, including:
 """
 
 __version__ = "0.1.0"
+__docformat__ = 'numpy'
 
 from gcover._version import __version__
 
@@ -20,7 +21,14 @@ from gcover._version import __version__
 # Définir ce qui est exporté avec "from gcover import *"
 __all__ = [
     "__version__",
-
+    "core",
+    "config",
+    "cli",
+    "gdb",
+    "publish",
+    "qa",
+    "schema",
+    "utils",
 ]
 
 # Metadata
