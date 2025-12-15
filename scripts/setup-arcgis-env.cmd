@@ -7,7 +7,7 @@ setlocal EnableDelayedExpansion
 REM ============================================================================
 REM Configuration
 REM ============================================================================
-set ENV_NAME=gcover-arcgis
+set ENV_NAME=ARCGIS_36"
 set ENV_BASE=Y:\conda\envs
 set ARCGIS_PRO=C:\Program Files\ArcGIS\Pro
 set ARCGIS_PYTHON=%ARCGIS_PRO%\bin\Python\envs\arcgispro-py3
