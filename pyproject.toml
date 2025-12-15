@@ -50,6 +50,7 @@ dependencies = [
     "jinja2>=3.0.0",
     "requests",
     "dateparser",
+    "duckdb",
 ]
 
 
