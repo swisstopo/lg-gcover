@@ -33,7 +33,7 @@ requirements:
     - gdal >=3.11.0
     - dateparser >=1.0.0
     - duckdb >=0.9.0
-    - boto3 >= 1.26.0
+    - boto3 >=1.26.0
 
 test:
   imports:
