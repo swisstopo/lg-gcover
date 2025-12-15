@@ -34,6 +34,10 @@ requirements:
     - dateparser >=1.0.0
     - duckdb >=0.9.0
     - boto3 >=1.26.0
+    - fiona >=1.9.0
+    - pyogrio >=0.7.0
+    - dateparser
+    - requests
 
 test:
   imports:
