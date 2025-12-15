@@ -14,7 +14,7 @@ $env:PYTHON_RICH_FORCE_ASCII = "true"
 
 
 # Path to conda environment
-$CondaPath = "Y:\conda\envs\gcover-arcgis"
+$CondaPath = "Y:\conda\envs\ARCGIS_36"
 $OutputDir = "\\v0t0020a.adr.admin.ch\lg\01_PRODUKTION\GIS\TOPGIS\QA\Weekly"
 $InputDir = "\\v0t0020a\topgisprod\10_Production_GC\Administration\QA"
 $LAST_WEEK = (Get-Date).AddDays(-8).ToString("yyyy-MM-dd")
