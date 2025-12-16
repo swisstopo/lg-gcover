@@ -42,17 +42,15 @@ dependencies = [
     "boto3>=1.26.0",
     "duckdb>=0.9.0",
     "fiona>=1.9.0",
-    "pyarrow>=14.0.0",
     "pyogrio>=0.7.0",
     "flask>=2.3.0",
     "pyyaml>=6.0",
     "tabulate>=0.9.0",
     "loguru",
     "jinja2>=3.0.0",
-    "pyarrow>=17.0.0",
-    "fastparquet",
     "requests",
     "dateparser",
+    "duckdb",
 ]
 
 
@@ -60,6 +58,16 @@ dependencies = [
 # For standalone installations (without ArcGIS Pro)
 standalone = [
     "gdal>=3.10.0",  # Latest version for better FileGDB support
+]
+
+# ============================================================================
+# PARQUET/ARROW - INCOMPATIBLE avec ArcGIS Pro !
+# ============================================================================
+# Ces packages entrent en conflit avec le GDAL d'ESRI
+# À installer UNIQUEMENT dans des environnements sans ArcGIS Pro
+parquet = [
+    "pyarrow>=10.0.0",      # ⚠️ Conflit avec ESRI GDAL
+    "fastparquet>=2023.0",  # ⚠️ Conflit avec ESRI GDAL
 ]
 # arcpy ne peut pas être installé via pip, mais on documente la dépendance
 esri = []  # Les utilisateurs doivent installer ArcGIS Pro manuellement
@@ -74,6 +82,7 @@ dev = [
     "pre-commit>=3.0",
     "types-pyyaml",
     "types-click",
+    "pdoc",
 ]
 
 docs = [
@@ -96,7 +105,7 @@ viz = [
 
 # Install with standalone GDAL
 full = [
-    "gcover[standalone,dev,docs,cloud,viz]",
+    "gcover[standalone,dev,docs,cloud,viz, parquet]",
 ]
 
 # Install for ESRI environments
@@ -234,7 +243,7 @@ env_override_existing_values = 0
 
 
 [tool.coverage.run]
-source = ["gcover"]
+source = ["src/gcover"]
 omit = [
     "*/tests/*",
     "*/_version.py",

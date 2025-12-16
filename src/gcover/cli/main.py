@@ -3,7 +3,6 @@
 Main CLI entry point for gcover.
 """
 
-import sys
 from pathlib import Path
 
 import click
@@ -12,17 +11,19 @@ from rich import print as rprint
 from datetime import datetime
 import dateparser
 
+import sys
+
+
 # Ajouter le dossier parent au path si nécessaire (pour le développement)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 try:
     from gcover import __version__
-    from gcover.utils.imports import HAS_ARCPY
 except ImportError:
     __version__ = "unknown"
-    HAS_ARCPY = False
 
-# from ..config import load_config
+
+# from gcover.config import load_config
 
 from gcover.config import AppConfig, load_config
 from gcover.utils.logging import gcover_logger, setup_logging
@@ -51,16 +52,23 @@ def parse_since(since: str) -> datetime:
 
 
 def _split_bbox(ctx, param, value):
-    # split columns by ',' and remove whitespace
-    try:
-        bbox = list(map(float, [c.strip() for c in value.split(",")]))
-        # validate
-        if len(bbox) != 4:
-            raise ValueError("bbox must have four values")
-    except ValueError as e:
-        raise click.BadOptionUsage("resolution", f"--bbox: {e}")
+    if value is None:
+        return None
+    parts = [p.strip() for p in value.split(',')]
 
-    return tuple(bbox)
+    if len(parts) != 4:
+        raise click.BadParameter(
+            "BBOX must be exactly 4 numbers separated by commas (e.g., 'min_lon,min_lat,max_lon,max_lat')")
+    try:
+        # Convert to floats
+        bbox = tuple(float(part) for part in parts)
+    except ValueError:
+        raise click.BadParameter("All BBOX components must be numbers")
+    minxx, miny, maxx, maxy = bbox
+    if minxx > maxx or miny > maxy:
+        raise click.BadParameter("Invalid BBOX: min coordinates must be less than or equal to max coordinates")
+
+    return bbox
 
 
 def confirm_extended(prompt: str, default=True):
@@ -82,7 +90,7 @@ def confirm_extended(prompt: str, default=True):
     help="Environment (dev/prod)",
 )
 @click.option(
-    "--verbose", "-v", is_flag=True, help="Enable verbose output and debug logging"
+    "--verbose", "-v", is_flag=True, help="Enable verbose output and debug logging", default=False
 )
 @click.option(
     "--log-file",
@@ -94,7 +102,7 @@ def confirm_extended(prompt: str, default=True):
 def cli(ctx, config, log_file, log_info, env, verbose):
     """gcover - Swiss GeoCover data processing toolkit"""
     ctx.ensure_object(dict)
-    ctx.obj["has_arcpy"] = HAS_ARCPY
+    # ctx.obj["has_arcpy"] = HAS_ARCPY
 
     # Normalize environment name
     try:
@@ -104,7 +112,7 @@ def cli(ctx, config, log_file, log_info, env, verbose):
 
     try:
         # Load centralized configuration
-        app_config: AppConfig = load_config(environment=environment)
+        app_config: AppConfig = load_config(environment=environment, verbose=verbose)
 
         # ctx.obj["config_manager"] = config_manager
         ctx.obj["config_path"] = config
@@ -114,6 +122,7 @@ def cli(ctx, config, log_file, log_info, env, verbose):
         global_config = app_config.global_
 
         # print(global_config.logging)
+        rprint(f"[cyan]Verbose: {verbose}[/cyan]")
 
         if verbose:
             rprint(f"[cyan]Environment: {environment}[/cyan]")
@@ -121,7 +130,7 @@ def cli(ctx, config, log_file, log_info, env, verbose):
             rprint(f"[cyan]Bucket name: {global_config.s3.bucket}[/cyan]")
             rprint(f"[cyan]Proxy: {global_config.proxy}[/cyan]")
             rprint(f"[cyan]Temp Dir: {global_config.temp_dir}[/cyan]")
-            rprint(f"[cyan]Has arcpy: {HAS_ARCPY}[/cyan]")
+            # rprint(f"[cyan]Has arcpy: {HAS_ARCPY}[/cyan]")
 
         # Setup centralized logging FIRST (before any other operations)
         setup_logging(verbose=verbose, log_file=log_file, environment=env)
@@ -148,18 +157,12 @@ def cli(ctx, config, log_file, log_info, env, verbose):
 def info() -> None:
     """Display information about the gcover installation."""
     click.echo(f"gcover version: {__version__}")
-    click.echo(f"ArcPy available: {'Yes' if HAS_ARCPY else 'No'}")
+    # click.echo(f"ArcPy available: {'Yes' if HAS_ARCPY else 'No'}")
     click.echo(f"Python version: {sys.version.split()[0]}")
 
     # Lister les modules disponibles
     click.echo("\nAvailable modules:")
     modules = []
-    try:
-        from gcover import bridge
-
-        modules.append("✓ bridge (GeoPandas <-> ESRI)")
-    except ImportError:
-        modules.append("✗ bridge (not available)")
 
     try:
         from gcover import schema
@@ -174,13 +177,6 @@ def info() -> None:
         modules.append("✓ qa (Quality assurance)")
     except ImportError:
         modules.append("✗ qa (not available)")
-
-    try:
-        from gcover import manage
-
-        modules.append("✓ manage (GDB management)")
-    except ImportError:
-        modules.append("✗ manage (not available)")
 
     try:
         from gcover import gdb
@@ -254,54 +250,45 @@ def tail_logs(lines):
 
 
 # Import des sous-commandes si disponibles
-try:
-    from .bridge_cmd import bridge_commands
-
-    cli.add_command(bridge_commands)
-except ImportError:
-    pass
 
 try:
-    from .schema_cmd import schema
+    from gcover.cli.schema_cmd import schema
 
     cli.add_command(schema)
-except ImportError:
-    pass
+except ImportError as e:
+    click.echo(f"Module `schema` not available: {e}")
+
 
 try:
-    from .gdb_cmd import gdb
+    from gcover.cli.gdb_cmd import gdb
 
     cli.add_command(gdb)
-except ImportError:
-    pass
+except ImportError as e:
+    click.echo(f"Module `gdb` not available: {e}")
+
 
 try:
-    from .qa_cmd import qa_commands
+    from gcover.cli.qa_cmd import qa_commands
 
     cli.add_command(qa_commands)
-except ImportError:
-    pass
+except ImportError as e:
+    click.echo(f"Module `qa` not available: {e}")
+
 
 try:
-    from .publish_cmd import publish_commands
+    from gcover.cli.publish_cmd import publish_commands
 
     cli.add_command(publish_commands)
 except ImportError:
     pass
 
-try:
-    from .manage_cmd import manage
-
-    cli.add_command(manage)
-except ImportError:
-    pass
 
 try:
-    from .sde_cmd import sde_commands
+    from gcover.cli.sde_cmd import sde_commands
 
     cli.add_command(sde_commands)
 except ImportError:
-    pass
+    click.echo("Module `sde` not available")
 
 
 def main() -> None:

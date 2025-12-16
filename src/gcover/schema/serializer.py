@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Union
 
 # Import your dataclasses
-from .models import (CodedDomain, CodedValue, ESRISchema, FeatureClass, Field,
+from gcover.schema.models import (CodedDomain, CodedValue, ESRISchema, FeatureClass, Field,
                      Index, RangeDomain, RelationshipClass, Subtype,
                      SubtypeValue, Table)
 

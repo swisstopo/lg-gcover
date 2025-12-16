@@ -5,12 +5,19 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import duckdb
+
 # Configure logging
 from loguru import logger
 
-from .assets import (AssetType, BackupGDBAsset, GDBAsset, IncrementGDBAsset,
-                     ReleaseCandidate, VerificationGDBAsset)
-from .storage import MetadataDB, S3Uploader
+from gcover.gdb.assets import (
+    AssetType,
+    BackupGDBAsset,
+    GDBAsset,
+    IncrementGDBAsset,
+    ReleaseCandidate,
+    VerificationGDBAsset,
+)
+from gcover.gdb.storage import MetadataDB, S3Uploader
 
 GBD_TO_EXCLUDE = ["progress.gdb", "temp.gdb"]
 
@@ -181,31 +188,45 @@ class GDBAssetManager:
                 logger.info(f"Asset already processed: {asset.path}")
                 return True
 
-            # Create zip
-            logger.info(f"Processing asset: {asset.path}")
-            logger.debug(f"Zipping asset...")
-            zip_path = asset.create_zip(self.temp_dir)
-
-            # Compute hash
-            logger.debug(f"Calculating md5 hash...")
-            hash_md5 = asset.compute_hash()
+            # Generate S3 key early (before zipping)
+            zip_filename = f"{asset.path.name}.zip"
+            s3_key = f"gdb-assets/{asset.info.release_candidate.short_name}/{asset.info.asset_type.value}/{zip_filename}"
+            asset.info.s3_key = s3_key
 
             if self.upload_to_s3:
-                # Generate S3 key
-                s3_key = f"gdb-assets/{asset.info.release_candidate.short_name}/{asset.info.asset_type.value}/{zip_path.name}"
-                asset.info.s3_key = s3_key
-
-                # Upload to S3
-                logger.debug(f"Upload to AWS S3...")
-                if not self.s3_uploader.file_exists(s3_key):
-                    uploaded = self.s3_uploader.upload_file(zip_path, s3_key)
-                    asset.info.uploaded = uploaded
-                    logger.debug(f"Uploaded to s3://{self.bucket_name}/{s3_key}")
-                else:
+                if self.s3_uploader.file_exists(s3_key):
                     logger.info(
                         f"File {s3_key} already exists in S3: {self.bucket_name}"
                     )
+                    # Still update database if not present
+                    asset.info.s3_key = s3_key
                     asset.info.uploaded = True
+                    asset.info.hash_md5 = None  # We don't have it without zipping
+                    self.metadata_db.insert_asset(asset.info)
+                    return True
+
+                # Only now: create zip (expensive operation)
+                logger.info(f"Zipping asset: {asset.path}")
+                zip_path = asset.create_zip(self.temp_dir)
+
+                # Compute hash
+                hash_md5 = asset.compute_hash()
+                asset.info.s3_key = s3_key
+
+                # Upload to S3
+                uploaded = self.s3_uploader.upload_file(zip_path, s3_key)
+                asset.info.uploaded = uploaded.success
+                logger.debug(f"Uploaded to s3://{self.bucket_name}/{s3_key}")
+
+                # Update database
+                self.metadata_db.insert_asset(asset.info)
+
+                # Cleanup temp file
+                zip_path.unlink()
+
+                logger.info(f"Successfully processed: {asset.path}")
+                return True
+
             else:
                 logger.warning("Skipping upload (parameter `--no-upload` set)")
 

@@ -308,6 +308,7 @@ class VerificationGDBAsset(GDBAsset):
             elif re.match(r"\d{8}_\d{2}-\d{2}-\d{2}.*", part):
                 timestamp_dir = part
 
+
         if not all([test_type, rc_str, timestamp_dir]):
             logger.error(f"{test_type}, {rc_str}, {timestamp_dir}")
             raise ValueError(f"Cannot parse verification path: {self.path}")
@@ -358,15 +359,20 @@ class IncrementGDBAsset(GDBAsset):
         """Parse increment path: YYYYMMDD_GCOVERP_YYYY-MM-DD.gdb"""
         gdb_name = self.path.name
 
-        # Pattern: 20250224_GCOVERP_2016-12-31.gdb
-        pattern = r"(\d{8})_GCOVERP_(\d{4}-\d{2}-\d{2})\.gdb"
+        # Pattern: 20250224_GCOVERP_2016-12-31.gdb and older GCOVER_2030-12-31_20220307.gdb
+        pattern = r"(?:GCOVER_(\d{4}-\d{2}-\d{2})_(\d{8})|(\d{8})_GCOVERP_(\d{4}-\d{2}-\d{2}))\.gdb"
 
         match = re.match(pattern, gdb_name)
-
         if not match:
             raise ValueError(f"Invalid increment GDB name format: {gdb_name}")
 
-        date_str, rc_str = match.groups()
+        # Extract values based on which format matched
+        if match.group(1):  # GCOVER_2030-12-31_20220307
+            rc_str = match.group(1)
+            date_str = match.group(2)
+        else:  # 20251110_GCOVERP_2030-12-31
+            date_str = match.group(3)
+            rc_str = match.group(4)
 
         # Parse timestamp (assume midnight for increments)
         timestamp = datetime.strptime(date_str, "%Y%m%d")

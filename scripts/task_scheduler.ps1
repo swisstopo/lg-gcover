@@ -14,10 +14,11 @@ $env:PYTHON_RICH_FORCE_ASCII = "true"
 
 
 # Path to conda environment
-$CondaPath = "Y:\conda\envs\GCOVER_ESRI"
+$CondaPath = "Y:\conda\envs\ARCGIS_36"
 $OutputDir = "\\v0t0020a.adr.admin.ch\lg\01_PRODUKTION\GIS\TOPGIS\QA\Weekly"
 $InputDir = "\\v0t0020a\topgisprod\10_Production_GC\Administration\QA"
-$LAST_WEEK = (Get-Date).AddDays(-7).ToString("yyyy-MM-dd")
+$LAST_WEEK = (Get-Date).AddDays(-8).ToString("yyyy-MM-dd")
+$LAST_MONTH = (Get-Date).AddDays(-31).ToString("yyyy-MM-dd")
 $TODAY = (Get-Date).ToString("yyyy-MM-dd")
 $LogFile = "$OutputDir\gcover_$TODAY.log"
 
@@ -38,14 +39,32 @@ if (Test-Path $CondaPath) {
 $env:PATH = "$CondaPath;$CondaPath\Scripts;$env:PATH"
 Write-Host "Conda environment activated"  2>&1 | Tee-Object -FilePath $LogFile -Append
 
+Write-Host "--- Check GCOVER Version ---" -ForegroundColor Green
+& gcover   --version
 
 Write-Host "Log to: $LogFile"
 
-Write-Host "--- Processing new GDB assets ---" -ForegroundColor Green
-& gcover   --env production  gdb process-all  --yes  --continue-on-error --filter-type verification_topology  --max-workers 1  --since $LAST_WEEK
+
+
+Write-Host "--- Processing new Topology QA assets ---" -ForegroundColor Green
+& gcover   --env production --log-file $LogFile  gdb process-all  --yes  --continue-on-error --filter-type verification_topology --max-workers 1  --since $LAST_WEEK
+
+Write-Host "--- Processing new TQA assets ---" -ForegroundColor Green
+& gcover   --env production --log-file $LogFile  gdb process-all  --yes  --continue-on-error --filter-type verification_tqa --max-workers 1  --since $LAST_WEEK
+
+Write-Host "--- Processing new Increment assets ---" -ForegroundColor Green
+& gcover   --env production --log-file $LogFile  gdb process-all  --yes  --continue-on-error --filter-type increment --max-workers 1  --since $LAST_MONTH
+
+Write-Host "--- Processing new Monthly assets ---" -ForegroundColor Green
+& gcover   --env production --log-file $LogFile  gdb process-all  --yes  --continue-on-error --filter-type backup_monthly --max-workers 1  --since $LAST_MONTH
+
+Write-Host "--- Processing new Weekly assets ---" -ForegroundColor Green
+& gcover   --env production --log-file $LogFile  gdb process-all  --yes  --continue-on-error --filter-type backup_weekly --max-workers 1  --since $LAST_MONTH
+
+
 
 Write-Host "--- Processing new QA tests ---" -ForegroundColor Green
-& gcover --env production  qa process-all  --qa-type topology  --max-workers 1 --format flatgeobuf --since $LAST_WEEK   $InputDir
+& gcover --env production --log-file $LogFile  qa process-all  --qa-type topology  --max-workers 1 --format flatgeobuf --since $LAST_WEEK   $InputDir
 
 Write-Host "--- Processing QA aggregate ---" -ForegroundColor Green
 & gcover  --env production qa aggregate --auto-discover --yes --zone-type mapsheets   --output-format xlsx   --type  verification_topology   --base-dir $OutputDir
@@ -55,17 +74,16 @@ Write-Host "--- Processing QA aggregate ---" -ForegroundColor Green
 Write-Host "--- Processing QA extract ---" -ForegroundColor Green
 & gcover    --env production qa extract  --yes --type verification_topology --format filegdb  --output $OutputDir
 
+
+Write-Host "--- Latest Topology assets  ---" -ForegroundColor Green
+& gcover --env production gdb latest-topology
+
+Write-Host "--- Latest Verification (TQA) assets ---" -ForegroundColor Green
+& gcover --env production  gdb latest-verifications
+
+Write-Host "--- Latest assets by RCs ---" -ForegroundColor Green
+& gcover --env production  gdb latest-by-rc
+
 Write-Host "=== QA PROCESSING COMPLETE ===" -ForegroundColor Green
 
 
-
-# gcover   --env production  gdb process-all  --yes  --continue-on-error --filter-type verification_topology  --max-workers 1  --since 2025-10-01
-
-# gcover --env production  qa process-all  --qa-type topology  --max-workers 1 --format flatgeobuf --since "2 week2 ago"  "\\v0t0020a\topgisprod\10_Production_GC\Administration\QA"
-
-# gcover  --env production qa aggregate --auto-discover --yes --zone-type mapsheets   --output-format xlsx   --type  verification_topology   --base-dir "\\v0t0020a.adr.admin.ch\lg\01_PRODUKTION\GIS\TOPGIS\QA\Weekly"
-
-# gcover   --env production qa aggregate --auto-discover --yes --zone-type lots   --output-format xlsx   --type  verification_topology   --base-dir "\\v0t0020a.adr.admin.ch\lg\01_PRODUKTION\GIS\TOPGIS\QA\Weekly"
-# gcover  --env production qa aggregate --auto-discover --yes --zone-type work_units   --output-format xlsx   --type  verification_topology   --base-dir "\\v0t0020a.adr.admin.ch\lg\01_PRODUKTION\GIS\TOPGIS\QA\Weekly"
-
-# gcover    --env production qa extract  --yes --type verification_topology --format filegdb  --output "\\v0t0020a.adr.admin.ch\lg\01_PRODUKTION\GIS\TOPGIS\QA\Weekly"

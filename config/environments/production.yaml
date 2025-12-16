@@ -1,8 +1,9 @@
 # Production environment overrides
 
 global:
-  log_level: WARNING
+  log_level: INFO
   proxy: ${GCOVER_PROXY_URL}
+  public_url: ${GCOVER_PROD_PUBLIC_URL}
   s3:
     bucket: ${GCOVER_S3_BUCKET_PROD}
     profile: ${GCOVER_AWS_PROFILE}

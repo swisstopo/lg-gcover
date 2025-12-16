@@ -17,6 +17,7 @@ import click
 import fiona
 import geopandas as gpd
 import pandas as pd
+import pyogrio
 import yaml
 from loguru import logger
 from rich.console import Console
@@ -25,24 +26,41 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from rich.tree import Tree
 
-from .esri_classification_applicator import ClassificationApplicator
-from .esri_classification_extractor import extract_lyrx
-from .tooltips_enricher import LayerType
+from gcover.publish.esri_classification_applicator import ClassificationApplicator
+from gcover.publish.esri_classification_extractor import extract_lyrx_complete
+from gcover.publish.tooltips_enricher import LayerType
+from gcover.publish.utils import save_layer_preserving_types
+from gcover.publish.vectorized_classification import apply_batch_from_config_vectorized
 
 console = Console()
 
 
+@dataclass(frozen=True)
+class FontSymbol:
+    font_family: str
+    char_index: int
+    # Add more fields as needed (e.g., weight, color)
+
+    def symbol_name(self) -> str:
+        return f"{self.font_family}_{self.char_index}"
+
+
 @dataclass
 class ClassificationConfig:
-    """Configuration for a single classification application."""
+    """Configuration for a single classification application, currently a .lyrx file"""
 
     style_file: Path
+    index: int  # draw index (small=top)
     mapfile_name: Optional[str] = None
+    mapfile_group: Optional[str] = None
+    map_label: Optional[Union[None, bool, str]] = (None,)
     classification_name: Optional[str] = None
     fields: Optional[Dict[str, str]] = None
     filter: Optional[str] = None
     symbol_prefix: Optional[str] = None
-
+    identifier_field: Optional[str] = None
+    data: Optional[str] = None
+    active: Optional[bool] = True
 
 
 @dataclass
@@ -50,9 +68,13 @@ class LayerConfig:
     """Configuration for a GPKG layer with multiple classifications."""
 
     gpkg_layer: str
+    gcover_layer: Optional[str]
     classifications: List[ClassificationConfig]
     field_types: Optional[Dict[str, str]] = None
     layer_type: Optional[LayerType] = None
+    connection_ref: Optional[str] = None
+    template: Optional[str] = None
+    max_scale: Optional[bool | int] = None  # None, False, True, ou int
 
 
 class BatchClassificationConfig:
@@ -84,15 +106,19 @@ class BatchClassificationConfig:
         for layer_config in self.raw_config.get("layers", []):
             self.layers.append(self._parse_layer_config(layer_config))
 
-        logger.info(f"Loaded config with {len(self.layers)} layers")
+        logger.debug(f"Loaded config with {len(self.layers)} layers")
 
     def _parse_layer_config(self, layer_dict: dict) -> LayerConfig:
         """Parse a single layer configuration."""
         gpkg_layer = layer_dict["gpkg_layer"]
+        gcover_layer = layer_dict.get("gcover_layer")
         layer_type_str = layer_dict.get("layer_type")
         layer_type = LayerType(layer_type_str) if layer_type_str else None
+        connection_ref = layer_dict.get("connection_ref")
+        template = layer_dict.get("template")
         classifications = []
         field_types = layer_dict.get("field_types", {})
+        max_scale = layer_dict.get("scale", None)
 
         for class_dict in layer_dict.get("classifications", []):
             # Resolve style file path
@@ -103,18 +129,29 @@ class BatchClassificationConfig:
             classifications.append(
                 ClassificationConfig(
                     style_file=style_file,
+                    index=class_dict.get("index", 200),
                     classification_name=class_dict.get("classification_name"),
                     fields=class_dict.get("fields"),
                     filter=class_dict.get("filter"),
                     symbol_prefix=class_dict.get("symbol_prefix"),
+                    mapfile_name=class_dict.get("mapfile_name"),
+                    mapfile_group=class_dict.get("mapfile_group"),
+                    map_label=class_dict.get("map_label"),
+                    identifier_field=class_dict.get("identifier_field"),
+                    data=class_dict.get("data"),
+                    active=class_dict.get("active", True),
                 )
             )
 
         return LayerConfig(
             gpkg_layer=gpkg_layer,
+            gcover_layer=gcover_layer,
             classifications=classifications,
             field_types=field_types,
             layer_type=layer_type,
+            connection_ref=connection_ref,
+            template=template,
+            max_scale=max_scale,
         )
 
     def get_layer_config(self, gpkg_layer: str) -> Optional[LayerConfig]:
@@ -125,6 +162,7 @@ class BatchClassificationConfig:
         return None
 
 
+# Then replace the function call or add a flag:
 def apply_batch_from_config(
     gpkg_path: Path,
     config: BatchClassificationConfig,
@@ -132,6 +170,10 @@ def apply_batch_from_config(
     output_path: Optional[Path] = None,
     debug: bool = False,
     bbox: Optional[tuple] = None,
+    continue_on_error: Optional[bool] = False,
+    use_vectorized: bool = True,  # NEW FLAG
+    preserve_existing: Optional[bool] = True,  # TODO remove?
+    overwrite: Optional[bool] = False,
 ) -> Dict[str, any]:
     """
     Apply all classifications from config to a GPKG.
@@ -157,7 +199,11 @@ def apply_batch_from_config(
     # Determine which layers to process
     if layer_name:
         if layer_name not in available_layers:
-            raise ValueError(f"Layer '{layer_name}' not found in GPKG")
+            # raise ValueError(f"Layer '{layer_name}' not found in GPKG")
+            console.print(
+                f"[red bold]✗ Layer '{layer_name}' not found in GPKG[/red bold]"
+            )
+            return {}
         layers_to_process = [layer_name]
     else:
         # Process all layers that have config
@@ -171,7 +217,22 @@ def apply_batch_from_config(
         logger.warning("No layers to process!")
         return {}
 
-    logger.info(f"Processing {len(layers_to_process)} layers: {layers_to_process}")
+    logger.info(
+        f"Processing {len(layers_to_process)} GPKG layers: {','.join(layers_to_process)}"
+    )
+
+    if use_vectorized:
+        return apply_batch_from_config_vectorized(
+            gpkg_path=gpkg_path,
+            config=config,
+            layer_name=layer_name,
+            output_path=output_path,
+            debug=debug,
+            bbox=bbox,
+            continue_on_error=continue_on_error,
+        )
+
+    # Iterative
 
     # Statistics
     stats = {
@@ -179,8 +240,9 @@ def apply_batch_from_config(
         "classifications_applied": 0,
         "features_classified": 0,
         "features_total": 0,
+        "features_newly_classified": 0,
     }
-
+    identifier_fields = {}
     # Process each layer
     for layer in layers_to_process:
         layer_config = config.get_layer_config(layer)
@@ -191,12 +253,35 @@ def apply_batch_from_config(
         console.print(f"\n[bold blue]Processing layer: {layer}[/bold blue]")
         console.print(f"Applying {len(layer_config.classifications)} classifications")
 
-        kwargs = {"layer": layer}
+        logger.debug(layer_config)
+
+        # Extract prefixes and mapfile names from config
+        for class_config in layer_config.classifications:
+            if class_config.classification_name:
+                # Use classification name as key
+                key = class_config.classification_name
+                if class_config.identifier_field:
+                    field_name = class_config.identifier_field
+                    identifier_fields[key] = field_name
+                    logger.debug(
+                        f"Layer '{key}' will use identifier_field: {field_name}"
+                    )
+
+        kwargs = {"layer": layer, "engine": "pyogrio", "use_arrow": True}
         if bbox:
             kwargs["bbox"] = bbox
 
         # Load layer
+        schema = pyogrio.read_info(gpkg_path, layer=layer)
+        int_columns = [
+            name
+            for name, dtype in zip(schema["fields"], schema["dtypes"])
+            if dtype in ["int32", "int64"]
+        ]
         gdf = gpd.read_file(gpkg_path, **kwargs)
+        # TODO: force to `Int64`
+        for col in int_columns:
+            gdf[col] = gdf[col].astype("Int64")
 
         stats["features_total"] += len(gdf)
 
@@ -207,35 +292,48 @@ def apply_batch_from_config(
             gdf[config.label_field] = None
 
         # Cast fields
-        field_types = layer_config.field_types
+        field_types = layer_config.field_types or {}
+        if field_types:
+            console.print(f"\n[bold blue]Field types: {field_types}[/bold blue]")
 
-        console.print(field_types)
-        console.print(gdf.columns)
+            for field, dtype in field_types.items():
+                if field in gdf.columns:
+                    try:
+                        # Handle nullable integer types properly
+                        if dtype.startswith("Int"):  # Int8, Int16, Int32, Int64
+                            gdf[field] = pd.to_numeric(
+                                gdf[field], errors="coerce"
+                            ).astype(dtype)
+                        else:
+                            gdf[field] = gdf[field].astype(dtype)
 
-        for field, dtype in field_types.items():
-            if field in gdf.columns:
-                try:
-                    gdf[field] = (
-                        pd.to_numeric(
-                            gdf[field], errors="coerce"
-                        )  # convert safely, invalids become NaN
-                        .dropna()  # optional: drop rows with NaN
-                        .astype(dtype)
-                    )
-                    console.print(
-                        f"Casted [green]{field}[/green] to [green]{dtype}[/green]"
-                    )
-                except Exception as e:
-                    console.print(f"[red]Failed to cast {field} to {dtype}: {e}[/red]")
+                        console.print(
+                            f"  Casted [green]{field}[/green] to [green]{dtype}[/green]"
+                        )
+                    except Exception as e:
+                        console.print(
+                            f"  [red]Failed to cast {field} to {dtype}: {e}[/red]"
+                        )
 
         # Apply each classification
         for i, class_config in enumerate(layer_config.classifications, 1):
             console.print(
-                f"\n  [{i}/{len(layer_config.classifications)}] {class_config.style_file.name}"
+                f"\n  [{i}/{len(layer_config.classifications)}] --- {class_config.style_file.name} ---"
             )
-
-            # Load classification from style file
-            classifications = extract_lyrx(class_config.style_file, display=False)
+            try:
+                # Load classification from style file
+                # TODO
+                # Load classifications
+                classifications = extract_lyrx_complete(
+                    class_config.style_file,
+                    display=False,
+                    identifier_fields=identifier_fields,  # ← NEW
+                )  # TODO switched from extract_lyrx
+                # classifications = extract_lyrx_complete(class_config.style_file, display=False)
+            except FileNotFoundError as e:
+                logger.error(f"Style .lyrx not found: {class_config.style_file}")
+                if continue_on_error:
+                    continue
 
             # Find the right classification
             classification = None
@@ -265,6 +363,7 @@ def apply_batch_from_config(
                     label_field=config.label_field,
                     symbol_prefix=class_config.symbol_prefix,
                     field_mapping=class_config.fields,
+                    field_types=field_types,
                     treat_zero_as_null=config.treat_zero_as_null,
                     debug=debug,
                 )
@@ -272,16 +371,16 @@ def apply_batch_from_config(
                 gdf_result = applicator.apply_v2(
                     gdf,
                     additional_filter=class_config.filter,
-                    overwrite=False,  # Don't overwrite the field itself
-                    preserve_existing=True,  # But preserve existing non-NULL values
+                    overwrite=overwrite,  # Don't overwrite the field itself
+                    preserve_existing=preserve_existing,  # But preserve existing non-NULL values
                 )
                 # TODO After bedrock classification
-                console.print(
-                    f"After {class_config.classification_name}: {gdf_result[config.symbol_field].notna().sum()} symbols"
-                )
-                console.print(
-                    f"{class_config.classification_name} symbols: {gdf_result[config.symbol_field].value_counts()}"
-                )
+                # console.print(
+                #    f"After {class_config.classification_name}: {gdf_result[config.symbol_field].notna().sum()} symbols"
+                # )
+                # console.print(
+                #    f"{class_config.classification_name} symbols: {gdf_result[config.symbol_field].value_counts()}"
+                # )
 
                 # Clean up string "None" values
                 gdf_result[config.symbol_field] = gdf_result[
@@ -297,14 +396,16 @@ def apply_batch_from_config(
                     gdf_result[config.symbol_field].notna()
                     & (gdf[config.symbol_field].isna())
                 ).sum()
-                stats["features_classified"] += newly_classified
+                features_classified = gdf_result[config.symbol_field].notna().sum()
+                stats["features_newly_classified"] += newly_classified
+                stats["features_classified"] += features_classified
                 stats["classifications_applied"] += 1
 
                 # Update gdf for next classification
                 gdf = gdf_result
 
                 console.print(
-                    f"    [green]✓ Classified {newly_classified} features[/green]"
+                    f"    [green]✓ Newly classified {newly_classified} features[/green]"
                 )
 
             except Exception as e:
@@ -318,27 +419,34 @@ def apply_batch_from_config(
 
         # Save layer to output
         console.print(f"\n  [cyan]Saving layer to {output_path}...[/cyan]")
-
         console.print(f"Before save: {gdf[config.symbol_field].notna().sum()} symbols")
 
-        # Check if we need to append or create new
-        if output_path.exists() and layer != layers_to_process[0]:
-            # Append to existing GPKG
-            gdf.to_file(output_path, layer=layer, driver="GPKG", mode="a")
-        else:
-            # Create new GPKG or overwrite
-            gdf.to_file(output_path, layer=layer, driver="GPKG")
+        # Determine if this is the first layer
+        is_first = (layer == layers_to_process[0]) and not output_path.exists()
 
-        gdf_check = gpd.read_file(output_path, layer=layer)
+        # Save with type preservation
+        save_layer_preserving_types(
+            gdf=gdf, output_path=output_path, layer_name=layer, is_first_layer=is_first
+        )
+
+        # Verification
+        gdf_check = gpd.read_file(output_path, layer=layer, engine="pyogrio")
         console.print(
             f"After save: {gdf_check[config.symbol_field].notna().sum()} symbols"
         )
-        console.print(f"Saved symbols: {gdf_check[config.symbol_field].value_counts()}")
+
+        # TODO
+        # console.print(
+        #    f"After save: {gdf_check[config.symbol_field].notna().sum()} symbols"
+        # )
+        # console.print(f"Saved symbols: {gdf_check[config.symbol_field].value_counts()}")
 
         stats["layers_processed"] += 1
 
         # Display layer summary
-        _display_layer_summary(gdf, layer, config.symbol_field, config.label_field)
+        _display_layer_summary(
+            gdf_check, layer, config.symbol_field, config.label_field
+        )
 
     return stats
 

@@ -6,12 +6,16 @@ global:
   log_level: INFO
   temp_dir: /tmp/gcover
   max_workers: 4
+  public_url: null
+  default_crs: "EPSG:2056"
+  chunk_size: 5000
 
   s3:
     bucket: "gcover-assets-dev"
     profile: "default-aws-profile" # AWS profile name
     # Enhanced S3 upload configuration
     upload_method: "auto" # Options: "auto", "direct", "presigned"
+    public_prefix: "public/"  # AWS S3 key prefix for public part of the bucket
 
     # Lambda presigned URL configuration (optional)
     lambda_endpoint: null # e.g., "https://api.example.com/presigned-url"
@@ -28,8 +32,17 @@ global:
     # Upload timeouts and retries
     upload_timeout: 300  # Upload timeout in seconds (5 minutes)
     max_retries: 3       # Maximum number of upload retries
-  default_crs: "EPSG:2056"
-  chunk_size: 5000
+
+  mapserver:
+    # Connections section for OGR/PostGIS definitions
+    connections:
+      gpkg:
+        connection_type: OGR
+        connection: "some_file.gpkg"
+        data: "fossils_layer"
+        ogr_driver: "GPKG"
+
+
   logging:
     file:
       enabled: true

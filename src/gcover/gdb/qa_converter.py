@@ -77,7 +77,7 @@ class FileGDBConverter:
             config: GDBConfig instance (loads from file if None)
             s3_prefix: S3 prefix for verification files
         """
-        # TODO from .config import load_config
+        # TODO from gcover.config import load_config
         # TODO no used from gcover.config import load_config, AppConfig
 
         self.s3_prefix = s3_prefix.rstrip("/") + "/"
@@ -102,16 +102,19 @@ class FileGDBConverter:
         # session = boto3.Session(profile_name=self.s3_profile)
         # self.s3_client = session.client("s3")
 
+        console.print(f"DuckDB: {self.duckdb_path}")
+
         self.s3_uploader = S3Uploader(
             bucket_name=s3_config.bucket,
             aws_profile=s3_config.profile,
             lambda_endpoint=s3_config.lambda_endpoint,
-            totp_secret=s3_config.lambda_endpoint,
+            totp_secret=s3_config.totp_secret,
             proxy_config=s3_config.proxy,
+            upload_method= s3_config.upload_method,
         )
 
         # Initialize DuckDB connection
-        console.print(f"DuckDB: {self.duckdb_path}")
+        console.print(f"FileGDBConverter. Upload method: {s3_config.upload_method}")
         try:
             self.conn = duckdb.connect(str(self.duckdb_path))
             self._init_stats_tables()
@@ -865,7 +868,7 @@ class FileGDBConverter:
 
 def main():
     """Example usage of the FileGDBConverter."""
-    # from .config import load_config TODO
+    # from gcover.config import load_config TODO
 
     # Load configuration
     config = load_config()

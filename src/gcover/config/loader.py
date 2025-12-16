@@ -11,7 +11,7 @@ from typing import Any
 import yaml
 from rich.console import Console
 
-from .models import AppConfig
+from gcover.config.models import AppConfig
 
 console = Console()
 
@@ -22,15 +22,18 @@ class ConfigManager:
     def __init__(self):
         self._config: AppConfig | None = None
         self._secrets_loaded = False
+        self.verbose = False
 
     def load_config(
         self,
         config_path: Path | None = None,
         environment: str = "development",
         load_secrets: bool = True,
+        verbose: bool = False,
     ) -> AppConfig:
         """Load configuration with separate environment files and secret management"""
         console.print(f"[blue]Environment: {environment}[/blue]")
+        self.verbose = verbose
 
         # 1. Load secrets first (from .env files and environment)
         if load_secrets and not self._secrets_loaded:
@@ -74,7 +77,8 @@ class ConfigManager:
 
             for env_file in env_files:
                 if env_file.exists():
-                    console.log(f"🔐 Loading secrets from: [blue]{env_file}[/blue]")
+                    if self.verbose:
+                        console.log(f"🔐 Loading secrets from: [blue]{env_file}[/blue]")
 
                     load_dotenv(
                         env_file, override=False
@@ -83,7 +87,8 @@ class ConfigManager:
             # Always try to load from default .env
             default_env = Path(".env")
             if default_env.exists():
-                console.log(f"🔐 Loading secrets from: {default_env}")
+                if self.verbose:
+                    console.log(f"🔐 Loading secrets from: {default_env}")
                 load_dotenv(default_env, override=False)
 
         except ImportError:
@@ -159,10 +164,15 @@ class ConfigManager:
                     result_value = result_value.replace(
                         f"${{{env_var}}}", str(processed_value)
                     )
-                    substitution_made = True
-                    console.log(
-                        f"🔐 Secret substituted: {env_var} -> {self._safe_log_value(key, processed_value)}"
-                    )
+
+                    # Log avec masquage intelligent basé sur le nom de la VARIABLE
+                    if  self.verbose:
+                        if self._is_secret_field(env_var):
+                            console.log(f"🔐 Secret substituted: {env_var} -> ***")
+                        else:
+                            console.log(
+                                f"🔐 Secret substituted: {env_var} -> {processed_value}"
+                        )
                 else:
                     # Si processed_value est None, garder la variable non remplacée
                     missing_vars.append(env_var)
@@ -230,6 +240,40 @@ class ConfigManager:
         field_lower = field_name.lower()
         return any(keyword in field_lower for keyword in optional_keywords)
 
+    def _mask_sensitive_env_vars(self, value: str) -> str:
+        """
+        Masque les valeurs des variables d'environnement sensibles dans une chaîne
+
+        Cette méthode analyse une chaîne contenant des références à des variables
+        d'environnement (format ${VAR_NAME}) et remplace par "***" uniquement les
+        variables dont le nom indique qu'elles sont sensibles (password, secret, etc.)
+
+        Args:
+            value: Chaîne contenant potentiellement des variables ${VAR_NAME}
+
+        Returns:
+            Chaîne avec les variables sensibles masquées par ***
+
+        Example:
+            >>> value = "host=${HOST} password=${GCOVER_POSTGIS_PASSWORD} user=${USER}"
+            >>> self._mask_sensitive_env_vars(value)
+            "host=${HOST} password=*** user=${USER}"
+        """
+        # Pattern pour détecter les variables d'environnement ${VAR_NAME}
+        env_var_pattern = r"\$\{([^}]+)\}"
+
+        def replace_if_sensitive(match):
+            env_var_name = match.group(1)
+            # Vérifier si le nom de la variable est sensible
+            if self._is_secret_field(env_var_name):
+                return "***"
+            else:
+                # Garder la référence à la variable (non résolue)
+                return match.group(0)
+
+        # Remplacer uniquement les variables sensibles
+        return re.sub(env_var_pattern, replace_if_sensitive, value)
+
     def _is_secret_field(self, field_name: str) -> bool:
         """Detect if a field contains sensitive information"""
         secret_keywords = [
@@ -254,7 +298,8 @@ class ConfigManager:
         if config_path is None:
             config_path = self._find_base_config_file()
 
-        console.log(f"🔧 Loading base config: {config_path}")
+        if self.verbose:
+            console.log(f"🔧 Loading base config: {config_path}")
 
         with open(config_path, "r") as f:
             # Handle both single YAML and multi-document YAML
@@ -281,7 +326,8 @@ class ConfigManager:
 
         for env_path in env_paths:
             if env_path.exists():
-                console.log(f"🔧 Loading environment config: {env_path}")
+                if self.verbose:
+                    console.log(f"🔧 Loading environment config: {env_path}")
 
                 with open(env_path, "r") as f:
                     env_config = yaml.safe_load(f)
@@ -355,12 +401,40 @@ class ConfigManager:
             else:
                 # Override or add new key
                 base[key] = value
-                console.log(f"🔧 Override: {key} = {self._safe_log_value(key, value)}")
+                if self.verbose:
+                    console.log(f"🔧 Override: {key} = {self._safe_log_value(key, value)}")
 
     def _safe_log_value(self, key: str, value: any) -> str:
-        """Safely log configuration values (hide secrets)"""
-        if self._is_secret_field(key) and isinstance(value, str):
+        """
+        Safely log configuration values (hide secrets)
+
+        Masque les valeurs sensibles de deux manières :
+        1. Si le nom du champ est sensible, tout masquer (comportement original)
+        2. Si la valeur contient des variables d'environnement sensibles,
+           masquer uniquement ces variables (nouveau comportement)
+
+        Args:
+            key: Nom du champ de configuration
+            value: Valeur du champ
+
+        Returns:
+            Chaîne sécurisée pour le logging
+
+        Examples:
+            >>> self._safe_log_value("password", "secret123")
+            "***"
+
+            >>> self._safe_log_value("connection", "host=${HOST} password=${PASSWORD}")
+            "host=${HOST} password=***"
+        """
+        # Si le champ lui-même est sensible, tout masquer
+        if self._is_secret_field(key):
             return "***" if value else "None"
+
+        # Si c'est une chaîne contenant des variables d'environnement
+        if isinstance(value, str) and "${" in value:
+            return self._mask_sensitive_env_vars(value)
+
         return str(value)
 
     def _apply_env_overrides(self, config: dict) -> None:
@@ -381,7 +455,8 @@ class ConfigManager:
                 config_path = env_var[len(prefix) :].lower().split("_")
                 self._set_nested_value(config_section, config_path, value)
                 safe_value = "***" if self._is_secret_field(config_path[-1]) else value
-                console.log(f"🔧 Env override: {env_var} = {safe_value}")
+                if self.verbose:
+                    console.log(f"🔧 Env override: {env_var} = {safe_value}")
 
     def _set_nested_value(self, config: dict, path: list[str], value: str) -> None:
         """Set a nested configuration value"""
@@ -428,9 +503,10 @@ def load_config(
     config_path: Path | None = None,
     environment: str = "development",
     load_secrets: bool = True,
+    verbose: bool = False,
 ) -> AppConfig:
     """Load configuration with separate environment files"""
-    return _config_manager.load_config(config_path, environment, load_secrets)
+    return _config_manager.load_config(config_path, environment, load_secrets, verbose)
 
 
 def get_config() -> AppConfig:
@@ -493,6 +569,7 @@ def debug_secrets() -> None:
         "proxy_url",
         "proxy_username",
         "proxy_password",
+        "GCOVER_POSTGIS_PASSWORD",
     ]
 
     for key in secret_keys:

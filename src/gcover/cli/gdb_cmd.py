@@ -15,6 +15,7 @@ from rich import print as rprint
 from rich.console import Console
 from rich.progress import Progress
 from rich.table import Table
+from collections import Counter
 
 # from gcover.gdb.config import  load_config TODO
 from gcover.config import AppConfig, load_config
@@ -48,9 +49,22 @@ from gcover.gdb.utils import (
     quick_size_check,
     verify_backup_integrity,
 )
-from .main import parse_since
+from gcover.cli.main import parse_since
 
 console = Console()
+
+def validate_asset_types(ctx, param, value):
+    if not value:
+        return []
+    raw_values = [v.strip() for v in value.split(",")]
+    valid_values = [t.value for t in AssetType]
+    invalid = [v for v in raw_values if v not in valid_values]
+    if invalid:
+        raise click.BadParameter(
+            f"Invalid asset type(s): {', '.join(invalid)}. "
+            f"Valid options are: {', '.join(valid_values)}"
+        )
+    return raw_values
 
 
 def get_configs(ctx) -> tuple[GDBConfig, GlobalConfig, str, bool]:
@@ -143,9 +157,9 @@ def init(ctx):
 )
 @click.option(
     "--type",
-    "asset_type",
-    type=click.Choice([t.value for t in AssetType]),
-    help="Filter by asset type",
+    "asset_types",
+    callback=validate_asset_types,
+    help="Comma-separated list of asset types",
 )
 @click.option(
     "--rc", type=click.Choice(["RC1", "RC2"]), help="Filter by release candidate"
@@ -181,7 +195,7 @@ def init(ctx):
 def scan(
     ctx,
     copy_to,
-    asset_type,
+    asset_types,
     rc,
     since,
     latest_only,
@@ -230,7 +244,7 @@ def scan(
 
         # Apply filters using utils function
         filtered_assets = filter_assets_by_criteria(
-            all_assets, asset_type, rc, since_date, latest_only=latest_only
+            all_assets, asset_types, rc, since_date, latest_only=latest_only
         )
 
         assets = remove_duplicate_assets(filtered_assets)
@@ -426,7 +440,7 @@ def scan(
                         manifest_metadata = {
                             "environment": ctx.obj["environment"],
                             "filters": {
-                                "asset_type": asset_type,
+                                "asset_types": asset_types,
                                 "rc": rc,
                                 "since": since,
                                 "latest_only": latest_only,
@@ -935,9 +949,8 @@ def process_all(
         since_date = None
         if since:
             # Example usage
-            since = "2 weeks ago"  # or "2025-10-01"
             since_date = parse_since(since)
-            print(f"Parsed date: {since_date.strftime('%Y-%m-%d')}")
+            rprint(f"Parsed date: {since_date.strftime('%Y-%m-%d')}")
 
             try:
                 since_date = datetime.strptime(since, "%Y-%m-%d")
@@ -945,9 +958,21 @@ def process_all(
                 rprint(f"[red]Invalid date format: {since}. Use YYYY-MM-DD[/red]")
                 sys.exit(1)
 
+
+       # Count by class type
+        class_counts = Counter(type(asset) for asset in assets)
+
+        # Print results
+        for cls, count in class_counts.items():
+            rprint(f"Found {cls.__name__}: {count}")
+        rprint(f"[yellow]Filtering by: type={filter_type}, rc={filter_rc} and date={since_date}...[/yellow]")
+
+
         for asset in assets:
             # Filter by type
+            logger.debug(f"Asset: {asset.path.name} ({asset.info.asset_type.value})")
             if filter_type and asset.info.asset_type.value != filter_type:
+                logger.debug(f"  Not matching {filter_type}")
                 continue
 
             # Filter by RC
@@ -956,22 +981,23 @@ def process_all(
                     ReleaseCandidate.RC1 if filter_rc == "RC1" else ReleaseCandidate.RC2
                 )
                 if asset.info.release_candidate != rc_value:
+                    logger.debug(f"  Not matching {filter_rc}")
                     continue
 
             # Filter by date
             if since_date and asset.info.timestamp < since_date:
+                logger.debug(f"  Not matching {since_date}")
                 continue
 
             # Check if already processed (unless force is specified)
             if not force and manager.metadata_db.asset_exists(asset.path):
-                if verbose:
-                    rprint(f"[dim]Skipping already processed: {asset.path.name}[/dim]")
+                rprint(f"[yellow]Skipping already processed: {asset.path.name}[/yellow]")
                 continue
 
             filtered_assets.append(asset)
 
         if not filtered_assets:
-            rprint("[yellow]No assets match the specified criteria[/yellow]")
+            rprint("[yellow]No new assets match the specified criteria[/yellow]")
             return
 
         # Show summary

@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional, Union
 
-from .metadata import SchemaMetadata
+from gcover.schema.metadata import SchemaMetadata
 
 
 @dataclass

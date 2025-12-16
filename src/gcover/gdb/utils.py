@@ -19,11 +19,8 @@ from loguru import logger
 from rich import print as rprint
 from rich.console import Console
 
-try:
-    from .assets import AssetType, GDBAsset, ReleaseCandidate
-except ImportError:
-    # Fallback for when used independently
-    from gcover.gdb.assets import AssetType, GDBAsset, ReleaseCandidate
+from gcover.gdb.assets import AssetType, GDBAsset, ReleaseCandidate
+
 
 console = Console()
 
@@ -463,7 +460,7 @@ def _map_asset_to_structure(asset: GDBAsset, config_base_paths: Dict[str, str]) 
 
 def filter_assets_by_criteria(
     assets: List[GDBAsset],
-    asset_type: Optional[str] = None,
+    asset_types: Optional[List[str]] = None,
     rc: Optional[str] = None,
     since: Optional[datetime] = None,
     until: Optional[datetime] = None,
@@ -490,7 +487,7 @@ def filter_assets_by_criteria(
     Example:
         >>> filtered = filter_assets_by_criteria(
         ...     all_assets,
-        ...     asset_type='backup',
+        ...     asset_types=['backup'],
         ...     rc='RC2',
         ...     since=datetime(2025, 1, 1),
         ...     latest_only=True
@@ -499,8 +496,10 @@ def filter_assets_by_criteria(
     filtered = assets
 
     # Filter by asset type
-    if asset_type:
-        filtered = [a for a in filtered if a.info.asset_type.value == asset_type]
+    if asset_types:
+        if isinstance(asset_types, str):
+            asset_types = [asset_types]
+        filtered = [a for a in filtered if a.info.asset_type.value in asset_types]
 
     # Filter by release candidate
     if rc:

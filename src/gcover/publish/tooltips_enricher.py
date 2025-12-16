@@ -18,7 +18,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 from loguru import logger
-from pyogrio.errors import DataLayerError
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import (BarColumn, Progress, SpinnerColumn,
@@ -26,17 +26,10 @@ from rich.progress import (BarColumn, Progress, SpinnerColumn,
 from rich.table import Table
 from shapely.geometry import box
 
-try:
-    import arcpy
-
-    HAS_ARCPY = True
-except ImportError:
-    HAS_ARCPY = False
-    logger.warning("arcpy not available - using pure geopandas approach")
-
+from gcover.arcpy_compat import HAS_ARCPY, arcpy
 from gcover.core.geometry import load_gpkg_with_validation, safe_read_filegdb
 
-from ..sde.bridge import GCoverSDEBridge, create_bridge
+from gcover.sde.bridge import GCoverSDEBridge, create_bridge
 
 console = Console()
 
@@ -380,6 +373,9 @@ class EnhancedTooltipsEnricher:
         Returns:
             Dictionary of clipped GeoDataFrames
         """
+
+        # Late import
+        from pyogrio.errors import DataLayerError
         # Get mapsheet geometry
         mapsheets = self.load_mapsheets_info()
         mapsheet_geom = mapsheets[mapsheets["MSH_MAP_NBR"] == mapsheet_nbr]

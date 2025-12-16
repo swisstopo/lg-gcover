@@ -19,7 +19,7 @@ except ImportError:
 from loguru import logger
 
 # Import your dataclasses
-from .models import (CodedDomain, CodedValue, ESRISchema, FeatureClass, Field,
+from gcover.schema.models import (CodedDomain, CodedValue, ESRISchema, FeatureClass, Field,
                      Index, RangeDomain, RelationshipClass, Subtype,
                      SubtypeValue, Table)
 

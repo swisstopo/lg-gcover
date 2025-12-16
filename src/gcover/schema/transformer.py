@@ -13,7 +13,7 @@ from loguru import logger
 from gcover.config import DEFAULT_EXCLUDED_FIELDS, EXCLUDED_TABLES
 
 # Import the dataclasses
-from .models import (CodedDomain, CodedValue, ESRISchema, FeatureClass, Field,
+from gcover.schema.models import (CodedDomain, CodedValue, ESRISchema, FeatureClass, Field,
                      Index, RangeDomain, RelationshipClass, Subtype,
                      SubtypeValue, Table)
 

@@ -13,17 +13,27 @@ from typing import Any, Callable, Dict, List, Optional, Union
 import geopandas as gpd
 import pandas as pd
 from loguru import logger
-from rich.progress import (BarColumn, MofNCompleteColumn, Progress,
-                           SpinnerColumn, TaskID, TextColumn,
-                           TimeElapsedColumn, TimeRemainingColumn)
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TaskID,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
 
-try:
-    import arcpy
-except ImportError:
-    logger.warning("arcpy not available - SDE bridge functionality disabled")
-    arcpy = None
+# Import depuis le module centralisé
+from gcover.arcpy_compat import HAS_ARCPY, arcpy
 
-from .connection_manager import SDEConnectionManager
+'''# Vérifier la disponibilité dès l'import (optionnel mais recommandé pour les messages clairs)
+if not HAS_ARCPY:
+    logger.warning("Module gcover.sde.bridge requires arcpy but it's not available")'''
+
+
+
+from gcover.sde.connection_manager import SDEConnectionManager
 
 
 class ReadOnlyError(Exception):

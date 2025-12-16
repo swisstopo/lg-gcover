@@ -48,6 +48,7 @@ jobs:
         shell: bash -el {0}
         run: |
           conda install -y \
+          duckdb \
           pip \
           gdal \
           geopandas \
@@ -83,6 +84,11 @@ jobs:
       #- name: Run ruff linter
       #  run: |
       #    ruff check src/ --output-format=github
+
+      - name: Run tests
+        shell: bash -l {0}
+        run: |
+          GCOVER_ENVIRONMENT=test  pytest tests/test_parse_since.py -v  
 
       - name: Run smoke tests
         shell: bash -l {0}
