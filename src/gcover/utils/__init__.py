@@ -40,9 +40,7 @@ __all__ = [
     "read_gpkg_metadata",
 
     # Geometry utilities (lazy loaded)
-    "buffer_geometry",
-    "simplify_geometry",
-    "validate_geometry",
+    "validate_and_repair_geometries",
 ]
 
 
@@ -61,9 +59,7 @@ def __getattr__(name: str):
         "read_gpkg_metadata": "gcover.utils.gpkg",
 
         # Geometry utilities
-        "buffer_geometry": "gcover.utils.geometry",
-        "simplify_geometry": "gcover.utils.geometry",
-        "validate_geometry": "gcover.utils.geometry",
+        "validate_and_repair_geometries": "gcover.core.geometry",
     }
 
     if name in _lazy_imports:

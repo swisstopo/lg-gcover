@@ -10,11 +10,21 @@ import pandas as pd
 from loguru import logger
 from rich.console import Console
 from rich.logging import RichHandler
-from rich.progress import (BarColumn, Progress, SpinnerColumn, TextColumn,
-                           TimeRemainingColumn)
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 from shapely import is_empty, is_valid, make_valid
-from shapely.geometry import (GeometryCollection, LineString, MultiPolygon,
-                              Point, Polygon)
+from shapely.geometry import (
+    GeometryCollection,
+    LineString,
+    MultiPolygon,
+    Point,
+    Polygon,
+)
 from shapely.validation import explain_validity
 
 
@@ -145,24 +155,17 @@ def repair_self_intersections_with_quality_control(
     """
     Repair self-intersecting rings with quality control to discard overly changed geometries.
 
-    Parameters:
-    -----------
-    gdf : gpd.GeoDataFrame
-        Input GeoDataFrame
-    max_area_change : float, default 0.1
-        Maximum allowed area change ratio (0.1 = 10%)
-    max_iou_threshold : float, default 0.8
-        Minimum Intersection over Union after repair
-    buffer_tolerance : float, default 0.001
-        Buffer distance for initial repair attempt (often fixes self-intersections)
-    discard_unreparable : bool, default True
-        Whether to discard geometries that fail quality checks
-    log_details : bool, default True
-        Whether to log detailed repair information
+    Args:
+        gdf: Input GeoDataFrame.
+        max_area_change: Maximum allowed area change ratio (0.1 = 10%). Defaults to 0.1.
+        max_iou_threshold: Minimum Intersection over Union (IoU) after repair. Defaults to 0.8.
+        buffer_tolerance: Buffer distance for initial repair attempt (often fixes self-intersections).
+            Defaults to 0.001.
+        discard_unreparable: Whether to discard geometries that fail quality checks. Defaults to True.
+        log_details: Whether to log detailed repair information. Defaults to True.
 
     Returns:
-    --------
-    gpd.GeoDataFrame with repaired geometries (or discarded if quality check fails)
+        A gpd.GeoDataFrame with repaired geometries (or discarded if quality check fails).
     """
 
     def calculate_geometry_similarity(
@@ -406,19 +409,18 @@ def validate_and_repair_geometries(
     Validate geometries in a GeoDataFrame and optionally repair invalid ones.
 
     Parameters:
-    -----------
-    gdf : gpd.GeoDataFrame
+
+      gdf : gpd.GeoDataFrame
         Input GeoDataFrame
-    repair : bool, default True
+      repair : bool, default True
         Whether to attempt to repair invalid geometries
-    remove_empty : bool, default True
+      remove_empty : bool, default True
         Whether to remove empty geometries
-    log_details : bool, default True
+      log_details : bool, default True
         Whether to log details about invalid geometries
 
     Returns:
-    --------
-    gpd.GeoDataFrame with validated (and optionally repaired) geometries
+      gpd.GeoDataFrame with validated (and optionally repaired) geometries
     """
 
     if gdf.empty:
@@ -507,8 +509,7 @@ def geometry_health_check(gdf: gpd.GeoDataFrame) -> dict:
     Perform a quick health check on geometries and return statistics.
 
     Returns:
-    --------
-    dict with geometry health statistics
+        dict with geometry health statistics
     """
     if gdf.empty:
         return {"status": "empty", "message": "GeoDataFrame is empty"}
@@ -556,20 +557,18 @@ def load_gpkg_with_validation(
     Load a GeoPackage with automatic geometry validation and cleaning.
 
     Parameters:
-    -----------
-    gpkg_path : str
-        Path to the GeoPackage file
-    layer : str, optional
-        Layer name to load (if None, loads first layer)
-    repair_geometries : bool, default True
-        Whether to attempt to repair invalid geometries
-    remove_invalid : bool, default True
-        Whether to remove geometries that cannot be repaired
-    **kwargs : additional arguments to pass to gpd.read_file()
+        gpkg_path : str
+          Path to the GeoPackage file
+        layer : str, optional
+           Layer name to load (if None, loads first layer)
+        repair_geometries : bool, default True
+          Whether to attempt to repair invalid geometries
+        remove_invalid : bool, default True
+            Whether to remove geometries that cannot be repaired
+        **kwargs : additional arguments to pass to gpd.read_file()
 
     Returns:
-    --------
-    gpd.GeoDataFrame with validated geometries
+        gpd.GeoDataFrame with validated geometries
     """
 
     try:

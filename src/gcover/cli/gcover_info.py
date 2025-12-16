@@ -3,10 +3,15 @@
 GPKG Field Manager - A CLI tool to list and rename fields in GeoPackage files.
 """
 
+import shutil
+import tempfile
 import warnings
-from typing import List, Optional, Dict
+from pathlib import Path
+from typing import Dict, List, Optional
 
 import click
+import fiona
+import pyogrio
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -42,7 +47,9 @@ def get_supported_layers(filename: str, spatial_only: bool = False) -> List[str]
             spatial_layers = []
             for layer in layer_names:
                 try:
-                    gdf = gpd.read_file(filename, layer=layer)
+                    gdf = gpd.read_file(
+                        filename, layer=layer, engine="pyogrio", use_arrow=True
+                    )
                     if gdf.geometry.name and not gdf.empty:
                         spatial_layers.append(layer)
                 except Exception:
@@ -73,9 +80,9 @@ def get_field_info(gdf: gpd.GeoDataFrame) -> Table:
     )
 
     table.add_column("Index", style="dim", width=6)
-    table.add_column("Field Name", style="cyan", width=20)
-    table.add_column("Data Type", style="green", width=15)
-    table.add_column("Nullable", style="yellow", width=10)
+    table.add_column("Field Name", style="cyan", width=30)
+    table.add_column("Data Type", style="green", width=5)
+    table.add_column("Nullable", style="yellow", width=5)
     table.add_column("Sample Value", style="white", width=SAMPLE_VALUE_COLUMN_WIDTH)
 
     for i, (col_name, col_type) in enumerate(gdf.dtypes.items()):
@@ -150,16 +157,28 @@ def process_layer(
         - Modified GeoDataFrame (or None if no changes)
         - Boolean indicating whether to go back to layer selection (True) or quit/save (False)
     """
+
     if gdf is None:
         try:
             console.print(f"\n[bold]Reading layer:[/bold] {layer}")
-            gdf = gpd.read_file(filename, layer=layer)
+            schema = pyogrio.read_info(filename, layer=layer)
+            int_columns = [
+                name
+                for name, dtype in zip(schema["fields"], schema["dtypes"])
+                if dtype in ["int32", "int64"]
+            ]
+            gdf = gpd.read_file(filename, layer=layer, engine="pyogrio", use_arrow=True)
+            for col in int_columns:
+                gdf[col] = gdf[col].astype("Int64")
 
             if gdf.empty:
                 console.print("[yellow]Warning: The layer is empty.[/yellow]")
                 return None, True
         except Exception as e:
+            import traceback
+
             console.print(f"[red]Error reading layer: {e}[/red]")
+            console.print(traceback.format_exc())
             return None, True
 
     # Display field information
@@ -168,6 +187,7 @@ def process_layer(
     # Field management loop
     while True:
         console.print("\n[bold]Options:[/bold]")
+        console.print("  [cyan]a[/cyan] - Add a new field")
         console.print("  [cyan]r[/cyan] - Rename a field")
         console.print("  [cyan]c[/cyan] - Change field type")
         console.print("  [cyan]d[/cyan] - Delete field")
@@ -178,9 +198,41 @@ def process_layer(
 
         choice = Prompt.ask(
             "What would you like to do?",
-            choices=["r", "c", "d", "n", "b", "s", "q"],
+            choices=["a", "r", "c", "d", "n", "b", "s", "q"],
             default="q",
         )
+
+        if choice == "a":
+            # New field
+            new_name = Prompt.ask("Enter new field name")
+            new_type = Prompt.ask(
+                "Enter new type",
+                choices=[
+                    "object",
+                    "string",
+                    "float64",
+                    "int64",
+                    "int32",
+                    "int16",
+                    "int8",
+                    "uint64",
+                    "uint32",
+                    "uint16",
+                    "uint8",
+                    "Int64",
+                    "Int32",
+                    "Int16",
+                    "Int8",
+                ],
+                default="Int64",
+            )
+
+            gdf[new_name] = pd.Series([pd.NA] * len(gdf), dtype=new_type)
+
+            console.print(f"[green]✓ Added new field '{new_name}' [{new_type}][/green]")
+
+            # Show updated field info
+            console.print(get_field_info(gdf))
 
         if choice == "r":
             # Rename field
@@ -304,6 +356,100 @@ def process_layer(
                 return None, False
 
 
+def save_modified_layers(
+    modified_layers: Dict[str, gpd.GeoDataFrame], filename: str, new_filename: str
+) -> int:
+    """
+    Save all modified layers to a file.
+    For GPKG with existing file, recreates the entire file to avoid schema conflicts.
+    """
+    success_count = 0
+
+    # Special handling for GPKG when overwriting
+    if (
+        new_filename.endswith(".gpkg")
+        and Path(new_filename).exists()
+        and new_filename == filename
+    ):
+        # Get list of all layers in original file
+        all_layers = fiona.listlayers(new_filename)
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(suffix=".gpkg", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        try:
+            # Copy unmodified layers to temp file
+            for layer_name in all_layers:
+                if layer_name not in modified_layers:
+                    gdf_original = gpd.read_file(
+                        new_filename, layer=layer_name, engine="pyogrio", use_arrow=True
+                    )
+                    gdf_original.to_file(
+                        tmp_path,
+                        layer=layer_name,
+                        driver="GPKG",
+                        engine="pyogrio",
+                        mode="a" if Path(tmp_path).stat().st_size > 0 else "w",
+                    )
+
+            # Add modified layers to temp file
+            for layer_name, gdf in modified_layers.items():
+                gdf.to_file(
+                    tmp_path,
+                    layer=layer_name,
+                    driver="GPKG",
+                    engine="pyogrio",
+                    mode="a",
+                )
+                success_count += 1
+                console.print(
+                    f"[green]✓ Successfully saved layer '{layer_name}'[/green]"
+                )
+
+            # Replace original file with temp file
+            shutil.move(tmp_path, new_filename)
+
+        except Exception as e:
+            console.print(f"[red]✗ Error: {e}[/red]")
+            if Path(tmp_path).exists():
+                Path(tmp_path).unlink()
+            raise
+
+    else:
+        # Standard save for new files or non-GPKG
+        for layer_name, gdf in modified_layers.items():
+            try:
+                if new_filename.endswith(".gpkg"):
+                    if Path(new_filename).exists():
+                        gdf.to_file(
+                            filename=new_filename,
+                            layer=layer_name,
+                            driver="GPKG",
+                            engine="pyogrio",
+                            mode="a",
+                        )
+                    else:
+                        gdf.to_file(
+                            new_filename,
+                            layer=layer_name,
+                            driver="GPKG",
+                            engine="pyogrio",
+                        )
+                else:
+                    gdf.to_file(new_filename, engine="pyogrio")
+
+                console.print(
+                    f"[green]✓ Successfully saved layer '{layer_name}'[/green]"
+                )
+                success_count += 1
+
+            except Exception as e:
+                console.print(f"[red]✗ Error saving layer '{layer_name}': {e}[/red]")
+
+    return success_count
+
+
 @click.command()
 @click.argument("filename", type=click.Path(exists=True))
 @click.option(
@@ -382,18 +528,13 @@ def info(filename: str, layer: Optional[str], in_place: bool, spatial_only: bool
 
             # Save all modified layers
             success_count = 0
-            for layer_name, gdf in modified_layers.items():
-                try:
-                    if new_filename.endswith(".gpkg"):
-                        gdf.to_file(new_filename, layer=layer_name, driver="GPKG")
-                    else:
-                        gdf.to_file(new_filename)
-                    console.print(
-                        f"[green]✓ Successfully saved layer '{layer_name}'[/green]"
-                    )
-                    success_count += 1
-                except Exception as e:
-                    console.print(f"[red]Error saving layer '{layer_name}': {e}[/red]")
+            try:
+                success_count = save_modified_layers(
+                    modified_layers, filename, new_filename
+                )
+
+            except Exception as e:
+                console.print(f"[red]Error saving layer '{layer_name}': {e}[/red]")
 
             console.print(
                 f"\n[green]✓ Saved {success_count}/{len(modified_layers)} layers to {new_filename}[/green]"
@@ -446,22 +587,16 @@ def info(filename: str, layer: Optional[str], in_place: bool, spatial_only: bool
 
                         # Save all modified layers
                         success_count = 0
-                        for layer_name, gdf in modified_layers.items():
-                            try:
-                                if new_filename.endswith(".gpkg"):
-                                    gdf.to_file(
-                                        new_filename, layer=layer_name, driver="GPKG"
-                                    )
-                                else:
-                                    gdf.to_file(new_filename)
-                                console.print(
-                                    f"[green]✓ Successfully saved layer '{layer_name}'[/green]"
-                                )
-                                success_count += 1
-                            except Exception as e:
-                                console.print(
-                                    f"[red]Error saving layer '{layer_name}': {e}[/red]"
-                                )
+
+                        try:
+                            success_count = save_modified_layers(
+                                modified_layers, filename, new_filename
+                            )
+
+                        except Exception as e:
+                            console.print(
+                                f"[red]Error saving layer '{layer_name}': {e}[/red]"
+                            )
 
                         console.print(
                             f"\n[green]✓ Saved {success_count}/{len(modified_layers)} layers to {new_filename}[/green]"

@@ -11,6 +11,8 @@ if sys.platform == "win32":
         # Will be handled by arcpy_compat later
         pass
 
-from gcover.cli.main import cli
+from gcover.cli.main import cli, info, logs, tail_logs, show_logs
 
-__all__ = ["cli"]
+from gcover.cli.gdb_cmd import gdb
+
+__all__ = ["cli","gdb", "logs", "tail_logs", "show_logs"]

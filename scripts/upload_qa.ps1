@@ -14,7 +14,7 @@ $env:PYTHON_RICH_FORCE_ASCII = "true"
 
 
 # Path to conda environment
-$CondaPath = "Y:\conda\envs\gcover-arcgis"
+$CondaPath = "Y:\conda\envs\ARCGIS_36"
 $OutputDir = "X:\mom"
 $InputDir = "\\v0t0020a\topgisprod\10_Production_GC\Administration\QA"
 $SINCE_DATE = (Get-Date).AddDays(-31).ToString("yyyy-MM-dd")

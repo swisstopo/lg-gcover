@@ -50,6 +50,7 @@ dependencies = [
     "jinja2>=3.0.0",
     "requests",
     "dateparser",
+    "duckdb",
 ]
 
 
@@ -81,6 +82,7 @@ dev = [
     "pre-commit>=3.0",
     "types-pyyaml",
     "types-click",
+    "pdoc",
 ]
 
 docs = [

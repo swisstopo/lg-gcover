@@ -43,6 +43,10 @@ except ImportError:
     load_gpkg_with_validation = None
 
 
+os.environ['OGR_GEOMETRY_ACCEPT_UNCLOSED_RING'] = 'NO'
+os.environ['METHOD'] = 'ONLY_CCW'
+
+
 # Configure rich console
 console = Console()
 
@@ -53,6 +57,11 @@ logger.add(
     format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
     level="INFO",
 )
+
+console.print("[yellow]Removed some OGR warnings (CCW, unclosed rings)[/yellow]")
+
+# Define the attributes you want to transfer from mapsheets_gdf
+MAPSHEET_ATTRIBUTES = ["MSH_MAP_TITLE", "MSH_MAP_NBR"]
 
 # Field domain mapping for coded domain decoding
 FIELD_DOMAIN_MAPPING = {
@@ -78,6 +87,20 @@ LOOKUP_TABLE_MAPPING = {
     "TECTO": ("GC_TECTO", "tecto_code", "tecto_desc"),
 }
 
+
+INTEGER_TYPE_COLUMNS = ['AARC_AGE', 'AARC_AGE', 'AARC_AGE', 'AARC_EPOCH', 'AARC_EPOCH', 'AARC_PERIOD', 'AARC_PERIOD', 'AARC_PERIOD', 'AARC_TYPE', 'ABOR_LINK', 'ABOR_MAIN_TAR', 'ABOR_REF_NUMBER', 'ABOR_TARG_MAT', 'ACTIVITY', 'ADMIXTURE', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'CHARACT', 'COMPOSIT', 'CONFINE', 'CONG_SPE', 'DIP', 'DIP', 'DIP', 'DIP', 'DIP', 'DIP', 'DIP', 'DRILL_MO', 'EPOCH', 'FOLD_FOR', 'GALL_AGE', 'GEN_RELA', 'GGLA_GLAC_TYP', 'GGLA_ICE_M_P', 'GGLA_MORAI_MO', 'GGLA_QUAT_STR', 'GGLA_REF_YEAR', 'GINS_MAIN_MOV', 'GLAC_TYPE', 'HCON_COMBI', 'HCON_EPOCH', 'HCON_STATUS', 'HIERA', 'HPAL_REF_YEAR', 'HPAL_REL_AGE', 'HSUB_COMBI', 'HSUR_COMBI', 'HSUR_DIS_LOCA', 'HSUR_FLOW_CON', 'HSUR_STATUS', 'HSUR_TEMP', 'HSUR_TYPE', 'IGNE_AFFINITY', 'IGNE_GRAIN_SI', 'IGNE_TEX', 'LANO_TYPE', 'LFOS_DAT_METH', 'LFOS_DIVISION', 'LFOS_STATUS', 'LGEO_STATUS', 'LRES_MATERIAL', 'LRES_STATUS', 'LTYP_STRATI', 'META_STA', 'META_STR', 'MFOL_FOLD_TYP', 'MFOL_PHASE', 'MORPHOLO', 'MPLA_PHASE', 'MPLA_POLARITY', 'PCOH_WA_TABLE', 'PSLO_TYPE', 'ROCK_SPE', 'ROCK_TYPE', 'SEDI_BEDDING', 'SEDI_BOND_MAT', 'SEDI_MAIN_COM', 'SEDI_SECO_COM', 'SEDI_STR', 'SEDI_TEX', 'STATUS', 'STATUS', 'STATUS', 'STATUS', 'STATUS', 'STRUCTUR', 'SYSTEM', 'TARG_MAT', 'TARG_MAT', 'TDEF_FOLD_FOR', 'TDEF_FOLD_TYP', 'THIN_COVER', 'TTECT_VERTI_MO', 'TTEC_FAULT_MO', 'TTEC_HORIZ_MO', 'TTEC_LIM_TYP', 'TYPE', 'TYPE']
+
+
+def convert_columns_to_int(ori_gdf, columns):
+    """Convert specified columns to nullable integers (Int64)"""
+    new_type = "Int64"
+    gdf = ori_gdf.copy()
+    for col in columns:
+        if col in gdf.columns:
+            gdf[col] = pd.to_numeric(gdf[col], errors="coerce").astype(
+                new_type
+            )
+    return gdf
 
 def extend_line_to_cross_polygon(line, polygon, extension_factor=1.5):
     """
@@ -888,7 +911,9 @@ class GeoCoverDenormalizer:
             "REVISION_YEAR",
             "WU_ID_CREATION",
             "WU_ID",
-            "TREE_LEVEL",  # User requested to omit this
+            "TREE_LEVEL",
+            "SHAPE_Area",
+            "SHAPE_Length", # User requested to omit this
         ]
 
         result_gdf = gdf.copy()
@@ -941,7 +966,7 @@ class GeoCoverDenormalizer:
             "LITHO_SEC",
             "LITHO_TER",
             "CORRELATION",
-        ]
+        ] + INTEGER_TYPE_COLUMNS
 
         for field in integer_fields:
             if field in result_gdf.columns:
@@ -1059,15 +1084,25 @@ class GeoCoverDenormalizer:
                         )
 
                     cleaned_gdf = self.clean_metadata_columns(gdf, remove_metadata)
+
+                    # Use only the dominant geometry (TODO: Why it is mixed)
+                    if hasattr(cleaned_gdf, "geometry") and not cleaned_gdf.empty:
+                        geom_types = cleaned_gdf.geometry.geom_type.value_counts()
+                        logger.debug(f"{table_name} geometry types: {dict(geom_types)}")
+
+                        # find the most common geometry type
+                        dominant_type = geom_types.idxmax()
+
+                        # filter GeoDataFrame to only that type
+                        cleaned_gdf = cleaned_gdf[cleaned_gdf.geometry.geom_type == dominant_type]
+
                     results[table_name] = cleaned_gdf
 
                     # Log some basic info to verify correctness
                     logger.debug(
                         f"{table_name}: {len(cleaned_gdf)} features, {len(cleaned_gdf.columns)} columns"
                     )
-                    if hasattr(cleaned_gdf, "geometry") and not cleaned_gdf.empty:
-                        geom_types = cleaned_gdf.geometry.geom_type.value_counts()
-                        logger.debug(f"{table_name} geometry types: {dict(geom_types)}")
+
 
                     progress.update(
                         task_id, completed=100, description=f"✅ {table_name} complete"
@@ -1195,6 +1230,11 @@ def create_summary_table(results: Dict[str, gpd.GeoDataFrame]) -> Table:
     help="Remove metadata columns (dates, origins, revisions, etc.)",
 )
 @click.option(
+    "--add-mapsheet-metadata",
+    is_flag=True,
+    help=f"Add mapsheet attributes ({",".join(MAPSHEET_ATTRIBUTES)})",
+)
+@click.option(
     "--split-layer",
     is_flag=True,
     help="Split layers on mapsheet border",
@@ -1218,6 +1258,7 @@ def denormalize_geocover(
     split_layer: bool,
     overwrite: bool,
     dry_run: bool,
+    add_mapsheet_metadata: bool
 ):
     """
     Denormalize GeoCover geodatabase tables with their lookup relationships.
@@ -1245,6 +1286,8 @@ def denormalize_geocover(
             border_style="blue",
         )
     )
+    if add_mapsheet_metadata and not split_layer:
+        click.Abort("You must use --split-layer with --add-mapsheet-metadata")
 
     # Validate input
     if not gdb_path.exists():
@@ -1313,8 +1356,19 @@ def denormalize_geocover(
                 console.print(f"   Input : {original_feat_nb} features")
                 console.print(f"   Mapsheets: {len(mapsheets_gdf)}")
 
+
+
                 try:
-                    if not (input_gdf.geom_type == "Point").all():
+                    # 1. Check if the layer contains only POINT geometries
+                    is_point_layer = (input_gdf.geom_type == "Point").all()
+                    original_feat_nb = len(input_gdf)  # Define this to track changes
+
+                    if not is_point_layer:
+                        # --- A. Splitting (Lines/Polygons) ---
+                        console.print(f"    Splitting {name} geometries...")
+
+                        # Assuming 'split_features_by_mapsheets' returns the split GeoDataFrame
+                        # The resulting GeoDataFrame (splitted_gdf) might still not have the map sheet attributes
                         splitted_gdf = split_features_by_mapsheets(
                             input_gdf=input_gdf,
                             mapsheets_gdf=mapsheets_gdf,
@@ -1322,18 +1376,53 @@ def denormalize_geocover(
                             progress_bar=True,
                             area_threshold=0.1,
                         )
-                        splitted_gdf.to_file("splitted.gpkg")
-                        results[name] = splitted_gdf
-                        splitted_feat_nb = len(splitted_gdf)
+                        if add_mapsheet_metadata:
+                          # --- B. Spatial Join to transfer attributes to the split features ---
+                          # Perform an inner spatial join to transfer the attributes from mapsheets_gdf
+                          # Use 'intersects' for lines/polygons. 'left' join ensures all split pieces are kept.
+                          final_gdf = splitted_gdf.sjoin(
+                            mapsheets_gdf[MAPSHEET_ATTRIBUTES + [mapsheets_gdf.geometry.name]],
+                            how="left",
+                            op="intersects"  # Use 'intersects' for lines and polygons
+                          )
 
+                          # Clean up the join
+                          # Drop the redundant 'index_right' column added by sjoin
+                          final_gdf = final_gdf.drop(columns=["index_right"])
+                        else:
+                            final_gdf = splitted_gdf.copy()
+
+                        splitted_feat_nb = len(final_gdf)
                         diff = splitted_feat_nb - original_feat_nb
                         sign = "+" if diff > 0 else ""
                         console.print(
-                            f"[dim]  After split: {splitted_feat_nb} features ([bold]{sign}{diff}[/bold])[/dim]"
+                            f"[dim]  After split & join: {splitted_feat_nb} features ([bold]{sign}{diff}[/bold])[/dim]"
                         )
 
                     else:
-                        console.print("    Ignoring POINT geometries")
+                        if add_mapsheet_metadata:
+                          # --- C. Direct Spatial Join (Points) ---
+                          console.print(f"    Performing spatial join on POINT geometries...")
+
+                          # Use 'within' or 'intersects' for points
+                          # 'within' is more strict, 'intersects' is generally safe.
+                          final_gdf = input_gdf.sjoin(
+                            mapsheets_gdf[MAPSHEET_ATTRIBUTES + [mapsheets_gdf.geometry.name]],
+                            how="left",
+                            op="within"  # Use 'within' or 'intersects' for points
+                          )
+
+                          # Drop the redundant 'index_right' column added by sjoin
+                          final_gdf = final_gdf.drop(columns=["index_right"])
+                        else:
+                            final_gdf = input_gdf.copy()
+
+                        console.print("    Ignoring POINT geometries for splitting")
+
+                    # --- D. Final steps for both paths ---
+                    results[name] = final_gdf
+                    final_gdf.to_file(f"processed_{name}.gpkg", driver="GPKG")
+
 
                 except Exception as e:
                     logger.error(e)
@@ -1360,6 +1449,9 @@ def denormalize_geocover(
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             rc_version = "RC2" if "2030-12-31" in str(gdb_path) else "RC1"
             output = Path(f"geocover_denormalized_{rc_version}_{timestamp}.gpkg")
+        if not str(output).endswith('.gpkg'):
+            console.print(f"[red]⚠️  Wrong file extension. Only GPKG is supported: {output}[/red]")
+            click.Abort()
 
         # Write results to single GPKG
         console.print(f"\n[green]💾 Writing results to:[/green] {output}")

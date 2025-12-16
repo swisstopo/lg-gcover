@@ -7,10 +7,12 @@ setlocal EnableDelayedExpansion
 REM ============================================================================
 REM Configuration
 REM ============================================================================
-set ENV_NAME=gcover-arcgis
+set ENV_NAME=ARCGIS_36"
 set ENV_BASE=Y:\conda\envs
 set ARCGIS_PRO=C:\Program Files\ArcGIS\Pro
 set ARCGIS_PYTHON=%ARCGIS_PRO%\bin\Python\envs\arcgispro-py3
+
+set ARCGIS_PYTHON=C:\Program Files\ArcGIS\Pro\bin\Python\envs\arcgispro-py3
 
 echo ================================================================================
 echo CREATION ENVIRONNEMENT GCOVER + ARCGIS PRO
@@ -143,7 +145,7 @@ echo Installation via conda...
 echo.
 
 REM Packages conda (versions compatibles ESRI)
-call conda install -y -c esri -c conda-forge geopandas shapely pandas pyyaml click rich
+call conda install -y -c esri  geopandas shapely pandas pyyaml click rich
 
 echo.
 echo Installation des packages Python purs via pip...
@@ -164,7 +166,7 @@ echo.
 if exist "pyproject.toml" (
     echo Projet lg-gcover trouve dans le repertoire courant
     echo Installation en mode developpement...
-    pip install -e . --no-deps
+    pip install -e .[dev] --no-deps
     
     if errorlevel 1 (
         echo Attention: Installation echouee
