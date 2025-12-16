@@ -1787,6 +1787,9 @@ def show_sample_data(layer_name: str, sample_gdf: gpd.GeoDataFrame):
     is_flag=True,
     help="Force 2D geometries (drop Z coordinates) - useful if 3D causes issues",
 )
+@click.option('--clip-to-swiss-border/--no-clip-to-swiss-border', help="Clip data to Swiss border (mapsheet)", default=True)
+@click.option('--validate-geometries/--no-validate-geometries', help="Validate and fix geometries", default=True)
+
 @click.option(
     "--exclude-metadata",
     is_flag=True,
@@ -1812,6 +1815,8 @@ def merge(
         layers: tuple,
         skip_tables: bool,
         force_2d: bool,
+        clip_to_swiss_border: bool,
+        validate_geometries: bool,
         exclude_metadata: bool,
         dry_run: bool,
 ):
@@ -1931,7 +1936,12 @@ def merge(
         mapsheet_numbers=mapsheet_numbers,
         preserve_z=not force_2d,  # If force_2d, don't preserve Z
         exclude_fields=DEFAULT_EXCLUDED_FIELDS if exclude_metadata else None,
+        use_convex_hull_masks=True,
+        clip_to_swiss_border=clip_to_swiss_border,
+        validate_geometries=validate_geometries,
+
     )
+
 
     # Override layers if specified
     if layers:
