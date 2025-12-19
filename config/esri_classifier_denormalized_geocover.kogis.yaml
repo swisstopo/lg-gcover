@@ -1,0 +1,71 @@
+# Extended YAML configuration for applying multiple classifications
+
+# Global settings (optional)
+global:
+    treat_zero_as_null: true
+    symbol_field: MAP_SYMBOL
+    label_field: LABEL
+    overwrite: False
+
+layers:
+  - gpkg_layer: exploit_points
+    connection_ref: gpkg_wms
+    classifications:
+      - classification_name: Exploit_Geomat_Pt
+        data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}_exploit_polygons  USING UNIQUE gid USING SRID=2056"
+
+  - gpkg_layer: fossils
+    classifications:
+      - classification_name: Fossils
+        data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}_fossils  USING UNIQUE gid USING SRID=2056"
+
+  - gpkg_layer: point_objects
+    classifications:
+      - classification_name: Point_Mpla_Planar_Structures
+      - classification_name: Point Objects_Achsenfläche
+        data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}_objects USING UNIQUE gid USING SRID=2056 WHERE map_symbol ILIKE 'achsen%'"
+
+      - classification_name: Point Objects_Orient
+      - classification_name: Point_Objects_Bohrung_Fels_erreicht
+      - classification_name: Point_Objects_Sondierung
+      - classification_name: Point_Objects_Bohrung_Fels_nicht_erreicht
+      - classification_name: Point Objects_Quelle
+      - classification_name: Point Objects_Erraticker
+      - classification_name: Point Objects_Orient
+
+  - gpkg_layer: linear_objects
+    classifications:
+      - classification_name: Linear Objects_Moränenwall
+      - classification_name: Linear Objects
+      - classification_name: Linear Objects_GeolKontur
+      - classification_name: Linear Objects_Gesteinhorizont
+      - classification_name: Linear Objects_Hilfs_Karto
+      - classification_name: Linear Objects_Bruch
+      - classification_name: Linear Objects_Ueberschiebung
+
+  - gpkg_layer: exploit_polygons
+    classifications:
+      - classification_name: Exploit_Geomat_Plg
+
+  - gpkg_layer: surfaces
+    classifications:
+      - classification_name: Surfaces
+
+  - gpkg_layer: unco_deposits
+    classifications:
+      - classification_name: Unco Deposits_Bachschutt
+      - classification_name: Unco Deposits_Litho_<20000
+      - classification_name: Unco Deposits_Chrono_Moräne
+      - classification_name: Unco Deposits_Chrono_T
+      - classification_name: Unco Deposits_Chrono_B
+
+  - gpkg_layer: bedrock
+    classifications:
+      - classification_name: Bedrock
+
+
+
+
+
+
+

@@ -24,6 +24,7 @@ layers:
           classification_name: Exploit_Geomat_Pt
           mapfile_name: exploit_geomat_pt
           mapfile_group: exploit_geomat
+          data: "${GC_POSTGIS_GEOM} FROM geol.${GC_POSTGIS_TABLE_PREFIX}_exploit_points USING UNIQUE gid USING SRID=2056"
           map_label: False
           # TODO: no filter
           symbol_prefix: geomat_pnt
@@ -46,6 +47,7 @@ layers:
           mapfile_name: fossils
           mapfile_group: point_features
           map_label: False
+          data: "${GC_POSTGIS_GEOM} FROM geol.${GC_POSTGIS_TABLE_PREFIX}_fossils USING UNIQUE gid USING SRID=2056"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -80,7 +82,7 @@ layers:
           mapfile_group: point_features
           filter: KIND IN (13801001,13801002, 13801004, 13801003, 13801005, 13801006)
           # Convert angles..
-          data: "geom from (SELECT geom, gid, map_symbol, dip::int, (450 - azimuth::int) % 360 AS map_angle FROM geol.geocover_point_objects WHERE azimuth >=0 AND azimuth <=360) AS angle_data USING UNIQUE id USING SRID=..."
+          data: "${GCOVER_POSTGIS_GEOM} from (SELECT ${GCOVER_POSTGIS_GEOM}, gid, map_symbol, dip::int, (450 - azimuth::int) % 360 AS map_angle FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}_point_objects WHERE azimuth >=0 AND azimuth <=360) AS angle_data USING UNIQUE id USING SRID=..."
 
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -94,7 +96,7 @@ layers:
           mapfile_name: achsenflaeche
           mapfile_group: point_features
           # Only a few 100s features
-          data: "geom FROM geol.geocover_point_objects USING UNIQUE gid USING SRID=2056 WHERE map_symbol ILIKE 'achsen%'"
+          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}_point_objects USING UNIQUE gid USING SRID=2056 WHERE map_symbol ILIKE 'achsen%'"
           map_label: False
           max_scale: 20000
           filter: KIND=14601006
@@ -108,6 +110,7 @@ layers:
           classification_name: Point Objects_Orient
           mapfile_name: pnt_orient
           mapfile_group: point_features
+          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}_point_objects  USING UNIQUE gid USING SRID=2056"
           filter: KIND IN (11901001,12501002,12501003,12501004,12501006,12101006,13601001,13601002 ,13601003,13701001,13701002,13701004,14601004)
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -119,6 +122,7 @@ layers:
           mapfile_name: bohrung_fels_erreicht
           mapfile_group: drill
           map_label: False
+          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}_point_objects  USING UNIQUE gid USING SRID=2056"
           filter: KIND=10501001 AND ABOR_DEPTH_BEDR<>999
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -131,6 +135,7 @@ layers:
           mapfile_name: sondierung
           mapfile_group: drill
           map_label: False
+          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}_point_objects  USING UNIQUE gid USING SRID=2056"
           filter: KIND IN (1051002,10501003,10501004,10501005)
           symbol_prefix: sondierung
           fields:
@@ -143,6 +148,7 @@ layers:
           mapfile_name: bohrung_fels_nicht_erreicht
           mapfile_group: drill
           map_label: False
+          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}_point_objects  USING UNIQUE gid USING SRID=2056"
           filter: KIND=10501001 AND ABOR_DEPTH_BEDR = 999
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -155,6 +161,7 @@ layers:
           mapfile_name: quelle
           mapfile_group: point_features
           map_label: False
+          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}_point_objects  USING UNIQUE gid USING SRID=2056"
           filter: KIND=12501001
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -168,6 +175,7 @@ layers:
           mapfile_name: erratiker
           mapfile_group: point_features
           map_label: False
+          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}_point_objects  USING UNIQUE gid USING SRID=2056"
           # TODO: missing AND (PRINTED = 1 OR PRINTED IS NULL)
           filter: KIND IN (14401001,14401002)
           fields:
@@ -181,6 +189,7 @@ layers:
           classification_name: Point Objects_Orient
           mapfile_name: pnt_orient
           mapfile_group: point_features
+          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}_point_objects  USING UNIQUE gid USING SRID=2056"
           filter: KIND IN (11901001,12501002,12501003,12501004,12501006,12101006,13601001,13601002 ,13601003,13701001,13701002,13701004,14601004)
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -207,6 +216,7 @@ layers:
           mapfile_name: linear_moraenenwall
           mapfile_group: linear_features
           map_label: False
+          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}_linear_objects USING UNIQUE gid USING SRID=2056"
           fields:
             KIND: KIND
             GGLA_GLAC_TYP: GGLA_GLAC_TYP
@@ -220,6 +230,7 @@ layers:
           mapfile_name: linear_objects
           mapfile_group: linear_features
           map_label: False  # Don't use mapfile LABEL, even if defined in .lyrx
+          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}_linear_objects  USING UNIQUE gid USING SRID=2056"
           # El cheapo filter
           filter: KIND IN (10201002,10201007,10201006,10201001,10201005,10201004,10201003,10701001,10701002,10901002,10901001,11101001,11101003,11101002,11301007,11301003,11301002,11301006,11301005,11301008,11301009,11301004,11701003,11701002,11701001,11701004,12201001,12201002,12301001,12301004,12301006,12301002,12301007,12301005,12301003,12401001,12601002,12601001,13001001,13301001,13901001,14001001,14701001)
           fields:
@@ -232,7 +243,7 @@ layers:
           mapfile_name: geolkontur
           mapfile_group: linear_features
           map_label: False
-          data: "geom FROM  (select * from geol.geocover_linear_objects where map_symbol in ('geolkontur_1' , 'geolkontur_0')) as a  USING UNIQUE gid USING SRID=2056"
+          data: "${GCOVER_POSTGIS_GEOM} FROM  (select * from geol.${GCOVER_POSTGIS_TABLE_PREFIX}_linear_objects where map_symbol in ('geolkontur_1' , 'geolkontur_0')) as a  USING UNIQUE gid USING SRID=2056"
           fields:
                 KIND: KIND
                 LGEO_STATUS: LGEO_STATUS
@@ -254,6 +265,7 @@ layers:
           mapfile_name: hilfs_karto
           mapfile_group: linear_features
           map_label: False
+          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}_linear_objects  USING UNIQUE gid USING SRID=2056"
           fields:
             KIND: KIND
           symbol_prefix: hilfs_karto
@@ -265,6 +277,7 @@ layers:
           mapfile_name: linear_bruch
           mapfile_group: linear_features
           map_label: False
+          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}_linear_objects  USING UNIQUE gid USING SRID=2056"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -277,6 +290,7 @@ layers:
           mapfile_name: linear_ueberschiebung
           mapfile_group: linear_features
           map_label: False
+          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}_linear_objects  USING UNIQUE gid USING SRID=2056"
           filter: KIND = 14901001
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -298,7 +312,7 @@ layers:
           mapfile_name: exploit_geomat_plg
           mapfile_group: exploit_geomat
           map_label: False
-          data: "geom FROM  geol.geocover_exploit_polygons  USING UNIQUE gid USING SRID=2056"
+          data: "geom FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}_exploit_polygons  USING UNIQUE gid USING SRID=2056"
           symbol_prefix: geomat_plg
           fields:
             KIND: KIND
@@ -318,7 +332,7 @@ layers:
           mapfile_group: surfaces
           map_label: False
           #data: "geom from (SELECT * from surfaces where map_symbol IS NOT NULL) as blabla using unique gid using srid=2056"
-          data: "geom FROM  geol.geocover_surfaces  USING UNIQUE gid USING SRID=2056"
+          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}_surfaces USING UNIQUE gid USING SRID=2056"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -344,6 +358,7 @@ layers:
           mapfile_name: bachschutt
           mapfile_group: unconsolidated
           map_label: False
+          data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}_unco_deposits  USING UNIQUE gid USING SRID=2056"
           # filter: RUNC_LITHO NOT IN (15101009, 15101015,15101019, 15101021, 15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101041,15101046, 15101047, 15101048, 15101049, 15101055, 15101058, 15101040)
           symbol_prefix: unco_bachschutt
           filter: RUNC_LITHO=15101041
@@ -358,6 +373,7 @@ layers:
           mapfile_name: unco_litho
           symbol_prefix: unco_litho
           mapfile_group: unconsolidated
+          data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}_unco_deposits  USING UNIQUE gid USING SRID=2056"
           map_label: False
           filter: RUNC_LITHO NOT IN (15101009, 15101015, 15101019, 15101021, 15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101041, 15101046, 15101047, 15101048, 15101049, 15101055, 15101058, 15101040)
           fields:
@@ -383,6 +399,7 @@ layers:
           mapfile_group: unconsolidated
           map_label: False
           symbol_prefix: unco_chrono_t
+          data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}_unco_deposits  USING UNIQUE gid USING SRID=2056"
           filter: RUNC_LITHO IN (15101019,15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101040, 15101046, 15101047, 15101048, 15101049, 15101055, 15101058)
           fields:
             KIND: KIND
@@ -395,6 +412,7 @@ layers:
           mapfile_name: unco_chrono_b
           mapfile_group: unconsolidated
           map_label: False
+          data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}_unco_deposits  USING UNIQUE gid USING SRID=2056"
           symbol_prefix: unco_chrono_b
           filter: RUNC_LITHO IN (15101009, 15101015)
           fields:
@@ -427,6 +445,7 @@ layers:
           mapfile_name: bedrock
           mapfile_group: bedrock
           map_label: False
+          data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}_bedrock  USING UNIQUE gid USING SRID=2056"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             GMU_CODE: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT
