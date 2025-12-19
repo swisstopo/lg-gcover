@@ -62,6 +62,7 @@ layers:
   - gpkg_layer: bedrock
     classifications:
       - classification_name: Bedrock
+        mapfile_group: ch.swisstopo.geologie-geocover
 
 
 
