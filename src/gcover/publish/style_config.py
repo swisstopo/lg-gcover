@@ -84,23 +84,54 @@ class LayerConfig:
     max_scale: Optional[bool | int] = None  # None, False, True, ou int
 
 
+def _resolve_env_vars(value: Any, max_depth: int = 10) -> Any:
+    """
+    Recursively resolve ${ENV_VAR} and ${ENV_VAR:default} placeholders.
 
-
-def _resolve_env_vars(value: Any) -> Any:
-    """Recursively resolve ${ENV_VAR} placeholders."""
+    Handles:
+    - Multiple placeholders: "${HOST}:${PORT}" → "localhost:5432"
+    - Default values: "${DB:postgres}" → "postgres" if DB not set
+    - Nested resolution: If resolved value contains ${...}, resolves those too
+    """
     if isinstance(value, str):
         pattern = r'\$\{([^}]+)\}'
-        def replacer(match):
-            var_name = match.group(1)
-            default = None
-            if ':' in var_name:
-                var_name, default = var_name.split(':', 1)
-            return os.environ.get(var_name, default or match.group(0))
-        return re.sub(pattern, replacer, value)
+
+        def replacer(match: re.Match) -> str:
+            expr = match.group(1)
+            # Handle default value syntax: ${VAR:default}
+            if ':' in expr:
+                var_name, default = expr.split(':', 1)
+            else:
+                var_name, default = expr, None
+
+            resolved = os.environ.get(var_name)
+            if resolved is not None:
+                return resolved
+            if default is not None:
+                return default
+            # Keep original if not found and no default
+            return match.group(0)
+
+        # Resolve iteratively for nested cases
+        result = value
+        for _ in range(max_depth):
+            new_result = re.sub(pattern, replacer, result)
+            if new_result == result:
+                break  # No more substitutions
+            result = new_result
+        else:
+            # max_depth reached — possible circular reference
+            import warnings
+            warnings.warn(f"Max resolution depth reached for: {value[:50]}...")
+
+        return result
+
     elif isinstance(value, dict):
-        return {k: _resolve_env_vars(v) for k, v in value.items()}
+        return {k: _resolve_env_vars(v, max_depth) for k, v in value.items()}
+
     elif isinstance(value, list):
-        return [_resolve_env_vars(item) for item in value]
+        return [_resolve_env_vars(item, max_depth) for item in value]
+
     return value
 
 
@@ -242,12 +273,12 @@ class BatchClassificationConfig:
 
         with open(config_path, "r", encoding="utf-8") as f:
             self.raw_config = yaml.safe_load(f)
-        logger.info(f"Environement: {env}")
+        logger.info(f"BatchClassificationConfig: environment: {env}")
 
         # Apply environment overlay
         if env:
             env_path = config_path.with_suffix(f'.{env}.yaml')
-            logger.info(f"en overlay: {env_path}")
+            logger.info(f"env overlay: {env_path}")
             if env_path.exists():
                 with open(env_path, "r", encoding="utf-8") as f:
                     env_config = yaml.safe_load(f) or {}
@@ -493,7 +524,6 @@ def apply_batch_from_config(
             try:
                 # Load classification from style file
                 # TODO
-                # Load classifications
                 classifications = extract_lyrx_complete(
                     class_config.style_file,
                     display=False,
@@ -544,13 +574,6 @@ def apply_batch_from_config(
                     overwrite=overwrite,  # Don't overwrite the field itself
                     preserve_existing=preserve_existing,  # But preserve existing non-NULL values
                 )
-                # TODO After bedrock classification
-                # console.print(
-                #    f"After {class_config.classification_name}: {gdf_result[config.symbol_field].notna().sum()} symbols"
-                # )
-                # console.print(
-                #    f"{class_config.classification_name} symbols: {gdf_result[config.symbol_field].value_counts()}"
-                # )
 
                 # Clean up string "None" values
                 gdf_result[config.symbol_field] = gdf_result[
@@ -604,12 +627,6 @@ def apply_batch_from_config(
         console.print(
             f"After save: {gdf_check[config.symbol_field].notna().sum()} symbols"
         )
-
-        # TODO
-        # console.print(
-        #    f"After save: {gdf_check[config.symbol_field].notna().sum()} symbols"
-        # )
-        # console.print(f"Saved symbols: {gdf_check[config.symbol_field].value_counts()}")
 
         stats["layers_processed"] += 1
 

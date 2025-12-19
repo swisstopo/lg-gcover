@@ -179,7 +179,7 @@ class MapServerGenerator:
         lines = [
             "LAYER",
             f'  NAME "{layer_name}"',
-            f'   GROUP "ch.swisstopo.geology.geocover-{layer_group}"',
+            f'  GROUP "{layer_group}"',
             f"  TYPE {layer_type}",
             "  STATUS ON",
             "",
@@ -192,8 +192,8 @@ class MapServerGenerator:
                 "  METADATA",
                 f'    "wms_title"    "{layer_name.capitalize()}"',
                 f'    "wms_abstract" "{layer_name.capitalize()}"',
-                '    "wms_srs"      "EPSG:2056 EPSG:4326 EPSG:3857"',
-                '    "wms_extent" "2350000 1050000 2850000 1350000"',
+                '    "ows_srs"      "EPSG:2056 EPSG:21781 EPSG:4326 EPSG:3857 EPSG:3034 EPSG:3035 EPSG:4258 EPSG:25832 EPSG:25833 EPSG:31467 EPSG:32632 EPSG:32633 EPSG:900913"',
+                '    "wms_extent" "2300000 900000 3100000 1450000"',
                 '    "wms_enable_request" "*"',
                 '    "wms_include_items" "all"',
                 '    "gml_include_items" "all"',
@@ -201,6 +201,9 @@ class MapServerGenerator:
                 "  END",
             ]
         )
+
+        if layer_group and layer_group.endswith('geocover'):
+            lines.insert(-1, '    "wms_group_title"  "GeoCover 2D"')
 
         # Data source
         if connection:
@@ -244,7 +247,7 @@ class MapServerGenerator:
                 '    "init=epsg:2056"',
                 "  END",
                 "",
-                "  EXTENT 2350000 1050000 2850000 1350000",
+                "  EXTENT 2300000 900000 3100000 1450000",
             ]
         )
 
