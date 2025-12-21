@@ -4,18 +4,17 @@ Enhanced CLI commands for preparing GeoCover data for publication.
 Supports multiple tooltip layers, flexible source mappings, and comprehensive configuration.
 """
 
+import json
 import os
 import sys
 import time
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from importlib.resources import files
 
 import click
 import geopandas as gpd
 import pandas as pd
-import json
 import yaml
 from loguru import logger
 from rich.console import Console
@@ -23,36 +22,24 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
-from gcover.config import DEFAULT_EXCLUDED_FIELDS
-
 from gcover.cli.main import _split_bbox
-from gcover.config import SDE_INSTANCES, AppConfig, load_config
-from gcover.publish.esri_classification_applicator import ClassificationApplicator
+from gcover.config import (DEFAULT_EXCLUDED_FIELDS, SDE_INSTANCES, AppConfig,
+                           load_config)
+from gcover.publish.esri_classification_applicator import \
+    ClassificationApplicator
 from gcover.publish.esri_classification_extractor import (
-    extract_lyrx_complete,
-    explore_layer_structure,
-    export_classifications_to_csv,
-    ClassificationJSONEncoder,
-    to_serializable_dict,
-)
+    ClassificationJSONEncoder, explore_layer_structure,
+    export_classifications_to_csv, extract_lyrx_complete, to_serializable_dict)
 from gcover.publish.generator import MapServerGenerator
+from gcover.publish.merge_sources import (GDBMerger, MergeConfig,
+                                          create_merge_config)
 from gcover.publish.qgis_generator import QGISGenerator
-from gcover.publish.style_config import (
-    BatchClassificationConfig,
-    apply_batch_from_config,
-)
-from gcover.publish.merge_sources import (
-    GDBMerger,
-    MergeConfig,
-    create_merge_config,
-)
-from gcover.publish.tooltips_enricher import (
-    EnhancedTooltipsEnricher,
-    EnrichmentConfig,
-    LayerMapping,
-    LayerType,
-    create_enrichment_config,
-)
+from gcover.publish.style_config import (BatchClassificationConfig,
+                                         apply_batch_from_config)
+from gcover.publish.tooltips_enricher import (EnhancedTooltipsEnricher,
+                                              EnrichmentConfig, LayerMapping,
+                                              LayerType,
+                                              create_enrichment_config)
 
 DEFAULT_ZONES_PATH = files("gcover.data").joinpath("administrative_zones.gpkg")
 
@@ -122,6 +109,7 @@ def extract_classification(
     """Extract ESRI layer classification information from .lyrx files."""
     logger.info(f"COMMAND START: apply-config")
     verbose = ctx.obj.get("verbose", False)
+    environnement = ctx.obj.get('environment')
     use_arcpy = False
 
     if verbose and quiet:
@@ -264,8 +252,10 @@ def apply_config(
       gcover publish apply-config geocover.gpkg config.yaml --dry-run
     """
     verbose = ctx.obj.get("verbose", False)
+    env = ctx.obj.get('environment')
 
     logger.info(f"COMMAND START: apply-config")
+    logger.info(f"environment: {env}")
 
     if verbose:
         console.print("[dim]Verbose logging enabled[/dim]")
@@ -274,7 +264,11 @@ def apply_config(
 
         # Load configuration
         with console.status("[cyan]Loading configuration...", spinner="dots"):
-            config = BatchClassificationConfig(config_file, styles_dir)
+            config = BatchClassificationConfig(config_path=config_file,
+                                               styles_base_path=styles_dir,
+                                               env=env)
+
+        logger.info(yaml.safe_dump(config.raw_config, sort_keys=False))
 
         console.print(f"[green]✓[/green] Loaded configuration:")
         console.print(f"  • Layers: {len(config.layers)}")
@@ -297,6 +291,8 @@ def apply_config(
             )
 
         console.print(table)
+
+
 
         if dry_run:
             console.print("\n[yellow]🔍 Dry run - no changes will be made[/yellow]")
@@ -953,6 +949,11 @@ def list_mapsheets(ctx, admin_zones: Optional[Path]):
     help="Use SYMBOL field instead of complex expressions",
 )
 @click.option(
+    "--no-scale",
+    is_flag=True,
+    help="Don't use maxscaledenom (mostly for debugging)",
+)
+@click.option(
     "--symbol-field", default="SYMBOL", help="Name of symbol field (default: SYMBOL)"
 )
 @click.option(
@@ -980,6 +981,7 @@ def mapserver(
     prefixes: Optional[str],
     generate_combined: bool,
     connection_name: Optional[str] = None,
+    no_scale: Optional[bool] = False
 ):
     """Generate MapServer mapfiles from ESRI style files.
 
@@ -1001,6 +1003,7 @@ def mapserver(
 
     """
     layer_type = None
+    env = ctx.obj.get('environment')
 
     publish_config, global_config = get_publish_config(ctx)
 
@@ -1023,13 +1026,16 @@ def mapserver(
     mapfile_groups = {}
     mapfile_labels = {}
     active_classes = {}
+    include_items_dict = {}
     mapfiles = []
     config = None
     symbol_field = None
 
     if config_file:
         console.print(f"[cyan]Loading configuration from {config_file}[/cyan]")
-        config = BatchClassificationConfig(config_file)
+        config = BatchClassificationConfig(config_path= config_file, env=env)
+
+
 
         identifier_fields = {}
 
@@ -1046,6 +1052,7 @@ def mapserver(
                     key = class_config.classification_name
                     mapfile_labels[key] = class_config.map_label
                     active_classes[key] = class_config.active
+                    include_items_dict[key] = class_config.include_items
                     if class_config.symbol_prefix:
                         prefix_map[key] = class_config.symbol_prefix
                     if class_config.mapfile_group:
@@ -1117,6 +1124,7 @@ def mapserver(
         layer_type=layer_type.name,  # TODO remove
         use_symbol_field=use_symbol_field,
         symbol_field=symbol_field,
+        no_scale=no_scale,
     )
 
     for (
@@ -1163,6 +1171,7 @@ def mapserver(
             mapfile_layer_group = mapfile_groups.get(layer_name, None)
             mapfile_label = mapfile_labels.get(layer_name, None)
             is_active = active_classes.get(layer_name)
+            include_items = include_items_dict.get(layer_name)
 
             if not is_active:
                 console.print(
@@ -1171,7 +1180,7 @@ def mapserver(
                 continue
 
             if not mapserver_data:
-                mapserver_data = f"geom from (SELECT * from {gpkg_layer} ) as blabla using unique gid using srid=2056"
+                # mapserver_data = f"geom from (SELECT * from {gpkg_layer} ) as blabla using unique gid using srid=2056"
                 mapserver_data = f"geom FROM  geol.geocover_{gpkg_layer}  USING UNIQUE gid USING SRID=2056"
 
             # Generate mapfile
@@ -1187,6 +1196,7 @@ def mapserver(
                 template=template,
                 map_label=mapfile_label,
                 layer_max_scale=layer_max_scale,
+                include_items=include_items,
             )
 
             # Save mapfile
@@ -2299,7 +2309,14 @@ def writeback(
     click.echo(f"Classification DB: {classification_db}")
     click.echo(f"Attributes: {', '.join(attributes)}")
 
-    from gcover.publish.writeback import update_filegdb_layer, extract_layer_name, load_layer_mapping_from_config, build_uuid_lookup, list_gpkg_layers, list_filegdb_layers, get_matching_layers_from_config, get_matching_layers_auto
+    from gcover.publish.writeback import (build_uuid_lookup,
+                                          extract_layer_name,
+                                          get_matching_layers_auto,
+                                          get_matching_layers_from_config,
+                                          list_filegdb_layers,
+                                          list_gpkg_layers,
+                                          load_layer_mapping_from_config,
+                                          update_filegdb_layer)
 
     if dryrun:
         click.secho("=== DRYRUN MODE ===", fg="yellow", bold=True)

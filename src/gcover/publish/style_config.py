@@ -5,12 +5,15 @@
 Extended classification applicator with YAML-based batch processing
 """
 
+import copy
 import json
+import os
 import re
 import zipfile
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
+from pprint import pprint
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import click
@@ -19,6 +22,7 @@ import geopandas as gpd
 import pandas as pd
 import pyogrio
 import yaml
+from dotenv import load_dotenv
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
@@ -26,11 +30,14 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from rich.tree import Tree
 
-from gcover.publish.esri_classification_applicator import ClassificationApplicator
+from gcover.config.loader import load_config
+from gcover.publish.esri_classification_applicator import \
+    ClassificationApplicator
 from gcover.publish.esri_classification_extractor import extract_lyrx_complete
 from gcover.publish.tooltips_enricher import LayerType
 from gcover.publish.utils import save_layer_preserving_types
-from gcover.publish.vectorized_classification import apply_batch_from_config_vectorized
+from gcover.publish.vectorized_classification import \
+    apply_batch_from_config_vectorized
 
 console = Console()
 
@@ -61,6 +68,7 @@ class ClassificationConfig:
     identifier_field: Optional[str] = None
     data: Optional[str] = None
     active: Optional[bool] = True
+    include_items: Optional[str] = None
 
 
 @dataclass
@@ -77,22 +85,216 @@ class LayerConfig:
     max_scale: Optional[bool | int] = None  # None, False, True, ou int
 
 
+def _resolve_env_vars(value: Any, max_depth: int = 10) -> Any:
+    """
+    Recursively resolve ${ENV_VAR} and ${ENV_VAR:default} placeholders.
+
+    Handles:
+    - Multiple placeholders: "${HOST}:${PORT}" → "localhost:5432"
+    - Default values: "${DB:postgres}" → "postgres" if DB not set
+    - Nested resolution: If resolved value contains ${...}, resolves those too
+    """
+    if isinstance(value, str):
+        pattern = r'\$\{([^}]+)\}'
+
+        def replacer(match: re.Match) -> str:
+            expr = match.group(1)
+            # Handle default value syntax: ${VAR:default}
+            if ':' in expr:
+                var_name, default = expr.split(':', 1)
+            else:
+                var_name, default = expr, None
+
+            resolved = os.environ.get(var_name)
+            if resolved is not None:
+                return resolved
+            if default is not None:
+                return default
+            # Keep original if not found and no default
+            return match.group(0)
+
+        # Resolve iteratively for nested cases
+        result = value
+        for _ in range(max_depth):
+            new_result = re.sub(pattern, replacer, result)
+            if new_result == result:
+                break  # No more substitutions
+            result = new_result
+        else:
+            # max_depth reached — possible circular reference
+            import warnings
+            warnings.warn(f"Max resolution depth reached for: {value[:50]}...")
+
+        return result
+
+    elif isinstance(value, dict):
+        return {k: _resolve_env_vars(v, max_depth) for k, v in value.items()}
+
+    elif isinstance(value, list):
+        return [_resolve_env_vars(item, max_depth) for item in value]
+
+    return value
+
+
+
+
+
+def deep_merge(base: Any, overlay: Any) -> Any:
+    """Deep merge overlay into base, overlay wins on conflicts."""
+    if isinstance(base, dict) and isinstance(overlay, dict):
+        result = copy.deepcopy(base)
+        for key, value in overlay.items():
+            if key in result:
+                result[key] = deep_merge(result[key], value)
+            else:
+                result[key] = copy.deepcopy(value)
+        return result
+    # Overlay wins for non-dict types
+    return copy.deepcopy(overlay)
+
+
+def _merge_classifications(
+        base_classifications: List[dict],
+        overlay_classifications: List[dict]
+) -> List[dict]:
+    """
+    Merge classification configs by classification_name.
+
+    - If classification_name exists in both: deep merge
+    - If only in overlay: append
+    - If only in base: keep
+    """
+
+    # Index by classification_name (or style_file as fallback)
+    def get_key(c: dict) -> str:
+        return c.get('classification_name') or c.get('style_file', '')
+
+    result = {get_key(c): copy.deepcopy(c) for c in base_classifications}
+
+    for overlay_class in overlay_classifications:
+        key = get_key(overlay_class)
+        if key in result:
+            # Merge existing classification
+            result[key] = deep_merge(result[key], overlay_class)
+        else:
+            # New classification from overlay
+            result[key] = copy.deepcopy(overlay_class)
+
+    # Preserve original order from base, append new ones at end
+    base_keys = [get_key(c) for c in base_classifications]
+    overlay_only_keys = [get_key(c) for c in overlay_classifications if get_key(c) not in base_keys]
+
+    ordered_keys = base_keys + overlay_only_keys
+    return [result[k] for k in ordered_keys if k in result]
+
+
+def _merge_layers(base_layers: List[dict], overlay_layers: List[dict]) -> List[dict]:
+    """
+    Merge layer configs by gpkg_layer.
+
+    - If gpkg_layer exists in both: deep merge (with special handling for classifications)
+    - If only in overlay: append
+    - If only in base: keep
+    """
+    result = {layer['gpkg_layer']: copy.deepcopy(layer) for layer in base_layers}
+
+    for overlay_layer in overlay_layers:
+        key = overlay_layer['gpkg_layer']
+        if key in result:
+            base_layer = result[key]
+
+            # Special handling for classifications list
+            base_classifications = base_layer.get('classifications', [])
+            overlay_classifications = overlay_layer.get('classifications', [])
+
+            if base_classifications and overlay_classifications:
+                # Merge classifications by classification_name
+                merged_classifications = _merge_classifications(
+                    base_classifications,
+                    overlay_classifications
+                )
+                # Merge the rest of the layer fields
+                merged_layer = deep_merge(base_layer, overlay_layer)
+                merged_layer['classifications'] = merged_classifications
+                result[key] = merged_layer
+            else:
+                # Simple deep merge if one side has no classifications
+                result[key] = deep_merge(base_layer, overlay_layer)
+        else:
+            # New layer from overlay
+            result[key] = copy.deepcopy(overlay_layer)
+
+    # Preserve order: base layers first, then new overlay layers
+    base_keys = [layer['gpkg_layer'] for layer in base_layers]
+    overlay_only_keys = [
+        layer['gpkg_layer'] for layer in overlay_layers
+        if layer['gpkg_layer'] not in base_keys
+    ]
+
+    ordered_keys = base_keys + overlay_only_keys
+    return [result[k] for k in ordered_keys if k in result]
+
+
+def merge_configs(base: dict, overlay: dict) -> dict:
+    """
+    Merge two configuration dicts with special handling for layers/classifications.
+
+    Merge hierarchy:
+    1. Top-level keys: deep merge
+    2. layers[]: merge by gpkg_layer
+    3. layers[].classifications[]: merge by classification_name
+    """
+    result = deep_merge(base, overlay)
+
+    # Special handling for layers list
+    if 'layers' in base and 'layers' in overlay:
+        result['layers'] = _merge_layers(base['layers'], overlay['layers'])
+
+    return result
+
 class BatchClassificationConfig:
-    """Parse and manage batch classification configuration."""
+    """
+            Load batch configuration from YAML.
 
-    def __init__(self, config_path: Path, styles_base_path: Optional[Path] = None):
-        """
-        Load batch configuration from YAML.
-
-        Args:
-            config_path: Path to YAML config file
-            styles_base_path: Base directory for resolving relative style paths
-        """
+            Args:
+                config_path: Path to YAML config file
+                styles_base_path: Base directory for resolving relative style paths
+                env:  Environnement to use (production, test, etc.)
+                overrides: Overwrite some config setting
+            """
+    def __init__(
+        self,
+        config_path: Path,
+        styles_base_path: Optional[Path] = None,
+        env: Optional[str] = None,
+        overrides: Optional[dict] = None,
+    ):
         self.config_path = config_path
         self.styles_base_path = styles_base_path or config_path.parent
 
         with open(config_path, "r", encoding="utf-8") as f:
             self.raw_config = yaml.safe_load(f)
+        logger.info(f"BatchClassificationConfig: environment: {env}")
+
+        # Apply environment overlay
+        if env:
+            env_path = config_path.with_suffix(f'.{env}.yaml')
+            logger.info(f"env overlay: {env_path}")
+            if env_path.exists():
+                with open(env_path, "r", encoding="utf-8") as f:
+                    env_config = yaml.safe_load(f) or {}
+                self.raw_config = merge_configs(self.raw_config, env_config)
+                logger.info(f"Applied {env} overlay from {env_path}")
+            else:
+                logger.warning(f"Overlay file not found: {env_path}")
+
+        # Apply programmatic overrides
+        if overrides:
+            self.raw_config = merge_configs(self.raw_config, overrides)
+
+        self.raw_config = _resolve_env_vars(self.raw_config)
+
+
 
         # Parse global settings
         self.global_settings = self.raw_config.get("global", {})
@@ -140,6 +342,7 @@ class BatchClassificationConfig:
                     identifier_field=class_dict.get("identifier_field"),
                     data=class_dict.get("data"),
                     active=class_dict.get("active", True),
+                    include_items=class_dict.get("include_items"),
                 )
             )
 
@@ -323,7 +526,6 @@ def apply_batch_from_config(
             try:
                 # Load classification from style file
                 # TODO
-                # Load classifications
                 classifications = extract_lyrx_complete(
                     class_config.style_file,
                     display=False,
@@ -374,13 +576,6 @@ def apply_batch_from_config(
                     overwrite=overwrite,  # Don't overwrite the field itself
                     preserve_existing=preserve_existing,  # But preserve existing non-NULL values
                 )
-                # TODO After bedrock classification
-                # console.print(
-                #    f"After {class_config.classification_name}: {gdf_result[config.symbol_field].notna().sum()} symbols"
-                # )
-                # console.print(
-                #    f"{class_config.classification_name} symbols: {gdf_result[config.symbol_field].value_counts()}"
-                # )
 
                 # Clean up string "None" values
                 gdf_result[config.symbol_field] = gdf_result[
@@ -434,12 +629,6 @@ def apply_batch_from_config(
         console.print(
             f"After save: {gdf_check[config.symbol_field].notna().sum()} symbols"
         )
-
-        # TODO
-        # console.print(
-        #    f"After save: {gdf_check[config.symbol_field].notna().sum()} symbols"
-        # )
-        # console.print(f"Saved symbols: {gdf_check[config.symbol_field].value_counts()}")
 
         stats["layers_processed"] += 1
 
@@ -599,7 +788,6 @@ def apply_config(
                 ", ".join(style_files[:3]) + ("..." if len(style_files) > 3 else ""),
             )
 
-        console.print(table)
 
         if dry_run:
             console.print("\n[yellow]🔍 Dry run - no changes will be made[/yellow]")
