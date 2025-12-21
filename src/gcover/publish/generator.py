@@ -64,6 +64,7 @@ class MapServerGenerator:
         use_symbol_field: bool = False,
         symbol_field: str = "SYMBOL",
         font_name_prefix: str = "esri",
+        no_scale: bool=False,
     ):
         """
         Initialize generator.
@@ -78,6 +79,7 @@ class MapServerGenerator:
         self.use_symbol_field = use_symbol_field
         self.symbol_field = symbol_field
         self.font_name_prefix = font_name_prefix
+        self.no_scale = no_scale
 
         # Track fonts and symbols used (for symbol file generation)
         self.fonts_used: Set[str] = set()
@@ -129,7 +131,8 @@ class MapServerGenerator:
         template: Optional[str] = "empty",
         layer_group: Optional[str] = None,
         map_label: Optional[Union[None, bool, str]] = None,
-        layer_max_scale: Optional[bool | int] = None
+        layer_max_scale: Optional[bool | int] = None,
+        include_items: Optional[str] = 'all',
     ) -> str:
         """
         Generate complete MapServer LAYER block.
@@ -195,14 +198,14 @@ class MapServerGenerator:
                 '    "ows_srs"      "EPSG:2056 EPSG:21781 EPSG:4326 EPSG:3857 EPSG:3034 EPSG:3035 EPSG:4258 EPSG:25832 EPSG:25833 EPSG:31467 EPSG:32632 EPSG:32633 EPSG:900913"',
                 '    "wms_extent" "2300000 900000 3100000 1450000"',
                 '    "wms_enable_request" "*"',
-                '    "wms_include_items" "all"',
-                '    "gml_include_items" "all"',
+                f'    "wms_include_items" "{include_items}"',
+                f'    "gml_include_items" "{include_items}"',
                 '    "gml_types" "auto"',
                 "  END",
             ]
         )
 
-        if layer_group and layer_group.endswith('geocover'):
+        if 'bedrock' in layer_name and 'geocover' in layer_group:
             lines.insert(-1, '    "wms_group_title"  "GeoCover 2D"')
 
         # Data source
@@ -220,19 +223,21 @@ class MapServerGenerator:
         # minScale → MAXSCALEDENOM
         # maxScale → MINSCALEDENOM
 
-        max_scale = self.render_maxscale(layer_max_scale,classification.min_scale )
-        if max_scale:
+        if self.no_scale is not True:
+
+          max_scale = self.render_maxscale(layer_max_scale,classification.min_scale )
+          if max_scale:
             console.print(f"Using `maxscaledenom`: {classification.min_scale}")
             lines.extend(["", max_scale])
 
-        if classification.max_scale:
+          if classification.max_scale:
             lines.extend(
                 [
                     "",
                     f"MINSCALEDENOM   {classification.min_scale}",
                 ]
             )
-        if classification.max_scale:
+          if classification.max_scale:
             lines.extend(
                 [
                     f"MAXCALEDENOM   {classification.min_scale}",

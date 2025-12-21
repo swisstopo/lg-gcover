@@ -949,6 +949,11 @@ def list_mapsheets(ctx, admin_zones: Optional[Path]):
     help="Use SYMBOL field instead of complex expressions",
 )
 @click.option(
+    "--no-scale",
+    is_flag=True,
+    help="Don't use maxscaledenom (mostly for debugging)",
+)
+@click.option(
     "--symbol-field", default="SYMBOL", help="Name of symbol field (default: SYMBOL)"
 )
 @click.option(
@@ -976,6 +981,7 @@ def mapserver(
     prefixes: Optional[str],
     generate_combined: bool,
     connection_name: Optional[str] = None,
+    no_scale: Optional[bool] = False
 ):
     """Generate MapServer mapfiles from ESRI style files.
 
@@ -1020,6 +1026,7 @@ def mapserver(
     mapfile_groups = {}
     mapfile_labels = {}
     active_classes = {}
+    include_items_dict = {}
     mapfiles = []
     config = None
     symbol_field = None
@@ -1045,6 +1052,7 @@ def mapserver(
                     key = class_config.classification_name
                     mapfile_labels[key] = class_config.map_label
                     active_classes[key] = class_config.active
+                    include_items_dict[key] = class_config.include_items
                     if class_config.symbol_prefix:
                         prefix_map[key] = class_config.symbol_prefix
                     if class_config.mapfile_group:
@@ -1116,6 +1124,7 @@ def mapserver(
         layer_type=layer_type.name,  # TODO remove
         use_symbol_field=use_symbol_field,
         symbol_field=symbol_field,
+        no_scale=no_scale,
     )
 
     for (
@@ -1162,6 +1171,7 @@ def mapserver(
             mapfile_layer_group = mapfile_groups.get(layer_name, None)
             mapfile_label = mapfile_labels.get(layer_name, None)
             is_active = active_classes.get(layer_name)
+            include_items = include_items_dict.get(layer_name)
 
             if not is_active:
                 console.print(
@@ -1170,7 +1180,7 @@ def mapserver(
                 continue
 
             if not mapserver_data:
-                mapserver_data = f"geom from (SELECT * from {gpkg_layer} ) as blabla using unique gid using srid=2056"
+                # mapserver_data = f"geom from (SELECT * from {gpkg_layer} ) as blabla using unique gid using srid=2056"
                 mapserver_data = f"geom FROM  geol.geocover_{gpkg_layer}  USING UNIQUE gid USING SRID=2056"
 
             # Generate mapfile
@@ -1186,6 +1196,7 @@ def mapserver(
                 template=template,
                 map_label=mapfile_label,
                 layer_max_scale=layer_max_scale,
+                include_items=include_items,
             )
 
             # Save mapfile

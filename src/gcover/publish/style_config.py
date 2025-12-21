@@ -68,6 +68,7 @@ class ClassificationConfig:
     identifier_field: Optional[str] = None
     data: Optional[str] = None
     active: Optional[bool] = True
+    include_items: Optional[str] = None
 
 
 @dataclass
@@ -341,6 +342,7 @@ class BatchClassificationConfig:
                     identifier_field=class_dict.get("identifier_field"),
                     data=class_dict.get("data"),
                     active=class_dict.get("active", True),
+                    include_items=class_dict.get("include_items"),
                 )
             )
 

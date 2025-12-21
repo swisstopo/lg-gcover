@@ -443,9 +443,10 @@ layers:
           index: 100
           classification_name: Bedrock
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}bedrock
-          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}bedrock
+          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}geocover
           map_label: False
           data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}_bedrock  USING UNIQUE gid USING SRID=2056"
+          include_items: "uuid,kind,gmu_desc, tecto_desc,litho_main_desc,litho_sec_desc, litho_ter_desc,chrono_base_desc,chrono_top_desc,correlation_desc"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             GMU_CODE: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT
