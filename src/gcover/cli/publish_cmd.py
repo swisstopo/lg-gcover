@@ -41,6 +41,10 @@ from gcover.publish.tooltips_enricher import (EnhancedTooltipsEnricher,
                                               LayerType,
                                               create_enrichment_config)
 
+from gcover.cli.symbols_cli import symbols_commands
+from gcover.publish.generator import PatternCatalogReader
+
+
 DEFAULT_ZONES_PATH = files("gcover.data").joinpath("administrative_zones.gpkg")
 
 console = Console()
@@ -71,6 +75,8 @@ def publish_commands(ctx):
     ctx.obj.setdefault("environment", "development")
     ctx.obj.setdefault("verbose", False)
     ctx.obj.setdefault("config_path", None)
+
+publish_commands.add_command(symbols_commands)
 
 
 @publish_commands.command()
@@ -937,6 +943,11 @@ def list_mapsheets(ctx, admin_zones: Optional[Path]):
     type=click.Path(exists=True, path_type=Path),
 )
 @click.option(
+    "--pattern-file",
+    type=click.Path(exists=True, path_type=Path),
+    help="Pattern file"
+)
+@click.option(
     "--connection",
     "connection_name",
     type=str,
@@ -975,6 +986,7 @@ def mapserver(
     ctx,
     output_dir: Path,
     config_file: Optional[Path],
+    pattern_file: Optional[Path],
     styles_dir: Optional[Path],
     use_symbol_field: bool,
     symbol_field: str,
@@ -1031,6 +1043,10 @@ def mapserver(
     config = None
     symbol_field = None
 
+    if pattern_file:
+        console.print(f"[cyan]Loading patterns from {pattern_file}[/cyan]")
+
+
     if config_file:
         console.print(f"[cyan]Loading configuration from {config_file}[/cyan]")
         config = BatchClassificationConfig(config_path= config_file, env=env)
@@ -1066,7 +1082,8 @@ def mapserver(
                         logger.debug(
                             f"Layer '{key}' will use identifier_field: {field_name}"
                         )
-
+        if pattern_file:
+            console.print(f"[cyan]Loading patterns from {pattern_file}[/cyan]")
         console.print(
             f"  [green]✓[/green] Extracted prefixes for {len(prefix_map)} classifications"
         )
@@ -1125,6 +1142,7 @@ def mapserver(
         use_symbol_field=use_symbol_field,
         symbol_field=symbol_field,
         no_scale=no_scale,
+        pattern_catalog=pattern_file,
     )
 
     for (

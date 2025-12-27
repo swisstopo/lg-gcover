@@ -5,6 +5,8 @@ MapServer Mapfile and QGIS QML Generator
 Generate map server configuration from ESRI classification rules.
 Supports complex multi-layer symbols including pattern fills, font markers,
 and sophisticated polygon styling.
+
+ENHANCED: Support for pattern catalog with PIXMAP symbols for polygon fills.
 """
 
 import json
@@ -46,6 +48,135 @@ from gcover.publish.rotation_extractor_extension import (
 console = Console()
 
 
+# =============================================================================
+# PATTERN CATALOG SUPPORT
+# =============================================================================
+
+
+class PatternCatalogReader:
+    """
+    Read and query pattern catalog for MapServer symbol generation.
+
+    The pattern catalog maps ESRI CIMCharacterMarker patterns to
+    pre-rendered PNG tiles for use as MapServer PIXMAP symbols.
+    """
+
+    def __init__(self, catalog_path: Optional[Path] = None):
+        """
+        Initialize catalog reader.
+
+        Args:
+            catalog_path: Path to patterns_catalog.yaml (None = no catalog)
+        """
+        self.catalog_path = catalog_path
+        self.patterns: Dict[str, dict] = {}
+        self.loaded = False
+
+        if catalog_path and catalog_path.exists():
+            self._load_catalog()
+
+    def _load_catalog(self) -> None:
+        """Load catalog from YAML file."""
+        try:
+            import yaml
+            with open(self.catalog_path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+
+            self.patterns = data.get('patterns', {})
+            self.loaded = True
+            logger.info(f"Loaded pattern catalog with {len(self.patterns)} patterns")
+
+        except Exception as e:
+            logger.warning(f"Could not load pattern catalog: {e}")
+            self.loaded = False
+
+    def find_pattern(
+        self,
+        font_family: str,
+        char_index: int,
+        size: float,
+        step_x: float,
+        step_y: float,
+        color: Tuple[int, int, int, int],
+    ) -> Optional[dict]:
+        """
+        Find matching pattern in catalog.
+
+        Uses fuzzy matching on size/step/color to find the best match.
+
+        Returns:
+            Pattern dict with mapserver info, or None if no match
+        """
+        if not self.loaded:
+            return None
+
+        best_match = None
+        best_score = float('inf')
+
+        for key, pattern in self.patterns.items():
+            char_info = pattern.get('character', {})
+
+            # Must match font and character exactly
+            pattern_font = char_info.get('font_family', '')
+            pattern_char = char_info.get('char_index')
+
+            if not self._fonts_match(font_family, pattern_font):
+                continue
+            if pattern_char != char_index:
+                continue
+
+            # Score based on size/step similarity
+            pattern_size = char_info.get('size', 0)
+            pattern_step = char_info.get('step', [0, 0])
+
+            size_diff = abs(size - pattern_size) / max(size, pattern_size, 0.1)
+            step_diff = (
+                abs(step_x - pattern_step[0]) / max(step_x, pattern_step[0], 0.1) +
+                abs(step_y - pattern_step[1]) / max(step_y, pattern_step[1], 0.1)
+            ) / 2
+
+            # Color difference (simple RGB distance)
+            pattern_color = pattern.get('color', {}).get('rgba', [0, 0, 0, 255])
+            color_diff = (
+                abs(color[0] - pattern_color[0]) +
+                abs(color[1] - pattern_color[1]) +
+                abs(color[2] - pattern_color[2])
+            ) / 765  # Normalize to 0-1
+
+            # Combined score (lower is better)
+            score = size_diff * 0.3 + step_diff * 0.3 + color_diff * 0.4
+
+            if score < best_score:
+                best_score = score
+                best_match = pattern
+
+        # Only return if reasonably good match (threshold: 0.5)
+        if best_match and best_score < 0.5:
+            return best_match
+
+        return None
+
+    def _fonts_match(self, font1: str, font2: str) -> bool:
+        """Check if two font names refer to the same font."""
+        # Normalize: lowercase, remove spaces
+        def normalize(f):
+            return f.lower().replace(' ', '').replace('-', '').replace('_', '')
+
+        return normalize(font1) == normalize(font2)
+
+    def get_pixmap_symbol_name(self, pattern: dict) -> Optional[str]:
+        """Get MapServer PIXMAP symbol name from pattern."""
+        mapserver_info = pattern.get('mapserver', {})
+        if mapserver_info.get('native', False):
+            return None  # Native hatch, no pixmap
+        return mapserver_info.get('symbol')
+
+    def get_png_path(self, pattern: dict) -> Optional[str]:
+        """Get relative PNG file path from pattern."""
+        mapserver_info = pattern.get('mapserver', {})
+        return mapserver_info.get('png_file')
+
+
 class MapServerGenerator:
     """
     Generate MapServer mapfile CLASS sections from classifications.
@@ -56,6 +187,7 @@ class MapServerGenerator:
     - Complex polygon symbols with multiple layers
     - Point and line font markers
     - PDF generation of all used symbols
+    - ENHANCED: Pattern catalog support for PIXMAP polygon fills
     """
 
     def __init__(
@@ -64,7 +196,8 @@ class MapServerGenerator:
         use_symbol_field: bool = False,
         symbol_field: str = "SYMBOL",
         font_name_prefix: str = "esri",
-        no_scale: bool=False,
+        no_scale: bool = False,
+        pattern_catalog: Optional[Path] = None,
     ):
         """
         Initialize generator.
@@ -74,6 +207,7 @@ class MapServerGenerator:
             use_symbol_field: If True, use CLASSITEM with simple expressions
             symbol_field: Name of symbol field in data (default: SYMBOL)
             font_name_prefix: Prefix for font names in FONTSET (default: "esri")
+            pattern_catalog: Path to patterns_catalog.yaml for PIXMAP symbols
         """
         self.layer_type = layer_type.upper()
         self.use_symbol_field = use_symbol_field
@@ -85,6 +219,10 @@ class MapServerGenerator:
         self.fonts_used: Set[str] = set()
         self.pattern_symbols: List[Dict] = []
         self.symbol_registry: Dict[FontSymbol, str] = {}
+
+        # NEW: Pattern catalog for PIXMAP symbols
+        self.pattern_catalog = PatternCatalogReader(pattern_catalog)
+        self.pixmap_symbols_used: Set[str] = set()
 
     def render_maxscale(self, layer_scale: Optional[bool | int],
                         style_scale: Optional[int]) -> Optional[str]:
@@ -107,7 +245,7 @@ class MapServerGenerator:
 
         # YAML définit une valeur spécifique
         if isinstance(layer_scale, int):
-            return f"  MAXSCALEDENOM {yaml_scale}"
+            return f"  MAXSCALEDENOM {layer_scale}"
 
         # YAML = None ou True → utilise le style si disponible
         if style_scale is not None:
@@ -225,7 +363,7 @@ class MapServerGenerator:
 
         if self.no_scale is not True:
 
-          max_scale = self.render_maxscale(layer_max_scale,classification.min_scale )
+          max_scale = self.render_maxscale(layer_max_scale, classification.min_scale)
           if max_scale:
             console.print(f"Using `maxscaledenom`: {classification.min_scale}")
             lines.extend(["", max_scale])
@@ -266,8 +404,6 @@ class MapServerGenerator:
 
         else:
             lines.append("  # Styled using classification field values")
-
-
 
         if label_item and map_label is None:
             lines.append(f'  LABELITEM "{label_item.lower()}"')
@@ -634,10 +770,45 @@ class MapServerGenerator:
         marker_index: int,
         symbol_prefix: str,
     ) -> None:
-        """Add MapServer STYLE for character marker pattern fill."""
+        """
+        Add MapServer STYLE for character marker pattern fill.
+
+        ENHANCED: Uses PIXMAP symbol from catalog if available,
+        falls back to TRUETYPE (which doesn't work for polygons but
+        maintains backward compatibility).
+        """
         r, g, b, a = marker_info.color
 
-        # Create symbol name using font and character
+        # Try to find pattern in catalog first
+        if self.pattern_catalog.loaded:
+            pattern = self.pattern_catalog.find_pattern(
+                font_family=marker_info.font_family,
+                char_index=marker_info.character_index,
+                size=marker_info.size,
+                step_x=marker_info.step_x,
+                step_y=marker_info.step_y,
+                color=marker_info.color,
+            )
+
+            if pattern:
+                symbol_name = self.pattern_catalog.get_pixmap_symbol_name(pattern)
+                if symbol_name:
+                    # Use PIXMAP symbol from catalog
+                    self.pixmap_symbols_used.add(symbol_name)
+
+                    lines.append("    STYLE")
+                    lines.append(f'      SYMBOL "{symbol_name}"')
+                    # Note: Color is baked into PNG, no COLOR needed
+                    if a < 255:
+                        lines.append(f"      OPACITY {a}")
+                    lines.append("    END # STYLE")
+
+                    logger.debug(f"Using PIXMAP symbol '{symbol_name}' for pattern fill")
+                    return
+
+        # FALLBACK: Use TRUETYPE symbol (legacy behavior)
+        # Note: This doesn't actually work for polygon fills in MapServer,
+        # but we keep it for backward compatibility and to show intent
         font_name = sanitize_font_name(marker_info.font_family)
         char_index = marker_info.character_index
         symbol_name = f"{font_name}_{char_index}"
@@ -655,6 +826,15 @@ class MapServerGenerator:
             lines.append(f"      OPACITY {a}")
         lines.append(f"      SIZE {size_px:.1f}")
         lines.append("    END # STYLE")
+
+        # Warn if no catalog available
+        if not self.pattern_catalog.loaded:
+            logger.warning(
+                f"No pattern catalog - using TRUETYPE for polygon fill "
+                f"(font={font_name}, char={char_index}). "
+                f"This may not render correctly. "
+                f"Generate a pattern catalog with: gcover publish symbols inventory"
+            )
 
     def _add_solid_fill_style(
         self, lines: List[str], color: Tuple[int, int, int, int]
@@ -678,13 +858,10 @@ class MapServerGenerator:
         lines.append(f"      WIDTH {width_px:.2f}")
 
         # Handle line style
-        # TODO: no SYMBOL dotted or dashed!
         line_style_info = outline_info["line_style"]
         if line_style_info["type"] == "dash":
-            # lines.append('      SYMBOL "dashed"')
             lines.append('       PATTERN 5 3 END')
         elif line_style_info["type"] == "dot":
-            #lines.append('      SYMBOL "dotted"')
             lines.append('       PATTERN 1 3 END')
 
         lines.append("    END # STYLE")
@@ -771,7 +948,6 @@ class MapServerGenerator:
                 lines.append('       PATTERN 5 3 END')
             elif line_style == "dot":
                 lines.append('       PATTERN 1 3 END')
-
 
     def _add_truetype_line_marker(
         self, lines: List[str], symbol_info, font_symbol_name: str
@@ -960,6 +1136,14 @@ class MapServerGenerator:
             lines.append("")
             lines.extend(hatch_symbols)
 
+        # NEW: Add PIXMAP symbols from catalog
+        pixmap_symbols = self._generate_pixmap_symbols()
+        if pixmap_symbols:
+            lines.append("")
+            lines.append("  # PIXMAP pattern fill symbols (from pattern catalog)")
+            lines.append("")
+            lines.extend(pixmap_symbols)
+
         # Generate font symbols if classifications provided
         if classification_list:
             # Point and line font markers
@@ -972,20 +1156,60 @@ class MapServerGenerator:
                 lines.append("")
                 lines.extend(font_symbols)
 
-            # Polygon pattern fills
-            pattern_symbols = self._generate_polygon_pattern_symbols(
-                classification_list
-            )
-            if pattern_symbols:
-                lines.append("")
-                lines.append("  # TrueType pattern fill symbols (polygons)")
-                lines.append("")
-                lines.extend(pattern_symbols)
+            # Polygon pattern fills (legacy TRUETYPE - only if no catalog)
+            if not self.pattern_catalog.loaded:
+                pattern_symbols = self._generate_polygon_pattern_symbols(
+                    classification_list
+                )
+                if pattern_symbols:
+                    lines.append("")
+                    lines.append("  # TrueType pattern fill symbols (polygons) - LEGACY")
+                    lines.append("  # NOTE: TrueType symbols don't work for polygon fills!")
+                    lines.append("  # Generate pattern catalog: gcover publish symbols inventory")
+                    lines.append("")
+                    lines.extend(pattern_symbols)
 
         lines.append("")
         lines.append("END # SYMBOLSET")
 
         return "\n".join(lines)
+
+    def _generate_pixmap_symbols(self) -> List[str]:
+        """
+        Generate PIXMAP symbol definitions from pattern catalog.
+
+        Only includes symbols that were actually used during generation.
+        """
+        if not self.pattern_catalog.loaded:
+            return []
+
+        if not self.pixmap_symbols_used:
+            return []
+
+        symbols = []
+
+        for symbol_name in sorted(self.pixmap_symbols_used):
+            # Find pattern in catalog to get PNG path
+            png_path = None
+            for key, pattern in self.pattern_catalog.patterns.items():
+                mapserver_info = pattern.get('mapserver', {})
+                if mapserver_info.get('symbol') == symbol_name:
+                    png_path = mapserver_info.get('png_file')
+                    break
+
+            if not png_path:
+                png_path = f"patterns/{symbol_name}.png"
+
+            symbols.extend([
+                "  SYMBOL",
+                f'    NAME "{symbol_name}"',
+                "    TYPE PIXMAP",
+                f'    IMAGE "{png_path}"',
+                "  END",
+                "",
+            ])
+
+        return symbols
 
     def _generate_basic_symbols(self) -> List[str]:
         """Generate basic geometric symbols."""
@@ -1044,21 +1268,7 @@ class MapServerGenerator:
 
     def _generate_line_pattern_symbols(self) -> List[str]:
         """Generate line pattern symbols (dashed, dotted)."""
-        # TODO
         return ["# No dash SYMBOL"]
-        '''return [
-            "  SYMBOL",
-            '    NAME "dashed"',
-            "    TYPE SIMPLE",
-            "    PATTERN 10 5 END",
-            "  END",
-            "",
-            "  SYMBOL",
-            '    NAME "dotted"',
-            "    TYPE SIMPLE",
-            "    PATTERN 2 4 END",
-            "  END",
-        ]'''
 
     def _generate_font_symbols_from_classifications(
         self, classification_list: List, prefixes: Dict
@@ -1110,7 +1320,7 @@ class MapServerGenerator:
         return symbols
 
     def _generate_polygon_pattern_symbols(self, classification_list: List) -> List[str]:
-        """Generate TrueType symbols for polygon pattern fills."""
+        """Generate TrueType symbols for polygon pattern fills (LEGACY)."""
         symbols = []
         symbols_generated = set()
 
@@ -1221,8 +1431,6 @@ class MapServerGenerator:
         lines.append("")
 
         return "\n".join(lines)
-
-
 # ============================================================================
 # QGIS GENERATOR (continued in next section due to length)
 # ============================================================================
