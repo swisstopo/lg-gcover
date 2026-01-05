@@ -16,7 +16,7 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
-    needs: build
+
 
     steps:
       - name: Checkout repository
@@ -107,6 +107,7 @@ jobs:
           GCOVER_ENVIRONMENT=test  pytest tests/ -v --tb=short || echo "Some tests failed - expected during cleanup"
   build:
     runs-on: ubuntu-latest
+    needs: test
 
     steps:
     - name: Checkout repository
