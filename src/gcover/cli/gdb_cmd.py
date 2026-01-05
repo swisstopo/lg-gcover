@@ -18,7 +18,7 @@ from rich.table import Table
 from collections import Counter
 
 # from gcover.gdb.config import  load_config TODO
-from gcover.config import AppConfig, load_config
+
 from gcover.config.models import GDBConfig, GlobalConfig
 from gcover.gdb.assets import (
     AssetType,
@@ -68,6 +68,7 @@ def validate_asset_types(ctx, param, value):
 
 
 def get_configs(ctx) -> tuple[GDBConfig, GlobalConfig, str, bool]:
+    from gcover.config import AppConfig, load_config
     app_config: AppConfig = load_config(
         environment=ctx.obj["environment"]
     )  # ctx.obj["app_config"]
