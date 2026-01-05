@@ -85,6 +85,12 @@ jobs:
       #  run: |
       #    ruff check src/ --output-format=github
 
+      - name: Debug CLI commands
+        shell: bash -l {0}
+        run: |
+          GCOVER_ENVIRONMENT=test python -m gcover.cli.main --env test gdb --help || true
+          GCOVER_ENVIRONMENT=test python -m gcover.cli.main --env test publish --help || true
+
       - name: Run tests
         shell: bash -l {0}
         run: |
