@@ -42,7 +42,7 @@ from gcover.publish.tooltips_enricher import (EnhancedTooltipsEnricher,
                                               create_enrichment_config)
 
 from gcover.cli.symbols_cli import symbols_commands
-from gcover.publish.generator import PatternCatalogReader
+
 
 
 DEFAULT_ZONES_PATH = files("gcover.data").joinpath("administrative_zones.gpkg")
