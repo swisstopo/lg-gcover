@@ -75,6 +75,8 @@ class ConfigManager:
             # Load .env files in priority order
             env_files = self._find_env_files(environment)
 
+            console.log(env_files)
+
             for env_file in env_files:
                 if env_file.exists():
                     if self.verbose:
@@ -100,10 +102,14 @@ class ConfigManager:
 
     def _find_env_files(self, environment: str) -> list[Path]:
         """Find .env files in priority order"""
+        project_root = Path(__file__).parent.parent.parent.parent  # Adjust depth as needed
+
         return [
             Path(f".env.{environment}.local"),  # Highest priority
             Path(f".env.{environment}"),
             Path(".env.local"),
+            project_root / f".env.{environment}",  # ← Add this
+            project_root / ".env",  # ← Add this
             Path("config") / f".env.{environment}",
             Path("config") / ".env",
             Path.home() / ".gcover" / f".env.{environment}",
