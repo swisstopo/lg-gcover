@@ -30,7 +30,6 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from rich.tree import Tree
 
-from gcover.config.loader import load_config
 from gcover.publish.esri_classification_applicator import \
     ClassificationApplicator
 from gcover.publish.esri_classification_extractor import extract_lyrx_complete
