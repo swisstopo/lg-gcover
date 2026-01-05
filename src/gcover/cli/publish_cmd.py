@@ -41,8 +41,8 @@ from gcover.publish.tooltips_enricher import (EnhancedTooltipsEnricher,
                                               LayerType,
                                               create_enrichment_config)
 
-from gcover.cli.symbols_cli import symbols_commands
-from gcover.publish.generator import PatternCatalogReader
+# TODO from gcover.cli.symbols_cli import symbols_commands
+
 
 
 DEFAULT_ZONES_PATH = files("gcover.data").joinpath("administrative_zones.gpkg")
@@ -76,7 +76,7 @@ def publish_commands(ctx):
     ctx.obj.setdefault("verbose", False)
     ctx.obj.setdefault("config_path", None)
 
-publish_commands.add_command(symbols_commands)
+# TODO publish_commands.add_command(symbols_commands)
 
 
 @publish_commands.command()
