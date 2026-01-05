@@ -170,6 +170,11 @@ def inventory(
     help="Scale factor for points to pixels (default: 1.33)",
 )
 @click.option(
+    "--diagonal/--no-diagonal",
+    default=True,
+    help="Generate 45° diagonal patterns for polka dots (default: enabled)",
+)
+@click.option(
     "--force",
     is_flag=True,
     help="Regenerate existing PNG files",
@@ -181,6 +186,7 @@ def generate(
     font_dir: Optional[Path],
     tile_size: int,
     scale: float,
+    diagonal: bool,
     force: bool,
 ):
     """
@@ -188,6 +194,10 @@ def generate(
     
     Reads a pattern catalog and generates PNG tiles that MapServer
     can use as PIXMAP symbols for polygon fills.
+    
+    By default, generates 45° diagonal patterns (--diagonal) which is
+    the standard for geological polka dot patterns. Use --no-diagonal
+    for rectangular grid patterns.
     
     Tile sizes of 16-32 pixels offer the best balance of quality
     and performance for MapServer.
@@ -203,6 +213,7 @@ def generate(
     console.print(f"Output: {output_dir}")
     console.print(f"Tile size: {tile_size}px")
     console.print(f"Scale: {scale}")
+    console.print(f"Diagonal pattern: {'Yes (45°)' if diagonal else 'No (90°)'}")
     
     # Load catalog
     with open(catalog, 'r') as f:
@@ -261,6 +272,10 @@ def generate(
             # Get step size from catalog or use tile_size
             step = char_info.get('step', [tile_size / scale, tile_size / scale])
             
+            # Determine if this should be diagonal
+            # Polka dots (char 51) are typically diagonal
+            use_diagonal = diagonal and pattern_type in ('polka_dot', 'character')
+            
             result = _generate_single_tile(
                 generator=generator,
                 name=name,
@@ -274,10 +289,12 @@ def generate(
                 output_dir=output_dir,
                 scale=scale,
                 min_tile_size=tile_size,
+                diagonal=use_diagonal,
             )
             
             if result:
-                console.print(f"[green]✓ Generated {result.name}[/green]")
+                diag_note = " (45°)" if use_diagonal else ""
+                console.print(f"[green]✓ Generated {result.name}{diag_note}[/green]")
                 generated_count += 1
             
         except Exception as e:
@@ -304,16 +321,44 @@ def _generate_single_tile(
     output_dir: Path,
     scale: float,
     min_tile_size: int = 16,
+    diagonal: bool = True,  # NEW: Generate 45° diagonal pattern
 ) -> Optional[Path]:
-    """Generate a single PNG tile."""
+    """
+    Generate a single PNG tile for pattern fill.
+    
+    For diagonal=True (default), generates a tile with 2 dots in diagonal
+    arrangement to create the classic 45° polka dot pattern used in 
+    geological maps.
+    
+    Tile layout for diagonal pattern:
+    ┌─────────────┐
+    │      •      │  <- dot at (w/2, h/4)
+    │             │
+    │  •       •  │  <- dots at edges (0, 3h/4) and (w, 3h/4)
+    │             │
+    └─────────────┘
+    
+    When tiled, this creates:
+    .   .   .   .
+      .   .   .
+    .   .   .   .
+      .   .   .
+    """
     try:
         from PIL import Image, ImageDraw, ImageFont
     except ImportError:
         raise ImportError("PIL/Pillow not installed. Run: pip install Pillow")
     
-    # Calculate tile size from step, with minimum
-    tile_width = max(int(step_x * scale), min_tile_size)
-    tile_height = max(int(step_y * scale), min_tile_size)
+    # Calculate tile size from step
+    base_width = max(int(step_x * scale), min_tile_size)
+    
+    if diagonal:
+        # For diagonal pattern: tile height is 2x to accommodate offset row
+        tile_width = base_width
+        tile_height = base_width * 2  # Double height for diagonal tiling
+    else:
+        tile_width = base_width
+        tile_height = max(int(step_y * scale), min_tile_size)
     
     # Create transparent image
     img = Image.new('RGBA', (tile_width, tile_height), (0, 0, 0, 0))
@@ -347,15 +392,31 @@ def _generate_single_tile(
         r, g, b = color[:3]
         a = 255
     
-    # Calculate position (center of tile, with offset)
-    offset_x = int((offset[0] or 0) * scale) if offset else 0
-    offset_y = int((offset[1] or 0) * scale) if offset else 0
-    
-    x = tile_width // 2 + offset_x
-    y = tile_height // 2 + offset_y
-    
-    # Draw character
-    draw.text((x, y), char, font=font, fill=(r, g, b, a), anchor='mm')
+    if diagonal:
+        # Draw dots in diagonal pattern
+        # Dot 1: top center area
+        x1 = tile_width // 2
+        y1 = tile_height // 4
+        draw.text((x1, y1), char, font=font, fill=(r, g, b, a), anchor='mm')
+        
+        # Dot 2: bottom left edge (will wrap when tiled)
+        x2 = 0
+        y2 = tile_height * 3 // 4
+        draw.text((x2, y2), char, font=font, fill=(r, g, b, a), anchor='mm')
+        
+        # Dot 3: bottom right edge (mirror of dot 2 for seamless tiling)
+        x3 = tile_width
+        y3 = tile_height * 3 // 4
+        draw.text((x3, y3), char, font=font, fill=(r, g, b, a), anchor='mm')
+    else:
+        # Single centered dot (original behavior)
+        offset_x = int((offset[0] or 0) * scale) if offset else 0
+        offset_y = int((offset[1] or 0) * scale) if offset else 0
+        
+        x = tile_width // 2 + offset_x
+        y = tile_height // 2 + offset_y
+        
+        draw.text((x, y), char, font=font, fill=(r, g, b, a), anchor='mm')
     
     # Save
     output_path = output_dir / f"{name}.png"
