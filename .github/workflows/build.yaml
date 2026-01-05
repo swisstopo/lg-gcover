@@ -99,7 +99,9 @@ jobs:
       - name: Run smoke tests
         shell: bash -l {0}
         run: |
-          GCOVER_ENVIRONMENT=test  pytest tests/test_imports.py tests/test_cli_smoke.py -v --no-cov  
+          # Load .env.test into environment
+          export $(grep -v '^#' .env.test | xargs)
+          GCOVER_ENVIRONMENT=test pytest tests/test_imports.py tests/test_cli_smoke.py -v --no-cov
 
       - name: Run all tests (allow failures for now)
         shell: bash -l {0}
