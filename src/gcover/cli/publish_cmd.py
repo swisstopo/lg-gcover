@@ -122,6 +122,7 @@ def extract_classification(
     """Extract ESRI layer classification information from .lyrx files."""
     logger.info(f"COMMAND START: apply-config")
     verbose = ctx.obj.get("verbose", False)
+    environnement = ctx.obj.get('environment')
     use_arcpy = False
 
     if verbose and quiet:
@@ -264,6 +265,7 @@ def apply_config(
       gcover publish apply-config geocover.gpkg config.yaml --dry-run
     """
     verbose = ctx.obj.get("verbose", False)
+    environnement = ctx.obj.get('environment')
 
     logger.info(f"COMMAND START: apply-config")
 
@@ -274,7 +276,13 @@ def apply_config(
 
         # Load configuration
         with console.status("[cyan]Loading configuration...", spinner="dots"):
-            config = BatchClassificationConfig(config_file, styles_dir)
+            config = BatchClassificationConfig(config_file, styles_dir, environnement)
+
+        # TODO: remove
+        from pprint import pprint
+        pprint(config.raw_config.get('layers')[0])
+        print(yaml.safe_dump(config.raw_config.get('layers')[1], sort_keys=False))
+
 
         console.print(f"[green]✓[/green] Loaded configuration:")
         console.print(f"  • Layers: {len(config.layers)}")

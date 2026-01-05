@@ -37,6 +37,7 @@ env_map = {
     "integration": "integration",
     "int": "integration",
     "test": "test",
+    "kogis": "kogis",
 }
 
 
