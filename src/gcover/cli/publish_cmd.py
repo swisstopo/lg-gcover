@@ -41,7 +41,7 @@ from gcover.publish.tooltips_enricher import (EnhancedTooltipsEnricher,
                                               LayerType,
                                               create_enrichment_config)
 
-# TODO from gcover.cli.symbols_cli import symbols_commands
+from gcover.cli.symbols_cli import symbols_commands
 
 
 
@@ -76,7 +76,7 @@ def publish_commands(ctx):
     ctx.obj.setdefault("verbose", False)
     ctx.obj.setdefault("config_path", None)
 
-# TODO publish_commands.add_command(symbols_commands)
+publish_commands.add_command(symbols_commands)
 
 
 @publish_commands.command()
