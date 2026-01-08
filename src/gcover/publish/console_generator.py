@@ -7,7 +7,7 @@ Useful for inspecting what was extracted from ESRI style files.
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import click
 from rich.console import Console
@@ -336,14 +336,14 @@ class ConsoleStyleGenerator:
 
 
 def inspect_styles_main(
-        style_files: tuple,
-        detailed: bool,
-        config_file: Optional[Path],
-        symbol_prefix: Optional[str] = None,
-        identifier_mode: str = "label",
-        identifier_field: Optional[str] = None,
-        head: Optional[int] = None,
-        verbose: Optional[bool]= False,
+    style_files: tuple,
+    detailed: bool,
+    config_file: Optional[Path],
+    symbol_prefix: Optional[str] = None,
+    identifier_mode: str = "label",
+    identifier_field: Optional[str] = None,
+    head: Optional[int] = None,
+    verbose: Optional[bool]= False,
 ):
     """
     Core logic for inspecting ESRI style files.
@@ -372,22 +372,14 @@ def inspect_styles_main(
         console.print("Use: gcover publish inspect <style_files> or --config-file")
         raise click.Abort()
 
-    # Build identifier configuration
-    identifier_fields_dict: Optional[Dict[str, str]] = None
-
     # Convert string mode to enum for default
     mode_enum = IdentifierMode(identifier_mode.lower())
-
-    # If field mode is requested with a specific field, we need to know the layer name
-    # Since we don't know it yet, we'll pass the field for all layers (if specified)
-    if mode_enum == IdentifierMode.FIELD and identifier_field:
-        # We'll apply this field to all layers - not ideal but works for single-layer files
-        # In production, use config file for per-layer settings
-        console.print(f"[yellow]Note: identifier_field will be applied to all layers[/yellow]")
-
+    
     console.print(f"[dim]Identifier mode: {mode_enum.value}[/dim]")
     if symbol_prefix:
         console.print(f"[dim]Symbol prefix: {symbol_prefix}[/dim]")
+    if identifier_field:
+        console.print(f"[dim]Identifier field: {identifier_field}[/dim]")
 
     # Process each style file
     generator = ConsoleStyleGenerator(symbol_prefix=symbol_prefix)
@@ -405,7 +397,7 @@ def inspect_styles_main(
                 style_file,
                 display=False,
                 default_identifier_mode=mode_enum,
-                identifier_fields=identifier_fields_dict,
+                default_identifier_field=identifier_field,
             )
 
             if not classifications:
@@ -436,3 +428,133 @@ def inspect_styles_main(
     console.print(f"[bold green]✓ Processed {len(style_files)} file(s)[/bold green]")
 
 
+@click.command()
+@click.argument("style_files", nargs=-1, type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--detailed",
+    "-d",
+    is_flag=True,
+    help="Show detailed symbol information including layers",
+)
+@click.option(
+    "--config-file",
+    "-c",
+    type=click.Path(exists=True, path_type=Path),
+    help="Load style files from YAML configuration",
+)
+@click.option(
+    "--symbol-prefix",
+    "-p",
+    type=str,
+    default=None,
+    help="Prefix for generated symbol IDs (e.g., 'unco_litho')",
+)
+@click.option(
+    "--identifier-mode",
+    "-m",
+    type=click.Choice(["label", "index", "field"]),
+    default="label",
+    help="How to generate identifiers: label (default), index, or field",
+)
+@click.option(
+    "--identifier-field",
+    "-f",
+    type=str,
+    default=None,
+    help="Field name for 'field' identifier mode",
+)
+@click.option(
+    "--head",
+    "-n",
+    type=int,
+    default=None,
+    help="Limit number of classes to display",
+)
+def inspect_styles_cli(
+    style_files: tuple,
+    detailed: bool,
+    config_file: Optional[Path],
+    symbol_prefix: Optional[str],
+    identifier_mode: str,
+    identifier_field: Optional[str],
+    head: Optional[int],
+):
+    """
+    Inspect and display ESRI style file contents.
+
+    Shows extracted classification information in a readable console format.
+    Useful for debugging and understanding what was extracted from .lyrx files.
+
+    \b
+    Identifier modes:
+      - label: Use slugified label text (default, most stable)
+      - index: Use sequential index (legacy, unstable)
+      - field: Use value from specified field
+
+    Examples:
+
+    \b
+    # Inspect single style file with default label-based identifiers
+    gcover publish inspect styles/Bedrock.lyrx
+
+    \b
+    # Inspect with symbol prefix to see full map_symbol values
+    gcover publish inspect styles/Unco_Litho.lyrx -p unco_litho
+
+    \b
+    # Compare label vs index identifiers
+    gcover publish inspect styles/Surfaces.lyrx -p surfaces -m label
+    gcover publish inspect styles/Surfaces.lyrx -p surfaces -m index
+
+    \b
+    # Inspect multiple files with details
+    gcover publish inspect styles/*.lyrx --detailed
+
+    \b
+    # Show only first 10 classes
+    gcover publish inspect styles/Bedrock.lyrx --head 10
+
+    \b
+    # Load from configuration
+    gcover publish inspect --config-file config/styles.yaml --detailed
+    """
+    inspect_styles_main(
+        style_files,
+        detailed,
+        config_file,
+        symbol_prefix=symbol_prefix,
+        identifier_mode=identifier_mode,
+        identifier_field=identifier_field,
+        head=head,
+    )
+
+
+if __name__ == "__main__":
+    inspect_styles_cli()
+
+
+# ============================================================================
+# Integration with publish_cmd.py
+# ============================================================================
+# To add this command to your publish CLI group, add this to publish_cmd.py:
+#
+# from gcover.publish.console_generator import inspect_styles_main
+#
+# @publish_commands.command(name="inspect")
+# @click.pass_context
+# @click.argument("style_files", nargs=-1, type=click.Path(exists=True, path_type=Path))
+# @click.option("--detailed", "-d", is_flag=True,
+#               help="Show detailed symbol information including layers")
+# @click.option("--config-file", "-c", type=click.Path(exists=True, path_type=Path),
+#               help="Load style files from YAML configuration")
+# @click.option("--symbol-prefix", "-p", type=str, default=None,
+#               help="Prefix for generated symbol IDs")
+# @click.option("--identifier-mode", "-m", type=click.Choice(["label", "index", "field"]),
+#               default="label", help="How to generate identifiers")
+# @click.option("--head", "-n", type=int, default=None,
+#               help="Limit number of classes to display")
+# def inspect_styles_cmd(ctx, style_files: tuple, detailed: bool, config_file: Optional[Path],
+#                        symbol_prefix: Optional[str], identifier_mode: str, head: Optional[int]):
+#     """Inspect and display ESRI style file contents."""
+#     inspect_styles_main(style_files, detailed, config_file,
+#                         symbol_prefix=symbol_prefix, identifier_mode=identifier_mode, head=head)

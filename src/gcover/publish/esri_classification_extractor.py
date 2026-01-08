@@ -748,11 +748,12 @@ class ESRIClassificationExtractor:
         pass
 
     def extract_from_lyrx(
-            self,
-            lyrx_path: Union[str, Path],
-            identifier_fields: Optional[Dict[str, str]] = None,
-            identifier_modes: Optional[Dict[str, IdentifierMode]] = None,
-            default_identifier_mode: IdentifierMode = IdentifierMode.LABEL,
+        self,
+        lyrx_path: Union[str, Path],
+        identifier_fields: Optional[Dict[str, str]] = None,
+        identifier_modes: Optional[Dict[str, IdentifierMode]] = None,
+        default_identifier_mode: IdentifierMode = IdentifierMode.LABEL,
+        default_identifier_field: Optional[str] = None,
     ) -> List[LayerClassification]:
         """
         Extract classification from .lyrx layer file.
@@ -764,6 +765,7 @@ class ESRIClassificationExtractor:
             identifier_modes: Optional dictionary mapping layer names to IdentifierMode.
                              Default is LABEL mode for all layers.
             default_identifier_mode: Default mode for layers not in identifier_modes.
+            default_identifier_field: Default field name for FIELD mode.
 
         Returns:
             List of LayerClassification objects
@@ -793,14 +795,16 @@ class ESRIClassificationExtractor:
             identifier_fields=identifier_fields,
             identifier_modes=identifier_modes,
             default_identifier_mode=default_identifier_mode,
+            default_identifier_field=default_identifier_field,
         )
 
     def _extract_from_json(
-            self,
-            lyrx_path: Path,
-            identifier_fields: Optional[Dict[str, str]] = None,
-            identifier_modes: Optional[Dict[str, IdentifierMode]] = None,
-            default_identifier_mode: IdentifierMode = IdentifierMode.LABEL,
+        self,
+        lyrx_path: Path,
+        identifier_fields: Optional[Dict[str, str]] = None,
+        identifier_modes: Optional[Dict[str, IdentifierMode]] = None,
+        default_identifier_mode: IdentifierMode = IdentifierMode.LABEL,
+        default_identifier_field: Optional[str] = None,
     ) -> List[LayerClassification]:
         """Extract classification using direct JSON parsing."""
         try:
@@ -810,9 +814,9 @@ class ESRIClassificationExtractor:
             classifications = []
 
             with Progress(
-                    SpinnerColumn(),
-                    TextColumn("[progress.description]{task.description}"),
-                    console=console,
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
             ) as progress:
                 task = progress.add_task("Processing layers...", total=len(all_layers))
 
@@ -825,11 +829,13 @@ class ESRIClassificationExtractor:
                     renderer = self._find_renderer_in_layer(layer_data)
                     if renderer and renderer.get("type") == "CIMUniqueValueRenderer":
                         layer_name = layer_data.get("name", "Unknown")
-
+                        
                         # Get identifier configuration for this layer
-                        identifier_field = None
-                        identifier_mode = default_identifier_mode  # Use default
-
+                        # Priority: layer-specific > default
+                        identifier_field = default_identifier_field  # Start with default
+                        identifier_mode = default_identifier_mode    # Start with default
+                        
+                        # Override with layer-specific field if present
                         if identifier_fields and layer_name in identifier_fields:
                             identifier_field = identifier_fields[layer_name]
                             identifier_mode = IdentifierMode.FIELD
@@ -837,9 +843,17 @@ class ESRIClassificationExtractor:
                                 f"Layer '{layer_name}' will use "
                                 f"identifier_field: {identifier_field}"
                             )
-
+                        
+                        # Override with layer-specific mode if present
                         if identifier_modes and layer_name in identifier_modes:
                             identifier_mode = identifier_modes[layer_name]
+                        
+                        # Log the final configuration
+                        if identifier_mode == IdentifierMode.FIELD:
+                            logger.info(
+                                f"Layer '{layer_name}' using FIELD mode with field: {identifier_field}"
+                            )
+                        else:
                             logger.info(
                                 f"Layer '{layer_name}' using identifier_mode: {identifier_mode.value}"
                             )
@@ -1930,16 +1944,18 @@ def explore_layer_structure(
 # MAIN CONVENIENCE FUNCTION (PUBLIC API)
 # =============================================================================
 
+
 def extract_lyrx_complete(
-        lyrx_path: Union[str, Path],
-        override_yaml: Optional[str] = None,
-        display: bool = True,
-        export_json: Optional[str] = None,
-        generate_override_template_path: Optional[str] = None,
-        identifier_fields: Optional[Dict[str, str]] = None,
-        identifier_modes: Optional[Dict[str, Union[IdentifierMode, str]]] = None,
-        default_identifier_mode: Union[IdentifierMode, str] = IdentifierMode.LABEL,
-        head: Optional[int] = None,
+    lyrx_path: Union[str, Path],
+    override_yaml: Optional[str] = None,
+    display: bool = True,
+    export_json: Optional[str] = None,
+    generate_override_template_path: Optional[str] = None,
+    identifier_fields: Optional[Dict[str, str]] = None,
+    identifier_modes: Optional[Dict[str, Union[IdentifierMode, str]]] = None,
+    default_identifier_mode: Union[IdentifierMode, str] = IdentifierMode.LABEL,
+    default_identifier_field: Optional[str] = None,
+    head: Optional[int] = None,
 ) -> List[LayerClassification]:
     """
     Convenience function for COMPLETE extraction with all features.
@@ -1951,32 +1967,41 @@ def extract_lyrx_complete(
         export_json: Optional path to export complete JSON
         generate_override_template_path: Generate override template for complex symbols
         identifier_fields: Optional dictionary mapping layer names to field names
-                          (only used when identifier_mode is FIELD)
+                          (only used when identifier_mode is FIELD).
         identifier_modes: Optional dictionary mapping layer names to IdentifierMode.
                          Can be IdentifierMode enum or string ('label', 'index', 'field').
                          Overrides default_identifier_mode for specific layers.
         default_identifier_mode: Default mode for layers not in identifier_modes.
                                 Can be IdentifierMode enum or string ('label', 'index', 'field').
                                 Default is 'label' (most stable).
+        default_identifier_field: Default field name for FIELD mode when layer not in
+                                 identifier_fields. Required when default_identifier_mode='field'.
         head: Optional limit on number of rows to display
 
     Returns:
         List of LayerClassification objects with complete symbol data
-
+    
     Examples:
         # Default: use label-based identifiers (most stable)
         extract_lyrx_complete("layer.lyrx")
-
+        
         # Use index-based identifiers for all layers
         extract_lyrx_complete("layer.lyrx", default_identifier_mode="index")
-
-        # Use field-based identifier for specific layer
+        
+        # Use field-based identifier for ALL layers (same field)
+        extract_lyrx_complete(
+            "layer.lyrx",
+            default_identifier_mode="field",
+            default_identifier_field="GEOLCODE"
+        )
+        
+        # Use field-based identifier for specific layer only
         extract_lyrx_complete(
             "layer.lyrx",
             identifier_fields={"Bedrock": "GEOL_MAPPING_UNIT"},
             identifier_modes={"Bedrock": "field"}
         )
-
+        
         # Mix: default to label, but use field for Bedrock
         extract_lyrx_complete(
             "layer.lyrx",
@@ -1997,6 +2022,14 @@ def extract_lyrx_complete(
     else:
         default_mode = default_identifier_mode
 
+    # Validate: field mode requires a field
+    if default_mode == IdentifierMode.FIELD and not default_identifier_field and not identifier_fields:
+        logger.warning(
+            "default_identifier_mode='field' but no default_identifier_field or "
+            "identifier_fields provided. Falling back to 'label' mode."
+        )
+        default_mode = IdentifierMode.LABEL
+
     # Normalize identifier_modes to IdentifierMode enums
     normalized_modes: Optional[Dict[str, IdentifierMode]] = None
     if identifier_modes:
@@ -2014,6 +2047,7 @@ def extract_lyrx_complete(
         identifier_fields=identifier_fields,
         identifier_modes=normalized_modes,
         default_identifier_mode=default_mode,
+        default_identifier_field=default_identifier_field,
     )
 
     for classification in classifications:

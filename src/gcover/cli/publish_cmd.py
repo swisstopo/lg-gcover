@@ -1446,15 +1446,22 @@ from gcover.publish.console_generator import inspect_styles_main
                help="Prefix for generated symbol IDs")
 @click.option("--identifier-mode", "-m", type=click.Choice(["label", "index", "field"]),
                default="label", help="How to generate identifiers")
+@click.option("--identifier-field", "-f", type=str, default=None,
+               help="Field to use for identifier ID")
 @click.option("--head", "-n", type=int, default=None,
                help="Limit number of classes to display")
 def inspect_styles_cmd(ctx, style_files: tuple, detailed: bool, config_file: Optional[Path],
-                        symbol_prefix: Optional[str], identifier_mode: str, head: Optional[int]):
+                        symbol_prefix: Optional[str], identifier_mode: str, head: Optional[int], identifier_field: Optional[str]=None):
      """Inspect and display ESRI style file contents."""
      verbose = ctx.obj.get("verbose", False)
 
+
+
+     if identifier_mode == 'field' and identifier_field is None:
+         raise click.BadParameter("You must provide --identifier-field when using --identifier-mode=field")
+
      inspect_styles_main(style_files, detailed, config_file,
-                         symbol_prefix=symbol_prefix, identifier_mode=identifier_mode, head=head, verbose=verbose)
+                         symbol_prefix=symbol_prefix, identifier_mode=identifier_mode,identifier_field=identifier_field, head=head, verbose=verbose)
 
 
 
