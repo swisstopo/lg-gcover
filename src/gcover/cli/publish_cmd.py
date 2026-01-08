@@ -1434,26 +1434,29 @@ def qgis(
 from gcover.publish.console_generator import inspect_styles_main
 
 
+
 @publish_commands.command(name="inspect")
 @click.pass_context
 @click.argument("style_files", nargs=-1, type=click.Path(exists=True, path_type=Path))
-@click.option(
-    "--detailed",
-    "-d",
-    is_flag=True,
-    help="Show detailed symbol information including layers",
-)
-@click.option(
-    "--config-file",
-    "-c",
-    type=click.Path(exists=True, path_type=Path),
-    help="Load style files from YAML configuration",
-)
-def inspect_styles_cmd(
-    ctx, style_files: tuple, detailed: bool, config_file: Optional[Path]
-):
-    """Inspect and display ESRI style file contents."""
-    inspect_styles_main(style_files, detailed, config_file)
+@click.option("--detailed", "-d", is_flag=True,
+               help="Show detailed symbol information including layers")
+@click.option("--config-file", "-c", type=click.Path(exists=True, path_type=Path),
+               help="Load style files from YAML configuration")
+@click.option("--symbol-prefix", "-p", type=str, default=None,
+               help="Prefix for generated symbol IDs")
+@click.option("--identifier-mode", "-m", type=click.Choice(["label", "index", "field"]),
+               default="label", help="How to generate identifiers")
+@click.option("--head", "-n", type=int, default=None,
+               help="Limit number of classes to display")
+def inspect_styles_cmd(ctx, style_files: tuple, detailed: bool, config_file: Optional[Path],
+                        symbol_prefix: Optional[str], identifier_mode: str, head: Optional[int]):
+     """Inspect and display ESRI style file contents."""
+     verbose = ctx.obj.get("verbose", False)
+
+     inspect_styles_main(style_files, detailed, config_file,
+                         symbol_prefix=symbol_prefix, identifier_mode=identifier_mode, head=head, verbose=verbose)
+
+
 
 
 @publish_commands.command()

@@ -6,6 +6,8 @@ global:
     symbol_field: MAP_SYMBOL
     label_field: LABEL
     overwrite: False
+    identifier_mode: label  # Possible value: 'label' (default), 'index', or 'field'
+
 # Layer configurations
 layers:
     - gpkg_layer: exploit_points
@@ -452,6 +454,7 @@ layers:
             GMU_CODE: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT
           symbol_prefix: bedrock
           filter: KIND == 14334001
-          identifier_field: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT # New
+          identifier_field: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT
+          identifier_mode: field
 
 
