@@ -1194,6 +1194,7 @@ class QAAnalyzer:
                     layer=layer_name,
                     driver=driver,
                     mode="a" if output_file.exists() else "w",
+                    layer_options={ "TARGET_ARCGIS_VERSION": "ARCGIS_PRO_3_2_OR_LATER"}
                 )
 
                 logger.info(f"Wrote {len(gdf)} features to layer '{layer_name}'")
