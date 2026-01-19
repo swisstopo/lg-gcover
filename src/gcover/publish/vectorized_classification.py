@@ -945,7 +945,7 @@ def apply_batch_from_config_vectorized(
                         logger.error(f"Classification '{class_config.classification_name}' "
                                    f"not found in {class_config.style_file.name}")
                         if not continue_on_error:
-                            raise ValueError(f"Classification not found")
+                            raise ValueError(f"Classification not found in {class_config.style_file.name}")
                         continue
                 elif len(classifications) == 1:
                     classification = classifications[0]

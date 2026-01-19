@@ -5,6 +5,7 @@ A professional CLI tool to denormalize GeoCover geodatabase tables with their lo
 """
 
 import sys
+import os
 import warnings
 import xml.etree.ElementTree as ET
 from datetime import datetime

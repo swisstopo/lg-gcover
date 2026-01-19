@@ -17,7 +17,10 @@ $env:PYTHON_RICH_FORCE_ASCII = "true"
 $CondaPath = "Y:\conda\envs\ARCGIS_36"
 $OutputDir = "X:\mom"
 $InputDir = "\\v0t0020a\topgisprod\10_Production_GC\Administration\QA"
-$SINCE_DATE = (Get-Date).AddDays(-31).ToString("yyyy-MM-dd")
+$SINCE_DATE = (Get-Date).AddDays(-35).ToString("yyyy-MM-dd")
+$TODAY = (Get-Date).ToString("yyyy-MM-dd")
+
+
 $LogFile = "$OutputDir\gcover_$TODAY.log"
 
 Write-Host "Using conda env: $CondaPath"
