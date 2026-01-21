@@ -7,6 +7,7 @@ A professional CLI tool to denormalize GeoCover geodatabase tables with their lo
 import sys
 import os
 import warnings
+import traceback
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from importlib.resources import files
@@ -897,6 +898,7 @@ class GeoCoverDenormalizer:
 
         metadata_columns = [
             "INTEGRATION_OBJECT_UUID",
+            "OPERATOR",
             "DATEOFCHANGE",
             "DATEOFCREATION",
             "ORIGINAL_ORIGIN",
@@ -1110,7 +1112,11 @@ class GeoCoverDenormalizer:
                     )
 
                 except Exception as e:
-                    logger.error(f"Failed to process {table_name}: {e}")
+                    import traceback
+
+                    logger.error(f"Failed to write {table_name}: {e}")
+                    console.print(f"[red]❌ Failed to write {table_name}: {e}[/red]")
+                    logger.error(f"Full traceback: {traceback.format_exc()}")
                     progress.update(
                         task_id, completed=100, description=f"❌ {table_name} failed"
                     )
