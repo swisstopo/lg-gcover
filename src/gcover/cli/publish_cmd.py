@@ -1191,7 +1191,7 @@ def mapserver(
         logger.debug(f"Active classes: {active_classes}")
 
         for classification in classifications:
-            layer_name = classification.layer_name or style_file.stem
+            layer_name = classification.layer_name.replace(' ', '_') or style_file.stem
 
             # Get prefix and mapfile name from config if available
             symbol_prefix = prefix_map.get(layer_name, layer_name.lower())
