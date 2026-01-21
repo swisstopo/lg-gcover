@@ -40,6 +40,14 @@ from gcover.publish.tooltips_enricher import (EnhancedTooltipsEnricher,
                                               EnrichmentConfig, LayerMapping,
                                               LayerType,
                                               create_enrichment_config)
+from gcover.publish.writeback import (build_uuid_lookup,
+                                          extract_layer_name,
+                                          get_matching_layers_auto,
+                                          get_matching_layers_from_config,
+                                          list_filegdb_layers,
+                                          list_gpkg_layers,
+                                          load_layer_mapping_from_config,
+                                          update_filegdb_layer)
 
 from gcover.cli.symbols_cli import symbols_commands
 
@@ -1065,7 +1073,8 @@ def mapserver(
             ):
                 if class_config.classification_name:
                     # Use classification name as key
-                    key = class_config.classification_name
+                    # TODO why discrepency in `class_config.classification_name`
+                    key = class_config.classification_name.replace(' ', '_')
                     mapfile_labels[key] = class_config.map_label
                     active_classes[key] = class_config.active
                     include_items_dict[key] = class_config.include_items
@@ -1179,6 +1188,7 @@ def mapserver(
             continue
 
         # Process each classification
+        logger.debug(f"Active classes: {active_classes}")
 
         for classification in classifications:
             layer_name = classification.layer_name or style_file.stem
@@ -1196,6 +1206,7 @@ def mapserver(
                     f"  [bold orange1]Skipping {layer_name} (inactive)[/bold orange1]"
                 )
                 continue
+
 
             if not mapserver_data:
                 # mapserver_data = f"geom from (SELECT * from {gpkg_layer} ) as blabla using unique gid using srid=2056"
@@ -2337,14 +2348,7 @@ def writeback(
     click.echo(f"Classification DB: {classification_db}")
     click.echo(f"Attributes: {', '.join(attributes)}")
 
-    from gcover.publish.writeback import (build_uuid_lookup,
-                                          extract_layer_name,
-                                          get_matching_layers_auto,
-                                          get_matching_layers_from_config,
-                                          list_filegdb_layers,
-                                          list_gpkg_layers,
-                                          load_layer_mapping_from_config,
-                                          update_filegdb_layer)
+
 
     if dryrun:
         click.secho("=== DRYRUN MODE ===", fg="yellow", bold=True)
