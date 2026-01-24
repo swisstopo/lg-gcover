@@ -12,18 +12,18 @@ layers:
     connection_ref: gpkg_wms
     classifications:
       - classification_name: Exploit_Geomat_Pt
-        data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}_exploit_polygons  USING UNIQUE gid USING SRID=2056"
+        data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}exploit_polygons  USING UNIQUE gid USING SRID=2056"
 
   - gpkg_layer: fossils
     classifications:
       - classification_name: Fossils
-        data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}_fossils  USING UNIQUE gid USING SRID=2056"
+        data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}fossils  USING UNIQUE gid USING SRID=2056"
 
   - gpkg_layer: point_objects
     classifications:
       - classification_name: Point_Mpla_Planar_Structures
       - classification_name: Point Objects_Achsenfläche
-        data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}_objects USING UNIQUE gid USING SRID=2056 WHERE map_symbol ILIKE 'achsen%'"
+        data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}objects USING UNIQUE gid USING SRID=2056 WHERE map_symbol ILIKE 'achsen%'"
 
       - classification_name: Point Objects_Orient
       - classification_name: Point_Objects_Bohrung_Fels_erreicht

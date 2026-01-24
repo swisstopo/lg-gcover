@@ -3,8 +3,8 @@
 # Global settings (optional)
 global:
     treat_zero_as_null: true
-    symbol_field: MAP_SYMBOL
-    label_field: LABEL
+    symbol_field: map_symbol
+    label_field: label
     overwrite: False
     identifier_mode: label  # Possible value: 'label' (default), 'index', or 'field'
 
@@ -28,6 +28,7 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}exploit_geomat_pt
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}exploit_geomat
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}exploit_points USING UNIQUE gid USING SRID=2056"
+          include_items: "label,kin,aexp_status,aexp_targ_mat,aexp_depth_tot"
           map_label: False
           # TODO: no filter
           symbol_prefix: geomat_pnt
@@ -141,10 +142,10 @@ layers:
           classification_name: Point_Objects_Sondierung
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}sondierung
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}drill
+          include_items: "label,kind,abor_depth_bedr,abor_fm_a,abor_fm_b,abor_depth_tot,abor_depth_fm_a,abor_depth_fm_b"
           active: True
           map_label: False
           data: "${GCOVER_POSTGIS_GEOM} FROM  (select * from geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE map_symbol ilike '%sondier%') as subselect  USING UNIQUE gid USING SRID=2056"
-
           include_items: "kind,label"
           filter: KIND IN (1051002,10501003,10501004,10501005)
           symbol_prefix: sondierung
@@ -157,6 +158,7 @@ layers:
           classification_name: Point_Objects_Bohrung_Fels_nicht_erreicht
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}bohrung_fels_nicht_erreicht
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}drill
+          include_items: "label,kind,abor_depth_bedr"
           active: True
           map_label: False
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
@@ -191,6 +193,7 @@ layers:
           map_label: False
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
           # TODO: missing AND (PRINTED = 1 OR PRINTED IS NULL)
+          include_items: "label,kind,runc_rock_typ,runc_protected"
           filter: KIND IN (14401001,14401002)
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -285,6 +288,7 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_bruch
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
           map_label: False
+          include_items: "label,kind,ttec_name"
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects  USING UNIQUE gid USING SRID=2056"
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -321,6 +325,7 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}exploit_geomat_plg
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}exploit_geomat
+          include_items: "label,kind,aexp_status,aexp_targ_mat"
           map_label: False
           data: "geom FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}exploit_polygons  USING UNIQUE gid USING SRID=2056"
           symbol_prefix: geomat_plg
@@ -341,6 +346,7 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}surfaces
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}surfaces
+          include_items: "label,more_info,kind"
           map_label: False
           #data: "geom from (SELECT * from surfaces where map_symbol IS NOT NULL) as blabla using unique gid using srid=2056"
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}surfaces USING UNIQUE gid USING SRID=2056"
@@ -414,7 +420,8 @@ layers:
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}unconsolidated
           map_label: False
           symbol_prefix: unco_chrono_t
-          data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}unco_deposits  USING UNIQUE gid USING SRID=2056"
+          data: "${GCOVER_POSTGIS_GEOM} FROM  (select * from geol.${GCOVER_POSTGIS_TABLE_PREFIX}unco_deposits WHERE map_symbol ilike 'unco_chrono_t%') as subselect  USING UNIQUE gid USING SRID=2056"
+          include_items: "label,kind,runc_litho,runc_glac_typ,runc_chrono_t"
           filter: RUNC_LITHO IN (15101019,15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101040, 15101046, 15101047, 15101048, 15101049, 15101055, 15101058)
           fields:
             KIND: KIND
@@ -460,7 +467,7 @@ layers:
           classification_name: Bedrock
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}bedrock
-          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}geocover
+          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}bedrock
           map_label: False
           data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}bedrock  USING UNIQUE gid USING SRID=2056"
           include_items: "label,uuid,kind,gmu_desc,tecto_desc,litho_main_desc,litho_sec_desc,litho_ter_desc,chrono_base_desc,chrono_top_desc,correlation_desc"
