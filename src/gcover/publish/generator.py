@@ -13,6 +13,7 @@ import json
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple, Union
+from importlib.resources import files
 
 import click
 from loguru import logger
@@ -44,6 +45,8 @@ from gcover.publish.rotation_extractor_extension import (
     RotationInfo,
     format_rotation_for_mapserver,
 )
+
+DEFAULT_IMAGES_DIR = "patterns"  # or img or "etc/img"  for KOGIS
 
 console = Console()
 
@@ -199,6 +202,7 @@ class MapServerGenerator:
             font_name_prefix: str = "esri",
             no_scale: bool = False,
             pattern_catalog: Optional[Path] = None,
+            gml_items: Optional[str] = 'default',
     ):
         """
         Initialize generator.
@@ -215,6 +219,7 @@ class MapServerGenerator:
         self.symbol_field = symbol_field
         self.font_name_prefix = font_name_prefix
         self.no_scale = no_scale
+        self.gml_items = gml_items
 
         # Track fonts and symbols used (for symbol file generation)
         self.fonts_used: Set[str] = set()
@@ -1152,7 +1157,7 @@ class MapServerGenerator:
         lines = [
             "SYMBOLSET",
             "",
-            "  # Basic geometric symbols for GeoCover",
+            "  # Basic geometric symbols for GeoCover (always available)",
             "",
         ]
 
@@ -1237,7 +1242,7 @@ class MapServerGenerator:
                     break
 
             if not png_path:
-                png_path = f"patterns/{symbol_name}.png"
+                png_path = f"{DEFAULT_IMAGES_DIR}/{symbol_name}.png"
 
             symbols.extend([
                 "  SYMBOL",
@@ -1251,59 +1256,14 @@ class MapServerGenerator:
         return symbols
 
     def _generate_basic_symbols(self) -> List[str]:
-        """Generate basic geometric symbols."""
-        return [
-            "  SYMBOL",
-            '    NAME "circle"',
-            "    TYPE ELLIPSE",
-            "    POINTS 1 1 END",
-            "    FILLED TRUE",
-            "  END",
-            "",
-            "  SYMBOL",
-            '    NAME "square"',
-            "    TYPE VECTOR",
-            "    POINTS",
-            "      0 0",
-            "      0 1",
-            "      1 1",
-            "      1 0",
-            "      0 0",
-            "    END",
-            "    FILLED TRUE",
-            "  END",
-            "",
-            "  SYMBOL",
-            '    NAME "triangle"',
-            "    TYPE VECTOR",
-            "    POINTS",
-            "      0 1",
-            "      0.5 0",
-            "      1 1",
-            "      0 1",
-            "    END",
-            "    FILLED TRUE",
-            "  END",
-            "",
-            "  SYMBOL",
-            '    NAME "star"',
-            "    TYPE VECTOR",
-            "    POINTS",
-            "      0 0.375",
-            "      0.35 0.375",
-            "      0.5 0",
-            "      0.65 0.375",
-            "      1 0.375",
-            "      0.75 0.625",
-            "      0.875 1",
-            "      0.5 0.75",
-            "      0.125 1",
-            "      0.25 0.625",
-            "      0 0.375",
-            "    END",
-            "    FILLED TRUE",
-            "  END",
-        ]
+            """Load basic geometric symbols from an external file."""
+
+            symbol_file = files("gcover.data").joinpath("basic_symbols.map")
+
+            with symbol_file.open("r", encoding="utf-8") as f:
+                lines = [line.rstrip("\n") for line in f]
+
+            return lines
 
     def _generate_line_pattern_symbols(self) -> List[str]:
         """Generate line pattern symbols (dashed, dotted)."""
