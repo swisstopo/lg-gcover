@@ -37,13 +37,13 @@ patterns:
     character:
       font_family: GeoFonts 1
       char_index: 65
-      size: 6
+      size: 12
       step:
-      - 11.33856
-      - 11.33856
+      - 22.33856
+      - 22.33856
       offset:
-      - 5.66928
-      - 5.66928
+      - 11.66928
+      - 11.66928
     color:
       rgba:
       - 0
@@ -95,10 +95,10 @@ patterns:
     character:
       font_family: GeoFonts 1
       char_index: 60
-      size: 8
+      size: 12
       step:
-      - 8.503919999999999
-      - 8.503919999999999
+      - 12.503919999999999
+      - 12.503919999999999
       offset:
       - 0.0
       - 0.0
