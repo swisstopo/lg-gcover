@@ -202,6 +202,7 @@ class MapServerGenerator:
             font_name_prefix: str = "esri",
             no_scale: bool = False,
             pattern_catalog: Optional[Path] = None,
+            gml_items: Optional[str] = 'default',
     ):
         """
         Initialize generator.
@@ -218,6 +219,7 @@ class MapServerGenerator:
         self.symbol_field = symbol_field
         self.font_name_prefix = font_name_prefix
         self.no_scale = no_scale
+        self.gml_items = gml_items
 
         # Track fonts and symbols used (for symbol file generation)
         self.fonts_used: Set[str] = set()
