@@ -94,6 +94,8 @@ class ClassificationConfig:
     data: Optional[str] = None
     active: Optional[bool] = True
     include_items: Optional[str] = None
+    maxscaledenom: Optional[float] = None
+    minscaledenom: Optional[float] = None
 
     def get_identifier_mode(self) -> IdentifierMode:
         """Get the IdentifierMode enum value.
@@ -361,7 +363,7 @@ class BatchClassificationConfig:
         template = layer_dict.get("template")
         classifications = []
         field_types = layer_dict.get("field_types", {})
-        max_scale = layer_dict.get("scale", None)
+        max_scale = layer_dict.get("scale", None)  # TODO,
 
         for class_dict in layer_dict.get("classifications", []):
             # Resolve style file path
@@ -394,6 +396,8 @@ class BatchClassificationConfig:
                     data=class_dict.get("data"),
                     active=class_dict.get("active", True),
                     include_items=class_dict.get("include_items"),
+                    maxscaledenom=class_dict.get("maxscaledenom"),
+                    minscaledenom=class_dict.get("minscaledenom"),
                 )
             )
 

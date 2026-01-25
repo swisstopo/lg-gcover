@@ -1055,6 +1055,7 @@ def mapserver(
     mapfile_labels = {}
     active_classes = {}
     include_items_dict = {}
+    max_scaledenoms = {}
     mapfiles = []
     config = None
     symbol_field = None
@@ -1066,6 +1067,7 @@ def mapserver(
     if config_file:
         console.print(f"[cyan]Loading configuration from {config_file}[/cyan]")
         config = BatchClassificationConfig(config_path= config_file, env=env)
+
 
 
 
@@ -1086,6 +1088,7 @@ def mapserver(
                     mapfile_labels[key] = class_config.map_label
                     active_classes[key] = class_config.active
                     include_items_dict[key] = class_config.include_items
+                    max_scaledenoms[key] = class_config.maxscaledenom
                     if class_config.symbol_prefix:
                         prefix_map[key] = class_config.symbol_prefix
                     if class_config.mapfile_group:
@@ -1120,7 +1123,7 @@ def mapserver(
                         connection_ref,
                         class_config.data,
                         layer_config.template,
-                        layer_config.max_scale,
+                        class_config.maxscaledenom,  # TODO layer_config.max_scale,
                     )
                     logger.debug(params)
                     style_files.append(params)
@@ -1274,7 +1277,7 @@ def mapserver(
                 symbol_field=symbol_field,
                 template=template,
                 map_label=mapfile_label,
-                layer_max_scale=layer_max_scale,
+                layer_max_scale=layer_max_scale,  # mapfile layer (from the classification)
                 include_items=include_items,
             )
 

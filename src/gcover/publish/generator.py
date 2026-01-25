@@ -367,26 +367,33 @@ class MapServerGenerator:
         # minScale → MAXSCALEDENOM
         # maxScale → MINSCALEDENOM
 
+
+
         if self.no_scale is not True:
 
             max_scale = self.render_maxscale(layer_max_scale, classification.min_scale)
+            console.print(f"=== Scales hell ===")
+            console.print(f"    layer_max_scale: {layer_max_scale}")
+            console.print(f"    ESRI lyrx classification.max_scale: {classification.max_scale}")
+            console.print(f"    ESRI lyrx  classification.min_scale: {classification.min_scale}")
+            console.print(f"    maxscale: {max_scale}")
             if max_scale:
-                console.print(f"Using `maxscaledenom`: {classification.min_scale}")
+
                 lines.extend(["", max_scale])
 
             if classification.max_scale:
                 lines.extend(
                     [
                         "",
-                        f"MINSCALEDENOM   {classification.min_scale}",
+                        f"MINSCALEDENOM   {classification.max_scale}",
                     ]
                 )
-            if classification.max_scale:
+            '''if classification.min_scale:
                 lines.extend(
                     [
-                        f"MAXCALEDENOM   {classification.min_scale}",
+                        f"MAXSCALEDENOM   {classification.min_scale}",
                     ]
-                )
+                )'''
 
         # Projection
         lines.extend(
@@ -708,7 +715,7 @@ class MapServerGenerator:
 
         # 2. THEN: Add hatch fills
         for i, fill_info in hatch_fills:
-            logger.info("Found hatch")
+            logger.debug("Found hatch")
             self._add_hatch_fill_style(
                 lines, fill_info, class_index, i, symbol_prefix
             )

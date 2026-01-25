@@ -86,6 +86,7 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}planar_struct
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
+          maxscaledenom: 26000
           filter: KIND IN (13801001,13801002, 13801004, 13801003, 13801005, 13801006)
           # Convert angles.. but keep the name TODO
           data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, dip::int, map_symbol, (360 - azimuth::int) % 360 AS azimuth FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360) AS subquery  USING UNIQUE gid USING SRID=2056"
@@ -104,7 +105,7 @@ layers:
           # Only a few 100s features
           data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, map_symbol, (360 - azimuth::int) % 360 AS azimuth FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360 AND map_symbol ILIKE '%achsen%') AS subquery  USING UNIQUE gid USING SRID=2056"
           map_label: False
-          max_scale: 20000
+          maxscaledenom: 20000
           filter: KIND=14601006
           fields:
             # Map GPKG field to classification field (can be complex paths)
