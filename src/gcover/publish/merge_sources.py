@@ -37,6 +37,7 @@ from shapely.geometry import (
     Point, 
     Polygon,
 )
+from shapely import difference
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import linemerge, unary_union
 from shapely import make_valid, simplify
@@ -87,34 +88,72 @@ def create_fast_mask(mapsheets: gpd.GeoDataFrame, source_rc: str) -> BaseGeometr
     return merged.convex_hull
 
 
-def create_exact_mask(mapsheets: gpd.GeoDataFrame, source_rc: str, tolerance: float = 0.1) -> BaseGeometry:
+def _create_source_masks(self) -> Dict[str, BaseGeometry]:
     """
-    Create an exact (but simplified) clip mask.
-    
-    Use this when you need precise clipping at borders.
-    
-    Args:
-        mapsheets: GeoDataFrame with mapsheet polygons
-        source_rc: Source identifier
-        tolerance: Simplification tolerance in CRS units (default 0.1m for LV95)
-        
-    Returns:
-        Simplified dissolved geometry
+    Create EXCLUSIVE (non-overlapping) clip masks for each source.
     """
-    sheets = mapsheets[mapsheets['SOURCE_RC'] == source_rc]
-    if sheets.empty:
-        return None
-        
-    # Dissolve to single geometry
-    merged = unary_union(sheets.geometry.values)
-    
-    # Remove internal slivers/boundaries with buffer trick
-    cleaned = merged.buffer(0.01).buffer(-0.01)
-    
-    # Simplify vertices
-    simplified = simplify(cleaned, tolerance=tolerance, preserve_topology=True)
-    
-    return make_valid(simplified)
+    if self.mapsheets_gdf is None:
+        self._load_mapsheets()
+
+    # Rename column for consistency
+    source_col = self.config.source_column
+    if source_col != 'SOURCE_RC':
+        self.mapsheets_gdf = self.mapsheets_gdf.rename(columns={source_col: 'SOURCE_RC'})
+
+    # Determine source priority (RC2 wins over RC1 by default)
+    all_sources = self.mapsheets_gdf['SOURCE_RC'].unique().tolist()
+    source_priority = []
+    if 'RC2' in all_sources:
+        source_priority.append('RC2')
+    if 'RC1' in all_sources:
+        source_priority.append('RC1')
+    for src in sorted(all_sources):
+        if src not in source_priority:
+            source_priority.append(src)
+
+    logger.info(f"Source priority for exclusive masks: {source_priority}")
+
+    masks = {}
+    claimed_area = None
+
+    for source_name in source_priority:
+        sheets = self.mapsheets_gdf[self.mapsheets_gdf['SOURCE_RC'] == source_name]
+        if sheets.empty:
+            continue
+
+        # Get EXACT dissolved boundary (NOT convex hull!)
+        source_area = unary_union(sheets.geometry.values)
+
+        # Clean up potential topology issues
+        if not source_area.is_valid:
+            source_area = source_area.buffer(0)
+
+        # Make EXCLUSIVE by subtracting already-claimed areas
+        if claimed_area is not None:
+            exclusive_area = difference(source_area, claimed_area)
+            if exclusive_area is None or exclusive_area.is_empty:
+                logger.warning(f"Source {source_name} fully covered by higher priority sources")
+                continue
+            mask = exclusive_area
+        else:
+            mask = source_area
+
+        if not mask.is_valid:
+            mask = mask.buffer(0)
+
+        masks[source_name] = mask
+
+        complexity = get_mask_complexity(mask)
+        logger.debug(f"  {source_name}: {complexity['type']}, {complexity['vertices']:,} vertices")
+
+        # Update claimed area for next iteration
+        if claimed_area is None:
+            claimed_area = source_area
+        else:
+            claimed_area = unary_union([claimed_area, source_area])
+
+    self.source_masks = masks
+    return masks
 
 
 def fast_clip(gdf: gpd.GeoDataFrame, mask: BaseGeometry) -> gpd.GeoDataFrame:
