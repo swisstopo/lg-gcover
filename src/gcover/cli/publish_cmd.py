@@ -50,8 +50,6 @@ from gcover.publish.writeback import (build_uuid_lookup,
                                           load_layer_mapping_from_config,
                                           update_filegdb_layer)
 
-from gcover.publish.merge_sources_v2 import apply_fixes
-
 from gcover.cli.symbols_cli import symbols_commands
 
 
@@ -2087,9 +2085,9 @@ def merge(
         else:
             if output.suffix.lower() == ".gdb":
                 console.print("[yellow]arcpy not available, using geopandas-based merger[/yellow]")
-            apply_fixes(GDBMerger)
+
             merger = GDBMerger(config, verbose=verbose)
-            apply_fixes(GDBMerger)
+
 
         stats = merger.merge()
 
