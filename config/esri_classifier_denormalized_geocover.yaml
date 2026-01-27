@@ -64,6 +64,8 @@ layers:
       gcover_layer: GC_ROCK_BODIES/GC_POINT_OBJECTS
       connection_ref: postgis_wms
       layer_type: point
+      computed_fields:  # must match case of source
+        map_angle: "(90 - AZIMUTH) % 360"
       field_types:
         KIND: Int64
         HSUR_STATUS: Int64
@@ -78,6 +80,7 @@ layers:
         TDEF_FOLD_TYP: Int64
         AEXP_STATUS: Int64
         ABOR_DEPTH_BEDR: Int64
+        AZIMUTH: Int64
 
       classifications:
         - style_file: styles/Point_Mpla_Planar_Structures.lyrx
@@ -207,6 +210,8 @@ layers:
       gcover_layer: GC_ROCK_BODIES/GC_LINEAR_OBJECTS
       connection_ref: postgis_wms
       layer_type: line
+      computed_fields:
+        length_m: "geometry.length"
       field_types:
         KIND: Int64
         TTEC_STATUS: Int64
@@ -316,6 +321,8 @@ layers:
       gcover_layer: GC_ROCK_BODIES/GC_EXPLOIT_GEOMAT_PLG
       connection_ref: postgis_wms
       layer_type: polygon
+      computed_fields:
+        area_m2: "geometry.area"
       field_types:
         KIND: Int64 # `Int64` with capital `I` is a nullable integer...
       classifications:
@@ -337,6 +344,8 @@ layers:
       gcover_layer: GC_ROCK_BODIES/GC_SURFACES
       connection_ref: postgis_wms
       layer_type: polygon
+      computed_fields:
+        area_m2: "geometry.area"
       field_types:
         KIND: Int64 # `Int64` with capital `I` is a nullable integer...
       classifications:
@@ -361,6 +370,8 @@ layers:
       gcover_layer: GC_ROCK_BODIES/GC_UNCO_DESPOSIT
       connection_ref: postgis_wms
       layer_type: polygon
+      computed_fields:
+        area_m2: "geometry.area"
       field_types:
         KIND: Int64
         RUNC_LITHO: Int64
@@ -451,6 +462,8 @@ layers:
       connection_ref: postgis_wms
       layer_type: polygon
       template: templates/bedrock.html
+      computed_fields:
+        area_m2: "geometry.area"
       field_types:
         KIND: Int64
         RBED_EXOTIC_ELE: Int64

@@ -94,6 +94,7 @@ class ClassificationConfig:
     data: Optional[str] = None
     active: Optional[bool] = True
     include_items: Optional[str] = None
+    computed_fields: Optional[Dict[str, str]] = None
 
     def get_identifier_mode(self) -> IdentifierMode:
         """Get the IdentifierMode enum value.
@@ -126,6 +127,7 @@ class LayerConfig:
     connection_ref: Optional[str] = None
     template: Optional[str] = None
     max_scale: Optional[bool | int] = None  # None, False, True, ou int
+    computed_fields: Optional[Dict[str, str]] = None
 
 
 def _resolve_env_vars(value: Any, max_depth: int = 10) -> Any:
@@ -362,6 +364,7 @@ class BatchClassificationConfig:
         classifications = []
         field_types = layer_dict.get("field_types", {})
         max_scale = layer_dict.get("scale", None)
+        computed_fields = layer_dict.get("computed_fields")
 
         for class_dict in layer_dict.get("classifications", []):
             # Resolve style file path
@@ -394,6 +397,7 @@ class BatchClassificationConfig:
                     data=class_dict.get("data"),
                     active=class_dict.get("active", True),
                     include_items=class_dict.get("include_items"),
+                    computed_fields=class_dict.get("computed_fields"),
                 )
             )
 
@@ -406,6 +410,7 @@ class BatchClassificationConfig:
             connection_ref=connection_ref,
             template=template,
             max_scale=max_scale,
+            computed_fields=computed_fields,
         )
 
     def get_layer_config(self, gpkg_layer: str) -> Optional[LayerConfig]:
@@ -633,11 +638,18 @@ def apply_batch_from_config(
                     debug=debug,
                 )
 
+                # Merge layer-level and classification-level computed_fields
+                merged_computed_fields = {
+                    **(layer_config.computed_fields or {}),
+                    **(class_config.computed_fields or {}),  # classification overrides layer
+                }
+
                 gdf_result = applicator.apply_v2(
                     gdf,
                     additional_filter=class_config.filter,
                     overwrite=overwrite,
                     preserve_existing=preserve_existing,
+                    computed_fields=merged_computed_fields or None,  # TODO
                 )
 
                 # Clean up string "None" values
