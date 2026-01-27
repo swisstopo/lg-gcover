@@ -911,6 +911,7 @@ class GDBMerger:
                 continue
 
             logger.debug(f"  Reading {source_name} from {source_path}")
+            console.print(f"[dim]  Reading {source_name} from {source_path}[/dim]")
 
             layer_start = time.time()
 
