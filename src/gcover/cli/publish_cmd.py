@@ -1124,6 +1124,7 @@ def mapserver(
                         class_config.data,
                         layer_config.template,
                         class_config.maxscaledenom,  # TODO layer_config.max_scale,
+                        class_config.minscaledenom,
                     )
                     logger.debug(params)
                     style_files.append(params)
@@ -1174,6 +1175,7 @@ def mapserver(
         mapserver_data,
         template,
         layer_max_scale,
+        layer_min_scale,
     ) in style_files:
 
         # 1. Pre-loop Feedback: Inform user of the global mode
@@ -1278,6 +1280,7 @@ def mapserver(
                 template=template,
                 map_label=mapfile_label,
                 layer_max_scale=layer_max_scale,  # mapfile layer (from the classification)
+                layer_min_scale=layer_min_scale,
                 include_items=include_items,
             )
 

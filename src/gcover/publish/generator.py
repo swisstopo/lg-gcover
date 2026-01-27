@@ -276,6 +276,7 @@ class MapServerGenerator:
             layer_group: Optional[str] = None,
             map_label: Optional[Union[None, bool, str]] = None,
             layer_max_scale: Optional[bool | int] = None,
+            layer_min_scale: Optional[bool | int] = None,
             include_items: Optional[str] = 'all',
     ) -> str:
         """
@@ -373,7 +374,8 @@ class MapServerGenerator:
 
             max_scale = self.render_maxscale(layer_max_scale, classification.min_scale)
             console.print(f"=== Scales hell ===")
-            console.print(f"    layer_max_scale: {layer_max_scale}")
+            console.print(f"    layer_max_scale (MAXSCALEDOM): {layer_max_scale}")
+            console.print(f"    layer_min_scale (MINSCALEDENOM): {layer_max_scale}")
             console.print(f"    ESRI lyrx classification.max_scale: {classification.max_scale}")
             console.print(f"    ESRI lyrx  classification.min_scale: {classification.min_scale}")
             console.print(f"    maxscale: {max_scale}")
@@ -388,12 +390,6 @@ class MapServerGenerator:
                         f"MINSCALEDENOM   {classification.max_scale}",
                     ]
                 )
-            '''if classification.min_scale:
-                lines.extend(
-                    [
-                        f"MAXSCALEDENOM   {classification.min_scale}",
-                    ]
-                )'''
 
         # Projection
         lines.extend(
@@ -420,8 +416,10 @@ class MapServerGenerator:
 
         if label_item and map_label is None:
             lines.append(f'  LABELITEM "{label_item.lower()}"')
+            console.print(f"Labelitem: {label_item.lower()}")
         elif isinstance(classification.map_label, str):
             lines.append(f'  LABELITEM "{map_label.lower()}"')
+            console.print(f"Labelitem (map_label): {map_label.lower()}")
 
         lines.append("")
 
