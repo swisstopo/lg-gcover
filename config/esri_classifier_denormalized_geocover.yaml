@@ -64,8 +64,8 @@ layers:
       gcover_layer: GC_ROCK_BODIES/GC_POINT_OBJECTS
       connection_ref: postgis_wms
       layer_type: point
-      computed_fields:
-        map_angle: "(90 - azimuth) % 360"
+      computed_fields:  # must match case of source
+        map_angle: "(90 - AZIMUTH) % 360"
       field_types:
         KIND: Int64
         HSUR_STATUS: Int64

@@ -1065,7 +1065,8 @@ class ClassificationApplicator:
                 else:
                     console.print(f"[dim]✗ {field} not found[/dim]")
 
-        # Step 2b: Apply computed fields  ← NEW STEP
+        # Step 2b: Apply computed fields
+
         if computed_fields:
                 console.print(f"\n[cyan]🔢 Computing fields...[/cyan]")
                 gdf = apply_computed_fields(gdf, computed_fields, strict=False)
