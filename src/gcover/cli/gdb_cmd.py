@@ -79,6 +79,22 @@ def get_configs(ctx) -> tuple[GDBConfig, GlobalConfig, str, bool]:
         ctx.obj.get("verbose", False),
     )
 
+def db_path_option(f):
+    """Reusable --db-path option with config fallback."""
+    return click.option(
+        "--db-path",
+        type=click.Path(exists=True, file_okay=True, dir_okay=False),
+        help="Metadata DB path (default: from config)",
+        required=False,
+    )(f)
+
+def get_metadata_db(ctx, db_path: str | None) -> MetadataDB:
+    """Get MetadataDB from explicit path or config."""
+    if db_path:
+        return MetadataDB(db_path)
+    gdb_config, *_ = get_configs(ctx)
+    return MetadataDB(gdb_config.db_path)
+
 
 @click.group()
 @click.pass_context
@@ -608,9 +624,7 @@ def sync(ctx, dry_run):
 @click.option(
     "--rc", type=click.Choice(["RC1", "RC2"]), help="Filter by release candidate"
 )
-@click.option(
-    "--db-path", type=click.Path(exists=True, file_okay=True, dir_okay=False), help="Metadata DB ", required=False
-)
+@db_path_option
 @click.option("--since", type=str, help="Show assets since date (YYYY-MM-DD)")
 @click.option("--limit", type=int, default=20, help="Limit number of results")
 @click.pass_context
@@ -620,11 +634,7 @@ def list_assets(ctx, asset_type, rc, since, limit, db_path):
     gdb_config, global_config, environment, verbose = get_configs(ctx)
 
     try:
-        if db_path:
-            db = MetadataDB(db_path)
-        else:
-
-            db = MetadataDB(gdb_config.db_path)
+        db = get_metadata_db(ctx, db_path)
 
         query = "SELECT * FROM gdb_assets WHERE 1=1"
         params = []
@@ -697,8 +707,9 @@ def list_assets(ctx, asset_type, rc, since, limit, db_path):
 @click.option(
     "--output-dir", type=click.Path(), default="./downloads", help="Download directory"
 )
+@db_path_option
 @click.pass_context
-def search(ctx, search_term, download, output_dir):
+def search(ctx, search_term, download, output_dir, db_path):
     """Search for GDB assets in the database"""
 
     gdb_config, global_config, environment, verbose = get_config(ctx)
@@ -707,7 +718,7 @@ def search(ctx, search_term, download, output_dir):
         s3_bucket = gdb_config.get_s3_bucket(global_config)
         s3_profile = gdb_config.get_s3_profile(global_config)
 
-        db = MetadataDB(gdb_config.db_path)
+        db = get_metadata_db(ctx, db_path)
 
         query = """
         SELECT * FROM gdb_assets
@@ -767,13 +778,14 @@ def search(ctx, search_term, download, output_dir):
 
 
 @gdb.command()
+@db_path_option
 @click.pass_context
-def status(ctx):
+def status(ctx,db_path):
     """Show system status and statistics"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
 
     try:
-        db = MetadataDB(gdb_config.db_path)
+        db = get_metadata_db(ctx, db_path)
         s3_bucket = gdb_config.get_s3_bucket(global_config)
 
         with duckdb.connect(str(db.db_path)) as conn:
@@ -1299,14 +1311,15 @@ def validate(ctx, check_s3, check_integrity):
 @click.option("--by-date", is_flag=True, help="Show statistics by date")
 @click.option("--by-type", is_flag=True, help="Show statistics by type")
 @click.option("--storage", is_flag=True, help="Show storage statistics")
+@db_path_option
 @click.pass_context
-def stats(ctx, by_date, by_type, storage):
+def stats(ctx, by_date, by_type, storage, db_path):
     """Show detailed statistics"""
 
     gdb_config, global_config, environment, verbose = get_configs(ctx)
 
     try:
-        db = MetadataDB(gdb_config.db_path)
+        db = get_metadata_db(ctx, db_path)
 
         with duckdb.connect(str(db.db_path)) as conn:
             if by_date:
@@ -1457,12 +1470,20 @@ def stats(ctx, by_date, by_type, storage):
     is_flag=True,
     help="Also show if they form a release couple (created close together)",
 )
+@db_path_option
 @click.pass_context
-def latest_by_rc(ctx, asset_type, days_back, show_couple):
+def latest_by_rc(ctx, asset_type, days_back, show_couple, db_path):
     """Show the latest asset for each RC (RC1/RC2)"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
 
     s3_config = global_config.s3
+
+    if db_path is not None:
+        rprint(f"[orange]Using custom db_path: {db_path}[/orange]")
+    else:
+        db_path = gdb_config.db_path
+        rprint(f"[blue]Using db_path from config: {db_path}[/blue]")
+
 
     try:
         # Create manager instance (reusing existing logic)
@@ -1473,7 +1494,7 @@ def latest_by_rc(ctx, asset_type, days_back, show_couple):
             base_paths=gdb_config.base_paths,
             s3_config=s3_config,  # TODO
             # s3_bucket=s3_bucket,
-            db_path=gdb_config.db_path,
+            db_path=db_path ,
             temp_dir=gdb_config.temp_dir,
             # aws_profile=s3_profile,
         )
