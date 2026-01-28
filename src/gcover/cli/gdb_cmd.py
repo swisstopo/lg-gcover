@@ -608,16 +608,23 @@ def sync(ctx, dry_run):
 @click.option(
     "--rc", type=click.Choice(["RC1", "RC2"]), help="Filter by release candidate"
 )
+@click.option(
+    "--db-path", type=click.Path(exists=True, file_okay=True, dir_okay=False), help="Metadata DB ", required=False
+)
 @click.option("--since", type=str, help="Show assets since date (YYYY-MM-DD)")
 @click.option("--limit", type=int, default=20, help="Limit number of results")
 @click.pass_context
-def list_assets(ctx, asset_type, rc, since, limit):
+def list_assets(ctx, asset_type, rc, since, limit, db_path):
     """List GDB assets from database"""
 
     gdb_config, global_config, environment, verbose = get_configs(ctx)
 
     try:
-        db = MetadataDB(gdb_config.db_path)
+        if db_path:
+            db = MetadataDB(db_path)
+        else:
+
+            db = MetadataDB(gdb_config.db_path)
 
         query = "SELECT * FROM gdb_assets WHERE 1=1"
         params = []
