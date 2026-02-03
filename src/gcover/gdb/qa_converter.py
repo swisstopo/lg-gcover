@@ -555,6 +555,7 @@ class FileGDBConverter:
         logger.info(
             f"Inserting new summary for {self._normalize_gdb_path(summary.gdb_path)}"
         )
+        console.print(f"[bold orange]Inserting new summary for:[/bold orange] {self._normalize_gdb_path(summary.gdb_path)}")
 
         summary_id = self.conn.execute(
             """

@@ -1956,6 +1956,7 @@ def extract_lyrx_complete(
     default_identifier_mode: Union[IdentifierMode, str] = IdentifierMode.LABEL,
     default_identifier_field: Optional[str] = None,
     head: Optional[int] = None,
+    use_arcpy: Optional[bool] = None,  # deprecated
 ) -> List[LayerClassification]:
     """
     Convenience function for COMPLETE extraction with all features.
@@ -2011,6 +2012,9 @@ def extract_lyrx_complete(
         )
     """
     extractor = ESRIClassificationExtractorEnhanced()
+
+    if use_arcpy:
+        console.warning(f"use of `use_arcpy`is deprecated")
 
     if override_yaml:
         extractor.load_overrides(override_yaml)

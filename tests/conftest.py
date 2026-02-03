@@ -13,10 +13,31 @@ sys.path.insert(0, str(src_path))
 
 
 
+
+
+@pytest.fixture(scope="session")
+def test_data_dir():
+    """Path to test data directory."""
+    return Path(__file__).parent / "data"
+
+
+@pytest.fixture(scope="session")
+def project_root():
+    """Path to project root."""
+    return Path(__file__).parent.parent
+
+
+
 def pytest_configure(config):
     """Force test environment for all pytest runs"""
     os.environ["GCOVER_ENVIRONMENT"] = "test"
     print("🧪 FORCED: GCOVER_ENVIRONMENT=test for pytest")
+    config.addinivalue_line(
+        "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
+    )
+    config.addinivalue_line(
+        "markers", "integration: marks tests as integration tests"
+    )
 
 
 @pytest.fixture(autouse=True)

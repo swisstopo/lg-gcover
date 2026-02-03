@@ -2091,7 +2091,9 @@ def merge(
         else:
             if output.suffix.lower() == ".gdb":
                 console.print("[yellow]arcpy not available, using geopandas-based merger[/yellow]")
+
             merger = GDBMerger(config, verbose=verbose)
+
 
         stats = merger.merge()
 
