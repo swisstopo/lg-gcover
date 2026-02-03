@@ -56,6 +56,7 @@ console = Console()
 
 ASSET_TYPE_ALIASES = {
     "backup": ["backup_daily", "backup_weekly", "backup_monthly"],
+    "qa": ["verification_topology", "verification_tqa"],
 }
 
 
