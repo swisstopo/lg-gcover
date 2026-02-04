@@ -84,9 +84,10 @@ class GCoverLogger:
             self._log_file = logging_config["file"]["path"]
             self._setup_file_logging(log_level, logging_config["file"])
 
+        # TODO: remove double handler
         # Setup module-specific logging
-        if logging_config["modules"]:
-            self._setup_module_logging(logging_config["modules"])
+        # if logging_config["modules"]:
+        #    self._setup_module_logging(logging_config["modules"])
 
         self._is_configured = True
 

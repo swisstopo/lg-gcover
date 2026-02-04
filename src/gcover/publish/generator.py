@@ -276,6 +276,7 @@ class MapServerGenerator:
             layer_group: Optional[str] = None,
             map_label: Optional[Union[None, bool, str]] = None,
             layer_max_scale: Optional[bool | int] = None,
+            layer_min_scale: Optional[bool | int] = None,
             include_items: Optional[str] = 'all',
     ) -> str:
         """
@@ -367,24 +368,26 @@ class MapServerGenerator:
         # minScale → MAXSCALEDENOM
         # maxScale → MINSCALEDENOM
 
+
+
         if self.no_scale is not True:
 
             max_scale = self.render_maxscale(layer_max_scale, classification.min_scale)
+            console.print(f"=== Scales hell ===")
+            console.print(f"    layer_max_scale (MAXSCALEDOM): {layer_max_scale}")
+            console.print(f"    layer_min_scale (MINSCALEDENOM): {layer_max_scale}")
+            console.print(f"    ESRI lyrx classification.max_scale: {classification.max_scale}")
+            console.print(f"    ESRI lyrx  classification.min_scale: {classification.min_scale}")
+            console.print(f"    maxscale: {max_scale}")
             if max_scale:
-                console.print(f"Using `maxscaledenom`: {classification.min_scale}")
+
                 lines.extend(["", max_scale])
 
             if classification.max_scale:
                 lines.extend(
                     [
                         "",
-                        f"MINSCALEDENOM   {classification.min_scale}",
-                    ]
-                )
-            if classification.max_scale:
-                lines.extend(
-                    [
-                        f"MAXCALEDENOM   {classification.min_scale}",
+                        f"MINSCALEDENOM   {classification.max_scale}",
                     ]
                 )
 
@@ -413,8 +416,10 @@ class MapServerGenerator:
 
         if label_item and map_label is None:
             lines.append(f'  LABELITEM "{label_item.lower()}"')
+            console.print(f"Labelitem: {label_item.lower()}")
         elif isinstance(classification.map_label, str):
             lines.append(f'  LABELITEM "{map_label.lower()}"')
+            console.print(f"Labelitem (map_label): {map_label.lower()}")
 
         lines.append("")
 
@@ -708,7 +713,7 @@ class MapServerGenerator:
 
         # 2. THEN: Add hatch fills
         for i, fill_info in hatch_fills:
-            logger.info("Found hatch")
+            logger.debug("Found hatch")
             self._add_hatch_fill_style(
                 lines, fill_info, class_index, i, symbol_prefix
             )

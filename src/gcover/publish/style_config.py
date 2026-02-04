@@ -94,6 +94,8 @@ class ClassificationConfig:
     data: Optional[str] = None
     active: Optional[bool] = True
     include_items: Optional[str] = None
+    maxscaledenom: Optional[float] = None
+    minscaledenom: Optional[float] = None
     computed_fields: Optional[Dict[str, str]] = None
 
     def get_identifier_mode(self) -> IdentifierMode:
@@ -397,6 +399,8 @@ class BatchClassificationConfig:
                     data=class_dict.get("data"),
                     active=class_dict.get("active", True),
                     include_items=class_dict.get("include_items"),
+                    maxscaledenom=class_dict.get("maxscaledenom"),
+                    minscaledenom=class_dict.get("minscaledenom"),
                     computed_fields=class_dict.get("computed_fields"),
                 )
             )
