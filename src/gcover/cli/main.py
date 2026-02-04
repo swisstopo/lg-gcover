@@ -3,16 +3,14 @@
 Main CLI entry point for gcover.
 """
 
+import sys
+from datetime import datetime
 from pathlib import Path
 
 import click
+import dateparser
 from loguru import logger
 from rich import print as rprint
-from datetime import datetime
-import dateparser
-
-import sys
-
 
 # Ajouter le dossier parent au path si nécessaire (pour le développement)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -37,6 +35,7 @@ env_map = {
     "integration": "integration",
     "int": "integration",
     "test": "test",
+    "kogis": "kogis"
 }
 
 

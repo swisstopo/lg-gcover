@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 
 """
-Create administrative_zones.gpkg from 4 standardized source files.
+Create administrative_zones.gpkg from 4 standardized source files (WU, lots, mapsheet and sources.xlsx).
 
 Simplified script that handles the real data sources with their actual attributes.
 
 2025-09-05  Added `SOURCE_RC` sources for BKP (data for publication)
 2025-10-13  Added sources `SOURCE_QA`  for QA (before publication)
 2025-10-14  Added borders_100m layer (100m buffer around mapsheet borders)
+2026-01-28  Only warning if missing  `QA_SOURCE`
 """
 
 import os
@@ -567,6 +568,8 @@ def create_administrative_zones(
             --output gcover/data/administrative_zones.gpkg \\
             --overwrite
     """
+    has_qa_source_column = False
+    
     if verbose:
         logger.add(lambda msg: click.echo(msg, err=True), level="DEBUG")
 
@@ -666,9 +669,18 @@ def create_administrative_zones(
             "MSH_MORE_INFO",
             "MSH_TOPO_NR",
             "SOURCE_RC",
-            "SOURCE_QA",
-            "Version",
+               "Version",
         ]
+
+        if 'SOURCE_QA' in sources_df.columns:
+            mapsheet_cols.append('SOURCE_QA')
+            has_qa_source_column = True
+            SOURCES_COLUMNS = ("SOURCE_RC", "SOURCE_QA")
+        else:
+            click.echo(click.style(f"WARNING: Missing column `SOURCE_QA`", fg='red'))
+            SOURCES_COLUMNS = ("SOURCE_RC", )
+
+
 
         # Define the columns to concatenate
         concat_cols = ["LOT_NR", "Status", "WU_NAME", "WU_ID"]
@@ -774,20 +786,22 @@ def create_administrative_zones(
 
         # Validation summary
         validation_str = ""
-        for source_col in ("SOURCE_RC", "SOURCE_QA"):
+        for source_col in SOURCES_COLUMNS:
             if source_col in mapsheets_with_sources.columns:
                 validation_str += validate_column(mapsheets_with_sources, source_col)
 
-        source_diff_str = sources_diff(mapsheets_with_sources)
+        source_diff_str=''
+        if has_qa_source_column:
+            source_diff_str = sources_diff(mapsheets_with_sources)
 
         # Write the docstring to a file
         now = dt.now().strftime("%Y-%m-%d %H:%M:%S")
 
         layers = fiona.listlayers(output_path)
         layer_string = "\n * ".join(layers)
-        docstring = f"""{__doc__ or ""}\nLayer list:\n * {layer_string}\n\n-- 'mapsheets_sources_only' --\n\n{validation_str}\n{source_diff_str}\n\nGenerated on {now}"""
+        docstring = f"""{__doc__ or ""}\nXLSX file:{str(sources_file)}\nLayer list:\n * {layer_string}\n\n-- 'mapsheets_sources_only' --\n\n{validation_str}\n{source_diff_str}\n\nGenerated on {now}"""
         output_without_ext = output_path.with_suffix("")
-        with open(output_without_ext.with_suffix(".README"), "w") as f:
+        with open(output_without_ext.with_suffix(".README"), "w", encoding="utf-8") as f:
             f.write(docstring)
 
         if "LOT_NR" in mapsheets_complete.columns:
@@ -802,6 +816,8 @@ def create_administrative_zones(
         click.echo(
             f"   📋 Available attributes: {', '.join([col for col in mapsheets_complete.columns if col != 'geometry'])}"
         )
+        if not has_qa_source_column:
+               click.echo(click.style( f"   Missing column `QA_SOURCE`: only for Produkt Ableitung", fg='red'))
 
     except Exception as e:
         logger.error(f"Failed to create administrative zones: {e}")

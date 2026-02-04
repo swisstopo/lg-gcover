@@ -4,55 +4,55 @@ Enhanced CLI commands for preparing GeoCover data for publication.
 Supports multiple tooltip layers, flexible source mappings, and comprehensive configuration.
 """
 
+import json
 import os
 import sys
 import time
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from importlib.resources import files
 
 import click
 import geopandas as gpd
 import pandas as pd
-import json
 import yaml
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
-
-from gcover.config import DEFAULT_EXCLUDED_FIELDS
+from rich.text import Text
 
 from gcover.cli.main import _split_bbox
-from gcover.config import SDE_INSTANCES, AppConfig, load_config
-from gcover.publish.esri_classification_applicator import ClassificationApplicator
+from gcover.config import (DEFAULT_EXCLUDED_FIELDS, SDE_INSTANCES, AppConfig,
+                           load_config)
+from gcover.publish.esri_classification_applicator import \
+    ClassificationApplicator
 from gcover.publish.esri_classification_extractor import (
-    extract_lyrx_complete,
-    explore_layer_structure,
-    export_classifications_to_csv,
-    ClassificationJSONEncoder,
-    to_serializable_dict,
-)
+    ClassificationJSONEncoder, explore_layer_structure,
+    export_classifications_to_csv, extract_lyrx_complete, to_serializable_dict)
 from gcover.publish.generator import MapServerGenerator
+from gcover.publish.merge_sources import (GDBMerger, MergeConfig,
+                                          create_merge_config)
 from gcover.publish.qgis_generator import QGISGenerator
-from gcover.publish.style_config import (
-    BatchClassificationConfig,
-    apply_batch_from_config,
-)
-from gcover.publish.merge_sources import (
-    GDBMerger,
-    MergeConfig,
-    create_merge_config,
-)
-from gcover.publish.tooltips_enricher import (
-    EnhancedTooltipsEnricher,
-    EnrichmentConfig,
-    LayerMapping,
-    LayerType,
-    create_enrichment_config,
-)
+from gcover.publish.style_config import (BatchClassificationConfig,
+                                         apply_batch_from_config)
+from gcover.publish.tooltips_enricher import (EnhancedTooltipsEnricher,
+                                              EnrichmentConfig, LayerMapping,
+                                              LayerType,
+                                              create_enrichment_config)
+from gcover.publish.writeback import (build_uuid_lookup,
+                                          extract_layer_name,
+                                          get_matching_layers_auto,
+                                          get_matching_layers_from_config,
+                                          list_filegdb_layers,
+                                          list_gpkg_layers,
+                                          load_layer_mapping_from_config,
+                                          update_filegdb_layer)
+
+from gcover.cli.symbols_cli import symbols_commands
+
+
 
 DEFAULT_ZONES_PATH = files("gcover.data").joinpath("administrative_zones.gpkg")
 
@@ -84,6 +84,8 @@ def publish_commands(ctx):
     ctx.obj.setdefault("environment", "development")
     ctx.obj.setdefault("verbose", False)
     ctx.obj.setdefault("config_path", None)
+
+publish_commands.add_command(symbols_commands)
 
 
 @publish_commands.command()
@@ -122,6 +124,7 @@ def extract_classification(
     """Extract ESRI layer classification information from .lyrx files."""
     logger.info(f"COMMAND START: apply-config")
     verbose = ctx.obj.get("verbose", False)
+    environnement = ctx.obj.get('environment')
     use_arcpy = False
 
     if verbose and quiet:
@@ -264,8 +267,10 @@ def apply_config(
       gcover publish apply-config geocover.gpkg config.yaml --dry-run
     """
     verbose = ctx.obj.get("verbose", False)
+    env = ctx.obj.get('environment')
 
     logger.info(f"COMMAND START: apply-config")
+    logger.info(f"environment: {env}")
 
     if verbose:
         console.print("[dim]Verbose logging enabled[/dim]")
@@ -274,7 +279,11 @@ def apply_config(
 
         # Load configuration
         with console.status("[cyan]Loading configuration...", spinner="dots"):
-            config = BatchClassificationConfig(config_file, styles_dir)
+            config = BatchClassificationConfig(config_path=config_file,
+                                               styles_base_path=styles_dir,
+                                               env=env)
+
+        logger.info(yaml.safe_dump(config.raw_config, sort_keys=False))
 
         console.print(f"[green]✓[/green] Loaded configuration:")
         console.print(f"  • Layers: {len(config.layers)}")
@@ -297,6 +306,8 @@ def apply_config(
             )
 
         console.print(table)
+
+
 
         if dry_run:
             console.print("\n[yellow]🔍 Dry run - no changes will be made[/yellow]")
@@ -941,6 +952,11 @@ def list_mapsheets(ctx, admin_zones: Optional[Path]):
     type=click.Path(exists=True, path_type=Path),
 )
 @click.option(
+    "--pattern-file",
+    type=click.Path(exists=True, path_type=Path),
+    help="Pattern file"
+)
+@click.option(
     "--connection",
     "connection_name",
     type=str,
@@ -951,6 +967,17 @@ def list_mapsheets(ctx, admin_zones: Optional[Path]):
     "--use-symbol-field",
     is_flag=True,
     help="Use SYMBOL field instead of complex expressions",
+)
+@click.option(
+    "--no-scale",
+    is_flag=True,
+    help="Don't use maxscaledenom (mostly for debugging)",
+)
+@click.option(
+    "--gml-items",
+    type=click.Choice(["default", "all", "label"]),
+    default="default",
+    help="What attribute to expose in `gml-items` (mostly for debugging)",
 )
 @click.option(
     "--symbol-field", default="SYMBOL", help="Name of symbol field (default: SYMBOL)"
@@ -974,12 +1001,15 @@ def mapserver(
     ctx,
     output_dir: Path,
     config_file: Optional[Path],
+    pattern_file: Optional[Path],
     styles_dir: Optional[Path],
     use_symbol_field: bool,
     symbol_field: str,
     prefixes: Optional[str],
     generate_combined: bool,
     connection_name: Optional[str] = None,
+    no_scale: Optional[bool] = False,
+    gml_items: Optional[str] = 'default'
 ):
     """Generate MapServer mapfiles from ESRI style files.
 
@@ -1001,6 +1031,7 @@ def mapserver(
 
     """
     layer_type = None
+    env = ctx.obj.get('environment')
 
     publish_config, global_config = get_publish_config(ctx)
 
@@ -1023,13 +1054,20 @@ def mapserver(
     mapfile_groups = {}
     mapfile_labels = {}
     active_classes = {}
+    include_items_dict = {}
     mapfiles = []
     config = None
     symbol_field = None
 
+    if pattern_file:
+        console.print(f"[cyan]Loading patterns from {pattern_file}[/cyan]")
+
+
     if config_file:
         console.print(f"[cyan]Loading configuration from {config_file}[/cyan]")
-        config = BatchClassificationConfig(config_file)
+        config = BatchClassificationConfig(config_path= config_file, env=env)
+
+
 
         identifier_fields = {}
 
@@ -1043,9 +1081,11 @@ def mapserver(
             ):
                 if class_config.classification_name:
                     # Use classification name as key
-                    key = class_config.classification_name
+                    # TODO why discrepency in `class_config.classification_name`
+                    key = class_config.classification_name.replace(' ', '_')
                     mapfile_labels[key] = class_config.map_label
                     active_classes[key] = class_config.active
+                    include_items_dict[key] = class_config.include_items
                     if class_config.symbol_prefix:
                         prefix_map[key] = class_config.symbol_prefix
                     if class_config.mapfile_group:
@@ -1059,7 +1099,8 @@ def mapserver(
                         logger.debug(
                             f"Layer '{key}' will use identifier_field: {field_name}"
                         )
-
+        if pattern_file:
+            console.print(f"[cyan]Loading patterns from {pattern_file}[/cyan]")
         console.print(
             f"  [green]✓[/green] Extracted prefixes for {len(prefix_map)} classifications"
         )
@@ -1117,6 +1158,9 @@ def mapserver(
         layer_type=layer_type.name,  # TODO remove
         use_symbol_field=use_symbol_field,
         symbol_field=symbol_field,
+        no_scale=no_scale,
+        pattern_catalog=pattern_file,
+        gml_items=gml_items,
     )
 
     for (
@@ -1128,7 +1172,16 @@ def mapserver(
         template,
         layer_max_scale,
     ) in style_files:
-        console.print(f"Processing {style_file.name} [{layer_type}]...")
+
+        # 1. Pre-loop Feedback: Inform user of the global mode
+        mode_colors = {"all": "bold magenta", "label": "bold blue"}
+        mode_color = mode_colors.get(gml_items, "bold green")
+
+        console.print(Panel(
+            Text(f"Using ESRI .lyrx: {style_file.name} [{layer_type}]", justify="center", style=mode_color),
+            subtitle="Processing Classification Layers"
+        ))
+
 
         if connection_ref and connections.get(connection_ref):
             connection = connections.get(connection_ref)
@@ -1153,25 +1206,60 @@ def mapserver(
             continue
 
         # Process each classification
+        logger.debug(f"Active classes: {active_classes}")
+
+
 
         for classification in classifications:
-            layer_name = classification.layer_name or style_file.stem
+            layer_name = (classification.layer_name or style_file.stem).replace(' ', '_')
+            is_active = active_classes.get(layer_name, False)
 
-            # Get prefix and mapfile name from config if available
+            # 1. Get prefix and mapfile name from config if available
             symbol_prefix = prefix_map.get(layer_name, layer_name.lower())
             mapfile_layer_name = mapfile_names.get(layer_name, layer_name)
             mapfile_layer_group = mapfile_groups.get(layer_name, None)
             mapfile_label = mapfile_labels.get(layer_name, None)
-            is_active = active_classes.get(layer_name)
+            include_items = include_items_dict.get(layer_name)
 
-            if not is_active:
+            # 2. Robust include_items logic
+            raw_include = include_items_dict.get(layer_name) or ""
+
+            if gml_items == 'all':
+                include_items = 'all'
+                method_msg = "[magenta]Full Export (All Fields)[/magenta]"
+
+            elif gml_items == 'label':
+                # Safely extract label field
+                label_field = getattr(config, 'label_field', None)
+
+                # Cleanly parse existing items into a set to avoid duplicates
+                fields = {s.strip() for s in raw_include.split(',') if s.strip()}
+
+                if label_field:
+                    fields.add(label_field)
+                    method_msg = f"[blue]Label-Optimized[/blue] (Included: {label_field})"
+                else:
+                    method_msg = "[yellow]Warning: No label_field found in config[/yellow]"
+
+                include_items = ",".join(sorted(fields))
+
+            else:
+                include_items = raw_include
+                method_msg = "[green]Standard (Config-based)[/green]"
+
+            # 3. Visual Feedback per Layer
+            if is_active:
+                    console.print(f"• [bold]{layer_name:<20}[/bold] | Mode: {method_msg}")
+                    if include_items:
+                        console.print(f"  [dim]Fields: {include_items}[/dim]")
+            else:
                 console.print(
                     f"  [bold orange1]Skipping {layer_name} (inactive)[/bold orange1]"
                 )
                 continue
 
             if not mapserver_data:
-                mapserver_data = f"geom from (SELECT * from {gpkg_layer} ) as blabla using unique gid using srid=2056"
+                # mapserver_data = f"geom from (SELECT * from {gpkg_layer} ) as blabla using unique gid using srid=2056"
                 mapserver_data = f"geom FROM  geol.geocover_{gpkg_layer}  USING UNIQUE gid USING SRID=2056"
 
             # Generate mapfile
@@ -1187,6 +1275,7 @@ def mapserver(
                 template=template,
                 map_label=mapfile_label,
                 layer_max_scale=layer_max_scale,
+                include_items=include_items,
             )
 
             # Save mapfile
@@ -1406,26 +1495,36 @@ def qgis(
 from gcover.publish.console_generator import inspect_styles_main
 
 
+
 @publish_commands.command(name="inspect")
 @click.pass_context
 @click.argument("style_files", nargs=-1, type=click.Path(exists=True, path_type=Path))
-@click.option(
-    "--detailed",
-    "-d",
-    is_flag=True,
-    help="Show detailed symbol information including layers",
-)
-@click.option(
-    "--config-file",
-    "-c",
-    type=click.Path(exists=True, path_type=Path),
-    help="Load style files from YAML configuration",
-)
-def inspect_styles_cmd(
-    ctx, style_files: tuple, detailed: bool, config_file: Optional[Path]
-):
-    """Inspect and display ESRI style file contents."""
-    inspect_styles_main(style_files, detailed, config_file)
+@click.option("--detailed", "-d", is_flag=True,
+               help="Show detailed symbol information including layers")
+@click.option("--config-file", "-c", type=click.Path(exists=True, path_type=Path),
+               help="Load style files from YAML configuration")
+@click.option("--symbol-prefix", "-p", type=str, default=None,
+               help="Prefix for generated symbol IDs")
+@click.option("--identifier-mode", "-m", type=click.Choice(["label", "index", "field"]),
+               default="label", help="How to generate identifiers")
+@click.option("--identifier-field", "-f", type=str, default=None,
+               help="Field to use for identifier ID")
+@click.option("--head", "-n", type=int, default=None,
+               help="Limit number of classes to display")
+def inspect_styles_cmd(ctx, style_files: tuple, detailed: bool, config_file: Optional[Path],
+                        symbol_prefix: Optional[str], identifier_mode: str, head: Optional[int], identifier_field: Optional[str]=None):
+     """Inspect and display ESRI style file contents."""
+     verbose = ctx.obj.get("verbose", False)
+
+
+
+     if identifier_mode == 'field' and identifier_field is None:
+         raise click.BadParameter("You must provide --identifier-field when using --identifier-mode=field")
+
+     inspect_styles_main(style_files, detailed, config_file,
+                         symbol_prefix=symbol_prefix, identifier_mode=identifier_mode,identifier_field=identifier_field, head=head, verbose=verbose)
+
+
 
 
 @publish_commands.command()
@@ -1986,7 +2085,9 @@ def merge(
         else:
             if output.suffix.lower() == ".gdb":
                 console.print("[yellow]arcpy not available, using geopandas-based merger[/yellow]")
+
             merger = GDBMerger(config, verbose=verbose)
+
 
         stats = merger.merge()
 
@@ -2299,7 +2400,7 @@ def writeback(
     click.echo(f"Classification DB: {classification_db}")
     click.echo(f"Attributes: {', '.join(attributes)}")
 
-    from gcover.publish.writeback import update_filegdb_layer, extract_layer_name, load_layer_mapping_from_config, build_uuid_lookup, list_gpkg_layers, list_filegdb_layers, get_matching_layers_from_config, get_matching_layers_auto
+
 
     if dryrun:
         click.secho("=== DRYRUN MODE ===", fg="yellow", bold=True)

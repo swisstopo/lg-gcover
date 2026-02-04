@@ -16,7 +16,7 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
-    needs: build
+
 
     steps:
       - name: Checkout repository
@@ -85,6 +85,12 @@ jobs:
       #  run: |
       #    ruff check src/ --output-format=github
 
+      - name: Debug CLI commands
+        shell: bash -l {0}
+        run: |
+          GCOVER_ENVIRONMENT=test python -m gcover.cli.main --env test gdb --help || true
+          GCOVER_ENVIRONMENT=test python -m gcover.cli.main --env test publish --help || true
+
       - name: Run tests
         shell: bash -l {0}
         run: |
@@ -93,7 +99,9 @@ jobs:
       - name: Run smoke tests
         shell: bash -l {0}
         run: |
-          GCOVER_ENVIRONMENT=test  pytest tests/test_imports.py tests/test_cli_smoke.py -v --no-cov  
+          # Load .env.test into environment
+          export $(grep -v '^#' .env.test | xargs)
+          GCOVER_ENVIRONMENT=test pytest tests/test_imports.py tests/test_cli_smoke.py -v --no-cov
 
       - name: Run all tests (allow failures for now)
         shell: bash -l {0}
@@ -101,6 +109,7 @@ jobs:
           GCOVER_ENVIRONMENT=test  pytest tests/ -v --tb=short || echo "Some tests failed - expected during cleanup"
   build:
     runs-on: ubuntu-latest
+    needs: test
 
     steps:
     - name: Checkout repository

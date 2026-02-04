@@ -375,7 +375,7 @@ class S3Uploader:
                     request_args = {
                         "data": file_obj,
                         "headers": presigned_data.get("headers", {}),
-                        "timeout": 300,
+                        "timeout": 60,
                         "verify": False,
                     }
 

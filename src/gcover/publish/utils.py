@@ -87,6 +87,7 @@ def generate_font_image(font_symbol_name, font_name, char_index):
         "geofonts1": "/home/marco/.fonts/g/GeoFonts1.ttf",
         "geofonts2": "/home/marco/.fonts/g/GeoFonts2.ttf",
         "default": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "esridefaultmarker": "/home/marco/.local/share/fonts/ESRI_Default_Marker.ttf",
     }
 
     char = chr(char_index)  # chr(index)

@@ -17,14 +17,14 @@ $env:PYTHON_RICH_FORCE_ASCII = "true"
 $CondaPath = "Y:\conda\envs\ARCGIS_36"
 $OutputDir = "\\v0t0020a.adr.admin.ch\lg\01_PRODUKTION\GIS\TOPGIS\QA\Weekly"
 $InputDir = "\\v0t0020a\topgisprod\10_Production_GC\Administration\QA"
-$SINCE_DATE = (Get-Date).AddDays(-90).ToString("yyyy-MM-dd")
+$SINCE_DATE = (Get-Date).AddDays(-32).ToString("yyyy-MM-dd")
 $TODAY = (Get-Date).ToString("yyyy-MM-dd")
 $LogFile = "$OutputDir\gcover_upload_assets_$TODAY.log"
 
 Write-Host "Using conda env: $CondaPath"
 Write-Host "Using OuputDir: $OutputDir"
 Write-Host "Using InputDir: $InputDir"
-Write-Host "Last week's date: $SINCE_DATE"
+Write-Host "Since date: $SINCE_DATE"
 
 # Check if conda env exists
 if (Test-Path $CondaPath) {

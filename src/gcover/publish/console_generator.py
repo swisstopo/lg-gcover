@@ -16,7 +16,10 @@ from rich.table import Table
 from rich.tree import Tree
 from rich.text import Text
 
-from gcover.publish.esri_classification_extractor import extract_lyrx_complete
+from gcover.publish.esri_classification_extractor import (
+    extract_lyrx_complete,
+    IdentifierMode,
+)
 from gcover.publish.symbol_utils import extract_polygon_symbol_layers
 
 console = Console()
@@ -31,24 +34,38 @@ class ConsoleStyleGenerator:
     - Class definitions with expressions
     - Symbol information (colors, fonts, patterns)
     - Multi-layer symbol details for polygons
+    - Generated map symbol IDs
     """
 
-    def __init__(self):
-        """Initialize console generator."""
+    def __init__(self, symbol_prefix: Optional[str] = None):
+        """
+        Initialize console generator.
+        
+        Args:
+            symbol_prefix: Optional prefix for generated symbol IDs
+        """
+        self.symbol_prefix = symbol_prefix
         self.style_summary = {
             "total_classes": 0,
             "visible_classes": 0,
             "fonts_used": set(),
             "colors_used": set(),
+            "identifiers": [],
         }
 
-    def display_classification(self, classification, detailed: bool = False):
+    def display_classification(
+        self,
+        classification,
+        detailed: bool = False,
+        show_identifiers: bool = True,
+    ):
         """
         Display a single classification to console.
 
         Args:
             classification: LayerClassification object
             detailed: Show detailed symbol information
+            show_identifiers: Show generated map symbol IDs
         """
         # Header
         title = f"[bold cyan]{classification.layer_name or 'Unnamed Layer'}[/bold cyan]"
@@ -69,22 +86,91 @@ class ConsoleStyleGenerator:
             field_names = ", ".join(f.name for f in classification.fields)
             meta_table.add_row("Classification Fields", field_names)
 
+        if self.symbol_prefix:
+            meta_table.add_row("Symbol Prefix", self.symbol_prefix)
+
         console.print(meta_table)
         console.print()
 
-        # Classes
-        console.print("[bold]Classes:[/bold]")
-        console.print()
-
-        for idx, class_obj in enumerate(classification.classes, 1):
-            self._display_class(class_obj, idx, classification.fields, detailed)
+        # Classes table (compact view with identifiers)
+        if show_identifiers:
+            self._display_classes_table(classification)
+        else:
+            # Original detailed view
+            console.print("[bold]Classes:[/bold]")
             console.print()
+
+            for idx, class_obj in enumerate(classification.classes, 1):
+                self._display_class(class_obj, idx, classification.fields, detailed)
+                console.print()
 
         # Summary
         self._display_summary()
 
+    def _display_classes_table(self, classification):
+        """Display classes in a compact table format with identifiers."""
+        table = Table(
+            title="Classification Classes",
+            show_header=True,
+            header_style="bold yellow",
+        )
+        table.add_column("#", style="dim", width=4, justify="right")
+        table.add_column("Label", style="cyan", width=45, no_wrap=False)
+        table.add_column("Map Symbol ID", style="green", width=35)
+        table.add_column("Field Values", style="white", width=25)
+        table.add_column("Vis", style="yellow", width=3, justify="center")
+
+        for idx, class_obj in enumerate(classification.classes, 1):
+            # Get identifier
+            identifier_str = ""
+            full_symbol_id = ""
+            
+            if hasattr(class_obj, "identifier") and class_obj.identifier:
+                try:
+                    key = class_obj.identifier.to_key()
+                    # Extract just the identifier value (last part after ::)
+                    identifier_str = key.split("::")[-1] if "::" in key else key
+                    
+                    # Build full symbol ID with prefix
+                    if self.symbol_prefix:
+                        full_symbol_id = f"{self.symbol_prefix}_{identifier_str}"
+                    else:
+                        full_symbol_id = identifier_str
+                        
+                    self.style_summary["identifiers"].append(full_symbol_id)
+                except Exception:
+                    identifier_str = "?"
+                    full_symbol_id = "?"
+
+            # Field values
+            values_str = ""
+            if class_obj.field_values:
+                for fv in class_obj.field_values[:2]:  # Show first 2 value sets
+                    values_str += " | ".join(str(v)[:10] for v in fv) + "\n"
+                values_str = values_str.strip()
+                if len(class_obj.field_values) > 2:
+                    values_str += f"\n(+{len(class_obj.field_values) - 2} more)"
+
+            # Visibility
+            visibility = "✓" if class_obj.visible else "✗"
+
+            # Update stats
+            if class_obj.visible:
+                self.style_summary["total_classes"] += 1
+                self.style_summary["visible_classes"] += 1
+
+            table.add_row(
+                str(idx),
+                class_obj.label[:45] if class_obj.label else "",
+                full_symbol_id,
+                values_str[:25] if values_str else "",
+                visibility,
+            )
+
+        console.print(table)
+
     def _display_class(self, class_obj, index: int, fields: List, detailed: bool):
-        """Display a single classification class."""
+        """Display a single classification class (detailed view)."""
         # Class header
         visibility = "✓" if class_obj.visible else "✗"
         header = f"[bold]{visibility} Class {index}:[/bold] {class_obj.label}"
@@ -96,6 +182,22 @@ class ConsoleStyleGenerator:
 
         self.style_summary["total_classes"] += 1
         self.style_summary["visible_classes"] += 1
+
+        # Show identifier / map symbol ID
+        if hasattr(class_obj, "identifier") and class_obj.identifier:
+            try:
+                key = class_obj.identifier.to_key()
+                identifier_value = key.split("::")[-1] if "::" in key else key
+                
+                if self.symbol_prefix:
+                    full_id = f"{self.symbol_prefix}_{identifier_value}"
+                else:
+                    full_id = identifier_value
+                    
+                console.print(f"  [green]Map Symbol ID:[/green] [bold]{full_id}[/bold]")
+                self.style_summary["identifiers"].append(full_id)
+            except Exception as e:
+                console.print(f"  [red]Identifier error: {e}[/red]")
 
         # Field values (expressions)
         if class_obj.field_values and fields:
@@ -223,9 +325,25 @@ class ConsoleStyleGenerator:
         if self.style_summary["colors_used"]:
             console.print(f"  Unique colors: {len(self.style_summary['colors_used'])}")
 
+        if self.style_summary["identifiers"]:
+            console.print(f"  Generated identifiers: {len(self.style_summary['identifiers'])}")
+            # Show sample identifiers
+            sample_ids = self.style_summary["identifiers"][:5]
+            for id_str in sample_ids:
+                console.print(f"    • [green]{id_str}[/green]")
+            if len(self.style_summary["identifiers"]) > 5:
+                console.print(f"    [dim]... and {len(self.style_summary['identifiers']) - 5} more[/dim]")
+
 
 def inspect_styles_main(
-    style_files: tuple, detailed: bool, config_file: Optional[Path]
+    style_files: tuple,
+    detailed: bool,
+    config_file: Optional[Path],
+    symbol_prefix: Optional[str] = None,
+    identifier_mode: str = "label",
+    identifier_field: Optional[str] = None,
+    head: Optional[int] = None,
+    verbose: Optional[bool]= False,
 ):
     """
     Core logic for inspecting ESRI style files.
@@ -236,6 +354,10 @@ def inspect_styles_main(
         style_files: Tuple of Path objects to style files
         detailed: Whether to show detailed symbol information
         config_file: Optional path to YAML configuration file
+        symbol_prefix: Optional prefix for generated symbol IDs
+        identifier_mode: How to generate identifiers ('label', 'index', 'field')
+        identifier_field: Field name for 'field' mode
+        head: Limit number of classes displayed
     """
 
     # Load style files
@@ -250,8 +372,17 @@ def inspect_styles_main(
         console.print("Use: gcover publish inspect <style_files> or --config-file")
         raise click.Abort()
 
+    # Convert string mode to enum for default
+    mode_enum = IdentifierMode(identifier_mode.lower())
+    
+    console.print(f"[dim]Identifier mode: {mode_enum.value}[/dim]")
+    if symbol_prefix:
+        console.print(f"[dim]Symbol prefix: {symbol_prefix}[/dim]")
+    if identifier_field:
+        console.print(f"[dim]Identifier field: {identifier_field}[/dim]")
+
     # Process each style file
-    generator = ConsoleStyleGenerator()
+    generator = ConsoleStyleGenerator(symbol_prefix=symbol_prefix)
 
     for style_file in style_files:
         console.print()
@@ -262,15 +393,29 @@ def inspect_styles_main(
 
         # Extract classifications
         try:
-            classifications = extract_lyrx_complete(style_file, display=False)
+            classifications = extract_lyrx_complete(
+                style_file,
+                display=False,
+                default_identifier_mode=mode_enum,
+                default_identifier_field=identifier_field,
+            )
 
             if not classifications:
                 console.print("[yellow]⚠ No classifications found[/yellow]")
                 continue
 
+            # Limit classes if head is specified
+            if head:
+                for classification in classifications:
+                    classification.classes = classification.classes[:head]
+
             # Display each classification
             for classification in classifications:
-                generator.display_classification(classification, detailed)
+                generator.display_classification(
+                    classification,
+                    detailed=detailed,
+                    show_identifiers=True,
+                )
                 console.print()
 
         except Exception as e:
@@ -297,28 +442,91 @@ def inspect_styles_main(
     type=click.Path(exists=True, path_type=Path),
     help="Load style files from YAML configuration",
 )
-def inspect_styles_cli(style_files: tuple, detailed: bool, config_file: Optional[Path]):
+@click.option(
+    "--symbol-prefix",
+    "-p",
+    type=str,
+    default=None,
+    help="Prefix for generated symbol IDs (e.g., 'unco_litho')",
+)
+@click.option(
+    "--identifier-mode",
+    "-m",
+    type=click.Choice(["label", "index", "field"]),
+    default="label",
+    help="How to generate identifiers: label (default), index, or field",
+)
+@click.option(
+    "--identifier-field",
+    "-f",
+    type=str,
+    default=None,
+    help="Field name for 'field' identifier mode",
+)
+@click.option(
+    "--head",
+    "-n",
+    type=int,
+    default=None,
+    help="Limit number of classes to display",
+)
+def inspect_styles_cli(
+    style_files: tuple,
+    detailed: bool,
+    config_file: Optional[Path],
+    symbol_prefix: Optional[str],
+    identifier_mode: str,
+    identifier_field: Optional[str],
+    head: Optional[int],
+):
     """
     Inspect and display ESRI style file contents.
 
     Shows extracted classification information in a readable console format.
     Useful for debugging and understanding what was extracted from .lyrx files.
 
+    \b
+    Identifier modes:
+      - label: Use slugified label text (default, most stable)
+      - index: Use sequential index (legacy, unstable)
+      - field: Use value from specified field
+
     Examples:
 
     \b
-    # Inspect single style file
+    # Inspect single style file with default label-based identifiers
     gcover publish inspect styles/Bedrock.lyrx
+
+    \b
+    # Inspect with symbol prefix to see full map_symbol values
+    gcover publish inspect styles/Unco_Litho.lyrx -p unco_litho
+
+    \b
+    # Compare label vs index identifiers
+    gcover publish inspect styles/Surfaces.lyrx -p surfaces -m label
+    gcover publish inspect styles/Surfaces.lyrx -p surfaces -m index
 
     \b
     # Inspect multiple files with details
     gcover publish inspect styles/*.lyrx --detailed
 
     \b
+    # Show only first 10 classes
+    gcover publish inspect styles/Bedrock.lyrx --head 10
+
+    \b
     # Load from configuration
     gcover publish inspect --config-file config/styles.yaml --detailed
     """
-    inspect_styles_main(style_files, detailed, config_file)
+    inspect_styles_main(
+        style_files,
+        detailed,
+        config_file,
+        symbol_prefix=symbol_prefix,
+        identifier_mode=identifier_mode,
+        identifier_field=identifier_field,
+        head=head,
+    )
 
 
 if __name__ == "__main__":
@@ -339,6 +547,14 @@ if __name__ == "__main__":
 #               help="Show detailed symbol information including layers")
 # @click.option("--config-file", "-c", type=click.Path(exists=True, path_type=Path),
 #               help="Load style files from YAML configuration")
-# def inspect_styles_cmd(ctx, style_files: tuple, detailed: bool, config_file: Optional[Path]):
+# @click.option("--symbol-prefix", "-p", type=str, default=None,
+#               help="Prefix for generated symbol IDs")
+# @click.option("--identifier-mode", "-m", type=click.Choice(["label", "index", "field"]),
+#               default="label", help="How to generate identifiers")
+# @click.option("--head", "-n", type=int, default=None,
+#               help="Limit number of classes to display")
+# def inspect_styles_cmd(ctx, style_files: tuple, detailed: bool, config_file: Optional[Path],
+#                        symbol_prefix: Optional[str], identifier_mode: str, head: Optional[int]):
 #     """Inspect and display ESRI style file contents."""
-#     inspect_styles_main(style_files, detailed, config_file)
+#     inspect_styles_main(style_files, detailed, config_file,
+#                         symbol_prefix=symbol_prefix, identifier_mode=identifier_mode, head=head)
