@@ -12,6 +12,7 @@ NEW: Complete symbol layer types including CIMHatchFill
 import hashlib
 import json
 from dataclasses import dataclass, field
+from dataclasses import asdict
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -50,6 +51,9 @@ class CharacterMarkerInfo:
     step_x: float = 10.0
     step_y: float = 10.0
     rotation: float = 0.0  # NEW: character rotation
+    
+    def to_dict(self):
+        return asdict(self)
 
 
 # =============================================================================
