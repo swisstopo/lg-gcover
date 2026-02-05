@@ -1,5 +1,5 @@
 metadata:
-  total_instances: 135
+  total_instances: 234
   unique_patterns: 38
   color_threshold_delta_e: 5.0
 patterns:
@@ -31,19 +31,21 @@ patterns:
     used_by:
     - Surfaces::Ggla Kame
     - Surfaces::Ggla Kame
+    - Surfaces::Ggla Kame
+    - Surfaces::Ggla Kame
   character_c65_m_loose_blue:
     type: character
     name: gins_rutschgebiet
     character:
       font_family: GeoFonts 1
       char_index: 65
-      size: 12
+      size: 6
       step:
-      - 22.33856
-      - 22.33856
+      - 11.33856
+      - 11.33856
       offset:
-      - 11.66928
-      - 11.66928
+      - 5.66928
+      - 5.66928
     color:
       rgba:
       - 0
@@ -59,8 +61,12 @@ patterns:
     used_by:
     - Surfaces::Gins Rutschgebiet
     - Surfaces::Gins Rutschgebiet
-    - Unco_Deposits_Litho_<20000::Rutschmasse
-    - Unco_Deposits_Litho_<20000::Rutschmasse
+    - Surfaces::Gins Rutschgebiet
+    - Surfaces::Gins Rutschgebiet
+    - Unco Deposits_Litho_<20000::Rutschmasse
+    - Unco Deposits_Litho_<20000::Rutschmasse
+    - Unco Deposits_Litho_<20000::Rutschmasse
+    - Unco Deposits_Litho_<20000::Rutschmasse
   character_c68_l_normal_blue:
     type: character
     name: gins_gebiet_mit_hakenwurf
@@ -89,16 +95,18 @@ patterns:
     used_by:
     - Surfaces::Gins Gebiet mit Hakenwurf
     - Surfaces::Gins Gebiet mit Hakenwurf
+    - Surfaces::Gins Gebiet mit Hakenwurf
+    - Surfaces::Gins Gebiet mit Hakenwurf
   character_c60_l_normal_blue:
     type: character
     name: gins_sackungsgebiet
     character:
       font_family: GeoFonts 1
       char_index: 60
-      size: 12
+      size: 8
       step:
-      - 12.503919999999999
-      - 12.503919999999999
+      - 8.503919999999999
+      - 8.503919999999999
       offset:
       - 0.0
       - 0.0
@@ -117,7 +125,10 @@ patterns:
     used_by:
     - Surfaces::Gins Sackungsgebiet
     - Surfaces::Gins Sackungsgebiet
-    - Unco_Deposits_Litho_<20000::zerrüttete Sackungsmasse
+    - Surfaces::Gins Sackungsgebiet
+    - Surfaces::Gins Sackungsgebiet
+    - Unco Deposits_Litho_<20000::zerrüttete Sackungsmasse
+    - Unco Deposits_Litho_<20000::zerrüttete Sackungsmasse
   character_c67_l_normal_blue:
     type: character
     name: gins_gebiet_mit_solifluktion
@@ -146,6 +157,8 @@ patterns:
     used_by:
     - Surfaces::Gins Gebiet mit Solifluktion
     - Surfaces::Gins Gebiet mit Solifluktion
+    - Surfaces::Gins Gebiet mit Solifluktion
+    - Surfaces::Gins Gebiet mit Solifluktion
   character_c87_l_normal_red:
     type: character
     name: aarc_refugium_hoehensiedlung_e
@@ -172,6 +185,7 @@ patterns:
       native: false
       png_file: patterns/aarc_refugium_hoehensiedlung_e.png
     used_by:
+    - Surfaces::Aarc Refugium, Höhensiedlung, Erdwerk
     - Surfaces::Aarc Refugium, Höhensiedlung, Erdwerk
   hatch_r45_dark_brown:
     type: hatch
@@ -298,8 +312,8 @@ patterns:
         width: 0.798
     used_by:
     - Surfaces::Tdef tektonisierte Zone
-    - Unco_Deposits_Litho_<20000::glazilakustrisches Sediment
-    - Unco_Deposits_Litho_<20000::tiefgründige Verwitterungsdecke
+    - Unco Deposits_Litho_<20000::glazilakustrisches Sediment
+    - Unco Deposits_Litho_<20000::tiefgründige Verwitterungsdecke
   character_c33_s_normal_blue:
     type: character
     name: hangschutt_holozaen
@@ -326,417 +340,23 @@ patterns:
       native: false
       png_file: patterns/hangschutt_holozaen.png
     used_by:
-    - Unco_Deposits_Chrono_B::Hangschutt, Holozän
-    - Unco_Deposits_Chrono_B::Hangschutt, Holozän
-    - Unco_Deposits_Chrono_B::Hangschutt, Pleistozän
-    - Unco_Deposits_Chrono_B::Hangschutt, Pleistozän
-    - Unco_Deposits_Chrono_B::Hangschutt, spät Pleistozän
-    - Unco_Deposits_Chrono_B::Hangschutt, spät Pleistozän
-    - Unco_Deposits_Chrono_B::Hangschutt, mittleres Pleistozän
-    - Unco_Deposits_Chrono_B::Hangschutt, mittleres Pleistozän
-  hatch_r45_blue_1:
-    type: hatch
-    name: bachschutt_(kegel)_spaetes_ple
-    hatch:
-      rotation: 45
-      separation: 4.252
-      line_width: 0.5669279999999999
-      line_style: dash
-    color:
-      rgba:
-      - 0
-      - 89
-      - 255
-      - 254
-      hex: '#0059ff'
-      name: blue
-    mapserver:
-      symbol: hatchsymbol
-      native: true
-      style_params:
-        angle: 45
-        size: 5.65516
-        width: 0.7540142399999998
-    used_by:
-    - Unco_Deposits_Bachschutt::Bachschutt (kegel), spätes Pleistozän
-    - Unco_Deposits_Bachschutt::Bachschutt (kegel), Pleistozän
-    - Unco_Deposits_Bachschutt::Bachschutt (kegel), Holozän
-    - Unco_Deposits_Litho_<20000::Lawinenschutt
-    - Unco_Deposits_Litho_<20000::gemischter Schutt
-  polka_dot_c51_s_tight_blue:
-    type: polka_dot
-    name: glazifluviatiles_sediment_undi
-    character:
-      font_family: GeoFonts 1
-      char_index: 51
-      size: 3
-      step:
-      - 4
-      - 4
-      offset:
-      - 2
-      - 2
-    color:
-      rgba:
-      - 0
-      - 89
-      - 255
-      - 254
-      hex: '#0059ff'
-      name: blue
-    mapserver:
-      symbol: glazifluviatiles_sediment_undi
-      native: false
-      png_file: patterns/glazifluviatiles_sediment_undi.png
-    used_by:
-    - Unco_Deposits_Chrono_T::glazifluviatiles Sediment, undifferenzier, Holozän
-    - Unco_Deposits_Chrono_T::glazifluviatiles Sediment, undifferenzier, Pleistozän
-    - Unco_Deposits_Chrono_T::glazifluviatiles Sediment, undifferenziert, Spätes Pleistozän
-    - Unco_Deposits_Chrono_T::glazifluviatiles Sediment, undifferenziert, Mittleres
-      Pleistozän
-    - Unco_Deposits_Chrono_T::glazifluviatiles Sediment, undifferenziert, Frühes Pleistozän
-  polka_dot_c51_s_tight_blue_1:
-    type: polka_dot
-    name: glazifluviatiles_sediment_undi
-    character:
-      font_family: GeoFonts 1
-      char_index: 51
-      size: 3
-      step:
-      - 4
-      - 4
-      offset:
-      - 0.0
-      - 0.0
-    color:
-      rgba:
-      - 38
-      - 127
-      - 255
-      - 254
-      hex: '#267fff'
-      name: blue
-    mapserver:
-      symbol: glazifluviatiles_sediment_undi
-      native: false
-      png_file: patterns/glazifluviatiles_sediment_undi.png
-    used_by:
-    - Unco_Deposits_Chrono_T::glazifluviatiles Sediment, undifferenzier, Holozän
-    - Unco_Deposits_Chrono_T::glazifluviatiles Sediment, undifferenzier, Pleistozän
-    - Unco_Deposits_Chrono_T::glazifluviatiles Sediment, undifferenziert, Spätes Pleistozän
-    - Unco_Deposits_Chrono_T::glazifluviatiles Sediment, undifferenziert, Mittleres
-      Pleistozän
-    - Unco_Deposits_Chrono_T::glazifluviatiles Sediment, undifferenziert, Frühes Pleistozän
-  polka_dot_c51_m_normal_red:
-    type: polka_dot
-    name: rueckzugsschotter_holozaen
-    character:
-      font_family: GeoFonts 1
-      char_index: 51
-      size: 4
-      step:
-      - 6
-      - 6
-      offset:
-      - 0.0
-      - 0.0
-    color:
-      rgba:
-      - 255
-      - 0
-      - 50
-      - 254
-      hex: '#ff0032'
-      name: red
-    mapserver:
-      symbol: rueckzugsschotter_holozaen
-      native: false
-      png_file: patterns/rueckzugsschotter_holozaen.png
-    used_by:
-    - Unco_Deposits_Chrono_T::Rückzugsschotter, Holozän
-    - Unco_Deposits_Chrono_T::Rückzugsschotter, Holozän
-    - Unco_Deposits_Chrono_T::Rückzugsschotter, Pleistozän
-    - Unco_Deposits_Chrono_T::Rückzugsschotter, Pleistozän
-    - Unco_Deposits_Chrono_T::Rückzugsschotter, Spätes Pleistozän
-    - Unco_Deposits_Chrono_T::Rückzugsschotter, Spätes Pleistozän
-    - Unco_Deposits_Chrono_T::Rückzugsschotter, Mittleres Pleistozän
-    - Unco_Deposits_Chrono_T::Rückzugsschotter, Mittleres Pleistozän
-  polka_dot_c51_s_normal_brown:
-    type: polka_dot
-    name: randglazialer_schotter_holozae
-    character:
-      font_family: GeoFonts 1
-      char_index: 51
-      size: 3
-      step:
-      - 6
-      - 6
-      offset:
-      - 3
-      - 3
-    color:
-      rgba:
-      - 165
-      - 102
-      - 0
-      - 254
-      hex: '#a56600'
-      name: brown
-    mapserver:
-      symbol: randglazialer_schotter_holozae
-      native: false
-      png_file: patterns/randglazialer_schotter_holozae.png
-    used_by:
-    - Unco_Deposits_Chrono_T::randglazialer Schotter, Holozän
-    - Unco_Deposits_Chrono_T::randglazialer Schotter, Holozän
-    - Unco_Deposits_Chrono_T::randglazialer Schotter, Mittleres Pleistozän
-    - Unco_Deposits_Chrono_T::randglazialer Schotter, Mittleres Pleistozän
-    - Unco_Deposits_Chrono_T::randglazialer Schotter, Frühes Pleistozän
-    - Unco_Deposits_Chrono_T::randglazialer Schotter, Frühes Pleistozän
-  polka_dot_c51_m_normal_brown:
-    type: polka_dot
-    name: randglazialer_schotter_spaetes
-    character:
-      font_family: GeoFonts 1
-      char_index: 51
-      size: 4
-      step:
-      - 6
-      - 6
-      offset:
-      - 3
-      - 3
-    color:
-      rgba:
-      - 165
-      - 102
-      - 0
-      - 254
-      hex: '#a56600'
-      name: brown
-    mapserver:
-      symbol: randglazialer_schotter_spaetes
-      native: false
-      png_file: patterns/randglazialer_schotter_spaetes.png
-    used_by:
-    - Unco_Deposits_Chrono_T::randglazialer Schotter, Spätes Pleistozän
-    - Unco_Deposits_Chrono_T::randglazialer Schotter, Spätes Pleistozän
+    - Unco Deposits_Chrono_B::Hangschutt, Holozän
+    - Unco Deposits_Chrono_B::Hangschutt, Holozän
+    - Unco Deposits_Chrono_B::Hangschutt, Holozän
+    - Unco Deposits_Chrono_B::Hangschutt, Holozän
+    - Unco Deposits_Chrono_B::Hangschutt, Pleistozän
+    - Unco Deposits_Chrono_B::Hangschutt, Pleistozän
+    - Unco Deposits_Chrono_B::Hangschutt, Pleistozän
+    - Unco Deposits_Chrono_B::Hangschutt, Pleistozän
+    - Unco Deposits_Chrono_B::Hangschutt, spät Pleistozän
+    - Unco Deposits_Chrono_B::Hangschutt, spät Pleistozän
+    - Unco Deposits_Chrono_B::Hangschutt, spät Pleistozän
+    - Unco Deposits_Chrono_B::Hangschutt, spät Pleistozän
+    - Unco Deposits_Chrono_B::Hangschutt, mittleres Pleistozän
+    - Unco Deposits_Chrono_B::Hangschutt, mittleres Pleistozän
+    - Unco Deposits_Chrono_B::Hangschutt, mittleres Pleistozän
+    - Unco Deposits_Chrono_B::Hangschutt, mittleres Pleistozän
   polka_dot_c51_m_normal_blue:
-    type: polka_dot
-    name: schotter_glazifluviatiles_sedi
-    character:
-      font_family: GeoFonts 1
-      char_index: 51
-      size: 4
-      step:
-      - 6
-      - 6
-      offset:
-      - 3
-      - 3
-    color:
-      rgba:
-      - 0
-      - 89
-      - 255
-      - 254
-      hex: '#0059ff'
-      name: blue
-    mapserver:
-      symbol: schotter_glazifluviatiles_sedi
-      native: false
-      png_file: patterns/schotter_glazifluviatiles_sedi.png
-    used_by:
-    - Unco_Deposits_Chrono_T::Schotter, glazifluviatiles Sedimen, Holozän
-    - Unco_Deposits_Chrono_T::Schotter, glazifluviatiles Sedimen, Pleistozän
-    - Unco_Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Spätes Pleistozän
-    - Unco_Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Spätes Pleistozän
-    - Unco_Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Mittleres Pleistozän
-    - Unco_Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Frühes Pleistozän
-    - Unco_Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Pliozän
-    - Unco_Deposits_Litho_<20000::fluviatiles Sediment
-    - Unco_Deposits_Litho_<20000::fluviatiles Sediment
-  polka_dot_c51_m_normal_blue_1:
-    type: polka_dot
-    name: schotter_glazifluviatiles_sedi
-    character:
-      font_family: GeoFonts 1
-      char_index: 51
-      size: 4
-      step:
-      - 6
-      - 6
-      offset:
-      - 0.0
-      - 0.0
-    color:
-      rgba:
-      - 38
-      - 127
-      - 255
-      - 254
-      hex: '#267fff'
-      name: blue
-    mapserver:
-      symbol: schotter_glazifluviatiles_sedi
-      native: false
-      png_file: patterns/schotter_glazifluviatiles_sedi.png
-    used_by:
-    - Unco_Deposits_Chrono_T::Schotter, glazifluviatiles Sedimen, Holozän
-    - Unco_Deposits_Chrono_T::Schotter, glazifluviatiles Sedimen, Pleistozän
-    - Unco_Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Mittleres Pleistozän
-    - Unco_Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Frühes Pleistozän
-    - Unco_Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Pliozän
-  polka_dot_c51_m_normal_green:
-    type: polka_dot
-    name: vorstossschotter_pleistozaen
-    character:
-      font_family: GeoFonts 1
-      char_index: 51
-      size: 4
-      step:
-      - 6
-      - 6
-      offset:
-      - 3
-      - 3
-    color:
-      rgba:
-      - 56
-      - 168
-      - 0
-      - 254
-      hex: '#38a800'
-      name: green
-    mapserver:
-      symbol: vorstossschotter_pleistozaen
-      native: false
-      png_file: patterns/vorstossschotter_pleistozaen.png
-    used_by:
-    - Unco_Deposits_Chrono_T::Vorstossschotter, Pleistozän
-    - Unco_Deposits_Chrono_T::Vorstossschotter, Pleistozän
-    - Unco_Deposits_Chrono_T::Vorstossschotter, Spätes Pleistozän
-    - Unco_Deposits_Chrono_T::Vorstossschotter, Spätes Pleistozän
-    - Unco_Deposits_Chrono_T::Vorstossschotter, Mittleres Pleistozän
-    - Unco_Deposits_Chrono_T::Vorstossschotter, Mittleres Pleistozän
-  hatch_r0_cyan:
-    type: hatch
-    name: glazilakustrisches_sediment_un
-    hatch:
-      rotation: 0.0
-      separation: 3
-      line_width: 1
-      line_style: solid
-    color:
-      rgba:
-      - 71
-      - 255
-      - 204
-      - 254
-      hex: '#47ffcc'
-      name: cyan
-    mapserver:
-      symbol: hatchsymbol
-      native: true
-      style_params:
-        angle: 0.0
-        size: 3.99
-        width: 1.33
-    used_by:
-    - Unco_Deposits_Chrono_T::glazilakustrisches Sediment, undifferenziert, Holozän
-    - Unco_Deposits_Chrono_T::glazilakustrisches Sediment, undifferenziert, Pleistozän
-    - Unco_Deposits_Chrono_T::glazilakustrisches Sediment, undifferenziert, Spätes
-      Pleistozän
-    - Unco_Deposits_Chrono_T::glazilakustrisches Sediment, undifferenziert, Mittleres
-      Pleistozän
-  hatch_r0_red:
-    type: hatch
-    name: glazilakustrisches_deltasedime
-    hatch:
-      rotation: 0.0
-      separation: 4
-      line_width: 0.2
-      line_style: solid
-    color:
-      rgba:
-      - 255
-      - 0
-      - 50
-      - 254
-      hex: '#ff0032'
-      name: red
-    mapserver:
-      symbol: hatchsymbol
-      native: true
-      style_params:
-        angle: 0.0
-        size: 5.32
-        width: 0.266
-    used_by:
-    - Unco_Deposits_Chrono_T::glazilakustrisches Deltasediment, Holozän
-    - Unco_Deposits_Chrono_T::glazilakustrisches Deltasediment, Pleistozän
-    - Unco_Deposits_Chrono_T::glazilakustrisches Deltasediment, Spätes Pleistozän
-    - Unco_Deposits_Chrono_T::glazilakustrisches Deltasediment, Mittleres Pleistozän
-  hatch_r0_yellow:
-    type: hatch
-    name: detritische_verlandungsbildung
-    hatch:
-      rotation: 0.0
-      separation: 4
-      line_width: 0.2
-      line_style: solid
-    color:
-      rgba:
-      - 165
-      - 153
-      - 0
-      - 254
-      hex: '#a59900'
-      name: yellow
-    mapserver:
-      symbol: hatchsymbol
-      native: true
-      style_params:
-        angle: 0.0
-        size: 5.32
-        width: 0.266
-    used_by:
-    - Unco_Deposits_Chrono_T::detritische Verlandungsbildung, Holozän
-    - Unco_Deposits_Chrono_T::detritische Verlandungsbildung, Pleistozän
-    - Unco_Deposits_Chrono_T::detritische Verlandungsbildung, Spätes Pleistozän
-    - Unco_Deposits_Chrono_T::detritische Verlandungsbildung, Mittleres Pleistozän
-  hatch_r0_blue:
-    type: hatch
-    name: seebodensediment_holozaen
-    hatch:
-      rotation: 0.0
-      separation: 4
-      line_width: 0.2
-      line_style: solid
-    color:
-      rgba:
-      - 0
-      - 89
-      - 255
-      - 254
-      hex: '#0059ff'
-      name: blue
-    mapserver:
-      symbol: hatchsymbol
-      native: true
-      style_params:
-        angle: 0.0
-        size: 5.32
-        width: 0.266
-    used_by:
-    - Unco_Deposits_Chrono_T::Seebodensediment, Holozän
-    - Unco_Deposits_Chrono_T::Seebodensediment, Pleistozän
-    - Unco_Deposits_Chrono_T::Seebodensediment, Spätes Pleistozän
-    - Unco_Deposits_Chrono_T::Seebodensediment, Mittleres Pleistozän
-    - Unco_Deposits_Chrono_T::Seebodensediment, Frühes Pleistozän
-    - Unco_Deposits_Litho_<20000::Seekreide
-    - Unco_Deposits_Litho_<20000::Sumpf
-  polka_dot_c51_m_normal_blue_2:
     type: polka_dot
     name: fluviatiler_schotter
     character:
@@ -762,17 +382,28 @@ patterns:
       native: false
       png_file: patterns/fluviatiler_schotter.png
     used_by:
-    - Unco_Deposits_Litho_<20000::fluviatiler Schotter
-    - Unco_Deposits_Litho_<20000::fluviatiler Schotter
-    - Unco_Deposits_Litho_<20000::Bergsturzablagerung
-    - Unco_Deposits_Litho_<20000::Bergsturzablagerung
-    - Unco_Deposits_Litho_<20000::Deltasediment, lakustrisches Sediment
-    - Unco_Deposits_Litho_<20000::Deltasediment, lakustrisches Sediment
-    - Unco_Deposits_Litho_<20000::Felssturzablagerung
-    - Unco_Deposits_Litho_<20000::Felssturzablagerung
-    - Unco_Deposits_Litho_<20000::Sturzabalgerung, undifferenziert
-    - Unco_Deposits_Litho_<20000::Sturzabalgerung, undifferenziert
-    - Unco_Deposits_Litho_<20000::zerrüttete Sackungsmasse
+    - Unco Deposits_Litho_<20000::fluviatiler Schotter
+    - Unco Deposits_Litho_<20000::fluviatiler Schotter
+    - Unco Deposits_Litho_<20000::fluviatiler Schotter
+    - Unco Deposits_Litho_<20000::fluviatiler Schotter
+    - Unco Deposits_Litho_<20000::Bergsturzablagerung
+    - Unco Deposits_Litho_<20000::Bergsturzablagerung
+    - Unco Deposits_Litho_<20000::Bergsturzablagerung
+    - Unco Deposits_Litho_<20000::Bergsturzablagerung
+    - Unco Deposits_Litho_<20000::Deltasediment, lakustrisches Sediment
+    - Unco Deposits_Litho_<20000::Deltasediment, lakustrisches Sediment
+    - Unco Deposits_Litho_<20000::Deltasediment, lakustrisches Sediment
+    - Unco Deposits_Litho_<20000::Deltasediment, lakustrisches Sediment
+    - Unco Deposits_Litho_<20000::Felssturzablagerung
+    - Unco Deposits_Litho_<20000::Felssturzablagerung
+    - Unco Deposits_Litho_<20000::Felssturzablagerung
+    - Unco Deposits_Litho_<20000::Felssturzablagerung
+    - Unco Deposits_Litho_<20000::Sturzabalgerung, undifferenziert
+    - Unco Deposits_Litho_<20000::Sturzabalgerung, undifferenziert
+    - Unco Deposits_Litho_<20000::Sturzabalgerung, undifferenziert
+    - Unco Deposits_Litho_<20000::Sturzabalgerung, undifferenziert
+    - Unco Deposits_Litho_<20000::zerrüttete Sackungsmasse
+    - Unco Deposits_Litho_<20000::zerrüttete Sackungsmasse
   polka_dot_c51_s_normal_blue:
     type: polka_dot
     name: strukturierter_hangschuttt
@@ -799,8 +430,10 @@ patterns:
       native: false
       png_file: patterns/strukturierter_hangschuttt.png
     used_by:
-    - Unco_Deposits_Litho_<20000::strukturierter Hangschuttt
-    - Unco_Deposits_Litho_<20000::strukturierter Hangschuttt
+    - Unco Deposits_Litho_<20000::strukturierter Hangschuttt
+    - Unco Deposits_Litho_<20000::strukturierter Hangschuttt
+    - Unco Deposits_Litho_<20000::strukturierter Hangschuttt
+    - Unco Deposits_Litho_<20000::strukturierter Hangschuttt
   polka_dot_c51_m_tight_blue:
     type: polka_dot
     name: tsunamiablagerung
@@ -827,8 +460,10 @@ patterns:
       native: false
       png_file: patterns/tsunamiablagerung.png
     used_by:
-    - Unco_Deposits_Litho_<20000::Tsunamiablagerung
-    - Unco_Deposits_Litho_<20000::Tsunamiablagerung
+    - Unco Deposits_Litho_<20000::Tsunamiablagerung
+    - Unco Deposits_Litho_<20000::Tsunamiablagerung
+    - Unco Deposits_Litho_<20000::Tsunamiablagerung
+    - Unco Deposits_Litho_<20000::Tsunamiablagerung
   hatch_r0_dark_brown:
     type: hatch
     name: palustrisches_sediment
@@ -853,7 +488,7 @@ patterns:
         size: 5.32
         width: 1.064
     used_by:
-    - Unco_Deposits_Litho_<20000::palustrisches Sediment
+    - Unco Deposits_Litho_<20000::palustrisches Sediment
   character_c33_s_normal_blue_1:
     type: character
     name: blockschutt
@@ -880,8 +515,10 @@ patterns:
       native: false
       png_file: patterns/blockschutt.png
     used_by:
-    - Unco_Deposits_Litho_<20000::Blockschutt
-    - Unco_Deposits_Litho_<20000::Blockschutt
+    - Unco Deposits_Litho_<20000::Blockschutt
+    - Unco Deposits_Litho_<20000::Blockschutt
+    - Unco Deposits_Litho_<20000::Blockschutt
+    - Unco Deposits_Litho_<20000::Blockschutt
   hatch_r0_dark_brown_1:
     type: hatch
     name: gyttja
@@ -906,9 +543,86 @@ patterns:
         size: 3.99
         width: 0.3770071199999999
     used_by:
-    - Unco_Deposits_Litho_<20000::Gyttja
-    - Unco_Deposits_Litho_<20000::Lignit, palustrisches Sediment
-    - Unco_Deposits_Litho_<20000::Torfmoor, Torf
+    - Unco Deposits_Litho_<20000::Gyttja
+    - Unco Deposits_Litho_<20000::Lignit, palustrisches Sediment
+    - Unco Deposits_Litho_<20000::Torfmoor, Torf
+  hatch_r45_blue_1:
+    type: hatch
+    name: lawinenschutt
+    hatch:
+      rotation: 45
+      separation: 2.9764
+      line_width: 0.5
+      line_style: dash
+    color:
+      rgba:
+      - 0
+      - 89
+      - 255
+      - 254
+      hex: '#0059ff'
+      name: blue
+    mapserver:
+      symbol: hatchsymbol
+      native: true
+      style_params:
+        angle: 45
+        size: 3.958612
+        width: 0.665
+    used_by:
+    - Unco Deposits_Litho_<20000::Lawinenschutt
+    - Unco Deposits_Litho_<20000::gemischter Schutt
+    - Unco Deposits_Bachschutt::Bachschutt (kegel), spätes Pleistozän
+    - Unco Deposits_Bachschutt::Bachschutt (kegel), Pleistozän
+    - Unco Deposits_Bachschutt::Bachschutt (kegel), Holozän
+  polka_dot_c51_m_normal_blue_1:
+    type: polka_dot
+    name: murgangablagerung
+    character:
+      font_family: GeoFonts 1
+      char_index: 51
+      size: 5
+      step:
+      - 6
+      - 6
+      offset:
+      - 3
+      - 3
+    color:
+      rgba:
+      - 0
+      - 89
+      - 255
+      - 254
+      hex: '#0059ff'
+      name: blue
+    mapserver:
+      symbol: murgangablagerung
+      native: false
+      png_file: patterns/murgangablagerung.png
+    used_by:
+    - Unco Deposits_Litho_<20000::Murgangablagerung
+    - Unco Deposits_Litho_<20000::Murgangablagerung
+    - Unco Deposits_Litho_<20000::Murgangablagerung
+    - Unco Deposits_Litho_<20000::Murgangablagerung
+    - Unco Deposits_Litho_<20000::fluviatiles Sediment
+    - Unco Deposits_Litho_<20000::fluviatiles Sediment
+    - Unco Deposits_Litho_<20000::fluviatiles Sediment
+    - Unco Deposits_Litho_<20000::fluviatiles Sediment
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sedimen, Holozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sedimen, Holozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sedimen, Pleistozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sedimen, Pleistozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Mittleres Pleistozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Mittleres Pleistozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Frühes Pleistozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Frühes Pleistozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Pliozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Pliozän
   character_c33_s_tight_red:
     type: character
     name: quelltuf
@@ -935,13 +649,50 @@ patterns:
       native: false
       png_file: patterns/quelltuf.png
     used_by:
-    - Unco_Deposits_Litho_<20000::Quelltuf
-    - Unco_Deposits_Litho_<20000::Quelltuf
-    - Unco_Deposits_Litho_<20000::Travertin
-    - Unco_Deposits_Litho_<20000::Travertin
-    - Unco_Deposits_Litho_<20000::hydrochemische Bildungen (Kalksinter)
-    - Unco_Deposits_Litho_<20000::hydrochemische Bildungen (Kalksinter)
-  polka_dot_c51_m_normal_red_1:
+    - Unco Deposits_Litho_<20000::Quelltuf
+    - Unco Deposits_Litho_<20000::Quelltuf
+    - Unco Deposits_Litho_<20000::Quelltuf
+    - Unco Deposits_Litho_<20000::Quelltuf
+    - Unco Deposits_Litho_<20000::Travertin
+    - Unco Deposits_Litho_<20000::Travertin
+    - Unco Deposits_Litho_<20000::Travertin
+    - Unco Deposits_Litho_<20000::Travertin
+    - Unco Deposits_Litho_<20000::hydrochemische Bildungen (Kalksinter)
+    - Unco Deposits_Litho_<20000::hydrochemische Bildungen (Kalksinter)
+    - Unco Deposits_Litho_<20000::hydrochemische Bildungen (Kalksinter)
+    - Unco Deposits_Litho_<20000::hydrochemische Bildungen (Kalksinter)
+  hatch_r0_blue:
+    type: hatch
+    name: seekreide
+    hatch:
+      rotation: 0.0
+      separation: 3
+      line_width: 1
+      line_style: solid
+    color:
+      rgba:
+      - 0
+      - 89
+      - 255
+      - 254
+      hex: '#0059ff'
+      name: blue
+    mapserver:
+      symbol: hatchsymbol
+      native: true
+      style_params:
+        angle: 0.0
+        size: 3.99
+        width: 1.33
+    used_by:
+    - Unco Deposits_Litho_<20000::Seekreide
+    - Unco Deposits_Litho_<20000::Sumpf
+    - Unco Deposits_Chrono_T::Seebodensediment, Holozän
+    - Unco Deposits_Chrono_T::Seebodensediment, Pleistozän
+    - Unco Deposits_Chrono_T::Seebodensediment, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::Seebodensediment, Mittleres Pleistozän
+    - Unco Deposits_Chrono_T::Seebodensediment, Frühes Pleistozän
+  polka_dot_c51_m_normal_red:
     type: polka_dot
     name: strandablagerungen
     character:
@@ -967,8 +718,10 @@ patterns:
       native: false
       png_file: patterns/strandablagerungen.png
     used_by:
-    - Unco_Deposits_Litho_<20000::Strandablagerungen
-    - Unco_Deposits_Litho_<20000::Strandablagerungen
+    - Unco Deposits_Litho_<20000::Strandablagerungen
+    - Unco Deposits_Litho_<20000::Strandablagerungen
+    - Unco Deposits_Litho_<20000::Strandablagerungen
+    - Unco Deposits_Litho_<20000::Strandablagerungen
   hatch_r0_blue_1:
     type: hatch
     name: waessermatte
@@ -993,7 +746,7 @@ patterns:
         size: 3.325
         width: 0.665
     used_by:
-    - Unco_Deposits_Litho_<20000::Wässermatte
+    - Unco Deposits_Litho_<20000::Wässermatte
   hatch_r45_brown:
     type: hatch
     name: anthropogene_elemente_undiffer
@@ -1018,7 +771,7 @@ patterns:
         size: 2.66
         width: 1.33
     used_by:
-    - Unco_Deposits_Litho_<20000::anthropogene Elemente, undifferenziert
+    - Unco Deposits_Litho_<20000::anthropogene Elemente, undifferenziert
   hatch_r90_cyan:
     type: hatch
     name: duenne_lockermaterialbedeckung
@@ -1043,8 +796,8 @@ patterns:
         size: 2.66
         width: 1.33
     used_by:
-    - Unco_Deposits_Litho_<20000::dünne Lockermaterialbedeckung
-    - Unco_Deposits_Litho_<20000::dünne Lockermaterialbedeckung, undifferenziert
+    - Unco Deposits_Litho_<20000::dünne Lockermaterialbedeckung
+    - Unco Deposits_Litho_<20000::dünne Lockermaterialbedeckung, undifferenziert
   polka_dot_c51_s_normal_blue_1:
     type: polka_dot
     name: gravitative_sedimente_und_verw
@@ -1071,9 +824,13 @@ patterns:
       native: false
       png_file: patterns/gravitative_sedimente_und_verw.png
     used_by:
-    - Unco_Deposits_Litho_<20000::gravitative Sedimente und Verwitterungsbildungen,
+    - Unco Deposits_Litho_<20000::gravitative Sedimente und Verwitterungsbildungen,
       undifferenziert
-    - Unco_Deposits_Litho_<20000::gravitative Sedimente und Verwitterungsbildungen,
+    - Unco Deposits_Litho_<20000::gravitative Sedimente und Verwitterungsbildungen,
+      undifferenziert
+    - Unco Deposits_Litho_<20000::gravitative Sedimente und Verwitterungsbildungen,
+      undifferenziert
+    - Unco Deposits_Litho_<20000::gravitative Sedimente und Verwitterungsbildungen,
       undifferenziert
   hatch_r0_white:
     type: hatch
@@ -1099,4 +856,350 @@ patterns:
         size: 5.985
         width: 1.596
     used_by:
-    - Unco_Deposits_Litho_<20000::Überschwemmungssediment
+    - Unco Deposits_Litho_<20000::Überschwemmungssediment
+  polka_dot_c51_s_tight_blue:
+    type: polka_dot
+    name: glazifluviatiles_sediment_undi
+    character:
+      font_family: GeoFonts 1
+      char_index: 51
+      size: 3
+      step:
+      - 4
+      - 4
+      offset:
+      - 2
+      - 2
+    color:
+      rgba:
+      - 0
+      - 89
+      - 255
+      - 254
+      hex: '#0059ff'
+      name: blue
+    mapserver:
+      symbol: glazifluviatiles_sediment_undi
+      native: false
+      png_file: patterns/glazifluviatiles_sediment_undi.png
+    used_by:
+    - Unco Deposits_Chrono_T::glazifluviatiles Sediment, undifferenzier, Holozän
+    - Unco Deposits_Chrono_T::glazifluviatiles Sediment, undifferenzier, Holozän
+    - Unco Deposits_Chrono_T::glazifluviatiles Sediment, undifferenzier, Pleistozän
+    - Unco Deposits_Chrono_T::glazifluviatiles Sediment, undifferenzier, Pleistozän
+    - Unco Deposits_Chrono_T::glazifluviatiles Sediment, undifferenziert, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::glazifluviatiles Sediment, undifferenziert, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::glazifluviatiles Sediment, undifferenziert, Mittleres
+      Pleistozän
+    - Unco Deposits_Chrono_T::glazifluviatiles Sediment, undifferenziert, Mittleres
+      Pleistozän
+    - Unco Deposits_Chrono_T::glazifluviatiles Sediment, undifferenziert, Frühes Pleistozän
+    - Unco Deposits_Chrono_T::glazifluviatiles Sediment, undifferenziert, Frühes Pleistozän
+  polka_dot_c51_s_tight_blue_1:
+    type: polka_dot
+    name: glazifluviatiles_sediment_undi
+    character:
+      font_family: GeoFonts 1
+      char_index: 51
+      size: 3
+      step:
+      - 4
+      - 4
+      offset:
+      - 0.0
+      - 0.0
+    color:
+      rgba:
+      - 38
+      - 127
+      - 255
+      - 254
+      hex: '#267fff'
+      name: blue
+    mapserver:
+      symbol: glazifluviatiles_sediment_undi
+      native: false
+      png_file: patterns/glazifluviatiles_sediment_undi.png
+    used_by:
+    - Unco Deposits_Chrono_T::glazifluviatiles Sediment, undifferenzier, Holozän
+    - Unco Deposits_Chrono_T::glazifluviatiles Sediment, undifferenzier, Holozän
+    - Unco Deposits_Chrono_T::glazifluviatiles Sediment, undifferenzier, Pleistozän
+    - Unco Deposits_Chrono_T::glazifluviatiles Sediment, undifferenzier, Pleistozän
+    - Unco Deposits_Chrono_T::glazifluviatiles Sediment, undifferenziert, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::glazifluviatiles Sediment, undifferenziert, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::glazifluviatiles Sediment, undifferenziert, Mittleres
+      Pleistozän
+    - Unco Deposits_Chrono_T::glazifluviatiles Sediment, undifferenziert, Mittleres
+      Pleistozän
+    - Unco Deposits_Chrono_T::glazifluviatiles Sediment, undifferenziert, Frühes Pleistozän
+    - Unco Deposits_Chrono_T::glazifluviatiles Sediment, undifferenziert, Frühes Pleistozän
+  polka_dot_c51_m_normal_red_1:
+    type: polka_dot
+    name: rueckzugsschotter_holozaen
+    character:
+      font_family: GeoFonts 1
+      char_index: 51
+      size: 4
+      step:
+      - 6
+      - 6
+      offset:
+      - 0.0
+      - 0.0
+    color:
+      rgba:
+      - 255
+      - 0
+      - 50
+      - 254
+      hex: '#ff0032'
+      name: red
+    mapserver:
+      symbol: rueckzugsschotter_holozaen
+      native: false
+      png_file: patterns/rueckzugsschotter_holozaen.png
+    used_by:
+    - Unco Deposits_Chrono_T::Rückzugsschotter, Holozän
+    - Unco Deposits_Chrono_T::Rückzugsschotter, Holozän
+    - Unco Deposits_Chrono_T::Rückzugsschotter, Holozän
+    - Unco Deposits_Chrono_T::Rückzugsschotter, Holozän
+    - Unco Deposits_Chrono_T::Rückzugsschotter, Pleistozän
+    - Unco Deposits_Chrono_T::Rückzugsschotter, Pleistozän
+    - Unco Deposits_Chrono_T::Rückzugsschotter, Pleistozän
+    - Unco Deposits_Chrono_T::Rückzugsschotter, Pleistozän
+    - Unco Deposits_Chrono_T::Rückzugsschotter, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::Rückzugsschotter, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::Rückzugsschotter, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::Rückzugsschotter, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::Rückzugsschotter, Mittleres Pleistozän
+    - Unco Deposits_Chrono_T::Rückzugsschotter, Mittleres Pleistozän
+    - Unco Deposits_Chrono_T::Rückzugsschotter, Mittleres Pleistozän
+    - Unco Deposits_Chrono_T::Rückzugsschotter, Mittleres Pleistozän
+  polka_dot_c51_s_normal_brown:
+    type: polka_dot
+    name: randglazialer_schotter_holozae
+    character:
+      font_family: GeoFonts 1
+      char_index: 51
+      size: 3
+      step:
+      - 6
+      - 6
+      offset:
+      - 3
+      - 3
+    color:
+      rgba:
+      - 165
+      - 102
+      - 0
+      - 254
+      hex: '#a56600'
+      name: brown
+    mapserver:
+      symbol: randglazialer_schotter_holozae
+      native: false
+      png_file: patterns/randglazialer_schotter_holozae.png
+    used_by:
+    - Unco Deposits_Chrono_T::randglazialer Schotter, Holozän
+    - Unco Deposits_Chrono_T::randglazialer Schotter, Holozän
+    - Unco Deposits_Chrono_T::randglazialer Schotter, Holozän
+    - Unco Deposits_Chrono_T::randglazialer Schotter, Holozän
+    - Unco Deposits_Chrono_T::randglazialer Schotter, Mittleres Pleistozän
+    - Unco Deposits_Chrono_T::randglazialer Schotter, Mittleres Pleistozän
+    - Unco Deposits_Chrono_T::randglazialer Schotter, Mittleres Pleistozän
+    - Unco Deposits_Chrono_T::randglazialer Schotter, Mittleres Pleistozän
+    - Unco Deposits_Chrono_T::randglazialer Schotter, Frühes Pleistozän
+    - Unco Deposits_Chrono_T::randglazialer Schotter, Frühes Pleistozän
+    - Unco Deposits_Chrono_T::randglazialer Schotter, Frühes Pleistozän
+    - Unco Deposits_Chrono_T::randglazialer Schotter, Frühes Pleistozän
+  polka_dot_c51_m_normal_brown:
+    type: polka_dot
+    name: randglazialer_schotter_spaetes
+    character:
+      font_family: GeoFonts 1
+      char_index: 51
+      size: 4
+      step:
+      - 6
+      - 6
+      offset:
+      - 3
+      - 3
+    color:
+      rgba:
+      - 165
+      - 102
+      - 0
+      - 254
+      hex: '#a56600'
+      name: brown
+    mapserver:
+      symbol: randglazialer_schotter_spaetes
+      native: false
+      png_file: patterns/randglazialer_schotter_spaetes.png
+    used_by:
+    - Unco Deposits_Chrono_T::randglazialer Schotter, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::randglazialer Schotter, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::randglazialer Schotter, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::randglazialer Schotter, Spätes Pleistozän
+  polka_dot_c51_m_normal_blue_2:
+    type: polka_dot
+    name: schotter_glazifluviatiles_sedi
+    character:
+      font_family: GeoFonts 1
+      char_index: 51
+      size: 4
+      step:
+      - 6
+      - 6
+      offset:
+      - 0.0
+      - 0.0
+    color:
+      rgba:
+      - 38
+      - 127
+      - 255
+      - 254
+      hex: '#267fff'
+      name: blue
+    mapserver:
+      symbol: schotter_glazifluviatiles_sedi
+      native: false
+      png_file: patterns/schotter_glazifluviatiles_sedi.png
+    used_by:
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sedimen, Holozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sedimen, Holozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sedimen, Pleistozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sedimen, Pleistozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Mittleres Pleistozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Mittleres Pleistozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Frühes Pleistozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Frühes Pleistozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Pliozän
+    - Unco Deposits_Chrono_T::Schotter, glazifluviatiles Sediment, Pliozän
+  polka_dot_c51_m_normal_green:
+    type: polka_dot
+    name: vorstossschotter_pleistozaen
+    character:
+      font_family: GeoFonts 1
+      char_index: 51
+      size: 4
+      step:
+      - 6
+      - 6
+      offset:
+      - 3
+      - 3
+    color:
+      rgba:
+      - 56
+      - 168
+      - 0
+      - 254
+      hex: '#38a800'
+      name: green
+    mapserver:
+      symbol: vorstossschotter_pleistozaen
+      native: false
+      png_file: patterns/vorstossschotter_pleistozaen.png
+    used_by:
+    - Unco Deposits_Chrono_T::Vorstossschotter, Pleistozän
+    - Unco Deposits_Chrono_T::Vorstossschotter, Pleistozän
+    - Unco Deposits_Chrono_T::Vorstossschotter, Pleistozän
+    - Unco Deposits_Chrono_T::Vorstossschotter, Pleistozän
+    - Unco Deposits_Chrono_T::Vorstossschotter, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::Vorstossschotter, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::Vorstossschotter, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::Vorstossschotter, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::Vorstossschotter, Mittleres Pleistozän
+    - Unco Deposits_Chrono_T::Vorstossschotter, Mittleres Pleistozän
+    - Unco Deposits_Chrono_T::Vorstossschotter, Mittleres Pleistozän
+    - Unco Deposits_Chrono_T::Vorstossschotter, Mittleres Pleistozän
+  hatch_r0_cyan:
+    type: hatch
+    name: glazilakustrisches_sediment_un
+    hatch:
+      rotation: 0.0
+      separation: 3
+      line_width: 1
+      line_style: solid
+    color:
+      rgba:
+      - 71
+      - 255
+      - 204
+      - 254
+      hex: '#47ffcc'
+      name: cyan
+    mapserver:
+      symbol: hatchsymbol
+      native: true
+      style_params:
+        angle: 0.0
+        size: 3.99
+        width: 1.33
+    used_by:
+    - Unco Deposits_Chrono_T::glazilakustrisches Sediment, undifferenziert, Holozän
+    - Unco Deposits_Chrono_T::glazilakustrisches Sediment, undifferenziert, Pleistozän
+    - Unco Deposits_Chrono_T::glazilakustrisches Sediment, undifferenziert, Spätes
+      Pleistozän
+    - Unco Deposits_Chrono_T::glazilakustrisches Sediment, undifferenziert, Mittleres
+      Pleistozän
+  hatch_r0_red:
+    type: hatch
+    name: glazilakustrisches_deltasedime
+    hatch:
+      rotation: 0.0
+      separation: 4
+      line_width: 0.2
+      line_style: solid
+    color:
+      rgba:
+      - 255
+      - 0
+      - 50
+      - 254
+      hex: '#ff0032'
+      name: red
+    mapserver:
+      symbol: hatchsymbol
+      native: true
+      style_params:
+        angle: 0.0
+        size: 5.32
+        width: 0.266
+    used_by:
+    - Unco Deposits_Chrono_T::glazilakustrisches Deltasediment, Holozän
+    - Unco Deposits_Chrono_T::glazilakustrisches Deltasediment, Pleistozän
+    - Unco Deposits_Chrono_T::glazilakustrisches Deltasediment, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::glazilakustrisches Deltasediment, Mittleres Pleistozän
+  hatch_r0_yellow:
+    type: hatch
+    name: detritische_verlandungsbildung
+    hatch:
+      rotation: 0.0
+      separation: 4
+      line_width: 0.2
+      line_style: solid
+    color:
+      rgba:
+      - 165
+      - 153
+      - 0
+      - 254
+      hex: '#a59900'
+      name: yellow
+    mapserver:
+      symbol: hatchsymbol
+      native: true
+      style_params:
+        angle: 0.0
+        size: 5.32
+        width: 0.266
+    used_by:
+    - Unco Deposits_Chrono_T::detritische Verlandungsbildung, Holozän
+    - Unco Deposits_Chrono_T::detritische Verlandungsbildung, Pleistozän
+    - Unco Deposits_Chrono_T::detritische Verlandungsbildung, Spätes Pleistozän
+    - Unco Deposits_Chrono_T::detritische Verlandungsbildung, Mittleres Pleistozän
