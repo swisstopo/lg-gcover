@@ -47,7 +47,7 @@ console = Console()
 
 
 @dataclass
-class ClassificationConfig:
+class ClassificationApplicationConfig:
     """Configuration for a single classification application, currently a .lyrx file.
     
     Attributes:
@@ -113,7 +113,7 @@ class LayerConfig:
 
     gpkg_layer: str
     gcover_layer: Optional[str]
-    classifications: List[ClassificationConfig]
+    classifications: List[ClassificationApplicationConfig]
     field_types: Optional[Dict[str, str]] = None
     layer_type: Optional[LayerType] = None
     connection_ref: Optional[str] = None
@@ -374,7 +374,7 @@ class BatchClassificationConfig:
                 identifier_mode = self.default_identifier_mode
 
             classifications.append(
-                ClassificationConfig(
+                ClassificationApplicationConfig(
                     style_file=style_file,
                     index=class_dict.get("index", 200),
                     classification_name=class_dict.get("classification_name"),

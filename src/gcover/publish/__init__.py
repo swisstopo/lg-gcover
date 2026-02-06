@@ -66,7 +66,7 @@ from gcover.publish.merge_sources import (
 )
 from gcover.publish.style_config import (
     BatchClassificationConfig,
-    ClassificationConfig,
+    ClassificationApplicationConfig,
     LayerConfig,
     apply_batch_from_config,
     apply_config,
@@ -176,7 +176,7 @@ __all__ = [
     "create_merge_config"
     # Style config
     "FontSymbol",
-    "ClassificationConfig",
+    "ClassificationApplicationConfig",
     "LayerConfig",
     "BatchClassificationConfig",
     "apply_batch_from_config",
