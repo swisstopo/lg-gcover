@@ -67,7 +67,6 @@ from gcover.publish.merge_sources import (
 from gcover.publish.style_config import (
     BatchClassificationConfig,
     ClassificationConfig,
-    FontSymbol,
     LayerConfig,
     apply_batch_from_config,
     apply_config,

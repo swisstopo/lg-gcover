@@ -46,16 +46,6 @@ from gcover.publish.vectorized_classification import \
 console = Console()
 
 
-@dataclass(frozen=True)
-class FontSymbol:
-    font_family: str
-    char_index: int
-    # Add more fields as needed (e.g., weight, color)
-
-    def symbol_name(self) -> str:
-        return f"{self.font_family}_{self.char_index}"
-
-
 @dataclass
 class ClassificationConfig:
     """Configuration for a single classification application, currently a .lyrx file.
