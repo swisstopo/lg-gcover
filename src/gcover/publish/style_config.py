@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
 from pprint import pprint
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, Literal
 
 import click
 import fiona
@@ -44,6 +44,53 @@ from gcover.publish.vectorized_classification import \
     apply_batch_from_config_vectorized
 
 console = Console()
+
+
+@dataclass
+class SymbolAdjustments:
+    """Global symbol adjustments for a mapfile/layer"""
+
+    point_size_multiplier: float = 1.0
+    line_width_multiplier: float = 1.0
+    dash_pattern_override: Optional[List[float]] = None  # e.g., [5, 10]
+    transparency_override: Optional[int] = None  # 0-100
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class MapfileGenerationConfig:
+    """Configuration for mapfile generation control"""
+
+    generation_mode: Literal["auto", "manual", "disabled"] = "auto"
+
+    # Manual mode settings
+    manual_mapfile_path: Optional[Path] = None
+    extract_symbols_for_catalog: bool = True  # Extract symbols from manual file
+
+    # Global symbol adjustments (applied to ALL classes in this layer)
+    symbol_adjustments: Optional[SymbolAdjustments] = None
+
+    # Metadata overrides (extend/override default metadata)
+    metadata: Optional[Dict[str, str]] = None
+
+    # Data statement override
+    data_statement: Optional[str] = None
+
+    # Reason for manual/disabled (for documentation)
+    reason: Optional[str] = None
+
+    # Expected symbols (for validation in manual mode)
+    expected_symbols: Optional[List[str]] = None
+
+    def __post_init__(self):
+        """Validate configuration"""
+        if self.generation_mode == "manual" and not self.manual_mapfile_path:
+            raise ValueError("manual_mapfile_path required when generation_mode='manual'")
+
+        if self.symbol_adjustments and isinstance(self.symbol_adjustments, dict):
+            self.symbol_adjustments = SymbolAdjustments(**self.symbol_adjustments)
 
 
 @dataclass
@@ -87,6 +134,14 @@ class ClassificationApplicationConfig:
     maxscaledenom: Optional[float] = None
     minscaledenom: Optional[float] = None
     computed_fields: Optional[Dict[str, str]] = None
+    # Mapfile generation configuration
+    mapfile_config: Optional[MapfileGenerationConfig] = None
+
+    def __post_init__(self):
+        """Validate and initialize nested configurations"""
+        if self.mapfile_config and isinstance(self.mapfile_config, dict):
+            self.mapfile_config = MapfileGenerationConfig(**self.mapfile_config)
+
 
     def get_identifier_mode(self) -> IdentifierMode:
         """Get the IdentifierMode enum value.
@@ -120,6 +175,7 @@ class LayerConfig:
     template: Optional[str] = None
     max_scale: Optional[bool | int] = None  # None, False, True, ou int
     computed_fields: Optional[Dict[str, str]] = None
+
 
 
 def _resolve_env_vars(value: Any, max_depth: int = 10) -> Any:
@@ -358,6 +414,8 @@ class BatchClassificationConfig:
         max_scale = layer_dict.get("scale", None)
         computed_fields = layer_dict.get("computed_fields")
 
+
+
         for class_dict in layer_dict.get("classifications", []):
             # Resolve style file path
             style_file = Path(class_dict["style_file"])
@@ -372,6 +430,20 @@ class BatchClassificationConfig:
             elif identifier_mode is None:
                 # Use global default
                 identifier_mode = self.default_identifier_mode
+
+
+            # NEW: Parse mapfile generation config
+            mapfile_config = None
+            if "mapfile_config" in class_dict:
+                mapfile_dict = class_dict["mapfile_config"]
+
+                # Resolve manual_mapfile_path if relative
+                if "manual_mapfile_path" in class_dict:
+                    path = Path(class_dict["manual_mapfile_path"])
+                    if not path.is_absolute():
+                        class_dict["manual_mapfile_path"] = self.styles_base_path / path
+
+                mapfile_config = MapfileGenerationConfig(**mapfile_dict)
 
             classifications.append(
                 ClassificationApplicationConfig(
@@ -392,6 +464,7 @@ class BatchClassificationConfig:
                     maxscaledenom=class_dict.get("maxscaledenom"),
                     minscaledenom=class_dict.get("minscaledenom"),
                     computed_fields=class_dict.get("computed_fields"),
+                    mapfile_config=mapfile_config,
                 )
             )
 
@@ -405,6 +478,7 @@ class BatchClassificationConfig:
             template=template,
             max_scale=max_scale,
             computed_fields=computed_fields,
+
         )
 
     def get_layer_config(self, gpkg_layer: str) -> Optional[LayerConfig]:
@@ -413,6 +487,45 @@ class BatchClassificationConfig:
             if layer.gpkg_layer == gpkg_layer:
                 return layer
         return None
+
+    def get_manual_layers(self) -> List[LayerConfig]:
+        """Get all layers with at least one classification using manual mapfile generation."""
+        return [
+            layer
+            for layer in self.layers
+            if any(
+                cls.mapfile_config
+                and cls.mapfile_config.generation_mode == "manual"
+                for cls in layer.classifications
+            )
+        ]
+
+    def get_disabled_layers(self) -> List[LayerConfig]:
+        """Get all layers with at least one classification using manual mapfile generation."""
+        return [
+            layer
+            for layer in self.layers
+            if any(
+                cls.mapfile_config
+                and cls.mapfile_config.generation_mode == "disabled"
+                for cls in layer.classifications
+            )
+        ]
+
+    def get_auto_layers(self) -> List[LayerConfig]:
+            """Get all layers with at least one classification using manual mapfile generation."""
+            return [
+                layer
+                for layer in self.layers
+                if any(
+                    cls.mapfile_config
+                    and cls.mapfile_config.generation_mode == "auto"
+                    for cls in layer.classifications
+                )
+            ]
+
+
+
 
 
 # Then replace the function call or add a flag:

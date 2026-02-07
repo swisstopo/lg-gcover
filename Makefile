@@ -22,7 +22,7 @@ test:
 	pytest tests/ -v
 
 doc:
-	pdoc src/gcover --docformat google
+	pdoc src/gcover  gcover.config.models gcover.publish.style_config  gcover.publish.esri_classification_extractor  --docformat google
 
 # Run everything
 check: lint smoke

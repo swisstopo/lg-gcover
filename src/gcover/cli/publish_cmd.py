@@ -1059,6 +1059,7 @@ def mapserver(
     mapfiles = []
     config = None
     symbol_field = None
+    mapfile_configs = {}
 
     if pattern_file:
         console.print(f"[cyan]Loading patterns from {pattern_file}[/cyan]")
@@ -1068,15 +1069,12 @@ def mapserver(
         console.print(f"[cyan]Loading configuration from {config_file}[/cyan]")
         config = BatchClassificationConfig(config_path= config_file, env=env)
 
-
-
-
         identifier_fields = {}
 
         symbol_field = config.symbol_field.lower()
         label_field = config.label_field.lower()
 
-        # Extract prefixes and mapfile names from config
+       # Extract prefixes and mapfile names from config
         for layer_config in config.layers:
             for class_config in sorted(
                 layer_config.classifications, key=lambda x: x.index
@@ -1089,6 +1087,7 @@ def mapserver(
                     active_classes[key] = class_config.active
                     include_items_dict[key] = class_config.include_items
                     max_scaledenoms[key] = class_config.maxscaledenom
+                    mapfile_configs[key]  = class_config.mapfile_config
                     if class_config.symbol_prefix:
                         prefix_map[key] = class_config.symbol_prefix
                     if class_config.mapfile_group:
@@ -1198,15 +1197,15 @@ def mapserver(
 
         generator.layer_type = layer_type.name
         # Load classifications
-        classifications = extract_lyrx_complete(
+        layer_classifications = extract_lyrx_complete(
             lyrx_path,
             display=False,
             identifier_fields=identifier_fields,  # ← NEW
         )  # TODO switched from extract_lyrx
 
-        if not classifications:
+        if not layer_classifications:
             console.print(
-                f"[yellow]⚠ No classifications found in {style_file.name}[/yellow]"
+                f"[yellow]⚠ No layer classifications found in {style_file.name}[/yellow]"
             )
             continue
 
@@ -1215,9 +1214,11 @@ def mapserver(
 
 
 
-        for classification in classifications:
-            layer_name = (classification.layer_name or style_file.stem).replace(' ', '_')
+        for layer_classification in layer_classifications:
+            layer_name = (layer_classification.layer_name or style_file.stem).replace(' ', '_')
             is_active = active_classes.get(layer_name, False)
+
+
 
             # 1. Get prefix and mapfile name from config if available
             symbol_prefix = prefix_map.get(layer_name, layer_name.lower())
@@ -1225,6 +1226,7 @@ def mapserver(
             mapfile_layer_group = mapfile_groups.get(layer_name, None)
             mapfile_label = mapfile_labels.get(layer_name, None)
             include_items = include_items_dict.get(layer_name)
+            mapfile_config = mapfile_configs.get(layer_name)
 
             # 2. Robust include_items logic
             raw_include = include_items_dict.get(layer_name) or ""
@@ -1269,7 +1271,7 @@ def mapserver(
 
             # Generate mapfile
             mapfile_content = generator.generate_layer(
-                classification=classification,
+                classification=layer_classification,
                 layer_name=mapfile_layer_name,
                 layer_group=mapfile_layer_group,
                 symbol_prefix=symbol_prefix,
@@ -1282,6 +1284,7 @@ def mapserver(
                 layer_max_scale=layer_max_scale,  # mapfile layer (from the classification)
                 layer_min_scale=layer_min_scale,
                 include_items=include_items,
+                mapfile_config=mapfile_config,
             )
 
             # Save mapfile
@@ -1294,11 +1297,11 @@ def mapserver(
             console.print(
                 f"  [green]✓[/green] Generated: {output_file.name} "
                 f"(prefix: {symbol_prefix}, "
-                f"{len([c for c in classification.classes if c.visible])} classes)"
+                f"{len([c for c in layer_classification.classes if c.visible])} classes)"
             )
 
             # Store classification for combined symbol file
-            all_classifications.append(classification)
+            all_classifications.append(layer_classification)
 
     # Generate combined symbol file if requested
     if generate_combined and all_classifications:

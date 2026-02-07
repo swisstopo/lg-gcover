@@ -25,6 +25,7 @@ from gcover.publish.esri_classification_extractor import (
     LayerClassification,
     SymbolType,
 )
+from gcover.publish.style_config import MapfileGenerationConfig
 from gcover.publish.symbol_models import (
     CharacterMarkerInfo,
     FontSymbol,
@@ -45,6 +46,7 @@ from gcover.publish.rotation_extractor_extension import (
     RotationInfo,
     format_rotation_for_mapserver,
 )
+
 
 DEFAULT_IMAGES_DIR = "patterns"  # or img or "etc/img"  for KOGIS
 
@@ -265,7 +267,7 @@ class MapServerGenerator:
 
     def generate_layer(
             self,
-            classification,
+            classification: LayerClassification,
             layer_name: str,
             layer_type: str,
             symbol_field: str,
@@ -278,19 +280,31 @@ class MapServerGenerator:
             layer_max_scale: Optional[bool | int] = None,
             layer_min_scale: Optional[bool | int] = None,
             include_items: Optional[str] = 'all',
+            mapfile_config: Optional[MapfileGenerationConfig] = None,
     ) -> str:
         """
         Generate complete MapServer LAYER block.
 
         Args:
-            classification: Layer classification with styling
-            layer_name: Name for the layer
-            data_path: Path to data source (e.g., OGR connection string)
-            symbol_prefix: Prefix for symbol IDs (e.g., "bedrock", "unco")
+          classification: `gcover.publish.esri_classification_extractor.LayerClassification` with styling
+          layer_name: Name for the layer
+          layer_type: MapServer layer type (e.g., POLYGON)
+          symbol_field: Attribute used for symbol selection
+          symbol_prefix: Prefix for symbol IDs (default: "class")
+          connection: Optional MapServer connection object
+          data: Optional data source path
+          template: Template name (default: "empty")
+          layer_group: Optional layer group name
+          map_label: Optional label override
+          layer_max_scale: Optional max scale
+          layer_min_scale: Optional min scale
+          include_items: Items to include in the LAYER block
+          mapfile_config: Mapfile generation configuration
 
         Returns:
-            Complete LAYER block as string
+            Complete LAYER block as a string.
         """
+
         label_info = None
         rotation_field = None
 
@@ -463,6 +477,7 @@ class MapServerGenerator:
                 rotation_info,
                 label_info,
                 map_label,
+                mapfile_config,
             )
             lines.append(class_block)
 
@@ -479,10 +494,19 @@ class MapServerGenerator:
             rotation_info: Optional[RotationInfo] = None,
             label_info: Optional[LabelInfo] = None,
             map_label: Optional[Union[None, bool, str]] = None,
+            mapfile_config=None,
     ) -> str:
         """Generate a single MapServer CLASS block."""
         if not class_obj.visible:
             return ""
+
+
+
+        # Get symbol adjustments if available
+        symbol_adjustments = None
+        if mapfile_config and hasattr(mapfile_config, 'symbol_adjustments'):
+            symbol_adjustments = mapfile_config.symbol_adjustments
+
 
         # Generate expression
         if self.use_symbol_field:
@@ -504,8 +528,13 @@ class MapServerGenerator:
 
         # Add LABEL
         if label_info and map_label is not False:
-            field = label_info.get_simple_field_name()  # "DIP"
-            color = label_info.font_color.to_rgb_tuple()  # (0, 89, 255)
+            field = label_info.get_simple_field_name()
+            color = label_info.font_color.to_rgb_tuple()
+
+            # NEW: Apply size adjustment to labels if specified
+            label_size = 8
+            if symbol_adjustments and symbol_adjustments.point_size_multiplier != 1.0:
+                label_size = int(label_size * symbol_adjustments.point_size_multiplier)
 
             lines.extend(
                 [
@@ -513,26 +542,44 @@ class MapServerGenerator:
                     f"        COLOR {' '.join(list(map(str, color)))}",
                     '         FONT "sans"',
                     "         TYPE truetype",
-                    f"        SIZE 8",
+                    f"        SIZE {label_size}",
                     "         POSITION AUTO",
                     "         PARTIALS FALSE",
                     "    END",
                 ]
             )
 
+
         # Add STYLE blocks based on layer type
         if self.layer_type == "POLYGON":
-            self._add_polygon_styles(lines, class_obj, class_index, symbol_prefix)
+                self._add_polygon_styles(
+                    lines,
+                    class_obj,
+                    class_index,
+                    symbol_prefix,
+                    symbol_adjustments=symbol_adjustments  # NEW: Pass adjustments
+                )
         elif self.layer_type == "LINE":
-            lines.append("    STYLE")
-            self._add_line_style(lines, class_obj, class_index, symbol_prefix)
-            lines.append("    END # STYLE")
+                lines.append("    STYLE")
+                self._add_line_style(
+                    lines,
+                    class_obj,
+                    class_index,
+                    symbol_prefix,
+                    symbol_adjustments=symbol_adjustments  # NEW: Pass adjustments
+                )
+                lines.append("    END # STYLE")
         elif self.layer_type == "POINT":
-            lines.append("    STYLE")
-            self._add_point_style(
-                lines, class_obj, class_index, symbol_prefix, rotation_info
-            )
-            lines.append("    END # STYLE")
+                lines.append("    STYLE")
+                self._add_point_style(
+                    lines,
+                    class_obj,
+                    class_index,
+                    symbol_prefix,
+                    rotation_info,
+                    symbol_adjustments=symbol_adjustments  # NEW: Pass adjustments
+                )
+                lines.append("    END # STYLE")
 
         lines.append("  END # CLASS")
         lines.append("")
@@ -595,20 +642,25 @@ class MapServerGenerator:
             class_obj,
             class_index: int,
             symbol_prefix: str,
+            symbol_adjustments=None,  # NEW
     ) -> None:
         """
         Add MapServer STYLE blocks for polygon symbols.
 
-        ENHANCED with hatch fill support using full_symbol_layers.
+        NEW: Applies symbol_adjustments to all style properties.
         """
-        # NEW: Try to use full_symbol_layers first (complete extraction)
+        # Try full_symbol_layers first
         if hasattr(class_obj, "full_symbol_layers") and class_obj.full_symbol_layers:
             self._add_polygon_styles_from_full_layers(
-                lines, class_obj.full_symbol_layers, class_index, symbol_prefix
+                lines,
+                class_obj.full_symbol_layers,
+                class_index,
+                symbol_prefix,
+                symbol_adjustments=symbol_adjustments  # NEW
             )
             return
 
-        # FALLBACK: Use legacy symbol_info extraction
+        # Fallback to legacy extraction
         if not hasattr(class_obj, "symbol_info") or not class_obj.symbol_info:
             self._add_simple_polygon_style(lines)
             return
@@ -619,7 +671,7 @@ class MapServerGenerator:
             self._add_simple_polygon_style(lines)
             return
 
-        # Extract all symbol layers (legacy method)
+        # Extract all symbol layers
         layers_info = extract_polygon_symbol_layers(symbol_info.raw_symbol)
 
         has_fill = False
@@ -627,19 +679,32 @@ class MapServerGenerator:
         # Add character marker pattern fills first
         for i, marker_info in enumerate(layers_info.character_markers):
             self._add_pattern_fill_style(
-                lines, marker_info, class_index, i, symbol_prefix
+                lines,
+                marker_info,
+                class_index,
+                i,
+                symbol_prefix,
+                symbol_adjustments=symbol_adjustments  # NEW
             )
             has_fill = True
 
-        # Add solid fills
+        # Add solid fills (with transparency adjustment)
         for fill_info in layers_info.fills:
             if fill_info["type"] == "solid":
-                self._add_solid_fill_style(lines, fill_info["color"])
+                self._add_solid_fill_style(
+                    lines,
+                    fill_info["color"],
+                    symbol_adjustments=symbol_adjustments  # NEW
+                )
                 has_fill = True
 
         # Add outline
         if layers_info.outline:
-            self._add_outline_style(lines, layers_info.outline)
+            self._add_outline_style(
+                lines,
+                layers_info.outline,
+                symbol_adjustments=symbol_adjustments  # NEW
+            )
 
         if not has_fill:
             if layers_info.outline:
@@ -653,84 +718,72 @@ class MapServerGenerator:
             full_layers,  # SymbolLayersInfo object
             class_index: int,
             symbol_prefix: str,
+            symbol_adjustments=None,  # NEW: Added parameter
     ) -> None:
         """
-        Add polygon styles using complete SymbolLayersInfo.
+        NEW: Add polygon styles using complete SymbolLayersInfo.
 
-        Renders fills in correct MapServer order:
-        1. Solid fills (background) - drawn first (bottom)
-        2. Pattern fills (character markers) - drawn on top
-        3. Outline - drawn last (top)
+        Renders all fill types in proper order.
 
-        Also deduplicates character markers to avoid double patterns.
+        Args:
+            lines: List of output lines
+            full_layers: SymbolLayersInfo object with complete symbol data
+            class_index: Index of this class
+            symbol_prefix: Prefix for symbol names
+            symbol_adjustments: NEW - SymbolAdjustments to apply
         """
         has_fill = False
 
-        # Collect fills by type for proper ordering
-        solid_fills = []
-        pattern_fills = []
-        hatch_fills = []
-
-        # Track seen patterns to avoid duplicates
-        seen_patterns = set()
-
+        # Process fills in order
         for i, fill_info in enumerate(full_layers.fills):
             fill_type = fill_info.get("type", "solid")
 
             if fill_type == "solid":
-                solid_fills.append(fill_info)
+                self._add_solid_fill_style(
+                    lines,
+                    fill_info["color"],
+                    symbol_adjustments=symbol_adjustments  # NEW: Pass adjustments
+                )
+                has_fill = True
 
             elif fill_type == "hatch":
-                hatch_fills.append((i, fill_info))
+                logger.info("Found hatch")
+                self._add_hatch_fill_style(
+                    lines,
+                    fill_info,
+                    class_index,
+                    i,
+                    symbol_prefix,
+                    symbol_adjustments=symbol_adjustments  # NEW: Pass adjustments
+                )
+                has_fill = True
 
             elif fill_type == "character":
                 marker = fill_info.get("marker_info")
                 if marker:
-                    # Create pattern signature for deduplication
-                    if hasattr(marker, 'font_family'):
-                        pattern_key = (
-                            marker.font_family,
-                            marker.character_index,
-                            # Don't include color - we only need one pattern per shape
-                        )
-                    else:
-                        pattern_key = (
-                            marker.get('font_family'),
-                            marker.get('character_index'),
-                        )
+                    self._add_pattern_fill_style(
+                        lines,
+                        marker,
+                        class_index,
+                        i,
+                        symbol_prefix,
+                        symbol_adjustments=symbol_adjustments  # NEW: Pass adjustments
+                    )
+                    has_fill = True
 
-                    # Only add if not seen before
-                    if pattern_key not in seen_patterns:
-                        seen_patterns.add(pattern_key)
-                        pattern_fills.append((i, fill_info))
-                    else:
-                        logger.debug(f"Skipping duplicate pattern: {pattern_key}")
+            elif fill_type == "picture":
+                logger.warning(f"Picture fill not yet supported in MapServer")
 
-        # 1. FIRST: Add solid fills (background)
-        for fill_info in solid_fills:
-            self._add_solid_fill_style(lines, fill_info["color"])
-            has_fill = True
+            elif fill_type == "gradient":
+                logger.warning(f"Gradient fill not yet supported in MapServer")
 
-        # 2. THEN: Add hatch fills
-        for i, fill_info in hatch_fills:
-            logger.debug("Found hatch")
-            self._add_hatch_fill_style(
-                lines, fill_info, class_index, i, symbol_prefix
-            )
-            has_fill = True
-
-        # 3. THEN: Add pattern fills (character markers) - ON TOP of solid
-        for i, fill_info in pattern_fills:
-            marker = fill_info.get("marker_info")
-            if marker:
-                self._add_pattern_fill_style(
-                    lines, marker, class_index, i, symbol_prefix
-                )
-                has_fill = True
-
-        # 4. LAST: Add outline (top layer)
+        # Add outline (top layer)
         if full_layers.outline:
-            self._add_outline_style(lines, full_layers.outline)
+            self._add_outline_style(
+                lines,
+                full_layers.outline,
+                symbol_adjustments=symbol_adjustments  # NEW: Pass adjustments
+            )
 
         # Fallback if no fills
         if not has_fill:
@@ -746,11 +799,14 @@ class MapServerGenerator:
             class_index: int,
             fill_index: int,
             symbol_prefix: str,
+            symbol_adjustments=None,  # NEW: Added parameter
     ) -> None:
         """
         Add MapServer STYLE for hatch fill pattern.
 
         Uses the generic "hatchsymbol" with customization in STYLE.
+
+        NEW: Applies line_width_multiplier and dash_pattern_override to hatch lines.
         """
         rotation = hatch_info["rotation"]
         separation = hatch_info["separation"]
@@ -770,6 +826,10 @@ class MapServerGenerator:
         separation_px = separation * 1.33
         width_px = line_width * 1.33
 
+        # NEW: Apply width adjustment to hatch lines
+        if symbol_adjustments and symbol_adjustments.line_width_multiplier != 1.0:
+            width_px *= symbol_adjustments.line_width_multiplier
+
         # Add STYLE block
         lines.append("    STYLE")
         lines.append('      SYMBOL "hatchsymbol"')
@@ -779,13 +839,22 @@ class MapServerGenerator:
         lines.append(f"      WIDTH {width_px:.2f}")
 
         # Add PATTERN if the line itself is dashed/dotted
-        if line_style.get("type") in ["dash", "dot"] and line_style.get("pattern"):
+        # NEW: Apply dash pattern override if specified
+        if symbol_adjustments and symbol_adjustments.dash_pattern_override:
+            pattern = ' '.join(str(int(p)) for p in symbol_adjustments.dash_pattern_override)
+            lines.append(f"      PATTERN {pattern} END")
+        elif line_style.get("type") in ["dash", "dot"] and line_style.get("pattern"):
             pattern = line_style["pattern"]
             pattern_str = " ".join(str(int(p)) for p in pattern)
             lines.append(f"      PATTERN {pattern_str} END")
 
-        if a < 255:
-            opacity = int((a / 255) * 100)
+        # NEW: Apply transparency override
+        final_alpha = a
+        if symbol_adjustments and symbol_adjustments.transparency_override is not None:
+            final_alpha = int(symbol_adjustments.transparency_override * 2.55)
+
+        if final_alpha < 255:
+            opacity = int((final_alpha / 255) * 100)
             lines.append(f"      OPACITY {opacity}")
 
         lines.append("    END # STYLE")
@@ -818,6 +887,7 @@ class MapServerGenerator:
             class_index: int,
             marker_index: int,
             symbol_prefix: str,
+            symbol_adjustments=None,  # NEW
     ) -> None:
         """
         Add MapServer STYLE for character marker pattern fill.
@@ -868,11 +938,23 @@ class MapServerGenerator:
         # Convert points to pixels
         size_px = marker_info.size * 1.33
 
+
+        # NEW: Apply size adjustment
+        if symbol_adjustments and symbol_adjustments.point_size_multiplier != 1.0:
+            size_px *= symbol_adjustments.point_size_multiplier
+
         lines.append("    STYLE")
         lines.append(f'      SYMBOL "{symbol_name}"')
         lines.append(f"      COLOR {r} {g} {b}")
-        if a < 255:
-            lines.append(f"      OPACITY {a}")
+
+        # NEW: Apply transparency override if specified
+        final_alpha = a
+        if symbol_adjustments and symbol_adjustments.transparency_override is not None:
+            final_alpha = int(symbol_adjustments.transparency_override * 2.55)
+
+        if final_alpha < 255:
+            lines.append(f"      OPACITY {final_alpha}")
+
         lines.append(f"      SIZE {size_px:.1f}")
         lines.append("    END # STYLE")
 
@@ -886,18 +968,28 @@ class MapServerGenerator:
             )
 
     def _add_solid_fill_style(
-            self, lines: List[str], color: Tuple[int, int, int, int]
+            self,
+            lines: List[str],
+            color: Tuple[int, int, int, int],
+            symbol_adjustments=None,  # NEW
     ) -> None:
         """Add MapServer STYLE for solid fill."""
         r, g, b, a = color
 
         lines.append("    STYLE")
         lines.append(f"      COLOR {r} {g} {b}")
-        if a < 255:
-            lines.append(f"      OPACITY {a}")
+
+        # NEW: Apply transparency override if specified
+        final_alpha = a
+        if symbol_adjustments and symbol_adjustments.transparency_override is not None:
+            final_alpha = int(symbol_adjustments.transparency_override * 2.55)
+
+        if final_alpha < 255:
+            lines.append(f"      OPACITY {final_alpha}")
+
         lines.append("    END # STYLE")
 
-    def _add_outline_style(self, lines: List[str], outline_info: Dict) -> None:
+    def _add_outline_style(self, lines: List[str], outline_info: Dict, symbol_adjustments = None,) -> None:
         """Add MapServer STYLE for polygon outline."""
         r, g, b, a = outline_info["color"]
         width_px = outline_info["width"] * 1.33
@@ -933,7 +1025,12 @@ class MapServerGenerator:
     # ========================================================================
 
     def _add_line_style(
-            self, lines: List[str], class_obj, class_index: int, symbol_prefix: str
+            self,
+            lines: List[str],
+            class_obj,
+            class_index: int,
+            symbol_prefix: str,
+            symbol_adjustments=None,  # NEW
     ):
         """Add line styling from ESRI symbol_info."""
         if hasattr(class_obj, "symbol_info") and class_obj.symbol_info:
@@ -957,16 +1054,30 @@ class MapServerGenerator:
                 else:
                     font_symbol_name = self.symbol_registry[spec]
 
-                self._add_truetype_line_marker(lines, symbol_info, font_symbol_name)
+                self._add_truetype_line_marker(
+                    lines,
+                    symbol_info,
+                    font_symbol_name,
+                    symbol_adjustments=symbol_adjustments  # NEW
+                )
                 self.fonts_used.add(symbol_info.font_family)
             else:
                 # Regular line
-                self._add_regular_line_style(lines, symbol_info)
+                self._add_regular_line_style(
+                    lines,
+                    symbol_info,
+                    symbol_adjustments=symbol_adjustments  # NEW
+                )
         else:
             lines.append("      COLOR 128 128 128")
             lines.append("      WIDTH 1.0")
 
-    def _add_regular_line_style(self, lines: List[str], symbol_info) -> None:
+    def _add_regular_line_style(
+            self,
+            lines: List[str],
+            symbol_info,
+            symbol_adjustments=None,  # NEW
+    ) -> None:
         """Add regular line style (no font markers)."""
         if hasattr(symbol_info, "color") and symbol_info.color:
             color_info = symbol_info.color
@@ -981,6 +1092,13 @@ class MapServerGenerator:
 
         if hasattr(symbol_info, "width") and symbol_info.width:
             width = symbol_info.width * 1.33
+
+            # NEW: Apply width adjustment
+
+            if symbol_adjustments and symbol_adjustments.line_width_multiplier != 1.0:
+                width *= symbol_adjustments.line_width_multiplier
+                logger.debug(f"Line width adjustment: {width}")
+
             lines.append(f"      WIDTH {width:.2f}")
         else:
             lines.append("      WIDTH 1.0")
@@ -993,13 +1111,22 @@ class MapServerGenerator:
                 and symbol_info.dash_pattern
         ):
             line_style = symbol_info.line_style
-            if line_style == "dash":
+
+            # NEW: Apply dash pattern override if specified
+            if symbol_adjustments and symbol_adjustments.dash_pattern_override:
+                pattern = ' '.join(str(int(p)) for p in symbol_adjustments.dash_pattern_override)
+                lines.append(f'       PATTERN {pattern} END')
+            elif line_style == "dash":
                 lines.append('       PATTERN 5 3 END')
             elif line_style == "dot":
                 lines.append('       PATTERN 1 3 END')
 
     def _add_truetype_line_marker(
-            self, lines: List[str], symbol_info, font_symbol_name: str
+            self,
+            lines: List[str],
+            symbol_info,
+            font_symbol_name: str,
+            symbol_adjustments=None,  # NEW
     ):
         """Add TrueType font marker on line."""
         lines.append(f'      SYMBOL "{font_symbol_name}"')
@@ -1017,6 +1144,11 @@ class MapServerGenerator:
 
         if hasattr(symbol_info, "size") and symbol_info.size:
             size = symbol_info.size * 1.33
+
+            # NEW: Apply size adjustment
+            if symbol_adjustments and symbol_adjustments.point_size_multiplier != 1.0:
+                size *= symbol_adjustments.point_size_multiplier
+
             lines.append(f"      SIZE {size:.1f}")
         else:
             lines.append("      SIZE 10")
@@ -1034,6 +1166,7 @@ class MapServerGenerator:
             class_index: int,
             symbol_prefix: str,
             rotation_info: Optional[RotationInfo] = None,
+            symbol_adjustments=None,  # NEW
     ):
         """Add point styling from ESRI symbol_info."""
         if hasattr(class_obj, "symbol_info") and class_obj.symbol_info:
@@ -1075,11 +1208,16 @@ class MapServerGenerator:
 
             if rotation_info and rotation_info.field_name:
                 lines.append(
-                    f"      ANGLE [{rotation_info.field_name.lower()}]   # lowercase, for PostGIS"
+                    f"      ANGLE [{rotation_info.field_name.lower()}]"
                 )
 
             if hasattr(symbol_info, "size") and symbol_info.size:
                 size = symbol_info.size * 1.33
+
+                # NEW: Apply size adjustment
+                if symbol_adjustments and symbol_adjustments.point_size_multiplier != 1.0:
+                    size *= symbol_adjustments.point_size_multiplier
+
                 lines.append(f"      SIZE {size:.1f}")
             else:
                 lines.append("      SIZE 8")
