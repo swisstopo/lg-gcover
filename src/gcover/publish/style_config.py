@@ -65,6 +65,15 @@ class MapfileGenerationConfig:
 
     generation_mode: Literal["auto", "manual", "disabled"] = "auto"
 
+    # NEW: Classes generation mode
+    classes_mode: Literal["auto", "regenerate", "frozen"] = "regenerate"
+
+    # NEW: Enable staging for comparison
+    staging_enabled: bool = True
+
+    # NEW: Output path for classes file
+    classes_file: Optional[Path] = None
+
     # Manual mode settings
     manual_mapfile_path: Optional[Path] = None
     extract_symbols_for_catalog: bool = True  # Extract symbols from manual file
@@ -91,6 +100,15 @@ class MapfileGenerationConfig:
 
         if self.symbol_adjustments and isinstance(self.symbol_adjustments, dict):
             self.symbol_adjustments = SymbolAdjustments(**self.symbol_adjustments)
+
+        # NEW: Validate classes_mode
+        if self.classes_mode not in ("regenerate", "frozen","auto"):
+            raise ValueError(f"Invalid classes_mode: {self.classes_mode}")
+
+        # NEW: Auto-set classes_file if not specified
+        if self.classes_file is None and self.generation_mode == "auto":
+            # Will be set by generator based on layer name
+            pass
 
 
 @dataclass

@@ -16,7 +16,7 @@ global:
       https_proxy: ${GCOVER_PROXY_URL}  # e.g., "http://proxy.company.com:8080"
   logging:
     file:
-      path: "\\\\adb.intra.admin.ch/swisstopo$/Transfer/mom/gcover_prod_{date}.log" # System log location
+      path: "logs/gcover_prod_{date}.log" # System log location
       retention: "90 days" # Keep production logs longer
     console:
       format: "simple" # Clean console output

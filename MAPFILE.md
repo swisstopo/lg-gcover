@@ -1,5 +1,8 @@
-# MapfileGeneration
+# Mapfile generation
 
+Generating `mapfiles` from the `.lyrx` (or any sources) is tricky. Some layers are easy to generate (e.g. `Bedrock`) while
+other layers have complexes symbology.
+This approach try to keep the complex, hand-edited mapfiles.
 
 
 ## Configuration
@@ -60,3 +63,105 @@ layers:
           reason: "Waiting for classification simplification"
 
 ```
+
+### Case 1 : Inline mode (default - comportement actuel)
+
+```yaml
+# Config without  `mapfile_config` or `classes_mode` unspecified
+classifications:
+  - style_file: styles/Bedrock.lyrx
+```
+
+**Result** :
+```mapfile
+LAYER
+  NAME "bedrock"
+  DATA "..."
+  
+  CLASS
+    NAME "Granite"
+    ...
+  END
+  
+  CLASS
+    NAME "Gneiss"
+    ...
+  END
+  
+END
+```
+
+### Case 2 : `regenerate` mode (always regenerate)
+
+```yaml
+classifications:
+  - style_file: styles/Bedrock.lyrx
+    mapfile_config:
+      classes_mode: regenerate
+```
+
+**Results** :
+- Files : `mapfiles/classes/bedrock_classes.inc`
+- Overwritten every regeneration
+
+```mapfile
+LAYER
+  NAME "bedrock"
+  DATA "..."
+  
+  INCLUDE "classes/bedrock_classes.inc"
+  
+END
+```
+
+### Case 3 : `frozen` mode (preserving manual edits)
+
+```yaml
+classifications:
+  - style_file: styles/Lines.lyrx
+    mapfile_config:
+      classes_mode: frozen
+```
+
+**Comportement** :
+```bash
+# First time
+gcover publish mapserver
+# → Creates lines_classes.inc
+
+# Second time
+gcover publish mapserver
+# → Keep lines_classes.inc (not overwritten)
+```
+
+### Case 4 : `staging` mode
+
+```bash
+gcover publish mapserver --staging lines
+```
+
+**Results** :
+- File : `mapfiles/classes/.staging/lines_classes.inc.new`
+- Keeps the original file
+
+### Case 5 : `Force` regenerate
+
+```bash
+gcover publish mapserver --force-regenerate lines
+```
+
+**Results** :
+- Overwriten even if `frozen`
+
+## List all classifications
+
+    gcover publish mapserver --list-classifications
+
+## Generate one particular classification
+
+    gcover publish mapserver --staging bedrock_rc1
+    gcover publish mapserver --diff bedrock_rc2 --diff-tool meld
+
+## Generate all `frozen` classifications
+
+    gcover publish mapserver --staging-all
