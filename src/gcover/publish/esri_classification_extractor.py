@@ -1136,6 +1136,7 @@ class ESRIClassificationExtractor:
 
             identifier = None
             if field_values and layer_path:
+
                 try:
                     identifier = ClassIdentifier.create(
                         layer_path=layer_path,
@@ -1217,6 +1218,7 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
         try:
             label = class_obj.get("label", "")
             visible = class_obj.get("visible", True)
+            symbol_prefix = class_obj.get("symbol_prefix","")
 
             field_values = []
             values = class_obj.get("values", [])
@@ -1237,6 +1239,8 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
 
             # Determine identifier value based on mode
             identifier_value = None
+
+
             
             if identifier_mode == IdentifierMode.FIELD and identifier_field and field_names:
                 # FIELD mode: Use value from specified field
@@ -1277,8 +1281,19 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
                     logger.info(f"Using index {class_index} for '{label}'")
 
             # Create identifier
+            # TODO
             identifier = None
-            if field_values:
+            if identifier_mode == IdentifierMode.FIELD:
+                identifier = ClassIdentifier.from_single_field(
+                    layer_path=layer_path,
+                    field_value=identifier_value,
+                    field_name=None,  # Don't add the field name
+                    label=label,
+                    symbol_dict= raw_symbol,
+                )
+
+            if identifier_mode == IdentifierMode.LABEL or identifier_mode == IdentifierMode.INDEX:
+              if field_values:
                 identifier = ClassIdentifier.create(
                     layer_path=layer_path,
                     field_values=field_values[0] if field_values else [],

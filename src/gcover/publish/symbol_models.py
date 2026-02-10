@@ -265,7 +265,10 @@ class ClassIdentifier:
             ClassIdentifier with VALUE_BASED strategy
         """
         # Create canonical ID: fieldname_value
-        canonical = f"{field_name.lower()}_{_sanitize_value(field_value)}"
+        if field_name:
+            canonical = f"{field_name_lower}_{_sanitize_value(field_value)}"
+        else:
+            canonical = f"{_sanitize_value(field_value)}"
 
         # Create hash from full context
         hash_str = f"{layer_path}::{field_name}={field_value}"
