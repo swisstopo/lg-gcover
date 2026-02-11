@@ -1237,7 +1237,7 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
 
             # Determine identifier value based on mode
             identifier_value = None
-            
+
             if identifier_mode == IdentifierMode.FIELD and identifier_field and field_names:
                 # FIELD mode: Use value from specified field
                 try:
@@ -1246,7 +1246,7 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
                         identifier_value = field_values[0][field_index]
                         if self.class_count <= 5:
                             logger.info(
-                                f"Using field '{identifier_field}' value "
+                                f"FIELD mode: Using field '{identifier_field}' value "
                                 f"'{identifier_value}' as identifier"
                             )
                         elif self.class_count == 6:
@@ -1266,7 +1266,7 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
                 used_slugs.add(identifier_value)
                 
                 if self.class_count <= 5:
-                    logger.info(f"Using slugified label '{identifier_value}' for '{label}'")
+                    logger.info(f"LABEL mode: Using slugified label '{identifier_value}' for '{label}'")
                 elif self.class_count == 6:
                     logger.info("... (more classes)")
             
@@ -1274,8 +1274,9 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
                 # INDEX mode: Use sequential index (legacy behavior)
                 identifier_value = class_index
                 if self.class_count <= 3:
-                    logger.info(f"Using index {class_index} for '{label}'")
+                    logger.info(f"INDEX mode: Using index {class_index} for '{label}'")
 
+            logger.info(f"identifier_value={identifier_value}")
             # Create identifier
             identifier = None
             if field_values:
@@ -1285,6 +1286,7 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
                     class_index=identifier_value,
                     symbol_dict=raw_symbol,
                     label=label,
+                    strategy=identifier_mode,
                 )
 
             return ClassificationClass(

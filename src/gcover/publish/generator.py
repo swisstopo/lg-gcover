@@ -307,6 +307,7 @@ class MapServerGenerator:
 
         label_info = None
         rotation_field = None
+        label_item = None
 
         if layer_type:
             if isinstance(layer_type, LayerType):
@@ -428,6 +429,7 @@ class MapServerGenerator:
         else:
             lines.append("  # Styled using classification field values")
 
+        # TODO: check
         if label_item and map_label is None:
             lines.append(f'  LABELITEM "{label_item.lower()}"')
             console.print(f"Labelitem: {label_item.lower()}")

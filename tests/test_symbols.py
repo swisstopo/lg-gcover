@@ -402,7 +402,7 @@ class TestClassIdentifier:
         assert identifier.canonical_id == "idx_99"
         assert identifier.class_index == 99
     
-    def test_to_key(self):
+    def test_to_canonical_key(self):
         """to_key() should generate unique key"""
         identifier = ClassIdentifier.from_single_field(
             layer_path="Surfaces/GC_SURFACES",
@@ -410,7 +410,7 @@ class TestClassIdentifier:
             field_value="15801003",
         )
         
-        key = identifier.to_key()
+        key = identifier.to_canonical_key()
         assert key == "Surfaces/GC_SURFACES::gmu_code_15801003"
     
     def test_special_characters_sanitized(self):
