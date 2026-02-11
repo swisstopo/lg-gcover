@@ -324,125 +324,225 @@ class MapServerGenerator:
 
         logger.info(f"=== {layer_name} ===")
 
-        try:
-            if classification.label_classes:
-                label_info = classification.label_classes[0]
-                label_item = label_info.get_simple_field_name()
-        except Exception as e:
-            logger.error(f"Error while retrieving labels info")
+        # --- Rotation extraction ---
 
         try:
             rotation_info = classification.rotation_info
             if rotation_info:
                 rotation_field = rotation_info.field_name
+        except Exception:
+            logger.error("Error while retrieving rotation info")
 
-        except Exception as e:
-            logger.error(f"Error while retrieving rotation info")
+        def build_layer_block(
+                classification,
+                layer_name: str,
+                layer_group: str,
+                layer_type: str,
+                symbol_field: str,
+                include_items: str = "all",
+                template: str = "empty",
+                connection=None,
+                data=None,
+                map_label=None,
+                layer_max_scale=None,
+                layer_min_scale=None,
+        ):
+            """Generate a MapServer LAYER block as a list of lines."""
 
-        lines = [
-            "LAYER",
-            f'  NAME "{layer_name}"',
-            f'  GROUP "{layer_group}"',
-            f"  TYPE {layer_type}",
-            "  STATUS ON",
-            "",
-        ]
+            lines = []
 
-        # Metadata
-        lines.extend(
-            [
-                "",
-                "  METADATA",
-                f'    "wms_title"    "{layer_name.capitalize()}"',
-                f'    "wms_abstract" "{layer_name.capitalize()}"',
-                '    "ows_srs"      "EPSG:2056 EPSG:21781 EPSG:4326 EPSG:3857 EPSG:3034 EPSG:3035 EPSG:4258 EPSG:25832 EPSG:25833 EPSG:31467 EPSG:32632 EPSG:32633 EPSG:900913"',
-                '    "wms_extent" "2300000 900000 3100000 1450000"',
-                '    "wms_enable_request" "*"',
-                f'    "wms_include_items" "{include_items}"',
-                f'    "gml_include_items" "{include_items}"',
-                '    "gml_types" "auto"',
-                "  END",
-            ]
-        )
+            # --- Label extraction ---
+            label_item = None
+            try:
+                if classification.label_classes:
+                    label_info = classification.label_classes[0]
+                    label_item = label_info.get_simple_field_name()
+            except Exception:
+                logger.error("Error while retrieving labels info")
 
-        if 'bedrock' in layer_name and 'geocover' in layer_group:
-            lines.insert(-1, '    "wms_group_title"  "GeoCover 2D"')
+            # --- Rotation extraction ---
+            rotation_field = None
 
-        # Data source
-        if connection:
+
+            # --- Base LAYER header ---
             lines.extend(
                 [
                     "",
-                    f"  CONNECTIONTYPE {connection.connection_type.name}",
-                    f'  CONNECTION "{connection.connection}"',
-                    f'  DATA "{data}"',
+                    f'  NAME "{layer_name}"',
+                    f'  GROUP "{layer_group}"',
+                    f"  TYPE {layer_type}",
+                    "  STATUS ON",
+                    "",
                 ]
             )
 
-        # Names are swapped between Mapserver and ESRI
-        # minScale → MAXSCALEDENOM
-        # maxScale → MINSCALEDENOM
+            # --- Metadata ---
+            lines.extend(
+                [
+                    "",
+                    "  METADATA",
+                    f'    "wms_title"    "{layer_name.capitalize()}"',
+                    f'    "wms_abstract" "{layer_name.capitalize()}"',
+                    '    "ows_srs"      "EPSG:2056 EPSG:21781 EPSG:4326 EPSG:3857 EPSG:3034 EPSG:3035 EPSG:4258 EPSG:25832 EPSG:25833 EPSG:31467 EPSG:32632 EPSG:32633 EPSG:900913"',
+                    '    "wms_extent" "2300000 900000 3100000 1450000"',
+                    '    "wms_enable_request" "*"',
+                    f'    "wms_include_items" "{include_items}"',
+                    f'    "gml_include_items" "{include_items}"',
+                    '    "gml_types" "auto"',
+                    "  END",
+                ]
+            )
 
+            # Special case
+            if "bedrock" in layer_name and "geocover" in layer_group:
+                lines.insert(-1, '    "wms_group_title"  "GeoCover 2D"')
 
-
-        if self.no_scale is not True:
-
-            max_scale = self.render_maxscale(layer_max_scale, classification.min_scale)
-            console.print(f"=== Scales hell ===")
-            console.print(f"    layer_max_scale (MAXSCALEDOM): {layer_max_scale}")
-            console.print(f"    layer_min_scale (MINSCALEDENOM): {layer_max_scale}")
-            console.print(f"    ESRI lyrx classification.max_scale: {classification.max_scale}")
-            console.print(f"    ESRI lyrx  classification.min_scale: {classification.min_scale}")
-            console.print(f"    maxscale: {max_scale}")
-            if max_scale:
-
-                lines.extend(["", max_scale])
-
-            if classification.max_scale:
+            # --- Data source ---
+            if connection:
                 lines.extend(
                     [
                         "",
-                        f"MINSCALEDENOM   {classification.max_scale}",
+                        f"  CONNECTIONTYPE {connection.connection_type.name}",
+                        f'  CONNECTION "{connection.connection}"',
+                        f'  DATA "{data}"',
                     ]
                 )
 
-        # Projection
-        lines.extend(
-            [
-                "",
-                "  PROJECTION",
-                '    "init=epsg:2056"',
-                "  END",
-                "",
-                "  EXTENT 2300000 900000 3100000 1450000",
-            ]
+            # --- Scale handling ---
+            # Names are swapped between Mapserver and ESRI
+            # minScale → MAXSCALEDENOM
+            # maxScale → MINSCALEDENOM
+
+            if not self.no_scale:
+                console.print(f"=== Scales hell ===")
+                console.print(f"    layer_max_scale (MAXSCALEDOM): {layer_max_scale}")
+                console.print(f"    layer_min_scale (MINSCALEDENOM): {layer_max_scale}")
+                console.print(
+                    f"    ESRI lyrx classification.max_scale: {classification.max_scale}"
+                )
+                console.print(
+                    f"    ESRI lyrx  classification.min_scale: {classification.min_scale}"
+                )
+                console.print(f"    maxscale: {max_scale}")
+
+                max_scale_line = self.render_maxscale(
+                    layer_max_scale, classification.min_scale
+                )
+                if max_scale_line:
+                    lines.extend(["", max_scale_line])
+
+                if classification.max_scale:
+                    lines.extend(
+                        [
+                            "",
+                            f"MINSCALEDENOM   {classification.max_scale}",
+                        ]
+                    )
+
+            # --- Projection ---
+            lines.extend(
+                [
+                    "",
+                    "  PROJECTION",
+                    '    "init=epsg:2056"',
+                    "  END",
+                    "",
+                    "  EXTENT 2300000 900000 3100000 1450000",
+                ]
+            )
+
+            # --- Template ---
+            lines.extend(["", f'  TEMPLATE "{template}"', ""])
+
+            # --- CLASSITEM ---
+            if self.use_symbol_field:
+                lines.append("  # Using CLASSITEM for simplified expressions")
+                lines.append(f'  CLASSITEM "{symbol_field}"')
+            else:
+                lines.append("  # Styled using classification field values")
+
+            # --- LABELITEM ---
+            if label_item and map_label is None:
+                lines.append(f'  LABELITEM "{label_item.lower()}"')
+            elif isinstance(map_label, str):
+                lines.append(f'  LABELITEM "{map_label.lower()}"')
+
+            lines.append("")
+
+            return lines
+
+        # Generate layer block
+
+        layer_block = build_layer_block(
+                classification,
+                layer_name,
+                layer_group,
+                layer_type,
+                symbol_field,
+                include_items,
+                template,
+                connection,
+                data,
+                map_label,
+                layer_max_scale,
+                layer_min_scale,
         )
-
-        # Template
-        lines.extend(["", f'  TEMPLATE "{template}"', ""])
-
-        # CLASSITEM if using symbol field
-        if self.use_symbol_field:
-            lines.append(f"  # Using CLASSITEM for simplified expressions")
-            lines.append(f'  CLASSITEM "{symbol_field}"')
-
-        else:
-            lines.append("  # Styled using classification field values")
-
-        # TODO: check
-        if label_item and map_label is None:
-            lines.append(f'  LABELITEM "{label_item.lower()}"')
-            console.print(f"Labelitem: {label_item.lower()}")
-        elif isinstance(classification.map_label, str):
-            lines.append(f'  LABELITEM "{map_label.lower()}"')
-            console.print(f"Labelitem (map_label): {map_label.lower()}")
-
-        lines.append("")
 
         # Generate CLASS blocks
         field_names = [f.name for f in classification.fields]
 
-        for idx, class_obj in enumerate(classification.classes):
+
+        # TODO moved to _generate_all_classes()
+        all_classes_blocks = self._generate_all_classes(
+            classification,
+            field_names,
+            symbol_prefix,
+            rotation_info,
+            label_info,
+            map_label,
+            mapfile_config,
+        )
+
+        # === DECISION: Inline vs Include mode ===
+
+        # Check if we should use .inc file
+        use_inc_file = False
+        classes_mode = None
+        lines = []
+
+        if mapfile_config:
+            classes_mode = getattr(mapfile_config, "classes_mode", None)
+            use_inc_file = classes_mode in ("regenerate", "frozen")
+
+        # ========================================
+        # PART 4A: INLINE MODE (default)
+        # ========================================
+
+        if not use_inc_file:
+            # Mode inline - comme avant
+
+            lines.extend(
+                [
+                    "LAYER",
+                    *layer_block,
+                    all_classes_blocks,
+                    "",
+                    "END # LAYER",
+                ]
+            )
+
+            return "\n".join(lines)
+        else:
+            console.error("Error. No lines generated")
+
+
+
+
+
+
+        #  TODO  ---
+
+        '''for idx, class_obj in enumerate(classification.classes):
             if not class_obj.visible:
                 continue
             # NOUVEAU: Extraire la valeur depuis l'identifier si disponible
@@ -485,7 +585,70 @@ class MapServerGenerator:
 
         lines.append("END # LAYER")
 
-        return "\n".join(lines)
+        return "\n".join(lines)'''
+
+    def _generate_all_classes(
+            self,
+            classification,
+            field_names: List[str],
+            symbol_prefix: str,
+            rotation_info: Optional[RotationInfo] = None,
+            label_info: Optional[LabelInfo] = None,
+            map_label: Optional[Union[None, bool, str]] = None,
+            mapfile_config=None,
+    ) -> str:
+        """
+        Generate ALL CLASS blocks for a classification.
+
+        This method contains the loop that calls generate_class() multiple times.
+        Returns all CLASS blocks as a single string.
+        """
+        all_classes = []
+
+        for idx, class_obj in enumerate(classification.classes):
+            if not class_obj.visible:
+                continue
+            # NOUVEAU: Extraire la valeur depuis l'identifier si disponible
+            identifier_value = idx  # Par défaut: utiliser l'index
+
+            if hasattr(class_obj, "identifier") and class_obj.identifier:
+                try:
+                    # Extraire la valeur depuis le ClassIdentifier
+                    identifier_key = class_obj.identifier.to_key()
+                    # La dernière partie contient la valeur (après le "::")
+                    identifier_value = identifier_key.split("::")[-1]
+
+                    logger.debug(
+                        f"Using identifier value '{identifier_value}' "
+                        f"for class '{class_obj.label}' (instead of index {idx})"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Could not extract identifier value for '{class_obj.label}': {e}, "
+                        f"using index {idx}"
+                    )
+                    identifier_value = idx
+
+            # Construire le symbol_id avec la valeur extraite
+            symbol_id = f"{symbol_prefix}_{identifier_value}"
+
+            logger.debug(f"class idx: {symbol_id}")
+
+            class_block = self.generate_class(
+                class_obj,
+                field_names,
+                identifier_value,
+                symbol_prefix,
+                rotation_info,
+                label_info,
+                map_label,
+                mapfile_config,
+            )
+
+            all_classes.append(class_block)
+
+        # Retourne TOUS les CLASS blocks comme une seule string
+        return "\n".join(all_classes)
 
     def generate_class(
             self,
