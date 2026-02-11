@@ -52,6 +52,8 @@ from gcover.publish.writeback import (build_uuid_lookup,
 
 from gcover.cli.symbols_cli import symbols_commands
 
+from gcover.cli.publish_helper import handle_staging_result
+
 
 
 DEFAULT_ZONES_PATH = files("gcover.data").joinpath("administrative_zones.gpkg")
@@ -1034,6 +1036,8 @@ def mapserver(
     env = ctx.obj.get('environment')
 
     publish_config, global_config = get_publish_config(ctx)
+    staging_mode = False # bool(staging or diff or staging_all or diff_all)  # TODO
+    console.print(f"Staging mode: {staging_mode}", style="yellow")
 
     try:
         connections = global_config.mapserver.connections
@@ -1164,6 +1168,7 @@ def mapserver(
         no_scale=no_scale,
         pattern_catalog=pattern_file,
         gml_items=gml_items,
+        output_dir=output_dir,
     )
 
     for (
@@ -1270,7 +1275,7 @@ def mapserver(
                 mapserver_data = f"geom FROM  geol.geocover_{gpkg_layer}  USING UNIQUE gid USING SRID=2056"
 
             # Generate mapfile
-            mapfile_content = generator.generate_layer(
+            result = generator.generate_layer(
                 classification=layer_classification,
                 layer_name=mapfile_layer_name,
                 layer_group=mapfile_layer_group,
@@ -1285,9 +1290,35 @@ def mapserver(
                 layer_min_scale=layer_min_scale,
                 include_items=include_items,
                 mapfile_config=mapfile_config,
+                staging_mode=staging_mode,
             )
 
-            # Save mapfile
+
+
+            if staging_mode:
+                handle_staging_result(
+                    result, symbol_prefix, mapfile_config, output_dir, "meld"
+                )
+
+            else:
+                # TODO: Save mapfile
+                mapfile = f"{mapfile_layer_name}.map"
+                output_file = output_dir / mapfile
+                output_file.write_text(result)
+                generated_files.append(output_file)
+                mapfiles.append(mapfile)
+
+                console.print(
+                    f"  [green]✓[/green] Generated: {output_file.name} "
+                    f"(prefix: {symbol_prefix}, "
+                    f"{len([c for c in layer_classification.classes if c.visible])} classes)"
+                )
+
+
+            # Store classification for combined symbol file
+            all_classifications.append(layer_classification)
+
+            '''# Save mapfile
             mapfile = f"{mapfile_layer_name}.map"
             output_file = output_dir / mapfile
             output_file.write_text(mapfile_content)
@@ -1301,7 +1332,7 @@ def mapserver(
             )
 
             # Store classification for combined symbol file
-            all_classifications.append(layer_classification)
+            all_classifications.append(layer_classification)'''
 
     # Generate combined symbol file if requested
     if generate_combined and all_classifications:

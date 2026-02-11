@@ -1,0 +1,81 @@
+from pathlib import Path
+from typing import Dict, List, Optional, Set, Tuple, Union
+from gcover.publish.diff_tools import detect_changes, print_changes, launch_diff_tool
+from gcover.publish.generator import MapServerGenerator
+
+from loguru import logger
+
+def handle_staging_result(
+    staging_file_path,
+    symbol_prefix: str,
+    mapfile_config,
+    output_dir: Path,
+    diff_tool: Optional[str] = None,
+):
+    """
+    Handle result from generate_layer() in staging mode.
+
+    This function:
+    1. Determines the original file path
+    2. Detects changes between original and staging
+    3. Prints changes to console
+    4. Optionally launches diff tool
+
+    Args:
+        staging_file_path: Path returned by generate_layer() (str or Path)
+        symbol_prefix: Symbol prefix for this layer
+        mapfile_config: MapfileGenerationConfig (can be None)
+        output_dir: Base output directory
+        diff_tool: Diff tool to launch (None = don't launch)
+    """
+    from pathlib import Path
+
+    # Convert to Path if string
+    staging_file = Path(staging_file_path)
+
+    # Determine original file path
+    if (
+        mapfile_config
+        and hasattr(mapfile_config, "classes_file")
+        and mapfile_config.classes_file
+    ):
+        # Explicit path from config
+        original_file = Path(mapfile_config.classes_file)
+    else:
+        # Default path: output_dir/classes/<symbol_prefix>_classes.inc
+        original_file = output_dir / "classes" / f"{symbol_prefix}_classes.inc"
+
+    logger.info("")
+    logger.info(f"✓ Generated staging file: {staging_file}")
+    logger.info("")
+
+    # Detect changes if original exists
+    if original_file.exists():
+        changes = detect_changes(original_file, staging_file)
+        print_changes(changes)
+
+        logger.info("")
+        logger.info(f"Compare with:")
+        logger.info(f"  {diff_tool or 'meld'} {original_file} {staging_file}")
+        logger.info("")
+    else:
+        logger.info("ℹ️  Original file doesn't exist yet (first generation)")
+        logger.info(f"   Will be created at: {original_file}")
+        logger.info("")
+
+    # Launch diff tool if requested
+    if diff_tool:
+        if not original_file.exists():
+            logger.warning(f"Cannot launch diff tool - original file doesn't exist")
+            logger.info(f"   Create it first with: gcover publish mapserver")
+        else:
+            success = launch_diff_tool(original_file, staging_file, diff_tool)
+
+            if success:
+                logger.info("")
+                logger.info("💡 Tip: After merging in diff tool:")
+                logger.info("   1. Save changes to original file")
+                logger.info("   2. Close diff tool")
+                logger.info(f"   3. git add {original_file}")
+                logger.info(f"   4. git commit -m 'Merge changes from .lyrx update'")
+                logger.info("")

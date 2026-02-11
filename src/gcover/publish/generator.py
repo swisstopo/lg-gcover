@@ -205,6 +205,7 @@ class MapServerGenerator:
             no_scale: bool = False,
             pattern_catalog: Optional[Path] = None,
             gml_items: Optional[str] = 'default',
+            output_dir: Optional[Path] = None
     ):
         """
         Initialize generator.
@@ -222,6 +223,7 @@ class MapServerGenerator:
         self.font_name_prefix = font_name_prefix
         self.no_scale = no_scale
         self.gml_items = gml_items
+        self.output_dir = output_dir
 
         # Track fonts and symbols used (for symbol file generation)
         self.fonts_used: Set[str] = set()
@@ -261,6 +263,63 @@ class MapServerGenerator:
 
         return None
 
+    def _get_classes_file_path(
+            self,
+            layer_name: str,
+            symbol_prefix: str,
+            mapfile_config,
+    ) -> Path:
+        """Determine path for classes include file."""
+
+        # Check if explicit path in config
+        if hasattr(mapfile_config, "classes_file") and mapfile_config.classes_file:
+            return Path(mapfile_config.classes_file)
+
+        # Default: output_dir/classes/<symbol_prefix>_classes.inc
+        classes_dir = self.output_dir / "classes"
+        return classes_dir / f"{symbol_prefix}_classes.inc"
+
+    def _add_classes_header(
+            self, classes_content: str, classification, symbol_prefix: str
+    ) -> str:
+        """Add header comment to classes file."""
+
+        from datetime import datetime
+
+        header_lines = [
+            f"# Auto-generated from {getattr(classification, 'style_file', 'unknown')}",
+            f"# Symbol prefix: {symbol_prefix}",
+            f"# Generated: {datetime.now().isoformat()}",
+            f"# Mode: {getattr(getattr(classification, 'mapfile_config', None), 'classes_mode', 'auto')}",
+            "",
+            classes_content,
+        ]
+
+        return "\n".join(header_lines)
+
+    def generate_to_staging(self, classes_file: Path, new_content: str) -> Path:
+        """
+        Generate classes to staging area for comparison.
+
+        Args:
+            classes_file: Original classes file path
+            new_content: Newly generated classes content
+
+        Returns:
+            Path to staging file (.new)
+        """
+        # Create staging directory
+        staging_dir = classes_file.parent / ".staging"
+        staging_dir.mkdir(exist_ok=True, parents=True)
+
+        # Write to .new file
+        staging_file = staging_dir / f"{classes_file.name}.new"
+        staging_file.write_text(new_content)
+
+        logger.info(f"✓ Generated staging file: {staging_file}")
+
+        return staging_file
+
     # ========================================================================
     # LAYER AND CLASS GENERATION
     # ========================================================================
@@ -281,6 +340,7 @@ class MapServerGenerator:
             layer_min_scale: Optional[bool | int] = None,
             include_items: Optional[str] = 'all',
             mapfile_config: Optional[MapfileGenerationConfig] = None,
+            staging_mode: bool = False,
     ) -> str:
         """
         Generate complete MapServer LAYER block.
@@ -506,13 +566,17 @@ class MapServerGenerator:
         # === DECISION: Inline vs Include mode ===
 
         # Check if we should use .inc file
-        use_inc_file = False
+        use_inc_file = True
         classes_mode = None
+
         lines = []
 
         if mapfile_config:
             classes_mode = getattr(mapfile_config, "classes_mode", None)
             use_inc_file = classes_mode in ("regenerate", "frozen")
+
+
+        use_inc_file = True  # TODO: remove
 
         # ========================================
         # PART 4A: INLINE MODE (default)
@@ -532,8 +596,71 @@ class MapServerGenerator:
             )
 
             return "\n".join(lines)
+        # ========================================
+        # PART 4B: INCLUDE MODE
+        # ========================================
+
         else:
-            console.error("Error. No lines generated")
+            # Determine output directory
+            # Tu dois avoir un output_dir quelque part - soit passé en paramètre
+            # soit accessible via self
+            # Pour l'instant, je suppose que tu as self.output_dir ou il faut l'ajouter
+
+            # Si tu n'as pas output_dir, il faut l'ajouter comme paramètre
+            # Pour l'instant, supposons qu'on peut le déduire
+
+            console.print(f"=== INCLUDE MODE ===")
+
+            # Determine classes file path
+            classes_file = self._get_classes_file_path(
+                layer_name,
+                symbol_prefix,
+                mapfile_config,
+            )
+
+            # Add header to classes
+            classes_with_header = self._add_classes_header(
+                all_classes_blocks, classification, symbol_prefix
+            )
+
+            # === STAGING MODE ===
+            if staging_mode:
+                logger.info(f"Generating staging file for {layer_name}")
+                staging_file = self.generate_to_staging(
+                    classes_file, classes_with_header
+                )
+                return str(staging_file)  # Return Path as string
+
+            # === DECIDE: Regenerate or preserve ===
+            '''should_regen = self.should_regenerate_classes(
+                classes_file, classes_mode, force=force_regenerate
+            )'''
+
+            should_regen = True  # TODO
+
+            if should_regen:
+                logger.info(f"Writing classes to {classes_file}")
+                classes_file.parent.mkdir(parents=True, exist_ok=True)
+                classes_file.write_text(classes_with_header)
+            else:
+                logger.info(f"Preserving {classes_file} (mode: frozen)")
+
+            # Build LAYER with INCLUDE
+            # Determine relative path (relatif à où le .map sera écrit)
+            # Pour simplifier, assume que classes/ est relatif à output_dir
+            relative_path = f"classes/{classes_file.name}"
+
+            lines.extend(
+                [
+                    "LAYER",
+                    *layer_block,
+                    f'  INCLUDE "{relative_path}"',
+                    "",
+                    "END # LAYER",
+                ]
+            )
+
+            return "\n".join(lines)
 
 
 
