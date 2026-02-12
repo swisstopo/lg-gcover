@@ -49,6 +49,14 @@ if ($latestFile) {
     Write-Host "No GC_Sources_PA.xlsx found in $($latestRFolder.FullName)"   -ForegroundColor Red
 }
 
+$response = Read-Host "Do you want to continue? (Y/N)"
+if ($response -eq 'Y' -or $response -eq 'y') {
+    Write-Host "Continuing..."
+} else {
+    Write-Host "Process cancelled."
+    Exit 0
+}
+
 
 
 # Check if conda env exists
