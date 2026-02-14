@@ -5,6 +5,91 @@ from gcover.publish.generator import MapServerGenerator
 
 from loguru import logger
 
+def find_classifications_by_name(batch_config, classification_name: str):
+    """
+    Find classifications by classification_name.
+
+    Args:
+        batch_config: BatchClassificationConfig
+        classification_name: Name from .lyrx (e.g., 'bedrock_rc1')
+
+    Returns:
+        List of tuples: [(layer_config, classification), ...]
+    """
+    results = []
+
+    for layer_config in batch_config.layers:
+        for classification in layer_config.classifications:
+            cls_name = getattr(classification, 'classification_name', None)
+
+            if cls_name == classification_name:
+                results.append((layer_config, classification))
+
+    return results
+
+
+def list_all_classification_names(batch_config):
+    """
+    List all classification names in config.
+
+    Returns:
+        List of dicts with classification info
+    """
+    classifications = []
+
+    for layer_config in batch_config.layers:
+        for classification in layer_config.classifications:
+            cls_name = getattr(classification, 'classification_name', None)
+
+            if cls_name:
+                mapfile_config = getattr(classification, 'mapfile_config', None)
+                mode = 'auto'
+                if mapfile_config:
+                    mode = getattr(mapfile_config, 'classes_mode', 'auto')
+
+                classifications.append({
+                    'name': cls_name,
+                    'layer': layer_config.gcover_layer,
+                    'style_file': getattr(classification, 'style_file', 'unknown'),
+                    'mode': mode
+                })
+
+    return classifications
+
+
+def get_all_frozen_classifications(batch_config):
+    """
+    Get all frozen classifications as tuples.
+
+    Returns:
+        List of tuples: [(layer_config, classification), ...]
+    """
+    results = []
+
+    for layer_config in batch_config.layers:
+        for classification in layer_config.classifications:
+            mapfile_config = getattr(classification, 'mapfile_config', None)
+            if mapfile_config and mapfile_config.classes_mode == 'frozen':
+                results.append((layer_config, classification))
+
+    return results
+
+
+def get_all_classifications(batch_config):
+    """
+    Get all classifications as tuples.
+
+    Returns:
+        List of tuples: [(layer_config, classification), ...]
+    """
+    results = []
+
+    for layer_config in batch_config.layers:
+        for classification in layer_config.classifications:
+            results.append((layer_config, classification))
+
+    return results
+
 def handle_staging_result(
     staging_file_path,
     symbol_prefix: str,

@@ -483,7 +483,7 @@ class MapServerGenerator:
                 console.print(
                     f"    ESRI lyrx  classification.min_scale: {classification.min_scale}"
                 )
-                console.print(f"    maxscale: {max_scale}")
+                console.print(f"    maxscale: {layer_max_scale}")
 
                 max_scale_line = self.render_maxscale(
                     layer_max_scale, classification.min_scale
@@ -566,7 +566,7 @@ class MapServerGenerator:
         # === DECISION: Inline vs Include mode ===
 
         # Check if we should use .inc file
-        use_inc_file = True
+        use_inc_file = False
         classes_mode = None
 
         lines = []
@@ -576,7 +576,9 @@ class MapServerGenerator:
             use_inc_file = classes_mode in ("regenerate", "frozen")
 
 
-        use_inc_file = True  # TODO: remove
+        # use_inc_file = True  # TODO: remove
+
+        console.print(f"Using include: {use_inc_file} (classes mode: {classes_mode})")
 
         # ========================================
         # PART 4A: INLINE MODE (default)
