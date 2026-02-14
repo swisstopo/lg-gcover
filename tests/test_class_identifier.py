@@ -1,7 +1,24 @@
 import pytest
-from gcover.publish.symbol_models import ClassIdentifier
+from gcover.publish.symbol_models import ClassIdentifier, IdentifierStrategy
 
 
+#  Old identifier
+
+def test_legacy_single_field():
+    bedrock = ClassIdentifier.create(
+        layer_path="Surfaces/GC_BEDROCK",
+        field_values=["15801003"],
+        class_index=42,
+        symbol_dict={},
+        label="Granite du Mont-Blanc",
+        strategy= IdentifierStrategy.VALUE_BASED,
+    )
+
+    # assert str(bedrock) == "Surfaces/GC_BEDROCK::gmu_code_15801003"
+    assert bedrock.to_key() == "Surfaces/GC_BEDROCK::15801003::42"
+    assert bedrock.strategy.value == "value_based"
+
+# New canonical id
 def test_single_field():
     bedrock = ClassIdentifier.from_single_field(
         layer_path="Surfaces/GC_SURFACES",
@@ -11,8 +28,8 @@ def test_single_field():
         label="Granite du Mont-Blanc",
     )
 
-    assert str(bedrock) == "Surfaces/GC_SURFACES::gmu_code_15801003"
-    assert bedrock.to_key() == "Surfaces/GC_SURFACES::gmu_code_15801003"
+    # assert str(bedrock) == "Surfaces/GC_SURFACES::gmu_code_15801003"
+    assert bedrock.to_canonical_key() == "Surfaces/GC_SURFACES::gmu_code_15801003"
     assert bedrock.strategy.value == "value_based"
 
 
@@ -25,8 +42,8 @@ def test_multiple_fields():
         label="Source active",
     )
 
-    assert str(point) == "Points/GC_POINT_OBJECTS::kind_12501001_hsur_status_1"
-    assert point.to_key() == "Points/GC_POINT_OBJECTS::kind_12501001_hsur_status_1"
+    # assert str(point) == "Points/GC_POINT_OBJECTS::kind_12501001_hsur_status_1"
+    assert point.to_canonical_key() == "Points/GC_POINT_OBJECTS::kind_12501001_hsur_status_1"
     assert point.strategy.value == "multi_value"
 
 
@@ -38,8 +55,8 @@ def test_expression():
         label="Fossiles triassiques",
     )
 
-    assert str(expr) == "Fossils/GC_FOSSILS::kind_14601006_lfos_division_triassic"
-    assert expr.to_key() == "Fossils/GC_FOSSILS::kind_14601006_lfos_division_triassic"
+    # assert str(expr) == "Fossils/GC_FOSSILS::kind_14601006_lfos_division_triassic"
+    assert expr.to_canonical_key() == "Fossils/GC_FOSSILS::kind_14601006_lfos_division_triassic"
     assert expr.strategy.value == "expression"
 
 
@@ -50,6 +67,6 @@ def test_index():
         label="Unknown class",
     )
 
-    assert str(idx) == "Complex/LAYER::idx_99"
-    assert idx.to_key() == "Complex/LAYER::idx_99"
+    # assert str(idx) == "Complex/LAYER::idx_99"
+    assert idx.to_canonical_key() == "Complex/LAYER::idx_99"
     assert idx.strategy.value == "index"

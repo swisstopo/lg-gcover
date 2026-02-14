@@ -316,6 +316,7 @@ class MapServerGenerator:
         label_info = None
         rotation_field = None
         lines = []
+        label_item = None
 
         if layer_type:
             if isinstance(layer_type, LayerType):
@@ -460,6 +461,13 @@ class MapServerGenerator:
 
             # --- Template ---
             lines.extend(["", f'  TEMPLATE "{template}"', ""])
+        # TODO: check
+        if label_item and map_label is None:
+            lines.append(f'  LABELITEM "{label_item.lower()}"')
+            console.print(f"Labelitem: {label_item.lower()}")
+        elif isinstance(classification.map_label, str):
+            lines.append(f'  LABELITEM "{map_label.lower()}"')
+            console.print(f"Labelitem (map_label): {map_label.lower()}")
 
             # --- CLASSITEM ---
             if self.use_symbol_field:

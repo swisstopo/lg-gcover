@@ -221,22 +221,25 @@ class ClassIdentifier:
         INDEX:        canonical_id = "idx_42"
     """
 
+    layer_path: str  # e.g., "Surfaces/GC_SURFACES"
     # Core identification
-    canonical_id: str  # Human-readable stable ID
-    hash_id: str  # Fallback unique hash
+    canonical_id: Optional[str] = None  # Human-readable stable ID
+    hash_id: Optional[str] = None  # Fallback unique hash
 
     # Context
-    layer_path: str  # e.g., "Surfaces/GC_SURFACES"
-    strategy: IdentifierStrategy
+
+    strategy: Optional[IdentifierStrategy] = None
 
     # Source information
     field_values: Tuple[str, ...] = ()  # Actual values used
     field_names: Tuple[str, ...] = ()  # Field names
-    class_index: int = 0  # Position in renderer
+    class_index: Optional[int] = 0  # Position in renderer
     label: str = ""  # Human label (can change)
 
     # Symbol tracking
     symbol_hash: Optional[str] = None  # Detect symbol changes
+
+
 
     @classmethod
     def from_single_field(
@@ -480,7 +483,16 @@ class ClassIdentifier:
             symbol_hash=symbol_hash,
         )
 
+    # TODO: legacy
     def to_key(self) -> str:
+        """
+        Generate unique key for this class.
+        Format: layer_path::field1_field2::index
+        """
+        field_str = "_".join(self.field_values)
+        return f"{self.layer_path}::{field_str}::{self.class_index}"
+
+    def to_canonical_key(self) -> str:
         """
         Generate unique key for this class.
 
@@ -517,8 +529,36 @@ class ClassIdentifier:
             "key": self.to_key(),
         }
 
-    @classmethod
+    # TODO: legacy method
+    @staticmethod
     def create(
+            layer_path: str,
+            field_values: List[str],
+            class_index: int,
+            symbol_dict: Dict[str, Any],
+            label: str,
+            strategy: Optional[IdentifierStrategy]=IdentifierStrategy.LABEL
+    ) -> "ClassIdentifier":
+        """Create identifier from classification class data."""
+        # Create stable hash of symbol structure
+        def _hash_symbol(symbol_dict: Dict[str, Any]) -> str:
+            """Create deterministic hash of symbol structure."""
+            # Use sorted JSON to ensure consistency
+            json_str = json.dumps(symbol_dict, sort_keys=True)
+            return hashlib.md5(json_str.encode()).hexdigest()[:12]
+        symbol_hash = _hash_symbol(symbol_dict)
+
+        return ClassIdentifier(
+            layer_path=layer_path,
+            field_values=tuple(str(v) for v in field_values),
+            class_index=class_index,
+            symbol_hash=symbol_hash,
+            label=label,
+            strategy=strategy,
+        )
+
+    @classmethod
+    def create_v2(
             cls,
             layer_path: str,
             field_values: List[str],
