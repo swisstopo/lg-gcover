@@ -1276,7 +1276,11 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
                 if self.class_count <= 3:
                     logger.info(f"INDEX mode: Using index {class_index} for '{label}'")
 
-            logger.info(f"identifier_value={identifier_value}")
+            if self.class_count <= 5:
+                logger.info(f"identifier_value={identifier_value}")
+            elif self.class_count == 6:
+                logger.info("... (identifier_value)")
+
             # Create identifier
             identifier = None
             if field_values:
