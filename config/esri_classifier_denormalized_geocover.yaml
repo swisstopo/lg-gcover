@@ -53,6 +53,7 @@ layers:
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
           map_label: False
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}fossils USING UNIQUE gid USING SRID=2056"
+          include_items: "label,kind,system_desc"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -96,6 +97,7 @@ layers:
           filter: KIND IN (13801001,13801002, 13801004, 13801003, 13801005, 13801006)
           # Convert angles.. but keep the name TODO
           data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, dip::int, map_symbol, (360 - azimuth::int) % 360 AS azimuth FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360) AS subquery  USING UNIQUE gid USING SRID=2056"
+          include_items: "label,mfol_phase,mpla_polarity,mpla_phase,mpla_ob_dip_slo,mpla_phase_ref"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -261,6 +263,7 @@ layers:
           filter: KIND=11301001
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_moraenenwall
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
+          include_items: "label,ggla_glac_typ,ggla_ice_m_p,ggla_quat_str"
           mapfile_config:
             classes_mode: frozen
             metadata:
@@ -286,6 +289,7 @@ layers:
               wms_group_title: Linear Objects
           map_label: False  # Don't use mapfile LABEL, even if defined in .lyrx
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects  USING UNIQUE gid USING SRID=2056"
+          include_items: "label"
           # El cheapo filter
           filter: KIND IN (10201002,10201007,10201006,10201001,10201005,10201004,10201003,10701001,10701002,10901002,10901001,11101001,11101003,11101002,11301007,11301003,11301002,11301006,11301005,11301008,11301009,11301004,11701003,11701002,11701001,11701004,12201001,12201002,12301001,12301004,12301006,12301002,12301007,12301005,12301003,12401001,12601002,12601001,13001001,13301001,13901001,14001001,14701001)
           fields:
@@ -298,6 +302,7 @@ layers:
           classification_name: Linear Objects_GeolKontur
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}geolkontur
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
+          include_items: "label"
           mapfile_config:
             metadata:
               wms_group_title: Linear Objects
@@ -319,6 +324,7 @@ layers:
             metadata:
               wms_group_title: Linear Objects
           map_label: False
+          include_items: "label,lpro_litho"
           fields:
             KIND: KIND
             LPRO_LITHO: LPRO_LITHO
@@ -344,12 +350,12 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_bruch
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
+          include_items: "label,kind,ttec_name,ttec_fault_mo,ttec_verti_mo,ttec_horiz_mo,ttec_status,ttec_lim_typ,ttec_hiera,ttec_activity,ttec_lim_tect_b"
           mapfile_config:
             classes_mode: frozen
             metadata:
               wms_group_title: Linear Objects
           map_label: False
-          include_items: "label,kind,ttec_name"
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects  USING UNIQUE gid USING SRID=2056"
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -363,6 +369,7 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_ueberschiebung
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
+          include_items: "label,kind,ttec_name,ttec_fault_mo,ttec_verti_mo,ttec_horiz_mo,ttec_status,ttec_lim_typ,ttec_hiera,ttec_activity,ttec_lim_tect_b"
           mapfile_config:
             classes_mode: frozen
             metadata:
@@ -418,7 +425,7 @@ layers:
           maxscaledenom: 50000
           mapfile_config:
             classes_mode: frozen
-          include_items: "label,more_info,kind"
+          include_items: "label,more_info,kind,aarc_epoch"
           map_label: False
           #data: "geom from (SELECT * from surfaces where map_symbol IS NOT NULL) as blabla using unique gid using srid=2056"
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}surfaces USING UNIQUE gid USING SRID=2056"
@@ -451,6 +458,7 @@ layers:
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}unconsolidated
           maxscaledenom: 50000
           map_label: False
+          include_items: "label,kind"
           mapfile_config:
             metadata:
               wms_group_title: Unconsolidated
@@ -476,6 +484,7 @@ layers:
           mapfile_group: unconsolidated
           data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}unco_deposits  USING UNIQUE gid USING SRID=2056"
           map_label: False
+          include_items: "label,kind"
           mapfile_config:
             metadata:
               wms_group_title: Unconsolidated
@@ -492,6 +501,7 @@ layers:
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}unconsolidated
           maxscaledenom: 50000
           map_label: False
+          include_items: "label,kind"
           mapfile_config:
             metadata:
               wms_group_title: Unconsolidated
@@ -527,6 +537,7 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}unco_chrono_b
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}unconsolidated
+          include_items: "label,kind,runc_litho,runc_glac_typ,runc_chrono_b"
           maxscaledenom: 50000
           map_label: False
           mapfile_config:
