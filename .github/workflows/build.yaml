@@ -93,20 +93,22 @@ jobs:
 
       - name: Run tests
         shell: bash -l {0}
+        if: false  # Disabled
         run: |
           GCOVER_ENVIRONMENT=test  pytest tests/test_parse_since.py -v  
 
       - name: Run smoke tests
         shell: bash -l {0}
+        if: false  # Disabled
         run: |
           # Load .env.test into environment
           export $(grep -v '^#' .env.test | xargs)
           GCOVER_ENVIRONMENT=test pytest tests/test_imports.py tests/test_cli_smoke.py -v --no-cov
 
-      - name: Run all tests (allow failures for now)
+      - name: Run all tests
         shell: bash -l {0}
         run: |
-          GCOVER_ENVIRONMENT=test  pytest tests/ -v --tb=short || echo "Some tests failed - expected during cleanup"
+          GCOVER_ENVIRONMENT=test  pytest tests/ -v --tb=short
   build:
     runs-on: ubuntu-latest
     needs: test

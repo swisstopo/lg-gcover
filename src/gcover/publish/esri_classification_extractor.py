@@ -80,6 +80,7 @@ from gcover.publish.rotation_extractor_extension import (
     format_rotation_for_mapserver,
 )
 
+from gcover.publish.utils import (slugify_label, make_unique_slug)
 console = Console()
 
 
@@ -110,93 +111,7 @@ class SymbolType(Enum):
     UNKNOWN = "Unknown"
 
 
-# =============================================================================
-# LABEL SLUGIFICATION
-# =============================================================================
 
-
-def slugify_label(label: str, max_length: int = 50) -> str:
-    """
-    Convert label to a stable, URL-safe identifier.
-    
-    Handles German/French geological terms with proper transliteration.
-    
-    Args:
-        label: Original label text
-        max_length: Maximum length of output (default: 50)
-    
-    Returns:
-        Slugified identifier string
-    
-    Examples:
-        "Sumpf" → "sumpf"
-        "fluviatiler Schotter, Pleistozän-Holozän" → "fluviatiler_schotter_pleistozaen_holozaen"
-        "Moräne (Würm)" → "moraene_wuerm"
-        "Überschiebung" → "ueberschiebung"
-    """
-    if not label:
-        return "unknown"
-    
-    # German-specific transliterations (before unicode normalization)
-    german_map = {
-        'ä': 'ae', 'ö': 'oe', 'ü': 'ue',
-        'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue',
-        'ß': 'ss',
-    }
-    
-    # French-specific (keep accents for now, normalize later)
-    # é, è, ê, ë → e (handled by unicode normalization)
-    
-    result = label
-    for char, replacement in german_map.items():
-        result = result.replace(char, replacement)
-    
-    # Normalize unicode (é → e, etc.)
-    normalized = unicodedata.normalize('NFKD', result)
-    ascii_text = normalized.encode('ascii', 'ignore').decode('ascii')
-    
-    # Convert to lowercase
-    lower = ascii_text.lower()
-    
-    # Replace spaces, hyphens, and special chars with underscore
-    slug = re.sub(r'[^a-z0-9]+', '_', lower)
-    
-    # Remove leading/trailing underscores and collapse multiple underscores
-    slug = re.sub(r'_+', '_', slug).strip('_')
-    
-    # Limit length
-    if len(slug) > max_length:
-        # Try to cut at word boundary
-        truncated = slug[:max_length]
-        last_underscore = truncated.rfind('_')
-        if last_underscore > max_length // 2:
-            slug = truncated[:last_underscore]
-        else:
-            slug = truncated.rstrip('_')
-    
-    return slug or "unknown"
-
-
-def make_unique_slug(slug: str, existing_slugs: Set[str]) -> str:
-    """
-    Ensure slug is unique by adding numeric suffix if needed.
-    
-    Args:
-        slug: Base slug
-        existing_slugs: Set of already-used slugs
-    
-    Returns:
-        Unique slug (possibly with _2, _3, etc. suffix)
-    """
-    if slug not in existing_slugs:
-        return slug
-    
-    # Find next available suffix
-    counter = 2
-    while f"{slug}_{counter}" in existing_slugs:
-        counter += 1
-    
-    return f"{slug}_{counter}"
 
 
 @dataclass
@@ -1237,7 +1152,7 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
 
             # Determine identifier value based on mode
             identifier_value = None
-            
+
             if identifier_mode == IdentifierMode.FIELD and identifier_field and field_names:
                 # FIELD mode: Use value from specified field
                 try:
@@ -1246,7 +1161,7 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
                         identifier_value = field_values[0][field_index]
                         if self.class_count <= 5:
                             logger.info(
-                                f"Using field '{identifier_field}' value "
+                                f"FIELD mode: Using field '{identifier_field}' value "
                                 f"'{identifier_value}' as identifier"
                             )
                         elif self.class_count == 6:
@@ -1266,7 +1181,7 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
                 used_slugs.add(identifier_value)
                 
                 if self.class_count <= 5:
-                    logger.info(f"Using slugified label '{identifier_value}' for '{label}'")
+                    logger.info(f"LABEL mode: Using slugified label '{identifier_value}' for '{label}'")
                 elif self.class_count == 6:
                     logger.info("... (more classes)")
             
@@ -1274,7 +1189,12 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
                 # INDEX mode: Use sequential index (legacy behavior)
                 identifier_value = class_index
                 if self.class_count <= 3:
-                    logger.info(f"Using index {class_index} for '{label}'")
+                    logger.info(f"INDEX mode: Using index {class_index} for '{label}'")
+
+            if self.class_count <= 5:
+                logger.info(f"identifier_value={identifier_value}")
+            elif self.class_count == 6:
+                logger.info("... (identifier_value)")
 
             # Create identifier
             identifier = None
@@ -1285,6 +1205,7 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
                     class_index=identifier_value,
                     symbol_dict=raw_symbol,
                     label=label,
+                    strategy=identifier_mode,
                 )
 
             return ClassificationClass(
