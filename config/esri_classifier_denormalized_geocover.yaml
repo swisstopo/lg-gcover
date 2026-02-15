@@ -26,7 +26,7 @@ layers:
           classification_name: Exploit_Geomat_Pt
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}exploit_geomat_pt
-          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}exploit_geomat
+          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}exploit_points USING UNIQUE gid USING SRID=2056"
           include_items: "label,kin,aexp_status,aexp_targ_mat,aexp_depth_tot"
           map_label: False
@@ -89,7 +89,10 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}planar_struct
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
-          maxscaledenom: 20000
+          maxscaledenom: 50000
+          mapfile_config:
+            metadata:
+              wms_group_title: Point Objects
           filter: KIND IN (13801001,13801002, 13801004, 13801003, 13801005, 13801006)
           # Convert angles.. but keep the name TODO
           data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, dip::int, map_symbol, (360 - azimuth::int) % 360 AS azimuth FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360) AS subquery  USING UNIQUE gid USING SRID=2056"
@@ -108,7 +111,10 @@ layers:
           # Only a few 100s features
           data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, map_symbol, (360 - azimuth::int) % 360 AS azimuth FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360 AND map_symbol ILIKE '%achsen%') AS subquery  USING UNIQUE gid USING SRID=2056"
           map_label: False
-          maxscaledenom: 20000
+          mapfile_config:
+            metadata:
+              wms_group_title: Point Objects
+          maxscaledenom: 50000
           filter: KIND=14601006
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -120,8 +126,11 @@ layers:
           classification_name: Point Objects_Orient
           mapfile_name: pnt_orient
           mapfile_group: point_features
-          maxscaledenom: 20000
+          maxscaledenom: 50000
           map_label: True  # Use the .lyrx defined, if exists
+          mapfile_config:
+            metadata:
+              wms_group_title: Point Objects
           active: True
           data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, ltyp_name, map_symbol, (360 - azimuth::int) % 360 AS azimuth FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360) AS subquery  USING UNIQUE gid USING SRID=2056"
           filter: KIND IN (11901001,12501002,12501003,12501004,12501006,12101006,13601001,13601002 ,13601003,13701001,13701002,13701004,14601004)
@@ -133,10 +142,13 @@ layers:
           index: 23
           classification_name: Point_Objects_Bohrung_Fels_erreicht
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}bohrung_fels_erreicht
-          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}drill
-          maxscaledenom: 20000
+          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
+          maxscaledenom: 50000
           active: True
           map_label: abor_depth_tot
+          mapfile_config:
+            metadata:
+              wms_group_title: Point Objects
           # data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
           data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, abor_depth_tot, map_symbol FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects) AS subquery  USING UNIQUE gid USING SRID=2056"
           filter: KIND=10501001 AND ABOR_DEPTH_BEDR<>999
@@ -149,11 +161,14 @@ layers:
           index: 24
           classification_name: Point_Objects_Sondierung
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}sondierung
-          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}drill
-          maxscaledenom: 20000
+          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
+          maxscaledenom: 50000
           include_items: "label,kind,abor_depth_bedr,abor_fm_a,abor_fm_b,abor_depth_tot,abor_depth_fm_a,abor_depth_fm_b"
           active: True
           map_label: False
+          mapfile_config:
+            metadata:
+              wms_group_title: Point Objects
           data: "${GCOVER_POSTGIS_GEOM} FROM  (select * from geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE map_symbol ilike '%sondier%') as subselect  USING UNIQUE gid USING SRID=2056"
           include_items: "kind,label"
           filter: KIND IN (1051002,10501003,10501004,10501005)
@@ -166,11 +181,14 @@ layers:
           index: 25
           classification_name: Point_Objects_Bohrung_Fels_nicht_erreicht
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}bohrung_fels_nicht_erreicht
-          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}drill
-          maxscaledenom: 20000
+          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
+          maxscaledenom: 50000
           include_items: "label,kind,abor_depth_bedr"
           active: True
           map_label: False
+          mapfile_config:
+            metadata:
+              wms_group_title: Point Objects
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
           filter: KIND=10501001 AND ABOR_DEPTH_BEDR = 999
           fields:
@@ -183,9 +201,12 @@ layers:
           classification_name: Point Objects_Quelle
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}quelle
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
-          maxscaledenom: 20000
+          maxscaledenom: 50000
           active: True
           map_label: False
+          mapfile_config:
+            metadata:
+              wms_group_title: Point Objects
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
           include_items: "label,hsur_status,hsur_flow_con,hsur_type,hsur_combi"
           filter: KIND=12501001
@@ -201,8 +222,11 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}erratiker
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
-          maxscaledenom: 20000
+          maxscaledenom: 50000
           map_label: False
+          mapfile_config:
+            metadata:
+              wms_group_title: Point Objects
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
           # TODO: missing AND (PRINTED = 1 OR PRINTED IS NULL)
           include_items: "label,kind,runc_rock_typ,runc_protected"
@@ -237,11 +261,16 @@ layers:
           filter: KIND=11301001
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_moraenenwall
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
+          mapfile_config:
+            classes_mode: frozen
+            metadata:
+              wms_group_title: Linear Objects
           map_label: False
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects USING UNIQUE gid USING SRID=2056"
           fields:
             KIND: KIND
             GGLA_GLAC_TYP: GGLA_GLAC_TYP
+          maxscaledenom: 50000
           symbol_prefix: moraenenwall
 
 
@@ -251,12 +280,17 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_objects
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
+          mapfile_config:
+            classes_mode: frozen
+            metadata:
+              wms_group_title: Linear Objects
           map_label: False  # Don't use mapfile LABEL, even if defined in .lyrx
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects  USING UNIQUE gid USING SRID=2056"
           # El cheapo filter
           filter: KIND IN (10201002,10201007,10201006,10201001,10201005,10201004,10201003,10701001,10701002,10901002,10901001,11101001,11101003,11101002,11301007,11301003,11301002,11301006,11301005,11301008,11301009,11301004,11701003,11701002,11701001,11701004,12201001,12201002,12301001,12301004,12301006,12301002,12301007,12301005,12301003,12401001,12601002,12601001,13001001,13301001,13901001,14001001,14701001)
           fields:
               KIND: KIND
+          maxscaledenom: 50000
           symbol_prefix: linear_objects
 
         - style_file: styles/Linear Objects_GeolKontur.lyrx
@@ -264,18 +298,26 @@ layers:
           classification_name: Linear Objects_GeolKontur
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}geolkontur
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
+          mapfile_config:
+            metadata:
+              wms_group_title: Linear Objects
           map_label: False
           data: "${GCOVER_POSTGIS_GEOM} FROM  (select * from geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects where map_symbol in ('geolkontur_1' , 'geolkontur_0')) as a  USING UNIQUE gid USING SRID=2056"
+          filter: KIND = 13001001
           fields:
                 KIND: KIND
                 LGEO_STATUS: LGEO_STATUS
+          maxscaledenom: 50000
           symbol_prefix: geolkontur
-          filter: KIND = 13001001
+
         - style_file: styles/Linear Objects_Gesteinhorizont.lyrx
           classification_name: Linear Objects_Gesteinhorizont
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}gesteinhorizont
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
+          mapfile_config:
+            metadata:
+              wms_group_title: Linear Objects
           map_label: False
           fields:
             KIND: KIND
@@ -292,6 +334,7 @@ layers:
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects  USING UNIQUE gid USING SRID=2056"
           fields:
             KIND: KIND
+          maxscaledenom: 50000
           symbol_prefix: hilfs_karto
           filter: KIND IN (15601001, 15601002)
 
@@ -301,6 +344,10 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_bruch
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
+          mapfile_config:
+            classes_mode: frozen
+            metadata:
+              wms_group_title: Linear Objects
           map_label: False
           include_items: "label,kind,ttec_name"
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects  USING UNIQUE gid USING SRID=2056"
@@ -316,6 +363,10 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_ueberschiebung
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
+          mapfile_config:
+            classes_mode: frozen
+            metadata:
+              wms_group_title: Linear Objects
           map_label: False
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects  USING UNIQUE gid USING SRID=2056"
           filter: KIND = 14901001
@@ -338,7 +389,7 @@ layers:
         - style_file: styles/Exploit_Geomat_Plg.lyrx
           index: 89
           classification_name: Exploit_Geomat_Plg
-          active: True
+          active: False # Not published
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}exploit_geomat_plg
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}exploit_geomat
           include_items: "label,kind,aexp_status,aexp_targ_mat"
@@ -364,7 +415,9 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}surfaces
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}surfaces
-          maxscaledenom: 20000
+          maxscaledenom: 50000
+          mapfile_config:
+            classes_mode: frozen
           include_items: "label,more_info,kind"
           map_label: False
           #data: "geom from (SELECT * from surfaces where map_symbol IS NOT NULL) as blabla using unique gid using srid=2056"
@@ -396,8 +449,14 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}bachschutt
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}unconsolidated
-          maxscaledenom: 25000
+          maxscaledenom: 50000
           map_label: False
+          mapfile_config:
+            metadata:
+              wms_group_title: Unconsolidated
+          mapfile_config:
+            metadata:
+              wms_group_title: Unconsolidated
           data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}unco_deposits  USING UNIQUE gid USING SRID=2056"
           # filter: RUNC_LITHO NOT IN (15101009, 15101015,15101019, 15101021, 15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101041,15101046, 15101047, 15101048, 15101049, 15101055, 15101058, 15101040)
           symbol_prefix: unco_bachschutt
@@ -410,13 +469,16 @@ layers:
         - style_file: styles/Unco Deposits_Litho__20000.lyrx
           index: 91
           classification_name: Unco Deposits_Litho_<20000
-          maxscaledenom: 25000
+          maxscaledenom: 50000
           active: True
           mapfile_name:  ${GCOVER_LAYERNAME_PREFIX}unco_litho
           symbol_prefix:  ${GCOVER_LAYERNAME_PREFIX}unco_litho
           mapfile_group: unconsolidated
           data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}unco_deposits  USING UNIQUE gid USING SRID=2056"
           map_label: False
+          mapfile_config:
+            metadata:
+              wms_group_title: Unconsolidated
           filter: RUNC_LITHO NOT IN (15101009, 15101015, 15101019, 15101021, 15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101041, 15101046, 15101047, 15101048, 15101049, 15101055, 15101058, 15101040)
           fields:
             KIND: KIND
@@ -428,8 +490,11 @@ layers:
           symbol_prefix: unco_chrono_moraene
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}unco_chrono_moraene
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}unconsolidated
-          maxscaledenom: 25000
+          maxscaledenom: 50000
           map_label: False
+          mapfile_config:
+            metadata:
+              wms_group_title: Unconsolidated
           filter: RUNC_LITHO =15101021
           fields:
             KIND: KIND
@@ -442,8 +507,11 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}unco_chrono_t
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}unconsolidated
-          maxscaledenom: 25000
+          maxscaledenom: 50000
           map_label: False
+          mapfile_config:
+            metadata:
+              wms_group_title: Unconsolidated
           symbol_prefix: unco_chrono_t
           data: "${GCOVER_POSTGIS_GEOM} FROM  (select * from geol.${GCOVER_POSTGIS_TABLE_PREFIX}unco_deposits WHERE map_symbol ilike 'unco_chrono_t%') as subselect  USING UNIQUE gid USING SRID=2056"
           include_items: "label,kind,runc_litho,runc_glac_typ,runc_chrono_t"
@@ -459,8 +527,11 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}unco_chrono_b
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}unconsolidated
-          maxscaledenom: 25000
+          maxscaledenom: 50000
           map_label: False
+          mapfile_config:
+            metadata:
+              wms_group_title: Unconsolidated
           data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}unco_deposits  USING UNIQUE gid USING SRID=2056"
           symbol_prefix: unco_chrono_b
           filter: RUNC_LITHO IN (15101009, 15101015)
@@ -495,7 +566,7 @@ layers:
           classification_name: Bedrock
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}bedrock
-          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}bedrock
+          # mapfile_group: ${GCOVER_LAYERNAME_PREFIX}bedrock
           map_label: False
           data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}bedrock  USING UNIQUE gid USING SRID=2056"
           include_items: "label,uuid,kind,gmu_desc,tecto_desc,litho_main_desc,litho_sec_desc,litho_ter_desc,chrono_base_desc,chrono_top_desc,correlation_desc"
