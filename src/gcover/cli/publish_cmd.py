@@ -1331,7 +1331,7 @@ def mapserver(
                 include_items = ",".join(sorted(fields))
 
             else:
-                include_items = raw_include
+                include_items = raw_include if raw_include else "all"
                 method_msg = "[green]Standard (Config-based)[/green]"
 
             # 3. Visual Feedback per Layer
@@ -1367,6 +1367,7 @@ def mapserver(
                 mapfile_config=mapfile_config,
                 staging_mode=staging_mode,
             )
+
 
             if staging_mode:
                 handle_staging_result(

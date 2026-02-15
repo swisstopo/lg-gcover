@@ -406,6 +406,7 @@ class MapServerGenerator:
                 map_label=None,
                 layer_max_scale=None,
                 layer_min_scale=None,
+                mapfile_config: Optional[MapfileGenerationConfig] = None,
         ):
             """Generate a MapServer LAYER block as a list of lines."""
 
@@ -428,24 +429,49 @@ class MapServerGenerator:
             lines.extend(
                 [
                     "",
-                    f'  NAME "{layer_name}"',
-                    f'  GROUP "{layer_group}"',
+                    f'  NAME "{layer_name}"'
+                ]
+            )
+            if layer_group:
+                lines.append( f'  GROUP "{layer_group}"')
+            lines.extend(
+                [
+
                     f"  TYPE {layer_type}",
                     "  STATUS ON",
                     "",
                 ]
             )
 
+
             # --- Metadata ---
             lines.extend(
                 [
                     "",
                     "  METADATA",
-                    f'    "wms_title"    "{layer_name.capitalize()}"',
+                    f'    "wms_title"    "{layer_name.capitalize()}"']
+            )
+            if layer_group:
+                lines.append(f'    "wms_enable_request" "*"')
+                # lines.append(f'    "wms_layer_group"      "/{layer_group}"')
+            else:
+                lines.append('    "wms_enable_request" "*"')
+            if mapfile_config:
+                metadata = getattr(mapfile_config, "metadata", None)
+                if metadata:
+                    for metadata_key in ["wms_group_title"]:
+                        metadata_value = metadata.get(metadata_key)
+                        if metadata_value:
+                            lines.append(f'    "{metadata_key}" "{metadata_value}"')
+
+
+
+
+            lines.extend(
+                    [
                     f'    "wms_abstract" "{layer_name.capitalize()}"',
                     '    "ows_srs"      "EPSG:2056 EPSG:21781 EPSG:4326 EPSG:3857 EPSG:3034 EPSG:3035 EPSG:4258 EPSG:25832 EPSG:25833 EPSG:31467 EPSG:32632 EPSG:32633 EPSG:900913"',
                     '    "wms_extent" "2300000 900000 3100000 1450000"',
-                    '    "wms_enable_request" "*"',
                     f'    "wms_include_items" "{include_items}"',
                     f'    "gml_include_items" "{include_items}"',
                     '    "gml_types" "auto"',
@@ -454,7 +480,7 @@ class MapServerGenerator:
             )
 
             # Special case
-            if "bedrock" in layer_name and "geocover" in layer_group:
+            if "bedrock" in layer_name and layer_group and "geocover" in layer_group:
                 lines.insert(-1, '    "wms_group_title"  "GeoCover 2D"')
 
             # --- Data source ---
@@ -546,6 +572,7 @@ class MapServerGenerator:
                 map_label,
                 layer_max_scale,
                 layer_min_scale,
+                mapfile_config,
         )
 
         # Generate CLASS blocks
@@ -578,7 +605,7 @@ class MapServerGenerator:
 
         # use_inc_file = True  # TODO: remove
 
-        console.print(f"Using include: {use_inc_file} (classes mode: {classes_mode})")
+        console.print(f"Using include: {use_inc_file} (classes mode: {classes_mode})", style="magenta")
 
         # ========================================
         # PART 4A: INLINE MODE (default)
@@ -650,7 +677,7 @@ class MapServerGenerator:
             # Build LAYER with INCLUDE
             # Determine relative path (relatif à où le .map sera écrit)
             # Pour simplifier, assume que classes/ est relatif à output_dir
-            relative_path = f"classes/{classes_file.name}"
+            relative_path = f"layers/classes/{classes_file.name}"  # relative to geocover.map
 
             lines.extend(
                 [
