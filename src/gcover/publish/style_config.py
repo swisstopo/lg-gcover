@@ -84,6 +84,14 @@ class MapfileGenerationConfig:
     # Expected symbols (for validation in manual mode)
     expected_symbols: Optional[List[str]] = None
 
+    # Classes generation mode
+    classes_mode: Literal["regenerate", "frozen","inline"] = "inline"
+
+    # Enable staging for comparison
+    staging_enabled: bool = True
+    # Output path for classes file
+    classes_file: Optional[Path] = None
+
     def __post_init__(self):
         """Validate configuration"""
         if self.generation_mode == "manual" and not self.manual_mapfile_path:
@@ -91,6 +99,14 @@ class MapfileGenerationConfig:
 
         if self.symbol_adjustments and isinstance(self.symbol_adjustments, dict):
             self.symbol_adjustments = SymbolAdjustments(**self.symbol_adjustments)
+
+        if self.classes_mode not in ("regenerate", "frozen", "inline"):
+            raise ValueError(f"Invalid classes_mode: {self.classes_mode}")
+
+        # Auto-set classes_file if not specified
+        if self.classes_file is None and self.generation_mode == "auto":
+            # Will be set by generator based on layer name
+            pass
 
 
 @dataclass

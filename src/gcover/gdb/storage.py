@@ -639,7 +639,7 @@ class S3Uploader:
             logger.info(f"Downloaded s3://{self.bucket_name}/{s3_key} to {local_path}")
             return True
         except ClientError as e:
-            logger.error(f"Download failed: {e}")
+            logger.error(f"Download from s3://{self.bucket_name}/{s3_key} to {local_path} failed: {e}")
             return False
 
 
