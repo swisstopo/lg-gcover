@@ -387,7 +387,7 @@ class TestClassIdentifier:
         )
         
         assert identifier.strategy == IdentifierStrategy.LABEL
-        assert identifier.canonical_id == "granite_biotite_et_muscovite"
+        assert identifier.canonical_id == "granite_a_biotite_et_muscovite"
         assert identifier.label == "Granite à biotite et muscovite"
     
     def test_index_identifier(self):
