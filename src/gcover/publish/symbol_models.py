@@ -17,6 +17,8 @@ from dataclasses import asdict
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
+from gcover.publish.utils import slugify_label
+
 from loguru import logger
 
 # =============================================================================
@@ -816,23 +818,9 @@ def _sanitize_value(value: str) -> str:
 
 def _sanitize_label(label: str) -> str:
     """Sanitize label for use in canonical ID."""
-    # Convert to lowercase
-    sanitized = label.lower()
 
-    # Replace spaces and special chars with underscore
-    sanitized = re.sub(r'[^a-z0-9]+', '_', sanitized)
+    return slugify_label(label, max_length=40)
 
-    # Remove multiple underscores
-    sanitized = re.sub(r'_+', '_', sanitized)
-
-    # Remove leading/trailing underscores
-    sanitized = sanitized.strip('_')
-
-    # Truncate if too long
-    if len(sanitized) > 40:
-        sanitized = sanitized[:40]
-
-    return sanitized
 
 
 def _extract_canonical_from_expression(expression: str, label: str = "") -> str:

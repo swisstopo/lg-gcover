@@ -1,15 +1,112 @@
+import difflib
+import json
 import re
+import shutil
+import sys
+import tempfile
+import unicodedata
+import zipfile
+from dataclasses import asdict, dataclass, field
+from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple
 
+import fiona
+import geopandas as gpd
 import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
 from rich.console import Console
-import tempfile
-import shutil
-import geopandas as gpd
-from pathlib import Path
-import fiona
 
 console = Console()
+
+
+# =============================================================================
+# LABEL SLUGIFICATION
+# =============================================================================
+
+
+def slugify_label(label: str, max_length: int = 50) -> str:
+    """
+    Convert label to a stable, URL-safe identifier.
+
+    Handles German/French geological terms with proper transliteration.
+
+    Args:
+        label: Original label text
+        max_length: Maximum length of output (default: 50)
+
+    Returns:
+        Slugified identifier string
+
+    Examples:
+        "Sumpf" → "sumpf"
+        "fluviatiler Schotter, Pleistozän-Holozän" → "fluviatiler_schotter_pleistozaen_holozaen"
+        "Moräne (Würm)" → "moraene_wuerm"
+        "Überschiebung" → "ueberschiebung"
+    """
+    if not label:
+        return "unknown"
+
+    # German-specific transliterations (before unicode normalization)
+    german_map = {
+        'ä': 'ae', 'ö': 'oe', 'ü': 'ue',
+        'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue',
+        'ß': 'ss',
+    }
+
+    # French-specific (keep accents for now, normalize later)
+    # é, è, ê, ë → e (handled by unicode normalization)
+
+    result = label
+    for char, replacement in german_map.items():
+        result = result.replace(char, replacement)
+
+    # Normalize unicode (é → e, etc.)
+    normalized = unicodedata.normalize('NFKD', result)
+    ascii_text = normalized.encode('ascii', 'ignore').decode('ascii')
+
+    # Convert to lowercase
+    lower = ascii_text.lower()
+
+    # Replace spaces, hyphens, and special chars with underscore
+    slug = re.sub(r'[^a-z0-9]+', '_', lower)
+
+    # Remove leading/trailing underscores and collapse multiple underscores
+    slug = re.sub(r'_+', '_', slug).strip('_')
+
+    # Limit length
+    if len(slug) > max_length:
+        # Try to cut at word boundary
+        truncated = slug[:max_length]
+        last_underscore = truncated.rfind('_')
+        if last_underscore > max_length // 2:
+            slug = truncated[:last_underscore]
+        else:
+            slug = truncated.rstrip('_')
+
+    return slug or "unknown"
+
+
+def make_unique_slug(slug: str, existing_slugs: Set[str]) -> str:
+    """
+    Ensure slug is unique by adding numeric suffix if needed.
+
+    Args:
+        slug: Base slug
+        existing_slugs: Set of already-used slugs
+
+    Returns:
+        Unique slug (possibly with _2, _3, etc. suffix)
+    """
+    if slug not in existing_slugs:
+        return slug
+
+    # Find next available suffix
+    counter = 2
+    while f"{slug}_{counter}" in existing_slugs:
+        counter += 1
+
+    return f"{slug}_{counter}"
 
 
 def save_layer_preserving_types(
