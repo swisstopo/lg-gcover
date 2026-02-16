@@ -2051,23 +2051,36 @@ def download(
                     # Optionally unzip
                     if unzip and filename.endswith(".zip"):
                         rprint(f"[cyan]  Extracting...[/cyan]")
-                        extract_dir = output_path / rc_name
-                        extract_dir.mkdir(parents=True, exist_ok=True)
 
+                        # 1. Extract to the original zip name folder
+                        real_extract_dir = output_path / local_path.stem
                         with zipfile.ZipFile(local_path, "r") as zf:
-                            # Get the list of files to show what's inside
-                            file_list = zf.namelist()
-                            gdb_folders = [
-                                f for f in file_list if f.endswith(".gdb/")
-                            ]
+                            zf.extractall(real_extract_dir)
 
-                            zf.extractall(extract_dir)
+                        rprint(f"[green]  ✓ Extracted to: {real_extract_dir}[/green]")
 
-                        rprint(f"[green]  ✓ Extracted to: {extract_dir}[/green]")
+                        # 2. Define the desired GDB name
+                        target_gdb = output_path / f"{rc_name}.gdb"
 
-                        if gdb_folders:
-                            for gdb in gdb_folders[:3]:  # Show first 3
-                                rprint(f"[dim]    - {gdb}[/dim]")
+                        # Handle Symlink (Linux/macOS) or Rename (Windows fallback)
+                        if sys.platform != "win32":
+                            # Unix-like: Create Symlink
+                            if target_gdb.exists() or target_gdb.is_symlink():
+                                target_gdb.unlink()
+
+                            target_gdb.symlink_to(real_extract_dir)
+                            rprint(f"[blue]  🔗 Created symlink: {target_gdb.name} -> {real_extract_dir.name}[/blue]")
+                        else:
+                            # Windows: Rename directory instead of symlinking
+                            rprint(
+                                f"[yellow]  ! Windows detected: Renaming directory to {rc_name}.gdb instead of symlinking[/yellow]")
+
+                            if target_gdb.exists():
+                                # If a folder with that name exists, we must remove it to rename
+                                shutil.rmtree(target_gdb)
+
+                            real_extract_dir.rename(target_gdb)
+                            rprint(f"[blue]  📂 Folder renamed to: {target_gdb.name}[/blue]")
 
                         # Optionally remove zip after extraction
                         if not keep_zip:
