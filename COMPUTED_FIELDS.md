@@ -77,6 +77,37 @@ computed_fields:
   map_angle: "(90 - azimuth) % 360"
 ```
 
+### Bearing (lines)
+
+```yaml
+- gpkg_layer: linear_objects
+  gcover_layer: GC_ROCK_BODIES/GC_LINEAR_OBJECTS
+  layer_type: line
+  computed_fields:
+    # Basic geometry
+    length_m: "geometry.length:round"
+    
+    # Bearing as integer (0-360)
+    bearing_deg: "geometry.bearing:int"
+    
+    # Strike for geological features (0-180)
+    strike_deg: "geometry.strike:int"
+    
+    # MapServer angle convention (0=East, CCW)
+    map_angle: "(90 - geometry.bearing) % 360:int"
+    
+    # Area in km² rounded
+    area_km2: "geometry.area / 1_000_000:round"
+    
+    # String field
+    bearing_label: "geometry.bearing:str"
+```
+
+**Output example:**
+```
+  ✓ Created 'bearing_deg' = geometry.bearing → int
+  ✓ Created 'map_angle' = (90 - geometry.bearing) % 360 → int
+  ✓ Created 'length_m' = geometry.length → round
 ### Area/Length for Display
 ```yaml
 computed_fields:
