@@ -92,6 +92,8 @@ layers:
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
           maxscaledenom: 50000
           mapfile_config:
+            symbol_adjustments:
+              point_size_multiplier: 1.5
             metadata:
               wms_group_title: Point Objects
           filter: KIND IN (13801001,13801002, 13801004, 13801003, 13801005, 13801006)
@@ -110,10 +112,13 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}achsenflaeche
           active: True
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
+          include_items: "label"
           # Only a few 100s features
           data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, map_symbol, (360 - azimuth::int) % 360 AS azimuth FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360 AND map_symbol ILIKE '%achsen%') AS subquery  USING UNIQUE gid USING SRID=2056"
           map_label: False
           mapfile_config:
+            symbol_adjustments:
+              point_size_multiplier: 1.5
             metadata:
               wms_group_title: Point Objects
           maxscaledenom: 50000
@@ -129,8 +134,11 @@ layers:
           mapfile_name: pnt_orient
           mapfile_group: point_features
           maxscaledenom: 50000
+          include_items: "label"
           map_label: True  # Use the .lyrx defined, if exists
           mapfile_config:
+            symbol_adjustments:
+              point_size_multiplier: 1.5
             metadata:
               wms_group_title: Point Objects
           active: True
@@ -207,6 +215,8 @@ layers:
           active: True
           map_label: False
           mapfile_config:
+            symbol_adjustments:
+              point_size_multiplier: 1.5
             metadata:
               wms_group_title: Point Objects
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
@@ -227,6 +237,8 @@ layers:
           maxscaledenom: 50000
           map_label: False
           mapfile_config:
+            symbol_adjustments:
+              point_size_multiplier: 1.5
             metadata:
               wms_group_title: Point Objects
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
