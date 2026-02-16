@@ -35,6 +35,9 @@ from rich.progress import (
 from rich.prompt import Confirm
 from rich.table import Table
 
+from gcover.core.geometry import (_compute_bearing_series, _compute_bearing_weighted_series, _compute_strike_series)
+
+
 # Import classification extractor
 from gcover.publish.esri_classification_extractor import (
     ClassificationClass,
@@ -69,6 +72,10 @@ GEOMETRY_PROPERTIES: Dict[str, Callable[[gpd.GeoDataFrame], pd.Series]] = {
     "geometry.bounds.miny": lambda gdf: gdf.bounds["miny"],
     "geometry.bounds.maxx": lambda gdf: gdf.bounds["maxx"],
     "geometry.bounds.maxy": lambda gdf: gdf.bounds["maxy"],
+    # Line bearing properties
+    "geometry.bearing": _compute_bearing_series,
+    "geometry.bearing_weighted": _compute_bearing_weighted_series,
+    "geometry.strike": _compute_strike_series,
 }
 
 

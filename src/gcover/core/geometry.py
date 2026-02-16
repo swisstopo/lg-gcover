@@ -21,10 +21,12 @@ from shapely import is_empty, is_valid, make_valid
 from shapely.geometry import (
     GeometryCollection,
     LineString,
+    MultiLineString,
     MultiPolygon,
     Point,
     Polygon,
 )
+
 from shapely.validation import explain_validity
 
 
@@ -848,3 +850,110 @@ def split_features_by_mapsheets(
     logger.debug("Feature splitting completed successfully!")
 
     return result_gdf
+
+
+
+def _compute_bearing_series(gdf: gpd.GeoDataFrame) -> pd.Series:
+    """
+    Compute bearing (azimuth) for each line geometry in the GeoDataFrame.
+
+    Returns bearing in degrees (0-360), where:
+    - 0° = North
+    - 90° = East
+    - 180° = South
+    - 270° = West
+
+    For MultiLineString: uses the longest constituent line.
+    For Swiss coordinates (EPSG:2056): X=easting, Y=northing.
+    """
+
+    def bearing_for_geom(geom):
+        if geom is None or geom.is_empty:
+            return np.nan
+
+        # Get the line to use (for MultiLineString, take longest)
+        if isinstance(geom, MultiLineString):
+            if len(geom.geoms) == 0:
+                return np.nan
+            line = max(geom.geoms, key=lambda g: g.length)
+        elif isinstance(geom, LineString):
+            line = geom
+        else:
+            return np.nan  # Not a line geometry
+
+        coords = list(line.coords)
+        if len(coords) < 2:
+            return np.nan
+
+        # Start and end points
+        x1, y1 = coords[0][:2]
+        x2, y2 = coords[-1][:2]
+
+        dx = x2 - x1
+        dy = y2 - y1
+
+        # atan2(dx, dy) gives angle from north, clockwise positive
+        bearing_rad = np.arctan2(dx, dy)
+        bearing_deg = np.degrees(bearing_rad)
+
+        return bearing_deg % 360
+
+    return gdf.geometry.apply(bearing_for_geom)
+
+
+def _compute_bearing_weighted_series(gdf: gpd.GeoDataFrame) -> pd.Series:
+    """
+    Compute length-weighted average bearing for MultiLineString geometries.
+
+    Uses vector averaging to handle angular wraparound correctly.
+    """
+
+    def weighted_bearing_for_geom(geom):
+        if geom is None or geom.is_empty:
+            return np.nan
+
+        lines = []
+        if isinstance(geom, MultiLineString):
+            lines = list(geom.geoms)
+        elif isinstance(geom, LineString):
+            lines = [geom]
+        else:
+            return np.nan
+
+        # Vector averaging
+        sum_x, sum_y, total_weight = 0.0, 0.0, 0.0
+
+        for line in lines:
+            coords = list(line.coords)
+            if len(coords) < 2:
+                continue
+
+            x1, y1 = coords[0][:2]
+            x2, y2 = coords[-1][:2]
+            dx, dy = x2 - x1, y2 - y1
+
+            bearing_rad = np.arctan2(dx, dy)
+            length = line.length
+
+            if length > 0:
+                sum_x += np.cos(bearing_rad) * length
+                sum_y += np.sin(bearing_rad) * length
+                total_weight += length
+
+        if total_weight == 0:
+            return np.nan
+
+        avg_bearing_rad = np.arctan2(sum_y, sum_x)
+        return np.degrees(avg_bearing_rad) % 360
+
+    return gdf.geometry.apply(weighted_bearing_for_geom)
+
+
+def _compute_strike_series(gdf: gpd.GeoDataFrame) -> pd.Series:
+    """
+    Compute strike (0-180°) - useful for geological features without direction.
+    """
+    bearings = _compute_bearing_series(gdf)
+    return bearings % 180
+
+

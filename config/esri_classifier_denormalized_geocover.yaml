@@ -247,6 +247,10 @@ layers:
       layer_type: line
       computed_fields:
         length_m: "geometry.length"
+        bearing_deg: "geometry.bearing"        # 0-360° from north
+        strike_deg: "geometry.strike"          # 0-180° (no direction)
+        # Convert to MapServer/ESRI angle convention (0=East, CCW positive):
+        bearing_angle: "90 - geometry.bearing"
       field_types:
         KIND: Int64
         TTEC_STATUS: Int64
