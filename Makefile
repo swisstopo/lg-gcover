@@ -7,8 +7,9 @@ STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/R16/styles/2026-01-28/
 MASTER_GDB        := $(OUTPUT_DIR)master_R16.gdb
 DENORMALIZED_GPKG := R16_master_denormalized.gpkg
 DENORMALIZED_PATH := $(OUTPUT_DIR)$(DENORMALIZED_GPKG)
-CLASSIFIED_PATH := $(OUTPUT_DIR)R16_master_denormalized.classified.gpkg
+CLASSIFIED_PATH := $(OUTPUT_DIR)R16_master_denormalized_classified.gpkg
 FULL_GDB          := $(DELIVERY_DIR)RC2.gdb
+SURFACES_AUX_PATH := $(OUTPUT_DIR)surfaces_aux.gpkg
 
 # Layers for denormalization
 LAYERS := fossils exploit_polygons exploit_points linear_objects point_objects bedrock surfaces unco_deposits
@@ -31,6 +32,7 @@ help:
 	@echo "Styles dir:			$(STYLES_DIR)"
 	@echo "DENORMALIZED GPKG:	$(DENORMALIZED_PATH)"
 	@echo "Classified:			$(CLASSIFIED_PATH)"
+	@echo "Surfaces auxilliary:	$(SURFACES_AUX_PATH)"
 	@echo "Output dir:			$(OUTPUT_DIR)"
 
 
@@ -77,6 +79,9 @@ denormalize: $(DENORMALIZED_PATH)
 
 ## classify: Apply classification from .lyrx to denormalized data
 classify: $(CLASSIFIED_PATH)
+
+surfaces_aux:
+	python scripts/surfaces_auxilliary_points.py -i $(CLASSIFIED_PATH) -l surfaces -s 80 -b 30 --output $(SURFACES_AUX_PATH)
 
 ## clean: Remove generated GDB and GeoPackage files
 clean:
