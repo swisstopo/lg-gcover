@@ -72,6 +72,8 @@ class MapfileGenerationConfig:
     # Global symbol adjustments (applied to ALL classes in this layer)
     symbol_adjustments: Optional[SymbolAdjustments] = None
 
+    symbol_scale: Optional[float] = None
+
     # Metadata overrides (extend/override default metadata)
     metadata: Optional[Dict[str, str]] = None
 
@@ -102,6 +104,9 @@ class MapfileGenerationConfig:
 
         if self.classes_mode not in ("regenerate", "frozen", "inline"):
             raise ValueError(f"Invalid classes_mode: {self.classes_mode}")
+
+        if self.symbol_scale is not None:
+            self.symbol_scale = float(self.symbol_scale)
 
         # Auto-set classes_file if not specified
         if self.classes_file is None and self.generation_mode == "auto":

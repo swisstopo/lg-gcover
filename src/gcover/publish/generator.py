@@ -761,6 +761,14 @@ class MapServerGenerator:
         """
         all_classes = []
 
+        if mapfile_config and mapfile_config.symbol_scale:
+            all_classes.extend([
+                "# Fixing symbol size",
+                f" SYMBOLSCALEDENOM {mapfile_config.symbol_scale}",
+                ""
+
+            ])
+
         for idx, class_obj in enumerate(classification.classes):
             if not class_obj.visible:
                 continue
