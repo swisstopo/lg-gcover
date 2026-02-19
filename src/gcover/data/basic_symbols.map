@@ -1,0 +1,71 @@
+
+  SYMBOL
+    NAME "circle"
+    TYPE ELLIPSE
+    POINTS 1 1 END
+    FILLED TRUE
+  END
+
+  SYMBOL
+    NAME "square"
+    TYPE VECTOR
+    POINTS
+      0 0
+      0 1
+      1 1
+      1 0
+      0 0
+    END
+    FILLED TRUE
+  END
+
+ SYMBOL
+    NAME "triangle"
+    TYPE VECTOR
+    POINTS
+      0 1
+      0.5 0
+      1 1
+      0 1
+    END
+    FILLED TRUE
+    ANCHORPOINT 0.5 1.0
+  END
+
+  SYMBOL
+    NAME "inverted_triangle"
+    TYPE VECTOR
+    POINTS
+      0.2 0
+      0.5 1
+      1 0
+      0.2 0
+    END
+    FILLED TRUE
+    ANCHORPOINT 0.5 0.0
+  END
+
+  SYMBOL
+    NAME "halfmoon"
+    TYPE PIXMAP
+    IMAGE "img/halfmoon.png"
+  END # SYMBOL
+
+  SYMBOL
+    NAME "star"
+    TYPE VECTOR
+    POINTS
+      0 0.375
+      0.35 0.375
+      0.5 0
+      0.65 0.375
+      1 0.375
+      0.75 0.625
+      0.875 1
+      0.5 0.75
+      0.125 1
+      0.25 0.625
+      0 0.375
+    END
+    FILLED TRUE
+  END

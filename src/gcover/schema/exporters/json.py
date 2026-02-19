@@ -184,11 +184,12 @@ def export_esri_schema_to_json(schema: ESRISchema, version: int = 2) -> dict[str
     return result
 
 
-from typing import Dict, List, Any, Optional, Union
-from ..differ import SchemaDiff
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Union
 
 from loguru import logger
+
+from ..differ import SchemaDiff
 
 
 def export_schema_diff_to_json(diff: SchemaDiff) -> Dict[str, Any]:

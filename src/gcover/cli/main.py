@@ -4,53 +4,164 @@ Main CLI entry point for gcover.
 """
 
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import click
+import dateparser
+from loguru import logger
+from rich import print as rprint
 
 # Ajouter le dossier parent au path si nécessaire (pour le développement)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 try:
     from gcover import __version__
-    from gcover.utils.imports import HAS_ARCPY
 except ImportError:
     __version__ = "unknown"
-    HAS_ARCPY = False
 
 
-@click.group()
+# from gcover.config import load_config
+
+from gcover.config import AppConfig, load_config
+from gcover.utils.logging import gcover_logger, setup_logging
+
+env_map = {
+    "prod": "production",
+    "production": "production",
+    "dev": "development",
+    "development": "development",
+    "sandisk": "sandisk",
+    "integration": "integration",
+    "int": "integration",
+    "test": "test",
+    "kogis": "kogis"
+}
+
+
+def parse_since(since: str) -> datetime:
+    parsed = dateparser.parse(since, settings={"RELATIVE_BASE": datetime.today()})
+    if parsed:
+        return parsed
+    else:
+        rprint(
+            f"[red]Invalid date: '{since}'. Use YYYY-MM-DD or natural language like '1 week ago'[/red]"
+        )
+        sys.exit(1)
+
+
+def _split_bbox(ctx, param, value):
+    if value is None:
+        return None
+    parts = [p.strip() for p in value.split(',')]
+
+    if len(parts) != 4:
+        raise click.BadParameter(
+            "BBOX must be exactly 4 numbers separated by commas (e.g., 'min_lon,min_lat,max_lon,max_lat')")
+    try:
+        # Convert to floats
+        bbox = tuple(float(part) for part in parts)
+    except ValueError:
+        raise click.BadParameter("All BBOX components must be numbers")
+    minxx, miny, maxx, maxy = bbox
+    if minxx > maxx or miny > maxy:
+        raise click.BadParameter("Invalid BBOX: min coordinates must be less than or equal to max coordinates")
+
+    return bbox
+
+
+def confirm_extended(prompt: str, default=True):
+    response = click.prompt(prompt + " [y/n]", default="y" if default else "n")
+    response = response.strip().lower()
+    return response in {"y", "yes", "o", "oui"}
+
+
+@click.group(context_settings={"show_default": True})
 @click.version_option(version=__version__, prog_name="gcover")
+@click.option(
+    "--config", "-c", type=click.Path(exists=True), help="Configuration file path"
+)
+@click.option(
+    "--env",
+    "-e",
+    type=click.Choice(env_map.keys()),
+    default="development",
+    help="Environment (dev/prod)",
+)
+@click.option(
+    "--verbose", "-v", is_flag=True, help="Enable verbose output and debug logging", default=False
+)
+@click.option(
+    "--log-file",
+    type=click.Path(path_type=Path),
+    help="Custom log file path (default: auto-generated)",
+)
+@click.option("--log-info", is_flag=True, help="Show logging configuration and exit")
 @click.pass_context
-def cli(ctx):
-    """
-    gcover - Geological vector data management tool.
-
-    A comprehensive toolkit for working with geological vector data,
-    providing bridge functionality between GeoPandas and ESRI formats,
-    schema management, quality assurance, and geodatabase management.
-    """
-    # Contexte global si nécessaire
+def cli(ctx, config, log_file, log_info, env, verbose):
+    """gcover - Swiss GeoCover data processing toolkit"""
     ctx.ensure_object(dict)
-    ctx.obj["has_arcpy"] = HAS_ARCPY
+    # ctx.obj["has_arcpy"] = HAS_ARCPY
+
+    # Normalize environment name
+    try:
+        environment = env_map[env.lower()]
+    except KeyError:
+        raise click.BadParameter(f"Unsupported environment: {env}")
+
+    try:
+        # Load centralized configuration
+        app_config: AppConfig = load_config(environment=environment, verbose=verbose)
+
+        # ctx.obj["config_manager"] = config_manager
+        ctx.obj["config_path"] = config
+        ctx.obj["environment"] = environment
+        ctx.obj["verbose"] = verbose
+
+        global_config = app_config.global_
+
+        # print(global_config.logging)
+        rprint(f"[cyan]Verbose: {verbose}[/cyan]")
+
+        if verbose:
+            rprint(f"[cyan]Environment: {environment}[/cyan]")
+            rprint(f"[cyan]Log Level: {global_config.log_level}[/cyan]")
+            rprint(f"[cyan]Bucket name: {global_config.s3.bucket}[/cyan]")
+            rprint(f"[cyan]Proxy: {global_config.proxy}[/cyan]")
+            rprint(f"[cyan]Temp Dir: {global_config.temp_dir}[/cyan]")
+            # rprint(f"[cyan]Has arcpy: {HAS_ARCPY}[/cyan]")
+
+        # Setup centralized logging FIRST (before any other operations)
+        setup_logging(verbose=verbose, log_file=log_file, environment=env)
+
+        # Show logging info and exit if requested
+        if log_info:
+            gcover_logger.show_log_info()
+            ctx.exit()
+
+        # Log the startup
+        logger.info(f"GCover CLI started (environment: {env})")
+        logger.debug(f"Configuration: config={config}, verbose={verbose}")
+
+    except Exception as e:
+        rprint(f"[red]Configuration error: {e}[/red]")
+        if verbose:
+            import traceback
+
+            rprint(f"[red]{traceback.format_exc()}[/red]")
+        sys.exit(1)
 
 
 @cli.command()
 def info() -> None:
     """Display information about the gcover installation."""
     click.echo(f"gcover version: {__version__}")
-    click.echo(f"ArcPy available: {'Yes' if HAS_ARCPY else 'No'}")
+    # click.echo(f"ArcPy available: {'Yes' if HAS_ARCPY else 'No'}")
     click.echo(f"Python version: {sys.version.split()[0]}")
 
     # Lister les modules disponibles
     click.echo("\nAvailable modules:")
     modules = []
-    try:
-        from gcover import bridge
-
-        modules.append("✓ bridge (GeoPandas <-> ESRI)")
-    except ImportError:
-        modules.append("✗ bridge (not available)")
 
     try:
         from gcover import schema
@@ -67,11 +178,25 @@ def info() -> None:
         modules.append("✗ qa (not available)")
 
     try:
-        from gcover import manage
+        from gcover import gdb
 
-        modules.append("✓ manage (GDB management)")
+        modules.append("✓ gdb (GDB management)")
     except ImportError:
-        modules.append("✗ manage (not available)")
+        modules.append("✗ gdb (not available)")
+
+    try:
+        from gcover import sde
+
+        modules.append("✓ sde (SDE management)")
+    except ImportError:
+        modules.append("✗ sde (not available)")
+
+    try:
+        from gcover import publish
+
+        modules.append("✓ publish (publication management)")
+    except ImportError:
+        modules.append("✗ publish (not available)")
 
     try:
         from gcover import geometry
@@ -84,39 +209,82 @@ def info() -> None:
         click.echo(f"  {module}")
 
 
-# Import des sous-commandes si disponibles
-try:
-    from .bridge_cmd import bridge
-
-    cli.add_command(bridge)
-except ImportError:
+# Additional logging commands
+@cli.group()
+def logs():
+    """Logging and diagnostics commands."""
     pass
 
+
+@logs.command("show")
+def show_logs():
+    """Show current logging configuration."""
+    gcover_logger.show_log_info()
+
+
+@logs.command("debug")
+@click.pass_context
+def enable_debug(ctx):
+    """Enable debug logging dynamically."""
+    gcover_logger.enable_debug_mode()
+    logger.debug("Debug logging enabled dynamically")
+    click.echo("✅ Debug logging enabled")
+
+
+@logs.command("tail")
+@click.option("--lines", "-n", default=50, help="Number of lines to show")
+def tail_logs(lines):
+    """Show recent log entries."""
+    log_file = gcover_logger.get_log_file_path()
+
+    if not log_file or not log_file.exists():
+        click.echo("❌ No log file found")
+        return
+
+    try:
+        with open(log_file, "r") as f:
+            all_lines = f.readlines()
+            recent_lines = all_lines[-lines:]
+
+        click.echo(f"📄 Last {len(recent_lines)} lines from {log_file}:")
+        click.echo("─" * 60)
+        for line in recent_lines:
+            click.echo(line.rstrip())
+
+    except Exception as e:
+        click.echo(f"❌ Error reading log file: {e}")
+
+
+# Import des sous-commandes si disponibles
+
 try:
-    from .schema_cmd import schema
+    from gcover.cli.schema_cmd import schema
 
     cli.add_command(schema)
-except ImportError:
-    pass
+except ImportError as e:
+    click.echo(f"Module `schema` not available: {e}")
+
 
 try:
-    from .gdb_cmd import gdb
+    from gcover.cli.gdb_cmd import gdb
 
     cli.add_command(gdb)
-except ImportError:
-    pass
+except ImportError as e:
+    click.echo(f"Module `gdb` not available: {e}")
+
 
 try:
-    from .qa_cmd import qa
+    from gcover.cli.qa_cmd import qa_commands
 
-    cli.add_command(qa)
-except ImportError:
-    pass
+    cli.add_command(qa_commands)
+except ImportError as e:
+    click.echo(f"Module `qa` not available: {e}")
+
 
 try:
-    from .manage_cmd import manage
+    from gcover.cli.publish_cmd import publish_commands
 
-    cli.add_command(manage)
+    cli.add_command(publish_commands)
 except ImportError:
     pass
 
@@ -126,6 +294,14 @@ try:
     cli.add_command(geometry)
 except ImportError:
     pass
+
+
+try:
+    from gcover.cli.sde_cmd import sde_commands
+
+    cli.add_command(sde_commands)
+except ImportError:
+    click.echo("Module `sde` not available")
 
 
 def main() -> None:

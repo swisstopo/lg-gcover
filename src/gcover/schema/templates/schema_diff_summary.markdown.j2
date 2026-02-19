@@ -1,0 +1,114 @@
+# Schema Comparison Summary
+
+**Date:** {{ metadata.comparison_date | format_datetime }} | **Old:** `{{ metadata.old_schema_name }}` | **New:** `{{ metadata.new_schema_name }}`
+
+---
+
+{% set total = summary | total_changes -%}
+{% if total == 0 -%}
+## No Changes Detected
+
+The schemas are identical.
+
+{% else -%}
+## Overview
+
+**{{ total }} total changes** detected across {{ summary | length }} categories.
+
+| Category | Added | Removed | Modified |
+|----------|-------|---------|----------|
+{% for category, counts in summary.items() -%}
+{% set category_total = counts.added + counts.removed + counts.modified -%}
+{% if category_total > 0 -%}
+| {{ category.replace('_', ' ').title() }} | {{ counts.added }} | {{ counts.removed }} | {{ counts.modified }} |
+{% endif -%}
+{% endfor -%}
+
+{% if coded_value_summary.total.added + coded_value_summary.total.removed + coded_value_summary.total.modified > 0 -%}
+### Coded Value Changes
+
+**{{ coded_value_summary.total.added + coded_value_summary.total.removed + coded_value_summary.total.modified }} coded value changes** across {{ coded_value_summary.by_domain | length }} domains:
+{{ coded_value_summary.total.added }} added, {{ coded_value_summary.total.removed }} removed, {{ coded_value_summary.total.modified }} modified.
+
+**Affected Domains:**
+{% for domain_name, counts in coded_value_summary.by_domain.items() -%}
+{% set domain_total = counts.added + counts.removed + counts.modified -%}
+- `{{ domain_name }}` ({{ domain_total }} changes)
+{% endfor -%}
+{% endif -%}
+
+## Changed Items
+
+{% if changes.domains -%}
+### Domains ({{ changes.domains | length }})
+
+{% for change in changes.domains -%}
+- **{{ change.change_type.upper() }}**: `{{ change.name }}`{% if change.coded_value_changes %} - {{ change.coded_value_changes | length }} coded value changes{% endif %}{% if change.property_changes %} - {{ change.property_changes | length }} property changes{% endif %}
+{% endfor -%}
+{% endif -%}
+
+{% if changes.tables -%}
+### Tables ({{ changes.tables | length }})
+
+{% for change in changes.tables -%}
+- **{{ change.change_type.upper() }}**: `{{ change.name }}`{% if change.field_changes %} - {{ change.field_changes | length }} field changes{% endif %}{% if change.property_changes %} - {{ change.property_changes | length }} property changes{% endif %}
+{% endfor -%}
+{% endif -%}
+
+{% if changes.feature_classes -%}
+### Feature Classes ({{ changes.feature_classes | length }})
+
+{% for change in changes.feature_classes -%}
+- **{{ change.change_type.upper() }}**: `{{ change.name }}`{% if change.field_changes %} - {{ change.field_changes | length }} field changes{% endif %}{% if change.property_changes %} - {{ change.property_changes | length }} property changes{% endif %}
+{% endfor -%}
+{% endif -%}
+
+{% if changes.relationships -%}
+### Relationships ({{ changes.relationships | length }})
+
+{% for change in changes.relationships -%}
+- **{{ change.change_type.upper() }}**: `{{ change.name }}`{% if change.property_changes %} - {{ change.property_changes | length }} property changes{% endif %}
+{% endfor -%}
+{% endif -%}
+
+{% if changes.subtypes -%}
+### Subtypes ({{ changes.subtypes | length }})
+
+{% for change in changes.subtypes -%}
+- **{{ change.change_type.upper() }}**: `{{ change.name }}`{% if change.value_changes %} - {{ change.value_changes | length }} value changes{% endif %}{% if change.property_changes %} - {{ change.property_changes | length }} property changes{% endif %}
+{% endfor -%}
+{% endif -%}
+
+{% endif -%}
+
+---
+
+{% if coded_value_summary.by_domain -%}
+## Quick Reference: Coded Value Changes
+
+{% for domain_name, counts in coded_value_summary.by_domain.items() -%}
+{% set domain_total = counts.added + counts.removed + counts.modified -%}
+{% if domain_total > 0 -%}
+### `{{ domain_name }}`
+
+{% for change in changes.domains -%}
+{% if change.name == domain_name and change.coded_value_changes -%}
+{% for cv_change in change.coded_value_changes -%}
+{% if cv_change.change_type == 'added' -%}
+- **+** `{{ cv_change.code }}`: {{ cv_change.new_name }}
+{% elif cv_change.change_type == 'removed' -%}
+- **-** `{{ cv_change.code }}`: {{ cv_change.old_name }}
+{% elif cv_change.change_type == 'modified' -%}
+- **~** `{{ cv_change.code }}`: {{ cv_change.old_name }} → {{ cv_change.new_name }}
+{% endif -%}
+{% endfor -%}
+{% endif -%}
+{% endfor -%}
+{% endif -%}
+{% endfor -%}
+
+{% endif -%}
+
+---
+
+*Report generated: {{ metadata.comparison_date | format_datetime }}*

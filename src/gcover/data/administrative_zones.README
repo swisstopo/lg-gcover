@@ -1,0 +1,35 @@
+
+Create administrative_zones.gpkg from 4 standardized source files (WU, lots, mapsheet and sources.xlsx).
+
+Simplified script that handles the real data sources with their actual attributes.
+
+2025-09-05  Added `SOURCE_RC` sources for BKP (data for publication)
+2025-10-13  Added sources `SOURCE_QA`  for QA (before publication)
+2025-10-14  Added borders_100m layer (100m buffer around mapsheet borders)
+2026-01-28  Only warning if missing  `QA_SOURCE`
+
+XLSX file:\\v0t0020a.adr.admin.ch\lg\01_PRODUKTION\GIS\TOPGIS\Produktableitung\R16_2026\Excels\GC_Sources_PA.xlsx
+Layer list:
+ * mapsheets_sources_only
+ * mapsheets_with_sources
+ * borders_100m
+ * lots
+ * work_units
+ * mapsheets
+
+-- 'mapsheets_sources_only' --
+
+   Unique SOURCE_RC values   
+┏━━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
+┃ Source            ┃ Count ┃
+┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
+│ RC1               │   162 │
+│ RC2               │    57 │
+│ BCK_2016          │     1 │
+│ 20300501_Saas.gdb │     1 │
+│ Total             │   221 │
+└───────────────────┴───────┘
+
+
+
+Generated on 2026-02-11 18:12:07 (for R16)

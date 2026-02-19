@@ -1,0 +1,1207 @@
+#!/usr/bin/env python
+#
+#
+"""
+Extended classification applicator with YAML-based batch processing
+"""
+
+import copy
+import json
+import os
+import re
+import sys
+import zipfile
+from dataclasses import asdict, dataclass, field
+from enum import Enum
+from pathlib import Path
+from pprint import pprint
+from typing import Any, Dict, List, Optional, Tuple, Union, Literal
+
+import click
+import fiona
+import geopandas as gpd
+import pandas as pd
+import pyogrio
+import yaml
+from dotenv import load_dotenv
+from loguru import logger
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
+from rich.table import Table
+from rich.tree import Tree
+
+from gcover.config.loader import load_config
+from gcover.publish.esri_classification_applicator import \
+    ClassificationApplicator
+from gcover.publish.esri_classification_extractor import (
+    extract_lyrx_complete,
+    IdentifierMode,
+)
+from gcover.publish.tooltips_enricher import LayerType
+from gcover.publish.utils import save_layer_preserving_types
+from gcover.publish.vectorized_classification import \
+    apply_batch_from_config_vectorized
+
+console = Console()
+
+
+@dataclass
+class SymbolAdjustments:
+    """Global symbol adjustments for a mapfile/layer"""
+
+    point_size_multiplier: float = 1.0
+    line_width_multiplier: float = 1.0
+    dash_pattern_override: Optional[List[float]] = None  # e.g., [5, 10]
+    transparency_override: Optional[int] = None  # 0-100
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class MapfileGenerationConfig:
+    """Configuration for mapfile generation control"""
+
+    generation_mode: Literal["auto", "manual", "disabled"] = "auto"
+
+    # Manual mode settings
+    manual_mapfile_path: Optional[Path] = None
+    extract_symbols_for_catalog: bool = True  # Extract symbols from manual file
+
+    # Global symbol adjustments (applied to ALL classes in this layer)
+    symbol_adjustments: Optional[SymbolAdjustments] = None
+
+    symbol_scale: Optional[float] = None
+
+    # Metadata overrides (extend/override default metadata)
+    metadata: Optional[Dict[str, str]] = None
+
+    # Data statement override
+    data_statement: Optional[str] = None
+
+    # Reason for manual/disabled (for documentation)
+    reason: Optional[str] = None
+
+    # Expected symbols (for validation in manual mode)
+    expected_symbols: Optional[List[str]] = None
+
+    # Classes generation mode
+    classes_mode: Literal["regenerate", "frozen","inline"] = "inline"
+
+    # Enable staging for comparison
+    staging_enabled: bool = True
+    # Output path for classes file
+    classes_file: Optional[Path] = None
+
+    def __post_init__(self):
+        """Validate configuration"""
+        if self.generation_mode == "manual" and not self.manual_mapfile_path:
+            raise ValueError("manual_mapfile_path required when generation_mode='manual'")
+
+        if self.symbol_adjustments and isinstance(self.symbol_adjustments, dict):
+            self.symbol_adjustments = SymbolAdjustments(**self.symbol_adjustments)
+
+        if self.classes_mode not in ("regenerate", "frozen", "inline"):
+            raise ValueError(f"Invalid classes_mode: {self.classes_mode}")
+
+        if self.symbol_scale is not None:
+            self.symbol_scale = float(self.symbol_scale)
+
+        # Auto-set classes_file if not specified
+        if self.classes_file is None and self.generation_mode == "auto":
+            # Will be set by generator based on layer name
+            pass
+
+
+@dataclass
+class ClassificationApplicationConfig:
+    """Configuration for a single classification application, currently a .lyrx file.
+    
+    Attributes:
+        style_file: Path to the .lyrx style file
+        index: Draw index (small=top)
+        mapfile_name: Name for the MapServer mapfile layer
+        mapfile_group: Group name for MapServer
+        map_label: Label configuration for MapServer
+        classification_name: Name of the classification within the .lyrx file
+        fields: Field mapping from GPKG to classification fields
+        filter: SQL-like filter expression
+        symbol_prefix: Prefix for generated symbol IDs
+        identifier_field: Field name to use for identifiers (when identifier_mode='field')
+        identifier_mode: How to generate symbol identifiers:
+            - 'label': Use slugified label text (default, most stable)
+            - 'index': Use sequential index (legacy, unstable if classes reorder)
+            - 'field': Use value from identifier_field
+        data: PostGIS DATA directive for MapServer
+        active: Whether this classification is active
+        include_items: Comma-separated list of fields to include in MapServer
+    """
+
+    style_file: Path
+    index: int  # draw index (small=top)
+    mapfile_name: Optional[str] = None
+    mapfile_group: Optional[str] = None
+    map_label: Optional[Union[None, bool, str]] = None
+    classification_name: Optional[str] = None
+    fields: Optional[Dict[str, str]] = None
+    filter: Optional[str] = None
+    symbol_prefix: Optional[str] = None
+    identifier_field: Optional[str] = None
+    identifier_mode: Optional[str] = None  # 'label' (default), 'index', or 'field'
+    data: Optional[str] = None
+    active: Optional[bool] = True
+    include_items: Optional[str] = None
+    maxscaledenom: Optional[float] = None
+    minscaledenom: Optional[float] = None
+    computed_fields: Optional[Dict[str, str]] = None
+    # Mapfile generation configuration
+    mapfile_config: Optional[MapfileGenerationConfig] = None
+
+    def __post_init__(self):
+        """Validate and initialize nested configurations"""
+        if self.mapfile_config and isinstance(self.mapfile_config, dict):
+            self.mapfile_config = MapfileGenerationConfig(**self.mapfile_config)
+
+
+    def get_identifier_mode(self) -> IdentifierMode:
+        """Get the IdentifierMode enum value.
+        
+        Returns:
+            IdentifierMode enum based on configuration:
+            - If identifier_mode is explicitly set, use that
+            - If identifier_field is set but mode isn't, assume 'field'
+            - Otherwise default to 'label'
+        """
+        if self.identifier_mode:
+            return IdentifierMode(self.identifier_mode.lower())
+        elif self.identifier_field:
+            # Backward compatibility: if identifier_field is set, assume field mode
+            return IdentifierMode.FIELD
+        else:
+            # Default to label mode (most stable)
+            return IdentifierMode.LABEL
+
+
+@dataclass
+class LayerConfig:
+    """Configuration for a GPKG layer with multiple classifications."""
+
+    gpkg_layer: str
+    gcover_layer: Optional[str]
+    classifications: List[ClassificationApplicationConfig]
+    field_types: Optional[Dict[str, str]] = None
+    layer_type: Optional[LayerType] = None
+    connection_ref: Optional[str] = None
+    template: Optional[str] = None
+    max_scale: Optional[bool | int] = None  # None, False, True, ou int
+    computed_fields: Optional[Dict[str, str]] = None
+
+
+
+def _resolve_env_vars(value: Any, max_depth: int = 10) -> Any:
+    """
+    Recursively resolve ${ENV_VAR} and ${ENV_VAR:default} placeholders.
+
+    Handles:
+    - Multiple placeholders: "${HOST}:${PORT}" → "localhost:5432"
+    - Default values: "${DB:postgres}" → "postgres" if DB not set
+    - Nested resolution: If resolved value contains ${...}, resolves those too
+    """
+    if isinstance(value, str):
+        pattern = r'\$\{([^}]+)\}'
+
+        def replacer(match: re.Match) -> str:
+            expr = match.group(1)
+            # Handle default value syntax: ${VAR:default}
+            if ':' in expr:
+                var_name, default = expr.split(':', 1)
+            else:
+                var_name, default = expr, None
+
+            resolved = os.environ.get(var_name)
+            if resolved is not None:
+                return resolved
+            if default is not None:
+                return default
+            # Keep original if not found and no default
+            return match.group(0)
+
+        # Resolve iteratively for nested cases
+        result = value
+        for _ in range(max_depth):
+            new_result = re.sub(pattern, replacer, result)
+            if new_result == result:
+                break  # No more substitutions
+            result = new_result
+        else:
+            # max_depth reached — possible circular reference
+            import warnings
+            warnings.warn(f"Max resolution depth reached for: {value[:50]}...")
+
+        return result
+
+    elif isinstance(value, dict):
+        return {k: _resolve_env_vars(v, max_depth) for k, v in value.items()}
+
+    elif isinstance(value, list):
+        return [_resolve_env_vars(item, max_depth) for item in value]
+
+    return value
+
+
+def deep_merge(base: Any, overlay: Any) -> Any:
+    """Deep merge overlay into base, overlay wins on conflicts."""
+    if isinstance(base, dict) and isinstance(overlay, dict):
+        result = copy.deepcopy(base)
+        for key, value in overlay.items():
+            if key in result:
+                result[key] = deep_merge(result[key], value)
+            else:
+                result[key] = copy.deepcopy(value)
+        return result
+    # Overlay wins for non-dict types
+    return copy.deepcopy(overlay)
+
+
+def _merge_classifications(
+        base_classifications: List[dict],
+        overlay_classifications: List[dict]
+) -> List[dict]:
+    """
+    Merge classification configs by classification_name.
+
+    - If classification_name exists in both: deep merge
+    - If only in overlay: append
+    - If only in base: keep
+    """
+
+    # Index by classification_name (or style_file as fallback)
+    def get_key(c: dict) -> str:
+        return c.get('classification_name') or c.get('style_file', '')
+
+    result = {get_key(c): copy.deepcopy(c) for c in base_classifications}
+
+    for overlay_class in overlay_classifications:
+        key = get_key(overlay_class)
+        if key in result:
+            # Merge existing classification
+            result[key] = deep_merge(result[key], overlay_class)
+        else:
+            # New classification from overlay
+            result[key] = copy.deepcopy(overlay_class)
+
+    # Preserve original order from base, append new ones at end
+    base_keys = [get_key(c) for c in base_classifications]
+    overlay_only_keys = [get_key(c) for c in overlay_classifications if get_key(c) not in base_keys]
+
+    ordered_keys = base_keys + overlay_only_keys
+    return [result[k] for k in ordered_keys if k in result]
+
+
+def _merge_layers(base_layers: List[dict], overlay_layers: List[dict]) -> List[dict]:
+    """
+    Merge layer configs by gpkg_layer.
+
+    - If gpkg_layer exists in both: deep merge (with special handling for classifications)
+    - If only in overlay: append
+    - If only in base: keep
+    """
+    result = {layer['gpkg_layer']: copy.deepcopy(layer) for layer in base_layers}
+
+    for overlay_layer in overlay_layers:
+        key = overlay_layer['gpkg_layer']
+        if key in result:
+            base_layer = result[key]
+
+            # Special handling for classifications list
+            base_classifications = base_layer.get('classifications', [])
+            overlay_classifications = overlay_layer.get('classifications', [])
+
+            if base_classifications and overlay_classifications:
+                # Merge classifications by classification_name
+                merged_classifications = _merge_classifications(
+                    base_classifications,
+                    overlay_classifications
+                )
+                # Merge the rest of the layer fields
+                merged_layer = deep_merge(base_layer, overlay_layer)
+                merged_layer['classifications'] = merged_classifications
+                result[key] = merged_layer
+            else:
+                # Simple deep merge if one side has no classifications
+                result[key] = deep_merge(base_layer, overlay_layer)
+        else:
+            # New layer from overlay
+            result[key] = copy.deepcopy(overlay_layer)
+
+    # Preserve order: base layers first, then new overlay layers
+    base_keys = [layer['gpkg_layer'] for layer in base_layers]
+    overlay_only_keys = [
+        layer['gpkg_layer'] for layer in overlay_layers
+        if layer['gpkg_layer'] not in base_keys
+    ]
+
+    ordered_keys = base_keys + overlay_only_keys
+    return [result[k] for k in ordered_keys if k in result]
+
+
+def merge_configs(base: dict, overlay: dict) -> dict:
+    """
+    Merge two configuration dicts with special handling for layers/classifications.
+
+    Merge hierarchy:
+    1. Top-level keys: deep merge
+    2. layers[]: merge by gpkg_layer
+    3. layers[].classifications[]: merge by classification_name
+    """
+    result = deep_merge(base, overlay)
+
+    # Special handling for layers list
+    if 'layers' in base and 'layers' in overlay:
+        result['layers'] = _merge_layers(base['layers'], overlay['layers'])
+
+    return result
+
+
+class BatchClassificationConfig:
+    """
+    Load batch configuration from YAML.
+
+    Args:
+        config_path: Path to YAML config file
+        styles_base_path: Base directory for resolving relative style paths
+        env: Environment to use (production, test, etc.)
+        overrides: Overwrite some config setting
+    """
+    def __init__(
+        self,
+        config_path: Path,
+        styles_base_path: Optional[Path] = None,
+        env: Optional[str] = None,
+        overrides: Optional[dict] = None,
+    ):
+        self.config_path = config_path
+        self.styles_base_path = styles_base_path or config_path.parent
+
+        with open(config_path, "r", encoding="utf-8") as f:
+            self.raw_config = yaml.safe_load(f)
+        logger.info(f"BatchClassificationConfig: environment: {env}")
+
+        # Apply environment overlay
+        if env:
+            env_path = config_path.with_suffix(f'.{env}.yaml')
+            logger.info(f"env overlay: {env_path}")
+            if env_path.exists():
+                with open(env_path, "r", encoding="utf-8") as f:
+                    env_config = yaml.safe_load(f) or {}
+                self.raw_config = merge_configs(self.raw_config, env_config)
+                logger.info(f"Applied {env} overlay from {env_path}")
+            else:
+                logger.warning(f"Overlay file not found: {env_path}")
+
+        # Apply programmatic overrides
+        if overrides:
+            self.raw_config = merge_configs(self.raw_config, overrides)
+
+        self.raw_config = _resolve_env_vars(self.raw_config)
+
+        # Parse global settings
+        self.global_settings = self.raw_config.get("global", {})
+        self.treat_zero_as_null = self.global_settings.get("treat_zero_as_null", False)
+        self.symbol_field = self.global_settings.get("symbol_field", "SYMBOL")
+        self.label_field = self.global_settings.get("label_field", "LABEL")
+        self.overwrite = self.global_settings.get("overwrite", False)
+        # Global default identifier mode (can be overridden per classification)
+        self.default_identifier_mode = self.global_settings.get("identifier_mode", "label")
+
+        # Parse layer configurations
+        self.layers: List[LayerConfig] = []
+        for layer_config in self.raw_config.get("layers", []):
+            self.layers.append(self._parse_layer_config(layer_config))
+
+        logger.debug(f"Loaded config with {len(self.layers)} layers")
+
+    def _parse_layer_config(self, layer_dict: dict) -> LayerConfig:
+        """Parse a single layer configuration."""
+        gpkg_layer = layer_dict["gpkg_layer"]
+        gcover_layer = layer_dict.get("gcover_layer")
+        layer_type_str = layer_dict.get("layer_type")
+        layer_type = LayerType(layer_type_str) if layer_type_str else None
+        connection_ref = layer_dict.get("connection_ref")
+        template = layer_dict.get("template")
+        classifications = []
+        field_types = layer_dict.get("field_types", {})
+        max_scale = layer_dict.get("scale", None)
+        computed_fields = layer_dict.get("computed_fields")
+
+
+
+        for class_dict in layer_dict.get("classifications", []):
+            # Resolve style file path
+            style_file = Path(class_dict["style_file"])
+            if not style_file.is_absolute():
+                style_file = self.styles_base_path / style_file
+
+            # Parse identifier_mode with fallback to global default
+            identifier_mode = class_dict.get("identifier_mode")
+            if identifier_mode is None and class_dict.get("identifier_field"):
+                # Backward compatibility: if identifier_field is set, assume 'field' mode
+                identifier_mode = "field"
+            elif identifier_mode is None:
+                # Use global default
+                identifier_mode = self.default_identifier_mode
+
+
+            # NEW: Parse mapfile generation config
+            mapfile_config = None
+            if "mapfile_config" in class_dict:
+                mapfile_dict = class_dict["mapfile_config"]
+
+                # Resolve manual_mapfile_path if relative
+                if "manual_mapfile_path" in class_dict:
+                    path = Path(class_dict["manual_mapfile_path"])
+                    if not path.is_absolute():
+                        class_dict["manual_mapfile_path"] = self.styles_base_path / path
+
+                mapfile_config = MapfileGenerationConfig(**mapfile_dict)
+
+            classifications.append(
+                ClassificationApplicationConfig(
+                    style_file=style_file,
+                    index=class_dict.get("index", 200),
+                    classification_name=class_dict.get("classification_name"),
+                    fields=class_dict.get("fields"),
+                    filter=class_dict.get("filter"),
+                    symbol_prefix=class_dict.get("symbol_prefix"),
+                    mapfile_name=class_dict.get("mapfile_name"),
+                    mapfile_group=class_dict.get("mapfile_group"),
+                    map_label=class_dict.get("map_label"),
+                    identifier_field=class_dict.get("identifier_field"),
+                    identifier_mode=identifier_mode,
+                    data=class_dict.get("data"),
+                    active=class_dict.get("active", True),
+                    include_items=class_dict.get("include_items"),
+                    maxscaledenom=class_dict.get("maxscaledenom"),
+                    minscaledenom=class_dict.get("minscaledenom"),
+                    computed_fields=class_dict.get("computed_fields"),
+                    mapfile_config=mapfile_config,
+                )
+            )
+
+        return LayerConfig(
+            gpkg_layer=gpkg_layer,
+            gcover_layer=gcover_layer,
+            classifications=classifications,
+            field_types=field_types,
+            layer_type=layer_type,
+            connection_ref=connection_ref,
+            template=template,
+            max_scale=max_scale,
+            computed_fields=computed_fields,
+
+        )
+
+    def get_layer_config(self, gpkg_layer: str) -> Optional[LayerConfig]:
+        """Get configuration for a specific GPKG layer."""
+        for layer in self.layers:
+            if layer.gpkg_layer == gpkg_layer:
+                return layer
+        return None
+
+    def get_manual_layers(self) -> List[LayerConfig]:
+        """Get all layers with at least one classification using manual mapfile generation."""
+        return [
+            layer
+            for layer in self.layers
+            if any(
+                cls.mapfile_config
+                and cls.mapfile_config.generation_mode == "manual"
+                for cls in layer.classifications
+            )
+        ]
+
+    def get_disabled_layers(self) -> List[LayerConfig]:
+        """Get all layers with at least one classification using manual mapfile generation."""
+        return [
+            layer
+            for layer in self.layers
+            if any(
+                cls.mapfile_config
+                and cls.mapfile_config.generation_mode == "disabled"
+                for cls in layer.classifications
+            )
+        ]
+
+    def get_auto_layers(self) -> List[LayerConfig]:
+            """Get all layers with at least one classification using manual mapfile generation."""
+            return [
+                layer
+                for layer in self.layers
+                if any(
+                    cls.mapfile_config
+                    and cls.mapfile_config.generation_mode == "auto"
+                    for cls in layer.classifications
+                )
+            ]
+
+
+
+
+
+# Then replace the function call or add a flag:
+def apply_batch_from_config(
+    gpkg_path: Path,
+    config: BatchClassificationConfig,
+    layer_name: Optional[str] = None,
+    output_path: Optional[Path] = None,
+    debug: bool = False,
+    bbox: Optional[tuple] = None,
+    continue_on_error: Optional[bool] = False,
+    use_vectorized: bool = True,  # NEW FLAG
+    preserve_existing: Optional[bool] = True,  # TODO remove?
+    overwrite: Optional[bool] = False,
+) -> Dict[str, any]:
+    """
+    Apply all classifications from config to a GPKG.
+
+    Args:
+        gpkg_path: Input GPKG file
+        config: Batch configuration
+        layer_name: Specific layer to process (None = process all layers in config)
+        output_path: Output GPKG path
+        debug: Enable debug output
+
+    Returns:
+        Dictionary with processing statistics
+    """
+
+    # Determine output path
+    if output_path is None:
+        output_path = gpkg_path.parent / f"{gpkg_path.stem}_classified.gpkg"
+
+    # Get available layers
+    available_layers = fiona.listlayers(str(gpkg_path))
+
+    # Determine which layers to process
+    if layer_name:
+        if layer_name not in available_layers:
+            console.print(
+                f"[red bold]✗ Layer '{layer_name}' not found in GPKG[/red bold]"
+            )
+            return {}
+        layers_to_process = [layer_name]
+    else:
+        # Process all layers that have config
+        layers_to_process = [
+            layer.gpkg_layer
+            for layer in config.layers
+            if layer.gpkg_layer in available_layers
+        ]
+
+    if not layers_to_process:
+        logger.warning("No layers to process!")
+        return {}
+
+    logger.info(
+        f"Processing {len(layers_to_process)} GPKG layers: {','.join(layers_to_process)}"
+    )
+
+    if use_vectorized:
+        return apply_batch_from_config_vectorized(
+            gpkg_path=gpkg_path,
+            config=config,
+            layer_name=layer_name,
+            output_path=output_path,
+            debug=debug,
+            bbox=bbox,
+            continue_on_error=continue_on_error,
+        )
+
+    # Iterative (non-vectorized) path
+
+    # Statistics
+    stats = {
+        "layers_processed": 0,
+        "classifications_applied": 0,
+        "features_classified": 0,
+        "features_total": 0,
+        "features_newly_classified": 0,
+    }
+    
+    # Process each layer
+    for layer in layers_to_process:
+        layer_config = config.get_layer_config(layer)
+        if not layer_config:
+            logger.warning(f"No configuration for layer '{layer}', skipping")
+            continue
+
+        console.print(f"\n[bold blue]Processing layer: {layer}[/bold blue]")
+        console.print(f"Applying {len(layer_config.classifications)} classifications")
+
+        logger.debug(layer_config)
+
+        # Build identifier_fields and identifier_modes from config
+        identifier_fields = {}
+        identifier_modes = {}
+        
+        for class_config in layer_config.classifications:
+            if class_config.classification_name:
+                key = class_config.classification_name
+                
+                # Set identifier mode
+                mode = class_config.get_identifier_mode()
+                identifier_modes[key] = mode
+                
+                # Set identifier field if using field mode
+                if mode == IdentifierMode.FIELD and class_config.identifier_field:
+                    identifier_fields[key] = class_config.identifier_field
+                    logger.debug(
+                        f"Layer '{key}' will use identifier_field: {class_config.identifier_field}"
+                    )
+                else:
+                    logger.debug(
+                        f"Layer '{key}' will use identifier_mode: {mode.value}"
+                    )
+
+        kwargs = {"layer": layer, "engine": "pyogrio", "use_arrow": True}
+        if bbox:
+            kwargs["bbox"] = bbox
+
+        # Load layer
+        schema = pyogrio.read_info(gpkg_path, layer=layer)
+        int_columns = [
+            name
+            for name, dtype in zip(schema["fields"], schema["dtypes"])
+            if dtype in ["int32", "int64"]
+        ]
+        gdf = gpd.read_file(gpkg_path, **kwargs)
+        # Force to `Int64` for nullable integers
+        for col in int_columns:
+            gdf[col] = gdf[col].astype("Int64")
+
+        stats["features_total"] += len(gdf)
+
+        # Initialize symbol/label fields
+        if config.symbol_field not in gdf.columns:
+            gdf[config.symbol_field] = None
+        if config.label_field not in gdf.columns:
+            gdf[config.label_field] = None
+
+        # Cast fields
+        field_types = layer_config.field_types or {}
+        if field_types:
+            console.print(f"\n[bold blue]Field types: {field_types}[/bold blue]")
+
+            for field, dtype in field_types.items():
+                if field in gdf.columns:
+                    try:
+                        # Handle nullable integer types properly
+                        if dtype.startswith("Int"):  # Int8, Int16, Int32, Int64
+                            gdf[field] = pd.to_numeric(
+                                gdf[field], errors="coerce"
+                            ).astype(dtype)
+                        else:
+                            gdf[field] = gdf[field].astype(dtype)
+
+                        console.print(
+                            f"  Casted [green]{field}[/green] to [green]{dtype}[/green]"
+                        )
+                    except Exception as e:
+                        console.print(
+                            f"  [red]Failed to cast {field} to {dtype}: {e}[/red]"
+                        )
+
+        # Apply each classification
+        for i, class_config in enumerate(layer_config.classifications, 1):
+            console.print(
+                f"\n  [{i}/{len(layer_config.classifications)}] --- {class_config.style_file.name} ---"
+            )
+            console.print(f"    Identifier mode: {class_config.get_identifier_mode().value}")
+            
+            try:
+                # Load classification from style file
+                classifications = extract_lyrx_complete(
+                    class_config.style_file,
+                    display=False,
+                    identifier_fields=identifier_fields,
+                    identifier_modes=identifier_modes,
+                )
+            except FileNotFoundError as e:
+                logger.error(f"Style .lyrx not found: {class_config.style_file}")
+                if continue_on_error:
+                    continue
+                raise
+
+            # Find the right classification
+            classification = None
+            if class_config.classification_name:
+                for c in classifications:
+                    if c.layer_name == class_config.classification_name:
+                        classification = c
+                        break
+                if not classification:
+                    logger.error(
+                        f"Classification '{class_config.classification_name}' not found in {class_config.style_file.name}"
+                    )
+                    continue
+            elif len(classifications) == 1:
+                classification = classifications[0]
+            else:
+                logger.error(
+                    f"Multiple classifications in {class_config.style_file.name}, specify classification_name"
+                )
+                continue
+
+            # Apply classification
+            try:
+                applicator = ClassificationApplicator(
+                    classification=classification,
+                    symbol_field=config.symbol_field,
+                    label_field=config.label_field,
+                    symbol_prefix=class_config.symbol_prefix,
+                    field_mapping=class_config.fields,
+                    field_types=field_types,
+                    treat_zero_as_null=config.treat_zero_as_null,
+                    debug=debug,
+                )
+
+                # Merge layer-level and classification-level computed_fields
+                merged_computed_fields = {
+                    **(layer_config.computed_fields or {}),
+                    **(class_config.computed_fields or {}),  # classification overrides layer
+                }
+
+                gdf_result = applicator.apply_v2(
+                    gdf,
+                    additional_filter=class_config.filter,
+                    overwrite=overwrite,
+                    preserve_existing=preserve_existing,
+                    computed_fields=merged_computed_fields or None,  # TODO
+                )
+
+                # Clean up string "None" values
+                gdf_result[config.symbol_field] = gdf_result[
+                    config.symbol_field
+                ].replace(["None", ""], None)
+                if config.label_field:
+                    gdf_result[config.label_field] = gdf_result[
+                        config.label_field
+                    ].replace(["None", ""], None)
+
+                # Update statistics
+                newly_classified = (
+                    gdf_result[config.symbol_field].notna()
+                    & (gdf[config.symbol_field].isna())
+                ).sum()
+                features_classified = gdf_result[config.symbol_field].notna().sum()
+                stats["features_newly_classified"] += newly_classified
+                stats["features_classified"] += features_classified
+                stats["classifications_applied"] += 1
+
+                # Update gdf for next classification
+                gdf = gdf_result
+
+                console.print(
+                    f"    [green]✓ Newly classified {newly_classified} features[/green]"
+                )
+
+            except Exception as e:
+                logger.error(f"Failed to apply classification: {e}")
+                debug = True
+                if debug:
+                    import traceback
+
+                    logger.debug(traceback.format_exc())
+                continue
+
+        # Save layer to output
+        console.print(f"\n  [cyan]Saving layer to {output_path}...[/cyan]")
+        console.print(f"Before save: {gdf[config.symbol_field].notna().sum()} symbols")
+
+        # Determine if this is the first layer
+        is_first = (layer == layers_to_process[0]) and not output_path.exists()
+
+        # Save with type preservation
+        save_layer_preserving_types(
+            gdf=gdf, output_path=output_path, layer_name=layer, is_first_layer=is_first
+        )
+
+        # Verification
+        gdf_check = gpd.read_file(output_path, layer=layer, engine="pyogrio")
+        console.print(
+            f"After save: {gdf_check[config.symbol_field].notna().sum()} symbols"
+        )
+
+        stats["layers_processed"] += 1
+
+        # Display layer summary
+        _display_layer_summary(
+            gdf_check, layer, config.symbol_field, config.label_field
+        )
+
+    return stats
+
+
+def _display_layer_summary(
+    gdf: gpd.GeoDataFrame, layer_name: str, symbol_field: str, label_field: str
+):
+    """Display summary statistics for a processed layer."""
+    total = len(gdf)
+    classified = gdf[symbol_field].notna().sum()
+    unclassified = total - classified
+
+    table = Table(title=f"Layer: {layer_name}", show_header=True)
+    table.add_column("Metric", style="cyan")
+    table.add_column("Count", style="green", justify="right")
+    table.add_column("Percentage", style="blue", justify="right")
+
+    table.add_row("Total features", str(total), "100%")
+    table.add_row("Classified", str(classified), f"{classified / total * 100:.1f}%")
+    table.add_row(
+        "Unclassified", str(unclassified), f"{unclassified / total * 100:.1f}%"
+    )
+
+    console.print(table)
+
+    # Show top symbol types
+    if classified > 0:
+        symbol_counts = gdf[symbol_field].value_counts().head(10)
+        console.print(
+            f"\n  [dim]Top symbols: {', '.join([f'{s} ({c})' for s, c in symbol_counts.items()])}[/dim]"
+        )
+
+
+# =============================================================================
+# CLI COMMAND
+# =============================================================================
+
+
+@click.group(name="classifier")
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress non-error output")
+def cli(verbose: bool, quiet: bool):
+    """🎨 Classification Symbol Applicator
+
+    Apply ESRI classification rules to GeoDataFrames/GPKG files.
+    Adds a SYMBOL field with generated class identifiers based on classification rules.
+    """
+    if quiet:
+        logger.remove()
+        logger.add(sys.stdout, level="ERROR", format="<red>{level}</red>: {message}")
+    elif verbose:
+        logger.remove()
+        logger.add(
+            sys.stdout,
+            level="DEBUG",
+            format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>",
+        )
+
+
+@cli.command()
+@click.argument("gpkg_file", type=click.Path(exists=True, path_type=Path))
+@click.argument("config_file", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--layer", "-l", help="Specific layer to process (default: all layers in config)"
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Output GPKG path (default: input_classified.gpkg)",
+)
+@click.option(
+    "--styles-dir",
+    type=click.Path(exists=True, path_type=Path),
+    help="Base directory for resolving relative style paths (default: config file directory)",
+)
+@click.option("--debug", is_flag=True, help="Enable debug output")
+@click.option(
+    "--dry-run", is_flag=True, help="Parse config without applying classifications"
+)
+def apply_config(
+    gpkg_file: Path,
+    config_file: Path,
+    layer: Optional[str],
+    output: Optional[Path],
+    styles_dir: Optional[Path],
+    debug: bool,
+    dry_run: bool,
+):
+    """Apply multiple classifications from YAML configuration file.
+
+    This command processes a GPKG using a YAML configuration that specifies
+    which style files to apply to which layers, with field mappings and filters.
+
+    \b
+    Example config structure:
+      global:
+        treat_zero_as_null: true
+        symbol_field: SYMBOL
+        label_field: LABEL
+        identifier_mode: label  # Default mode for all classifications
+      layers:
+        - gpkg_layer: GC_POINT_OBJECTS
+          classifications:
+            - style_file: styles/springs.lyrx
+              classification_name: Quelle
+              filter: KIND == 12501001
+              symbol_prefix: spring
+              # Uses default 'label' mode → stable slugified identifiers
+            - style_file: styles/bedrock.lyrx
+              identifier_field: GEOL_MAPPING_UNIT
+              identifier_mode: field  # Use field value as identifier
+              symbol_prefix: bedrock
+
+    \b
+    Identifier modes:
+      - label: Use slugified label text (default, most stable)
+      - index: Use sequential index (legacy, unstable if classes reorder)
+      - field: Use value from identifier_field
+
+    \b
+    Examples:
+      # Apply all classifications from config
+      classifier apply-config geocover.gpkg config.yaml
+
+      # Process only specific layer
+      classifier apply-config geocover.gpkg config.yaml -l GC_POINT_OBJECTS
+
+      # Specify styles directory
+      classifier apply-config data.gpkg config.yaml --styles-dir /path/to/styles
+
+      # Dry run to validate config
+      classifier apply-config geocover.gpkg config.yaml --dry-run
+    """
+    try:
+        console.print(f"\n[bold blue]📋 Batch Classification from Config[/bold blue]\n")
+
+        # Load configuration
+        with console.status("[cyan]Loading configuration...", spinner="dots"):
+            config = BatchClassificationConfig(config_file, styles_dir)
+
+        console.print(f"[green]✓[/green] Loaded configuration:")
+        console.print(f"  • Layers: {len(config.layers)}")
+        console.print(f"  • Symbol field: {config.symbol_field}")
+        console.print(f"  • Label field: {config.label_field}")
+        console.print(f"  • Treat 0 as NULL: {config.treat_zero_as_null}")
+        console.print(f"  • Default identifier mode: {config.default_identifier_mode}")
+
+        # Display layer summary
+        table = Table(title="Configuration Summary", show_header=True)
+        table.add_column("GPKG Layer", style="cyan")
+        table.add_column("Classifications", style="yellow", justify="right")
+        table.add_column("Style Files", style="dim")
+        table.add_column("ID Modes", style="green")
+
+        for layer_config in config.layers:
+            style_files = [c.style_file.name for c in layer_config.classifications]
+            id_modes = [c.get_identifier_mode().value for c in layer_config.classifications]
+            # Show unique modes
+            unique_modes = list(set(id_modes))
+            table.add_row(
+                layer_config.gpkg_layer,
+                str(len(layer_config.classifications)),
+                ", ".join(style_files[:3]) + ("..." if len(style_files) > 3 else ""),
+                ", ".join(unique_modes),
+            )
+
+        console.print(table)
+
+        if dry_run:
+            console.print("\n[yellow]🔍 Dry run - no changes will be made[/yellow]")
+
+            # Validate that style files exist
+            console.print("\nValidating style files...")
+            all_valid = True
+            for layer_config in config.layers:
+                for class_config in layer_config.classifications:
+                    mode_info = f"[{class_config.get_identifier_mode().value}]"
+                    if not class_config.style_file.exists():
+                        console.print(
+                            f"  [red]✗ Missing: {class_config.style_file}[/red] {mode_info}"
+                        )
+                        all_valid = False
+                    else:
+                        console.print(
+                            f"  [green]✓ Found: {class_config.style_file.name}[/green] {mode_info}"
+                        )
+
+            if all_valid:
+                console.print("\n[green]✓ Configuration is valid![/green]")
+            else:
+                console.print("\n[red]✗ Configuration has errors[/red]")
+            return
+
+        # Apply classifications
+        stats = apply_batch_from_config(
+            gpkg_path=gpkg_file,
+            config=config,
+            layer_name=layer,
+            output_path=output,
+            debug=debug,
+        )
+
+        # Display final statistics
+        console.print("\n[bold green]✅ Batch processing complete![/bold green]\n")
+
+        summary_table = Table(title="Processing Statistics", show_header=True)
+        summary_table.add_column("Metric", style="cyan")
+        summary_table.add_column("Value", style="green", justify="right")
+
+        summary_table.add_row("Layers processed", str(stats["layers_processed"]))
+        summary_table.add_row(
+            "Classifications applied", str(stats["classifications_applied"])
+        )
+        summary_table.add_row("Features classified", str(stats["features_classified"]))
+        summary_table.add_row("Total features", str(stats["features_total"]))
+
+        if stats["features_total"] > 0:
+            pct = stats["features_classified"] / stats["features_total"] * 100
+            summary_table.add_row("Coverage", f"{pct:.1f}%")
+
+        console.print(summary_table)
+
+        output_file = output or gpkg_file.parent / f"{gpkg_file.stem}_classified.gpkg"
+        console.print(f"\n[dim]Output: {output_file}[/dim]")
+
+    except Exception as e:
+        logger.error(f"Batch processing failed: {e}")
+        if debug:
+            import traceback
+
+            logger.debug(traceback.format_exc())
+        raise
+
+
+@cli.command()
+@click.argument(
+    "output_path", type=click.Path(path_type=Path), default="classification_config.yaml"
+)
+@click.option(
+    "--example",
+    type=click.Choice(["simple", "complex"]),
+    default="complex",
+    help="Type of example to generate",
+)
+def create_config(output_path: Path, example: str):
+    """Create an example YAML configuration file for batch processing.
+
+    \b
+    Examples:
+      # Create simple example
+      classifier create-config config.yaml --example simple
+
+      # Create complex example with multiple layers
+      classifier create-config config.yaml --example complex
+    """
+    if example == "simple":
+        config = {
+            "global": {
+                "treat_zero_as_null": True,
+                "symbol_field": "SYMBOL",
+                "label_field": "LABEL",
+                "identifier_mode": "label",  # Default: use slugified labels
+            },
+            "layers": [
+                {
+                    "gpkg_layer": "GC_FOSSILS",
+                    "classifications": [
+                        {
+                            "style_file": "styles/Fossils.lyrx",
+                            "classification_name": "Fossils",
+                            "filter": "KIND == 14601006",
+                            "symbol_prefix": "fossil",
+                            # Uses default 'label' mode
+                            "fields": {
+                                "KIND": "KIND",
+                                "LFOS_DIVISION": "LFOS_DIVISION",
+                                "LFOS_STATUS": "LFOS_STATUS",
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+    else:  # complex
+        config = {
+            "global": {
+                "treat_zero_as_null": True,
+                "symbol_field": "SYMBOL",
+                "label_field": "LABEL",
+                "overwrite": False,
+                "identifier_mode": "label",  # Default mode
+            },
+            "layers": [
+                {
+                    "gpkg_layer": "GC_POINT_OBJECTS",
+                    "classifications": [
+                        {
+                            "style_file": "styles/Point_Objects_Quelle.lyrx",
+                            "classification_name": "Quelle",
+                            "filter": "KIND == 12501001",
+                            "symbol_prefix": "spring",
+                            # identifier_mode: label (default) → spring_quelle_thermal, etc.
+                            "fields": {
+                                "KIND": "KIND",
+                                "HSUR_TYPE": "HSUR_TYPE",
+                                "HSUR_STATUS": "HSUR_STATUS",
+                            },
+                        },
+                        {
+                            "style_file": "styles/Point_Objects_Bohrung_Fels_erreicht.lyrx",
+                            "classification_name": "Bohrung Fels erreicht",
+                            "filter": "KIND == 12501002 and LBOR_ROCK_REACHED == 1",
+                            "symbol_prefix": "borehole_rock",
+                            "identifier_mode": "index",  # Legacy mode if needed
+                        },
+                        {
+                            "style_file": "styles/Point_Objects_Erraticker.lyrx",
+                            "classification_name": "Erraticker",
+                            "filter": "KIND == 14601008",
+                            "symbol_prefix": "erratic",
+                        },
+                    ],
+                },
+                {
+                    "gpkg_layer": "GC_BEDROCK",
+                    "classifications": [
+                        {
+                            "style_file": "styles/Bedrock.lyrx",
+                            "classification_name": "Bedrock",
+                            "symbol_prefix": "bedrock",
+                            "identifier_field": "TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT",
+                            "identifier_mode": "field",  # Use GEOL_MAPPING_UNIT value
+                            "fields": {
+                                "GMU_CODE": "TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT",
+                            },
+                        }
+                    ],
+                },
+                {
+                    "gpkg_layer": "GC_FOSSILS",
+                    "classifications": [
+                        {
+                            "style_file": "styles/Fossils.lyrx",
+                            "filter": "KIND == 14601006",
+                            "symbol_prefix": "fossil",
+                        }
+                    ],
+                },
+            ],
+        }
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        yaml.dump(
+            config, f, default_flow_style=False, allow_unicode=True, sort_keys=False
+        )
+
+    console.print(f"[green]✓ Created example configuration: {output_path}[/green]")
+    console.print(f"\nEdit this file to match your layers and style files, then run:")
+    console.print(
+        f"[cyan]  classifier apply-config your_data.gpkg {output_path}[/cyan]"
+    )
+
+
+if __name__ == "__main__":
+    cli()

@@ -1,30 +1,35 @@
 """
-lg-gcover - A library and CLI tool to work with geological vector data.
+lg-gcover - A library and CLI tool to work with Geocover 2D vector data and model.
 
 This package provides tools for working with geological vector data, including:
+- ESRI File Geodatabase management utilities
+- ESRI Schema Export management and comparison
+- File GDB QA tests results management and tools
 - Bridge functionality between GeoPandas and ESRI formats
-- Schema management and comparison
-- Quality assurance tools
-- Geodatabase management utilities
+- Publication tools (Mapserver, QGis, ArcGis)
 """
 
-__version__ = "0.1.0"
+__docformat__ = 'numpy'
 
-# Import des modules principaux pour un accès facile
-from .core.config import Config
+from gcover._version import __version__
 
-# TODO
-from .schema.models import ESRISchema
-from .utils.imports import HAS_ARCPY
+from gcover import cli, config, core, gdb, publish, qa, schema, utils
+
 
 # Définir ce qui est exporté avec "from gcover import *"
 __all__ = [
     "__version__",
-    "Config",
-    "HAS_ARCPY",
+    "core",
+    "config",
+    "cli",
+    "gdb",
+    "publish",
+    "qa",
+    "schema",
+    "utils",
 ]
 
 # Metadata
 __author__ = "Your Name"
-__email__ = "your.email@example.com"
-__license__ = "MIT"
+__email__ = "geocover@swisstopo.ch"
+__license__ = "BSD-3"

@@ -1,5 +1,5 @@
 package:
-  name: lg-gcover
+  name: gcover
   version: {{ environ.get('SETUPTOOLS_SCM_PRETEND_VERSION', '0.0.1') }}
 
 source:
@@ -30,6 +30,14 @@ requirements:
     - structlog >=23.0.0
     - python-dotenv >=1.0.0
     - loguru >=0.6.0
+    - gdal >=3.11.0
+    - dateparser >=1.0.0
+    - duckdb >=0.9.0
+    - boto3 >=1.26.0
+    - fiona >=1.9.0
+    - pyogrio >=0.7.0
+    - dateparser
+    - requests
 
 test:
   imports:
@@ -43,7 +51,7 @@ about:
   license_file: LICENSE
   summary: "A library and CLI tool to work with geological vector data"
   description: |
-    lg-gcover is a Python library and CLI tool designed to work with 
+    gcover is a Python library and CLI tool designed to work with 
     geological vector data, particularly the GeoCover dataset from 
     the Swiss national Geological Survey.
   doc_url: https://lg-gcover.readthedocs.io

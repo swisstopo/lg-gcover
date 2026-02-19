@@ -1,0 +1,205 @@
+# Schema Comparison Report
+
+**Comparison Date:** {{ metadata.comparison_date | format_datetime }}  
+**Old Schema:** `{{ metadata.old_schema_name }}`  
+**New Schema:** `{{ metadata.new_schema_name }}`
+
+---
+
+## Summary
+
+{% set total = summary | total_changes -%}
+{% if total == 0 -%}
+**No changes detected** - The schemas are identical.
+{% else -%}
+**Total Changes:** {{ total }}
+
+### Changes by Category
+
+| Category | Added | Removed | Modified | Total |
+|----------|-------|---------|----------|-------|
+{% for category, counts in summary.items() -%}
+{% set category_total = counts.added + counts.removed + counts.modified -%}
+{% if category_total > 0 -%}
+| {{ category.replace('_', ' ').title() }} | {{ counts.added }} | {{ counts.removed }} | {{ counts.modified }} | {{ category_total }} |
+{% endif -%}
+{% endfor -%}
+
+### Coded Value Changes Summary
+
+{% if coded_value_summary.total.added + coded_value_summary.total.removed + coded_value_summary.total.modified > 0 -%}
+**Total Coded Value Changes:** {{ coded_value_summary.total.added }} added, {{ coded_value_summary.total.removed }} removed, {{ coded_value_summary.total.modified }} modified
+
+| Domain | Added | Removed | Modified | Total |
+|--------|-------|---------|----------|-------|
+{% for domain_name, counts in coded_value_summary.by_domain.items() -%}
+{% set domain_total = counts.added + counts.removed + counts.modified -%}
+| `{{ domain_name }}` | {{ counts.added }} | {{ counts.removed }} | {{ counts.modified }} | {{ domain_total }} |
+{% endfor -%}
+{% else -%}
+No coded value changes detected.
+{% endif -%}
+{% endif %}
+
+---
+
+{% if changes.domains -%}
+## Domain Changes
+
+{% for change in changes.domains -%}
+### {{ change.change_type.title() }}: `{{ change.name }}`
+
+{% if change.coded_value_changes -%}
+#### Coded Value Changes ({{ change.coded_value_changes | length }} total)
+
+{% for cv_change in change.coded_value_changes -%}
+{% if cv_change.change_type == 'added' -%}
+- **ADDED** `{{ cv_change.code }}`: *{{ cv_change.new_name }}*
+{% elif cv_change.change_type == 'removed' -%}
+- **REMOVED** `{{ cv_change.code }}`: ~~{{ cv_change.old_name }}~~
+{% elif cv_change.change_type == 'modified' -%}
+- **MODIFIED** `{{ cv_change.code }}`: ~~{{ cv_change.old_name }}~~ → *{{ cv_change.new_name }}*
+{% endif -%}
+{% endfor -%}
+{% endif -%}
+
+{% if change.property_changes -%}
+#### Property Changes
+
+{% for prop, values in change.property_changes.items() -%}
+- **{{ prop }}**: `{{ values.old }}` → `{{ values.new }}`
+{% endfor -%}
+{% endif -%}
+
+---
+
+{% endfor -%}
+{% endif -%}
+
+{% if changes.tables -%}
+## Table Changes
+
+{% for change in changes.tables -%}
+### {{ change.change_type.title() }}: `{{ change.name }}`
+
+{% if change.field_changes -%}
+#### Field Changes ({{ change.field_changes | length }} total)
+
+{% for field in change.field_changes -%}
+##### {{ field.change_type.title() }}: `{{ field.name }}`
+
+{% if field.property_changes -%}
+**Property Changes:**
+{% for prop, values in field.property_changes.items() -%}
+- **{{ prop }}**: `{{ values.old }}` → `{{ values.new }}`
+{% endfor -%}
+{% endif -%}
+{% endfor -%}
+{% endif -%}
+
+{% if change.property_changes -%}
+#### Table Property Changes
+
+{% for prop, values in change.property_changes.items() -%}
+- **{{ prop }}**: `{{ values.old }}` → `{{ values.new }}`
+{% endfor -%}
+{% endif -%}
+
+---
+
+{% endfor -%}
+{% endif -%}
+
+{% if changes.feature_classes -%}
+## Feature Class Changes
+
+{% for change in changes.feature_classes -%}
+### {{ change.change_type.title() }}: `{{ change.name }}`
+
+{% if change.field_changes -%}
+#### Field Changes ({{ change.field_changes | length }} total)
+
+{% for field in change.field_changes -%}
+##### {{ field.change_type.title() }}: `{{ field.name }}`
+
+{% if field.property_changes -%}
+**Property Changes:**
+{% for prop, values in field.property_changes.items() -%}
+- **{{ prop }}**: `{{ values.old }}` → `{{ values.new }}`
+{% endfor -%}
+{% endif -%}
+{% endfor -%}
+{% endif -%}
+
+{% if change.property_changes -%}
+#### Feature Class Property Changes
+
+{% for prop, values in change.property_changes.items() -%}
+- **{{ prop }}**: `{{ values.old }}` → `{{ values.new }}`
+{% endfor -%}
+{% endif -%}
+
+---
+
+{% endfor -%}
+{% endif -%}
+
+{% if changes.relationships -%}
+## Relationship Changes
+
+{% for change in changes.relationships -%}
+### {{ change.change_type.title() }}: `{{ change.name }}`
+
+{% if change.property_changes -%}
+#### Property Changes
+
+{% for prop, values in change.property_changes.items() -%}
+- **{{ prop }}**: `{{ values.old }}` → `{{ values.new }}`
+{% endfor -%}
+{% endif -%}
+
+---
+
+{% endfor -%}
+{% endif -%}
+
+{% if changes.subtypes -%}
+## Subtype Changes
+
+{% for change in changes.subtypes -%}
+### {{ change.change_type.title() }}: `{{ change.name }}`
+
+{% if change.value_changes -%}
+#### Subtype Value Changes
+
+{% for code, change_type in change.value_changes.items() -%}
+- **{{ change_type.upper() }}** `{{ code }}`
+{% endfor -%}
+{% endif -%}
+
+{% if change.property_changes -%}
+#### Property Changes
+
+{% for prop, values in change.property_changes.items() -%}
+- **{{ prop }}**: `{{ values.old }}` → `{{ values.new }}`
+{% endfor -%}
+{% endif -%}
+
+---
+
+{% endfor -%}
+{% endif -%}
+
+---
+
+## Report Details
+
+- **Generated:** {{ metadata.comparison_date | format_datetime }}
+- **Old Schema:** {{ metadata.old_schema_name }}
+- **New Schema:** {{ metadata.new_schema_name }}
+{% if metadata.old_schema_backup_date -%}
+- **Old Schema Date:** {{ metadata.old_schema_backup_date }}
+{% endif -%}
+{% if metadata.new_schema_backup_date -%}
+- **New Schema Date:** {{ metadata.new_schema_backup_date }}
+{% endif -%}

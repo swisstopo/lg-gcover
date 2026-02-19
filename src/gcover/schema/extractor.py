@@ -3,8 +3,8 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ..utils.imports import require_arcpy
-from .models import ESRISchema
-from .transformer import transform_esri_json
+from gcover.models import ESRISchema
+from gcover.transformer import transform_esri_json
 
 
 @require_arcpy
@@ -28,7 +28,7 @@ def extract_schema(
     """
     import tempfile
 
-    import arcpy
+    from gcover.arcpy_compat import HAS_ARCPY, arcpy
 
     if output_dir is None:
         output_dir = Path(tempfile.mkdtemp())

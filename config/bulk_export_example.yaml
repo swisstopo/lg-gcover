@@ -1,0 +1,34 @@
+# config/bulk_export_example.yaml
+# Configuration for bulk SDE export operations
+
+exports:
+  # Basic export - all data, all fields
+  - feature_class: "TOPGIS_GC.GC_ROCK_BODIES/TOPGIS_GC.GC_BEDROCK"
+    output_file: "gc_bedrock_full.gpkg"
+    layer_name: "bedrock"
+
+  # Filtered export with specific fields and WHERE clause
+  - feature_class: "TOPGIS_GC.GC_ROCK_BODIES/TOPGIS_GC.GC_UNCO_DESPOSIT"
+    output_file: "gc_deposits_recent.gpkg"
+    layer_name: "deposits"
+    fields: ["UUID", "OBJECTID", "OPERATOR", "DATEOFCHANGE", "MORE_INFO"]
+    where_clause: "DATEOFCHANGE > date '2024-01-01'"
+    max_features: 10000
+
+  # Spatial filtered export with bounding box
+  - feature_class: "TOPGIS_GC.GC_ROCK_BODIES/TOPGIS_GC.GC_BEDROCK"
+    output_file: "gc_bedrock_bern.gpkg"
+    layer_name: "bedrock_bern"
+    bbox: [2585000.0, 1158000.0, 2602500.0, 1170000.0]  # Bern region
+
+  # Export for specific analysis
+  - feature_class: "TOPGIS_GC.GC_ROCK_BODIES/TOPGIS_GC.GC_BEDROCK"
+    output_file: "gc_bedrock_analysis.geojson"
+    fields: ["UUID", "ROCK_TYPE", "AGE", "FORMATION"]
+    where_clause: "ROCK_TYPE IS NOT NULL AND AGE IS NOT NULL"
+
+# Global settings (optional)
+settings:
+  default_crs: "EPSG:2056"
+  chunk_size: 5000
+  log_level: "INFO"

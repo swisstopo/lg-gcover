@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel", "setuptools-scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lg-gcover"
+name = "gcover"
 dynamic = ["version"]
 description = "A library and CLI tool to work with geological vector data"
 readme = "README.md"
@@ -39,11 +39,36 @@ dependencies = [
     "pyyaml>=6.0",
     "structlog>=23.0.0",
     "python-dotenv>=1.0.0",
-    "fiona>=1.0.0",
+    "boto3>=1.26.0",
+    "duckdb>=0.9.0",
+    "fiona>=1.9.0",
+    "pyogrio>=0.7.0",
+    "flask>=2.3.0",
+    "pyyaml>=6.0",
+    "tabulate>=0.9.0",
     "loguru",
+    "jinja2>=3.0.0",
+    "requests",
+    "dateparser",
+    "duckdb",
 ]
 
+
 [project.optional-dependencies]
+# For standalone installations (without ArcGIS Pro)
+standalone = [
+    "gdal>=3.10.0",  # Latest version for better FileGDB support
+]
+
+# ============================================================================
+# PARQUET/ARROW - INCOMPATIBLE avec ArcGIS Pro !
+# ============================================================================
+# Ces packages entrent en conflit avec le GDAL d'ESRI
+# À installer UNIQUEMENT dans des environnements sans ArcGIS Pro
+parquet = [
+    "pyarrow>=10.0.0",      # ⚠️ Conflit avec ESRI GDAL
+    "fastparquet>=2023.0",  # ⚠️ Conflit avec ESRI GDAL
+]
 # arcpy ne peut pas être installé via pip, mais on documente la dépendance
 esri = []  # Les utilisateurs doivent installer ArcGIS Pro manuellement
 
@@ -57,6 +82,7 @@ dev = [
     "pre-commit>=3.0",
     "types-pyyaml",
     "types-click",
+    "pdoc",
 ]
 
 docs = [
@@ -77,9 +103,18 @@ viz = [
     "plotly>=5.0",
 ]
 
-all = [
-    "lg-gcover[dev,docs,cloud,viz]",
+# Install with standalone GDAL
+full = [
+    "gcover[standalone,dev,docs,cloud,viz, parquet]",
 ]
+
+# Install for ESRI environments
+esri-dev = [
+    "gcover[esri,dev,docs,cloud,viz]",
+]
+
+
+
 
 [project.urls]
 Homepage = "https://github.com/swisstopo/lg-gcover"
@@ -90,6 +125,9 @@ Changelog = "https://github.com/swisstopo/lg-gcover/blob/main/CHANGELOG.md"
 
 [project.scripts]
 gcover = "gcover.cli.main:cli"
+gcover-info = "gcover.cli.gcover_info:info"
+gcover-gdb = "gcover.cli.gdb_cli:cli"    # New GDB CLI
+gcover-dashboard = "gcover.gdb.dashboard:main"  # Dashboard
 
 [tool.setuptools]
 # Cette section est cruciale pour inclure vos __init__.py
@@ -103,6 +141,7 @@ exclude = ["tests*", "docs*"]
 [tool.setuptools.package-data]
 # Inclure explicitement les fichiers __init__.py et autres fichiers de données
 gcover = ["**/*.py", "**/*.yaml", "**/*.yml", "**/*.json"]
+data = ["data/*"]
 
 [tool.setuptools_scm]
 # Gestion automatique de la version basée sur les tags git
@@ -148,6 +187,8 @@ ignore = [
     "E501",  # line too long (handled by black)
     "B008",  # do not perform function calls in argument defaults
     "C901",  # too complex
+    "UP006",  # Dict -> builtin dict
+    "UP045", # X | None
 ]
 
 [tool.ruff.per-file-ignores]
@@ -192,9 +233,17 @@ addopts = [
     "--cov-report=html",
     "--cov-report=xml",
 ]
+# Environment variable handling
+env = [
+    "GCOVER_ENVIRONMENT=test"
+]
+env_override_existing_values = 0
+
+
+
 
 [tool.coverage.run]
-source = ["gcover"]
+source = ["src/gcover"]
 omit = [
     "*/tests/*",
     "*/_version.py",
