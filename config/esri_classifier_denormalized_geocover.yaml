@@ -30,6 +30,8 @@ layers:
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}exploit_points USING UNIQUE gid USING SRID=2056"
           include_items: "label,kin,aexp_status,aexp_targ_mat,aexp_depth_tot"
           map_label: False
+          mapfile_config:
+            symbol_scale: 20000
           # TODO: no filter
           symbol_prefix: geomat_pnt
           fields:
@@ -92,6 +94,8 @@ layers:
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
           maxscaledenom: 50000
           mapfile_config:
+            symbol_adjustments:
+              point_size_multiplier: 1.5
             metadata:
               wms_group_title: Point Objects
           filter: KIND IN (13801001,13801002, 13801004, 13801003, 13801005, 13801006)
@@ -110,10 +114,13 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}achsenflaeche
           active: True
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
+          include_items: "label"
           # Only a few 100s features
           data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, map_symbol, (360 - azimuth::int) % 360 AS azimuth FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360 AND map_symbol ILIKE '%achsen%') AS subquery  USING UNIQUE gid USING SRID=2056"
           map_label: False
           mapfile_config:
+            symbol_adjustments:
+              point_size_multiplier: 1.5
             metadata:
               wms_group_title: Point Objects
           maxscaledenom: 50000
@@ -129,8 +136,11 @@ layers:
           mapfile_name: pnt_orient
           mapfile_group: point_features
           maxscaledenom: 50000
+          include_items: "label"
           map_label: True  # Use the .lyrx defined, if exists
           mapfile_config:
+            symbol_adjustments:
+              point_size_multiplier: 1.5
             metadata:
               wms_group_title: Point Objects
           active: True
@@ -207,6 +217,8 @@ layers:
           active: True
           map_label: False
           mapfile_config:
+            symbol_adjustments:
+              point_size_multiplier: 1.5
             metadata:
               wms_group_title: Point Objects
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
@@ -227,6 +239,8 @@ layers:
           maxscaledenom: 50000
           map_label: False
           mapfile_config:
+            symbol_adjustments:
+              point_size_multiplier: 1.5
             metadata:
               wms_group_title: Point Objects
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
@@ -271,10 +285,11 @@ layers:
           include_items: "label,ggla_glac_typ,ggla_ice_m_p,ggla_quat_str"
           mapfile_config:
             classes_mode: frozen
+            symbol_scale: 12500
             metadata:
               wms_group_title: Linear Objects
           map_label: False
-          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects USING UNIQUE gid USING SRID=2056"
+          data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, map_angle, strike_deg, map_symbol FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects) AS subquery  USING UNIQUE gid USING SRID=2056"
           fields:
             KIND: KIND
             GGLA_GLAC_TYP: GGLA_GLAC_TYP
@@ -326,10 +341,12 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}gesteinhorizont
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
           mapfile_config:
+            classes_mode: frozen
+            symbol_scale: 12500
             metadata:
               wms_group_title: Linear Objects
           map_label: False
-          include_items: "label,lpro_litho"
+          include_items: "label,lpro_litho,lpro_cong_spe,lpro_name_horiz"
           fields:
             KIND: KIND
             LPRO_LITHO: LPRO_LITHO
@@ -377,6 +394,7 @@ layers:
           include_items: "label,kind,ttec_name,ttec_fault_mo,ttec_verti_mo,ttec_horiz_mo,ttec_status,ttec_lim_typ,ttec_hiera,ttec_activity,ttec_lim_tect_b"
           mapfile_config:
             classes_mode: frozen
+            symbol_scale: 12500
             metadata:
               wms_group_title: Linear Objects
           map_label: False
@@ -430,6 +448,7 @@ layers:
           maxscaledenom: 50000
           mapfile_config:
             classes_mode: frozen
+            symbol_scale: 12000
           include_items: "label,more_info,kind,aarc_epoch"
           map_label: False
           #data: "geom from (SELECT * from surfaces where map_symbol IS NOT NULL) as blabla using unique gid using srid=2056"
@@ -465,9 +484,8 @@ layers:
           map_label: False
           include_items: "label,kind"
           mapfile_config:
-            metadata:
-              wms_group_title: Unconsolidated
-          mapfile_config:
+            classes_mode: frozen
+            symbol_scale: 12000
             metadata:
               wms_group_title: Unconsolidated
           data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}unco_deposits  USING UNIQUE gid USING SRID=2056"
@@ -546,6 +564,8 @@ layers:
           maxscaledenom: 50000
           map_label: False
           mapfile_config:
+            classes_mode: frozen
+            symbol_scale: 8000
             metadata:
               wms_group_title: Unconsolidated
           data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}unco_deposits  USING UNIQUE gid USING SRID=2056"
