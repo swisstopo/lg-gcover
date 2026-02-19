@@ -35,7 +35,7 @@ help:
 
 
 ## all: Run the entire workflow (Merge -> Import -> Denormalize -> Symbolize)
-all: $(CLASSIFIED_PATH)
+all: merge $(CLASSIFIED_PATH)
 
 # 1. Merge sources and run diagnosis
 $(MASTER_GDB): $(DELIVERY_DIR)RC1.gdb $(DELIVERY_DIR)RC2.gdb

@@ -247,6 +247,11 @@ layers:
       layer_type: line
       computed_fields:
         length_m: "geometry.length"
+        bearing_deg: "geometry.bearing:int" # 0-360° from north
+        # Strike for geological features (0-180)
+        strike_deg: "geometry.strike:int"  # 0-180° (no direction)
+        # MapServer angle convention (0=East, CCW positive)
+        map_angle: "(90 - geometry.bearing) % 360:int"
       field_types:
         KIND: Int64
         TTEC_STATUS: Int64

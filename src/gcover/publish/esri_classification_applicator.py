@@ -12,9 +12,7 @@ Author: Generated for lg-gcover project
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
-from typing import Callable
-
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import click
 import geopandas as gpd
@@ -24,24 +22,18 @@ import yaml
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import (
-    BarColumn,
-    Progress,
-    SpinnerColumn,
-    TaskProgressColumn,
-    TextColumn,
-    TimeRemainingColumn,
-)
+from rich.progress import (BarColumn, Progress, SpinnerColumn,
+                           TaskProgressColumn, TextColumn, TimeRemainingColumn)
 from rich.prompt import Confirm
 from rich.table import Table
 
+from gcover.core.geometry import (_compute_bearing_series,
+                                  _compute_bearing_weighted_series,
+                                  _compute_strike_series)
 # Import classification extractor
 from gcover.publish.esri_classification_extractor import (
-    ClassificationClass,
-    ESRIClassificationExtractor,
-    LayerClassification,
-    extract_lyrx_complete,
-)
+    ClassificationClass, ESRIClassificationExtractor, LayerClassification,
+    extract_lyrx_complete)
 from gcover.publish.utils import translate_esri_to_pandas
 
 console = Console()
@@ -69,25 +61,114 @@ GEOMETRY_PROPERTIES: Dict[str, Callable[[gpd.GeoDataFrame], pd.Series]] = {
     "geometry.bounds.miny": lambda gdf: gdf.bounds["miny"],
     "geometry.bounds.maxx": lambda gdf: gdf.bounds["maxx"],
     "geometry.bounds.maxy": lambda gdf: gdf.bounds["maxy"],
+    # Line bearing properties
+    "geometry.bearing": _compute_bearing_series,
+    "geometry.bearing_weighted": _compute_bearing_weighted_series,
+    "geometry.strike": _compute_strike_series,
+}
+# Supported inline type casts
+SUPPORTED_CASTS = {
+    "int",
+    "Int64",
+    "Int32",
+    "float",
+    "float64",
+    "str",
+    "string",
+    "round",
+    "bool",
 }
 
 
+def _parse_expression_with_cast(expression: str) -> Tuple[str, Optional[str]]:
+    """
+    Parse expression for optional type cast suffix.
+
+    Syntax: "expression:cast_type"
+
+    Examples:
+        "geometry.bearing:int" → ("geometry.bearing", "int")
+        "geometry.area / 1_000_000:round" → ("geometry.area / 1_000_000", "round")
+        "geometry.length" → ("geometry.length", None)
+
+    Returns:
+        Tuple of (clean_expression, cast_type or None)
+    """
+    if ":" not in expression:
+        return expression, None
+
+    # Split from the right to handle expressions that might contain colons
+    # (though unlikely in pandas eval expressions)
+    parts = expression.rsplit(":", 1)
+
+    potential_cast = parts[-1].strip()
+
+    if potential_cast in SUPPORTED_CASTS:
+        return parts[0].strip(), potential_cast
+
+    # Not a recognized cast, return original expression
+    return expression, None
+
+
+def _apply_cast(series: pd.Series, cast_type: str) -> pd.Series:
+    """
+    Apply type cast to a pandas Series.
+
+    Args:
+        series: Input Series
+        cast_type: One of SUPPORTED_CASTS
+
+    Returns:
+        Casted Series
+    """
+    if cast_type in ("int", "Int64"):
+        # Use nullable integer to preserve NaN
+        return series.round().astype("Int64")
+
+    elif cast_type == "Int32":
+        return series.round().astype("Int32")
+
+    elif cast_type in ("float", "float64"):
+        return series.astype("float64")
+
+    elif cast_type in ("str", "string"):
+        return series.astype("string")
+
+    elif cast_type == "round":
+        return series.round()
+
+    elif cast_type == "bool":
+        return series.astype("boolean")
+
+    else:
+        logger.warning(f"Unknown cast type '{cast_type}', returning unchanged")
+        return series
+
+
 def apply_computed_fields(
-        gdf: gpd.GeoDataFrame,
-        computed_fields: Optional[Dict[str, str]],
-        strict: bool = False,
+    gdf: gpd.GeoDataFrame,
+    computed_fields: Optional[Dict[str, str]],
+    strict: bool = False,
 ) -> gpd.GeoDataFrame:
     """
     Add or update computed fields using pandas eval expressions.
 
     Supports:
     - Column arithmetic: "(90 - azimuth) % 360"
-    - Geometry properties: "geometry.length", "geometry.area"
+    - Geometry properties: "geometry.length", "geometry.area", "geometry.bearing"
     - Mixed expressions: "geometry.area / 1_000_000"
+    - Inline type casting: "geometry.bearing:int", "geometry.area:round"
+
+    Supported cast types:
+    - :int, :Int64, :Int32 → Nullable integer (rounds first)
+    - :float, :float64 → Float
+    - :str, :string → String
+    - :round → Rounded float (no type change)
+    - :bool → Boolean
 
     Args:
         gdf: Input GeoDataFrame
-        computed_fields: Dict of {field_name: expression}
+        computed_fields: Dict of {field_name: expression} or {field_name: "expression:cast"}
         strict: If True, raise on errors; if False, log warning and continue
 
     Returns:
@@ -97,7 +178,9 @@ def apply_computed_fields(
         >>> computed_fields = {
         ...     "map_angle": "(90 - azimuth) % 360",
         ...     "area_m2": "geometry.area",
-        ...     "area_km2": "geometry.area / 1_000_000",
+        ...     "area_km2": "geometry.area / 1_000_000:round",
+        ...     "bearing": "geometry.bearing:int",
+        ...     "length_km": "geometry.length / 1000:float",
         ... }
         >>> gdf = apply_computed_fields(gdf, computed_fields)
     """
@@ -107,8 +190,12 @@ def apply_computed_fields(
     gdf = gdf.copy()
     geom_cache: Dict[str, str] = {}  # geom_key -> temp_column_name
 
-    # Collect all expressions to find geometry properties used
-    all_expressions = " ".join(computed_fields.values())
+    # Collect all expressions (without cast suffixes) to find geometry properties used
+    all_expressions_clean = []
+    for expr in computed_fields.values():
+        clean_expr, _ = _parse_expression_with_cast(expr)
+        all_expressions_clean.append(clean_expr)
+    all_expressions = " ".join(all_expressions_clean)
 
     # Pre-compute geometry properties and store in temporary columns
     for geom_key, geom_func in GEOMETRY_PROPERTIES.items():
@@ -129,13 +216,13 @@ def apply_computed_fields(
     success_count = 0
     for field_name, expression in computed_fields.items():
         try:
+            # Parse expression for optional cast
+            clean_expression, cast_type = _parse_expression_with_cast(expression)
+
             # Replace geometry references with temporary column names
-            eval_expr = expression
+            eval_expr = clean_expression
             for geom_key, temp_col in geom_cache.items():
                 eval_expr = eval_expr.replace(geom_key, temp_col)
-
-            # Check for missing columns in expression
-            # (pandas.eval will raise, but we can give better error messages)
 
             # Evaluate expression
             result = gdf.eval(eval_expr)
@@ -144,13 +231,20 @@ def apply_computed_fields(
             if not isinstance(result, pd.Series):
                 result = pd.Series([result] * len(gdf), index=gdf.index)
 
+            # Apply type cast if specified
+            if cast_type:
+                result = _apply_cast(result, cast_type)
+                cast_info = f" → {cast_type}"
+            else:
+                cast_info = ""
+
             # Assign result
             is_overwrite = field_name in gdf.columns
             gdf[field_name] = result
 
             action = "Updated" if is_overwrite else "Created"
             console.print(
-                f"  [green]✓ {action} '{field_name}'[/green] = [dim]{expression}[/dim]"
+                f"  [green]✓ {action} '{field_name}'[/green] = [dim]{clean_expression}{cast_info}[/dim]"
             )
             logger.info(f"Computed field '{field_name}' = {expression}")
             success_count += 1
@@ -178,8 +272,8 @@ def apply_computed_fields(
 
 
 def validate_computed_fields(
-        gdf: gpd.GeoDataFrame,
-        computed_fields: Dict[str, str],
+    gdf: gpd.GeoDataFrame,
+    computed_fields: Dict[str, str],
 ) -> List[Dict[str, Any]]:
     """
     Validate computed field expressions without applying them.
@@ -194,8 +288,23 @@ def validate_computed_fields(
     issues = []
 
     for field_name, expression in computed_fields.items():
+        # Parse out cast type for validation
+        clean_expression, cast_type = _parse_expression_with_cast(expression)
+
+        # Check for valid cast type
+        if cast_type and cast_type not in SUPPORTED_CASTS:
+            issues.append(
+                {
+                    "field": field_name,
+                    "expression": expression,
+                    "issue": "invalid_cast",
+                    "details": f"Unknown cast type '{cast_type}'. Supported: {SUPPORTED_CASTS}",
+                }
+            )
+            continue
+
         # Check for geometry properties
-        eval_expr = expression
+        eval_expr = clean_expression
         for geom_key in GEOMETRY_PROPERTIES.keys():
             eval_expr = eval_expr.replace(geom_key, "0")  # Replace with dummy
 
@@ -208,31 +317,37 @@ def validate_computed_fields(
 
             tokens = re.findall(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b", eval_expr)
             column_refs = [
-                t for t in tokens
+                t
+                for t in tokens
                 if not keyword.iskeyword(t)
-                   and t not in ("and", "or", "not", "in", "True", "False", "None")
-                   and not t.startswith("__geom_")
+                and t not in ("and", "or", "not", "in", "True", "False", "None")
+                and not t.startswith("__geom_")
             ]
 
             # Check if referenced columns exist
             missing = [col for col in column_refs if col not in gdf.columns]
             if missing:
-                issues.append({
-                    "field": field_name,
-                    "expression": expression,
-                    "issue": "missing_columns",
-                    "details": missing,
-                })
+                issues.append(
+                    {
+                        "field": field_name,
+                        "expression": expression,
+                        "issue": "missing_columns",
+                        "details": missing,
+                    }
+                )
 
         except Exception as e:
-            issues.append({
-                "field": field_name,
-                "expression": expression,
-                "issue": "parse_error",
-                "details": str(e),
-            })
+            issues.append(
+                {
+                    "field": field_name,
+                    "expression": expression,
+                    "issue": "parse_error",
+                    "details": str(e),
+                }
+            )
 
     return issues
+
 
 def float_to_int_string(val):
     try:
@@ -979,12 +1094,12 @@ class ClassificationApplicator:
 
     # Used by batch
     def apply_v2(
-            self,
-            gdf: gpd.GeoDataFrame,
-            additional_filter: Optional[str] = None,
-            overwrite: Optional[bool] = False,
-            preserve_existing: Optional[bool] = True,
-            computed_fields: Optional[Dict[str, str]] = None,  # ← NEW PARAMETER
+        self,
+        gdf: gpd.GeoDataFrame,
+        additional_filter: Optional[str] = None,
+        overwrite: Optional[bool] = False,
+        preserve_existing: Optional[bool] = True,
+        computed_fields: Optional[Dict[str, str]] = None,  # ← NEW PARAMETER
     ) -> gpd.GeoDataFrame:
         """
         Apply classification to GeoDataFrame.
@@ -1042,7 +1157,7 @@ class ClassificationApplicator:
         # Check required fields
         all_present, missing = self.matcher.check_required_fields(gdf)
         if not all_present:
-                raise ValueError(f"Missing required fields in GPKG: {missing}")
+            raise ValueError(f"Missing required fields in GPKG: {missing}")
 
         logger.success(
             f"All required GPKG fields present: {self.matcher.required_gpkg_fields}"
@@ -1068,8 +1183,8 @@ class ClassificationApplicator:
         # Step 2b: Apply computed fields
 
         if computed_fields:
-                console.print(f"\n[cyan]🔢 Computing fields...[/cyan]")
-                gdf = apply_computed_fields(gdf, computed_fields, strict=False)
+            console.print(f"\n[cyan]🔢 Computing fields...[/cyan]")
+            gdf = apply_computed_fields(gdf, computed_fields, strict=False)
 
         # Step 3: Extract numeric columns
         numeric_columns = get_numeric_field_names(self.field_types)
