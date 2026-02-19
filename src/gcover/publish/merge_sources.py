@@ -943,26 +943,26 @@ class GDBMerger:
                 logger.debug(f"  {source_name}: no features after clip")
                 continue
 
-            # === UUID DEDUPLICATION (critical!) ===
-            # Even with exclusive masks, if the spatial read returned features
-            # from outside the mask (due to bbox filtering), we might have dupes.
+            # === UUID DEDUPLICATION — regenerate instead of dropping ===
+            # Exclusive masks prevent real duplicates. The only remaining case is a
+            # polygon that straddles an RC1/RC2 boundary: both GDBs contain it, each
+            # clipped to its own half. Dropping one half silently loses area; instead
+            # we give the "already seen" copy a fresh UUID so both halves survive.
             if 'UUID' in clipped.columns:
-                before_dedup = len(clipped)
-
-                # Keep only features with new UUIDs (or NULL UUIDs)
-                clipped_uuids = clipped['UUID'].dropna().unique()
-                new_uuids = set(clipped_uuids) - seen_uuids
-
-                # Filter: keep if UUID is NULL or UUID is new
-                mask = clipped['UUID'].isna() | clipped['UUID'].isin(new_uuids)
-                clipped = clipped[mask].copy()
-
-                # Track these UUIDs
-                seen_uuids.update(new_uuids)
-
-                dupes_removed = before_dedup - len(clipped)
-                if dupes_removed > 0:
-                    logger.warning(f"  {source_name}: removed {dupes_removed} duplicate UUIDs!")
+                import uuid as _uuid
+                collision_mask = (
+                        clipped['UUID'].notna() & clipped['UUID'].isin(seen_uuids)
+                )
+                n_collisions = collision_mask.sum()
+                if n_collisions > 0:
+                    new_ids = [str(_uuid.uuid4()) for _ in range(n_collisions)]
+                    clipped.loc[collision_mask, 'UUID'] = new_ids
+                    logger.warning(
+                        f"  {source_name}: regenerated {n_collisions} duplicate UUIDs "
+                        f"(boundary features present in both sources)"
+                    )
+                # Register all UUIDs from this source
+                seen_uuids.update(clipped['UUID'].dropna().unique())
 
             # Add source tracking
             clipped["_MERGE_SOURCE"] = source_name
