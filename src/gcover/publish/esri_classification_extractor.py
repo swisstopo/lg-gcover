@@ -456,29 +456,46 @@ class CIMSymbolParser:
                     color_info = CIMSymbolParser._extract_color_from_symbol(nested_symbol)
                     if color_info:
                         info.color = color_info
-
+            # collect stroke and fill separately, skip zero-width strokes, and prefer fill over stroke
             elif layer_type == "CIMVectorMarker":
                 info.size = layer.get("size")
 
                 marker_graphics = layer.get("markerGraphics", [])
                 for graphic in marker_graphics:
                     graphic_symbol = graphic.get("symbol", {})
-                    if graphic_symbol:
-                        color_info = CIMSymbolParser._extract_color_from_symbol(graphic_symbol)
-                        if color_info:
-                            info.color = color_info
-                            break
+                    if not graphic_symbol:
+                        continue
 
-                        symbol_layers_nested = graphic_symbol.get("symbolLayers", [])
-                        for nested_layer in symbol_layers_nested:
-                            if nested_layer.get("type") == "CIMSolidStroke":
-                                stroke_color = CIMColorParser.parse_color(nested_layer.get("color"))
-                                if stroke_color:
-                                    info.color = stroke_color
-                            elif nested_layer.get("type") == "CIMSolidFill":
-                                fill_color = CIMColorParser.parse_color(nested_layer.get("color"))
-                                if fill_color:
-                                    info.color = fill_color
+                    fill_color = None
+                    stroke_color = None
+
+                    symbol_layers_nested = graphic_symbol.get("symbolLayers", [])
+                    for nested_layer in symbol_layers_nested:
+                        nested_type = nested_layer.get("type")
+                        if nested_type == "CIMSolidFill":
+                            c = CIMColorParser.parse_color(nested_layer.get("color"))
+                            if c:
+                                fill_color = c
+                        elif nested_type == "CIMSolidStroke":
+                            # Skip invisible strokes (width == 0)
+                            if nested_layer.get("width", 1) == 0:
+                                continue
+                            c = CIMColorParser.parse_color(nested_layer.get("color"))
+                            if c:
+                                stroke_color = c
+
+                    # Prefer fill; fall back to stroke
+                    chosen = fill_color or stroke_color
+
+                    if not chosen:
+                        # Last resort: delegate to the generic extractor
+                        chosen = CIMSymbolParser._extract_color_from_symbol(graphic_symbol)
+
+                    if chosen:
+                        info.color = chosen
+                        break  # First graphic with a usable color wins
+
+
 
             elif layer_type == "CIMSimpleMarker":
                 info.size = layer.get("size")
