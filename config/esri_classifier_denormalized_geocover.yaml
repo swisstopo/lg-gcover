@@ -156,6 +156,7 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}bohrung_fels_erreicht
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
           maxscaledenom: 50000
+          include_items: "label,kind,abor_depth_bedr,abor_fm_a,abor_fm_b,abor_depth_tot,abor_depth_fm_a,abor_depth_fm_b"
           active: True
           map_label: abor_depth_tot
           mapfile_config:
