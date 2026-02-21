@@ -1,7 +1,7 @@
 # --- Variables ---
 DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/R16/
 OUTPUT_DIR   := ${HOME}/DATA/Derivations/output/test/
-STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/R16/styles/2026-01-28/
+STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/R16/styles/2026-02-19/
 
 # File Paths
 MASTER_GDB        := $(OUTPUT_DIR)master_R16.gdb
@@ -81,12 +81,13 @@ denormalize: $(DENORMALIZED_PATH)
 classify: $(CLASSIFIED_PATH)
 
 surfaces_aux:
-	python scripts/surfaces_auxilliary_points.py -i $(CLASSIFIED_PATH) -l surfaces -s 80 -b 30 --output $(SURFACES_AUX_PATH)
-
+	python scripts/surfaces_auxilliary_points.py -i $(CLASSIFIED_PATH) -l surfaces -s 80 -b 25 --output $(SURFACES_AUX_PATH)
+	python scripts/surfaces_auxilliary_points.py -i $(CLASSIFIED_PATH) -l unco_deposits -s 80 -b 25 --output $(SURFACES_AUX_PATH)
 ## clean: Remove generated GDB and GeoPackage files
 clean:
 	rm -rf $(MASTER_GDB)
 	rm -f $(DENORMALIZED_PATH)
+	rm -rf $(OUTPUT_DIR)surfaces_aux.gpkg
 
 
 # Makefile for easy test execution
