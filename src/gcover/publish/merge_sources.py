@@ -614,6 +614,34 @@ class MergeStats:
 
 
 # =============================================================================
+# FileGDB discovery
+# =============================================================================
+
+def _discover_filegdbs(directory: Path) -> List[Tuple[Path, str, str]]:
+    """
+    Yield (path, stem, full_name) for every FileGDB found in *directory*.
+
+    Detection uses the presence of a 'timestamps' file, which every ESRI
+    FileGDB contains regardless of whether the directory ends with '.gdb'.
+
+    Examples
+    --------
+    directory/BCK_2016/         → ("BCK_2016", "BCK_2016")
+    directory/Saas.gdb/         → ("Saas",     "Saas.gdb")
+    directory/20300501_Saas.gdb → ("20300501_Saas", "20300501_Saas.gdb")
+    """
+    results = []
+    for candidate in sorted(directory.iterdir()):
+        if not candidate.is_dir():
+            continue
+        # 'timestamps' is the canonical FileGDB marker (always present)
+        if not (candidate / "timestamps").exists():
+            continue
+        full_name = candidate.name                          # e.g. "Saas.gdb" or "BCK_2016"
+        stem      = candidate.stem                          # strips trailing .gdb if present
+        results.append((candidate, stem, full_name))
+    return results
+# =============================================================================
 # MAIN MERGER CLASS
 # =============================================================================
 
@@ -663,6 +691,7 @@ class GDBMerger:
             logger.debug(f"  Registered RC2 source: {self.config.rc2_path}")
             
         # Custom sources from directory
+        # Note, if FileGDB dir doesn't end with `.gdb` `geopandas` won't be able to open it
         if self.config.custom_sources_dir and self.config.custom_sources_dir.exists():
             for gdb_path in self.config.custom_sources_dir.glob("*.gdb"):
                 source_name = gdb_path.name  # e.g., "Saas.gdb"
