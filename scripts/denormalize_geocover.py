@@ -13,7 +13,7 @@ from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
-from shapely.ops import linemerge,
+from shapely.ops import linemerge
 
 import click
 import fiona

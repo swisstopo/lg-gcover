@@ -1,17 +1,18 @@
 # --- Variables ---
 DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/R16/
-OUTPUT_DIR   := ${HOME}/DATA/Derivations/output/test/
+OUTPUT_DIR   := ${HOME}/DATA/Derivations/output/R16/
 STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/R16/styles/2026-02-19/
 TRANSLATION_CSV := ${HOME}/code/github.com/lg-geology-data-model/exports/2026-02-12/geolcodes_translated.csv
 
 # File Paths
 MASTER_GDB        := $(OUTPUT_DIR)master_R16.gdb
-DENORMALIZED_GPKG := R16_master_denormalized.gpkg
-TRANSLATED_GPKG   := R16_master_classified_translated.gpkg
-DENORMALIZED_PATH := $(OUTPUT_DIR)$(DENORMALIZED_GPKG)
-CLASSIFIED_PATH   := $(OUTPUT_DIR)R16_master_denormalized_classified.gpkg
+DENORMALIZED_GPKG := denormalized.gpkg
+DENORMALIZED_PATH := $(OUTPUT_DIR)$(DENORMALIZED_GPKG)  # name auto
+CLASSIFIED_GPKG	  := denormalized_classified.gpkg
+CLASSIFIED_PATH   := $(OUTPUT_DIR)$(CLASSIFIED_GPKG)
+TRANSLATED_GPKG   := denormalized_classified_translated.gpkg
 TRANSLATED_PATH   := $(OUTPUT_DIR)$(TRANSLATED_GPKG)
-FULL_GDB          := $(DELIVERY_DIR)RC2.gdb
+FULL_GDB_PATH     := $(DELIVERY_DIR)RC2.gdb
 SURFACES_AUX_PATH := $(OUTPUT_DIR)surfaces_aux.gpkg
 
 # Layers for denormalization
@@ -68,24 +69,25 @@ merge: $(MASTER_GDB)/timestamps
 $(DENORMALIZED_PATH): $(MASTER_GDB)/timestamps
 	@echo "--- Importing missing tables via ogr2ogr ---"
 	@for table in $(TABLES_TO_IMPORT); do \
-		ogr2ogr -f "OpenFileGDB" -update -overwrite $(MASTER_GDB) $(FULL_GDB) $$table; \
+		ogr2ogr -f "OpenFileGDB" -update -overwrite $(MASTER_GDB) $(FULL_GDB_PATH) $$table; \
 	done
 
 	@echo "--- Running Denormalization loop ---"
 	@for layer in $(LAYERS); do \
-		scripts/denormalize_geocover.py --remove-metadata  -o $(DENORMALIZED_PATH) --cd-gdb-path $(DELIVERY_DIR)RC2.gdb  --tables $$layer $(MASTER_GDB) ; \
+		scripts/denormalize_geocover.py --remove-metadata  -o $(DENORMALIZED_PATH) --cd-gdb-path $(FULL_GDB_PATH)  --tables $$layer $(MASTER_GDB) ; \
 	done
 
 $(TRANSLATED_PATH): $(CLASSIFIED_PATH)
-	@python ./scripts/translate_gpkg.py -t $(TRANSLATION_CSV) \
-		--lowercase-columns \
-		 -o $(TRANSLATED_PATH)  --langs de,fr  $(CLASSIFIED_PATH)
+	@echo "Saving to $(TRANSLATED_PATH)"
+	python ./scripts/translate_gpkg.py -t $(TRANSLATION_CSV) \
+		--lowercase-columns --output $(TRANSLATED_PATH)  --langs de,fr  $(CLASSIFIED_PATH)
 
 $(CLASSIFIED_PATH): $(DENORMALIZED_PATH)
 	@echo "--- Applying Style Configuration ---"
 	@gcover --env sandisk publish apply-config --styles-dir $(STYLES_DIR) \
 		$(DENORMALIZED_PATH) config/esri_classifier_denormalized_geocover.yaml
 
+.PHONY: translate classify denormalize
 ## denormalize: Only run the table import and denormalization (requires master GDB)
 denormalize: $(DENORMALIZED_PATH)
 
