@@ -584,7 +584,7 @@ def load_gpkg_with_validation(
         logger.info(f"Initial feature count: {len(gdf)}")
 
         if gdf.empty:
-            loggerwarning("Loaded an empty GeoDataFrame")
+            logger.warning("Loaded an empty GeoDataFrame")
             return gdf
 
         # Validate and repair geometries
