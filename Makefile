@@ -95,13 +95,6 @@ translate: $(TRANSLATED_PATH)
 ## classify: Apply classification from .lyrx to denormalized data
 classify: $(CLASSIFIED_PATH)
 
-<<<<<<< Updated upstream
-surfaces_aux:
-	python scripts/surfaces_auxilliary_points.py -i $(CLASSIFIED_PATH) -l surfaces -s 80 -b 25 --output $(SURFACES_AUX_PATH)
-	python scripts/surfaces_auxilliary_points.py -i $(CLASSIFIED_PATH) -l unco_deposits -s 80 -b 25 --output $(SURFACES_AUX_PATH)
-## clean: Remove generated GDB and GeoPackage files
-clean:
-=======
 
 ## surfaces-aux: Create auxilliary grid sur surfaces/unco deposits
 surfaces-aux:
@@ -119,12 +112,10 @@ clean-translate: clean-classify
 ## clean-classify: Clean classified artefacts
 clean-classify:
 	rm -rf $(CLASSIFIED_PATH)
+
 ## clean-all: Remove generated GDB and GeoPackage files
-clean-all:
->>>>>>> Stashed changes
+clean-all: clean-denormalize
 	rm -rf $(MASTER_GDB)
-	rm -f $(DENORMALIZED_PATH)
-	rm -rf $(TRANSLATED_PATH)
 	rm -rf $(OUTPUT_DIR)surfaces_aux.gpkg
 
 
