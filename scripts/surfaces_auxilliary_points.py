@@ -1,30 +1,7 @@
 import geopandas as gpd
 import numpy as np
-from shapely.geometry import Point, MultiPoint
-from shapely.affinity import translate
-
-from rich.console import Console
-from shapely.geometry import Point
-from rich.progress import Progress
-
-import geopandas as gpd
-import numpy as np
-from shapely.geometry import Point
-from rich.progress import Progress
-from rich import print as rprint
-from rich.panel import Panel
-
-
-import geopandas as gpd
-import numpy as np
-from shapely.geometry import Point, MultiPoint
-from rich.progress import Progress
-from rich import print as rprint
-from rich.table import Table
-
-import geopandas as gpd
-import numpy as np
 import click
+import math
 from shapely.geometry import Point, MultiPoint
 from rich.progress import Progress
 from rich import print as rprint
@@ -37,7 +14,8 @@ from rich.table import Table
 @click.option('--output', '-o', default="hex_multipoints.gpkg", help="Output filename.")
 @click.option('--spacing', '-s', default=80.0, help="Distance between points in meters.")
 @click.option('--buffer', '-b', default=40.0, help="Inset distance from polygon edge.")
-def generate_grid(input, layer, output, spacing, buffer):
+@click.option('--copy-polygons', '-d', is_flag=True, default=False, help="Copy the original polygons in GPKG")
+def generate_grid(input, layer, output, spacing, buffer, copy_polygons):
     """Generates a hexagonal MultiPoint grid within specified geologic features."""
 
     rprint(f"[bold blue]→ Reading layer:[/bold blue] {layer}")
@@ -110,9 +88,14 @@ def generate_grid(input, layer, output, spacing, buffer):
             if feature_points:
                 new_row = row.copy()
                 new_row.geometry = MultiPoint(feature_points)
+                new_row['pt_count'] = len(feature_points)
                 results.append(new_row)
 
             progress.update(task, advance=1)
+
+    if copy_polygons:
+        # Copy the original geometries:
+        filtered_gdf.to_file(output, layer=f"{layer}_filtered", driver="GPKG")
 
     # 4. Save and Report
     if results:
@@ -120,9 +103,7 @@ def generate_grid(input, layer, output, spacing, buffer):
         out_gdf.to_file(output, layer=f"{layer}_aux_points", driver="GPKG")
 
 
-        # Orignal geometries:
 
-        filtered_gdf.to_file(output, layer=f"filtered_{layer}", driver="GPKG")
 
         # Summary Table
         table = Table(title="Generation Results")

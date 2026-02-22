@@ -45,12 +45,22 @@ except ImportError:
     load_gpkg_with_validation = None
 
 
+# Configure rich console
+console = Console()
+
 os.environ['OGR_GEOMETRY_ACCEPT_UNCLOSED_RING'] = 'NO'
 os.environ['METHOD'] = 'ONLY_CCW'
 
 
-# Configure rich console
-console = Console()
+console.print("[yellow]Removed some OGR warnings (CCW, unclosed rings)[/yellow]")
+# Suppress pandas fragmentation warnings
+warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
+os.environ['OGR_GEOMETRY_ACCEPT_UNCLOSED_RING'] = 'NO'
+os.environ['METHOD'] = 'ONLY_CCW'
+
+
+
+
 
 # Configure loguru
 logger.remove()  # Remove default handler
@@ -60,7 +70,7 @@ logger.add(
     level="INFO",
 )
 
-console.print("[yellow]Removed some OGR warnings (CCW, unclosed rings)[/yellow]")
+
 
 # Define the attributes you want to transfer from mapsheets_gdf
 MAPSHEET_ATTRIBUTES = ["MSH_MAP_TITLE", "MSH_MAP_NBR"]

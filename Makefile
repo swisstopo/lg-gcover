@@ -80,9 +80,11 @@ denormalize: $(DENORMALIZED_PATH)
 ## classify: Apply classification from .lyrx to denormalized data
 classify: $(CLASSIFIED_PATH)
 
-surfaces_aux:
-	python scripts/surfaces_auxilliary_points.py -i $(CLASSIFIED_PATH) -l surfaces -s 80 -b 25 --output $(SURFACES_AUX_PATH)
-	python scripts/surfaces_auxilliary_points.py -i $(CLASSIFIED_PATH) -l unco_deposits -s 80 -b 25 --output $(SURFACES_AUX_PATH)
+
+## surfaces-aux: Create auxilliary grid sur surfaces/unco deposits
+surfaces-aux:
+	python scripts/surfaces_auxilliary_points.py --copy-polygons -i $(CLASSIFIED_PATH) -l surfaces -s 80 -b 25 --output $(SURFACES_AUX_PATH)
+	python scripts/surfaces_auxilliary_points.py --copy-polygons -i $(CLASSIFIED_PATH) -l unco_deposits -s 80 -b 25 --output $(SURFACES_AUX_PATH)
 ## clean: Remove generated GDB and GeoPackage files
 clean:
 	rm -rf $(MASTER_GDB)
