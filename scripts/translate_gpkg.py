@@ -1,0 +1,485 @@
+#!/usr/bin/env python3
+"""
+translate_gpkg.py
+─────────────────
+Enrich a GeoPackage by adding translated label columns for every field
+whose values look like GeolCodes (integers in [10 000 000 – 20 000 000]).
+
+For each qualifying column `FOO`, up to four new columns are appended:
+  FOO_de  FOO_fr  FOO_it  FOO_en
+
+Only languages that have at least 80 % coverage in translations.csv are
+added by default (always includes DE and FR as minimum requirement).
+
+Usage
+-----
+  python translate_gpkg.py [OPTIONS] GPKG
+
+Options
+-------
+  -t, --translations PATH   Path to translations.csv  [required]
+  -l, --layer TEXT          Process only this layer (default: all layers)
+  -o, --output PATH         Output GPKG (default: overwrite input)
+  --min-coverage FLOAT      Min. fraction of non-null values in a column
+                            to consider it a code column [default: 0.5]
+  --langs TEXT              Comma-separated language list [default: de,fr,it,en]
+  --dry-run                 Report what would be done, don't write anything
+"""
+
+import os
+import sys
+import tempfile
+from pathlib import Path
+from typing import Optional
+
+import click
+import fiona
+import geopandas as gpd
+import pandas as pd
+from rich import print as rprint
+from rich.console import Console
+from rich.progress import (BarColumn, Progress, SpinnerColumn,
+                           TaskProgressColumn, TextColumn)
+from rich.table import Table
+
+console = Console()
+
+GEOLCODE_MIN = 999_995
+GEOLCODE_MAX = 20_000_000
+
+SPECIAL_GEOLCODES = {999_997, 999_998, 999_999}
+
+ATTRIBUTES_TO_IGNORE = [
+    "pmod_height",
+    "aexp_depth_tot",
+    "pcob_altitude",
+    "abor_depth_tot",
+    "abor_depth_fm_a",
+    "abor_depth_fm_b",
+    "abor_ref_number",
+]
+
+TRANSLATED_SUFFIXES = ("_desc", "_fr", "_de", "_it", "_en")
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def load_translations(path: Path, langs: list[str]) -> pd.DataFrame:
+    """Load translations CSV, keep only requested language columns.
+
+    Rows whose first column cannot be coerced to integer are silently dropped
+    (count is reported to the caller via a module-level side-channel so that
+    the CLI can display it with Rich).
+    """
+    # Read first column as str so we can coerce cleanly
+    df = pd.read_csv(path, dtype=str)
+    code_col = df.columns[0]  # whatever it's named (GeolCodeInt, GeolCode, …)
+
+    before = len(df)
+    df[code_col] = pd.to_numeric(df[code_col], errors="coerce")
+    dropped = df[code_col].isna().sum()
+    df = df.dropna(subset=[code_col])
+    df[code_col] = df[code_col].astype("int64")
+    df = df.rename(columns={code_col: "GeolCodeInt"})
+
+    if dropped:
+        console.print(
+            f"  [yellow]⚠[/]  Dropped [bold]{dropped}[/] / {before} translation row(s) "
+            f"— GeolCode not castable to integer"
+        )
+
+    lang_cols = {lang: lang.upper() for lang in langs}
+    keep_cols = ["GeolCodeInt"] + [c for c in lang_cols.values() if c in df.columns]
+    df = df[keep_cols].copy()
+
+    # Rename to target suffix names  e.g. "DE" → "de"
+    df = df.rename(columns={v: k for k, v in lang_cols.items()})
+    return df.set_index("GeolCodeInt")
+
+
+def is_geolcode_column(series: pd.Series, min_coverage: float) -> bool:
+    """Return True if enough non-null values in series are GeolCodes."""
+    """if series.dtype == object:
+        # try numeric coercion
+        converted = pd.to_numeric(series, errors="coerce")
+    elif pd.api.types.is_numeric_dtype(series):
+        converted = series.astype("float64")
+    else:
+        return False
+
+    valid = converted.dropna()
+    if len(valid) == 0:
+        return False"""
+    # Step 1: convert to numeric (float), coercing errors to NaN
+    if series.dtype == object:
+        converted = pd.to_numeric(series, errors="coerce")
+    elif pd.api.types.is_numeric_dtype(series):
+        converted = series.astype("float64")
+    else:
+        return False
+
+    # Step 2: keep only whole numbers (or NaN)
+    converted = converted.where(converted.isna() | (converted % 1 == 0))
+
+    # Step 3: cast to nullable Int64
+    converted = converted.astype("Int64")
+
+    # Step 4: continue with your existing logic
+    valid = converted.dropna()
+    if len(valid) == 0:
+        return False
+
+    coverage = len(valid) / len(series)
+    if coverage < min_coverage:
+        return False
+
+    # Values inside the normal range
+    in_range = valid.between(GEOLCODE_MIN, GEOLCODE_MAX)
+    # Values equal to special sentinel codes
+    is_special = valid.isin(SPECIAL_GEOLCODES)
+    valid_values = (in_range | is_special).sum()
+
+    return (valid_values / len(valid)) >= 0.90  # 90 % of valid values in range
+
+
+def _lowercase_gdf_columns(gdf):
+    """Rename all non-geometry columns to lowercase.
+
+    The geometry column is intentionally kept as-is so that geopandas
+    internals (which track the active geometry by name) remain correct.
+    """
+    geom_col = gdf.geometry.name
+    rename_map = {
+        col: col.lower()
+        for col in gdf.columns
+        if col != geom_col and col != col.lower()
+    }
+    if rename_map:
+        console.print(
+            f"  Lowercasing {len(rename_map)} column(s): {list(rename_map.keys())}"
+        )
+    return gdf.rename(columns=rename_map)
+
+
+def enrich_layer(
+    gdf: gpd.GeoDataFrame,
+    translations: pd.DataFrame,
+    langs: list[str],
+    min_coverage: float,
+    layer_name: str,
+) -> tuple[gpd.GeoDataFrame, list[dict]]:
+    """Add translated columns to GDF; return (enriched_gdf, stats_list)."""
+    stats = []
+
+    # table = Table(title=f"Translating {layer_name}", show_lines=False, header_style="bold cyan")
+    # console.print(table)
+    non_geo_cols = [c for c in gdf.columns if c != gdf.geometry.name]
+
+    for col in non_geo_cols:
+        # Already human-readable text – skip
+        if col.lower().endswith(TRANSLATED_SUFFIXES):
+            continue
+
+        if col.lower() in ATTRIBUTES_TO_IGNORE:
+            continue
+
+        if not is_geolcode_column(gdf[col], min_coverage):
+            continue
+
+        # Strip trailing _code for output names: tecto_code → tecto_de / tecto_fr
+        out_prefix = col[: -len("_code")] if col.lower().endswith("_code") else col
+
+        # Coerce to int64 for joining
+        # codes = pd.to_numeric(gdf[col], errors="coerce").astype("Int64")
+        codes = (
+            pd.to_numeric(gdf[col], errors="coerce")
+            .where(lambda s: s.isna() | (s % 1 == 0))  # keep only whole numbers
+            .astype("Int64")
+        )
+
+        added_langs = []
+
+        for lang in langs:
+            if lang not in translations.columns:
+                continue
+            out_col = f"{out_prefix}_{lang}"
+            mapped = codes.map(translations[lang])
+            # Only add the column if at least DE+FR exist (checked at caller),
+            # but skip column entirely if 0 % match
+            if mapped.notna().sum() == 0:
+                continue
+            gdf[out_col] = mapped
+            added_langs.append(lang)
+
+        if added_langs:
+            n_codes = codes.notna().sum()
+            ref_lang = next((l for l in langs if l in translations.columns), None)
+            n_translated = (
+                codes.map(translations[ref_lang]).notna().sum() if ref_lang else 0
+            )
+            stats.append(
+                {
+                    "layer": layer_name,
+                    "column": col,
+                    "out_prefix": out_prefix,
+                    "langs": ", ".join(added_langs),
+                    "codes_found": int(n_codes),
+                    "translated": int(n_translated),
+                    "coverage": f"{n_translated / n_codes * 100:.1f}%"
+                    if n_codes
+                    else "–",
+                }
+            )
+
+    return gdf, stats
+
+
+def check_min_langs(translations: pd.DataFrame) -> None:
+    """Abort if DE and FR are not both present."""
+    missing = [lang for lang in ("de", "fr") if lang not in translations.columns]
+    if missing:
+        console.print(
+            f"[bold red]✗[/] translations.csv missing required language(s): {missing}"
+        )
+        sys.exit(1)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CLI
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@click.command(context_settings={"help_option_names": ["-h", "--help"]})
+@click.argument("gpkg", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "-t",
+    "--translations",
+    "trans_path",
+    required=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to translations.csv (GeolCodeInt, DE, FR, IT, EN, ...)",
+)
+@click.option(
+    "-l",
+    "--layer",
+    "layer_filter",
+    default=None,
+    help="Process only this layer (default: all layers)",
+)
+@click.option(
+    "-o",
+    "--output",
+    "output_path",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Output GPKG path (default: overwrite input)",
+)
+@click.option(
+    "--min-coverage",
+    default=0.5,
+    show_default=True,
+    type=float,
+    help="Min. fraction of non-null values required to treat column as code column",
+)
+@click.option(
+    "--langs",
+    default="de,fr,it,en",
+    show_default=True,
+    help="Comma-separated language suffixes to add",
+)
+@click.option(
+    "--lowercase-columns",
+    is_flag=True,
+    default=False,
+    help=(
+        "Normalize all attribute column names to lowercase before writing. "
+        "The geometry column is preserved as-is."
+    ),
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Report what would be done without writing anything",
+)
+def main(
+    gpkg: Path,
+    trans_path: Path,
+    layer_filter: Optional[str],
+    output_path: Optional[Path],
+    min_coverage: float,
+    langs: str,
+    lowercase_columns: bool,
+    dry_run: bool,
+) -> None:
+    """Add GeolCode translation columns (_de, _fr, …) to every layer of a GPKG."""
+
+    lang_list = [l.strip().lower() for l in langs.split(",")]
+    output_path = output_path or gpkg
+
+    console.rule("[bold cyan]GeoCover – GPKG Translation Enrichment")
+
+    # ── Load translations ────────────────────────────────────────────────────
+    console.print(f"[dim]Loading translations from[/] [bold]{trans_path}[/]")
+    try:
+        translations = load_translations(trans_path, lang_list)
+    except Exception as exc:
+        console.print(f"[bold red]✗ Failed to load translations:[/] {exc}")
+        sys.exit(1)
+
+    check_min_langs(translations)
+
+    available_langs = [l for l in lang_list if l in translations.columns]
+    console.print(
+        f"  [green]✓[/] {len(translations):,} codes loaded  │  "
+        f"Languages: {', '.join(f'[bold]{l}[/]' for l in available_langs)}"
+    )
+
+    # ── Discover layers ──────────────────────────────────────────────────────
+    try:
+        all_layers = fiona.listlayers(str(gpkg))
+    except Exception as exc:
+        console.print(f"[bold red]✗ Cannot read GPKG:[/] {exc}")
+        sys.exit(1)
+
+    layers = [layer_filter] if layer_filter else all_layers
+    unknown = [l for l in layers if l not in all_layers]
+    if unknown:
+        console.print(f"[bold red]✗ Unknown layer(s): {unknown}[/]")
+        sys.exit(1)
+
+    total_layers = len(layers)
+    console.print(f"  [green]✓[/] {total_layers} layer(s) to process\n")
+
+    # ── Process layers ───────────────────────────────────────────────────────
+    all_stats: list[dict] = []
+    enriched: dict[str, gpd.GeoDataFrame] = {}
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Processing layers…", total=total_layers)
+
+        for idx, lyr in enumerate(layers):
+            progress.update(task, description=f"{idx + 1}/{total_layers}[cyan]{lyr}[/]")
+            try:
+                gdf = gpd.read_file(str(gpkg), layer=lyr)
+            except Exception as exc:
+                console.print(f"  [yellow]⚠[/]  Skipping [bold]{lyr}[/]: {exc}")
+                progress.advance(task)
+                continue
+            if lowercase_columns:
+                console.print(f" [blue] Converting to lower case[/blue]")
+                gdf = _lowercase_gdf_columns(gdf)
+
+            gdf, stats = enrich_layer(
+                gdf, translations, available_langs, min_coverage, lyr
+            )
+            enriched[lyr] = gdf
+            console.print(f" [green] ✓ Layer {lyr} translated[/green]")
+            all_stats.extend(stats)
+            progress.advance(task)
+
+    # ── Summary table ────────────────────────────────────────────────────────
+    console.print()
+    if not all_stats:
+        console.print("[yellow]⚠  No translatable code columns found.[/]")
+    else:
+        table = Table(
+            title="Translation summary", show_lines=False, header_style="bold cyan"
+        )
+        table.add_column("Layer", style="dim")
+        table.add_column("Source column")
+        table.add_column("Output prefix", style="cyan")
+        table.add_column("Languages", style="green")
+        table.add_column("Codes", justify="right")
+        table.add_column("Translated", justify="right")
+        table.add_column("Coverage", justify="right")
+
+        for s in all_stats:
+            src, out = s["column"], s["out_prefix"]
+            out_display = out if out == src else f"[cyan]{out}[/cyan]"
+            table.add_row(
+                s["layer"],
+                src,
+                out_display,
+                s["langs"],
+                str(s["codes_found"]),
+                str(s["translated"]),
+                s["coverage"],
+            )
+
+        console.print(table)
+        console.print(
+            f"\n  [bold green]{len(all_stats)}[/] column(s) enriched across "
+            f"[bold green]{len({s['layer'] for s in all_stats})}[/] layer(s)"
+        )
+
+    # ── Write output ─────────────────────────────────────────────────────────
+    if dry_run:
+        console.print("\n[bold yellow]⚑  Dry-run – no file written.[/]")
+        return
+
+    if not all_stats:
+        console.print("\n[dim]Nothing to write.[/]")
+        return
+
+    console.print(f"\n[dim]Writing to[/] [bold]{output_path}[/]")
+
+    # Write all layers (enriched or untouched pass-through)
+    write_layers = set(enriched.keys())
+    passthrough = [l for l in all_layers if l not in write_layers]
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".gpkg", delete=False)
+    tmp_path = tmp.name
+    tmp.close()  # important: GDAL needs to open it itself
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        console=console,
+    ) as progress:
+        total = len(all_layers)
+        task = progress.add_task("Writing…", total=total)
+
+        # Write enriched layers
+        first_write = True
+        for lyr, gdf in enriched.items():
+            progress.update(task, description=f"[cyan]{lyr}[/]")
+            mode = "w" if first_write else "a"
+            gdf.to_file(str(tmp_path), layer=lyr, driver="GPKG", mode=mode)
+            first_write = False
+            progress.advance(task)
+
+        # Pass-through layers that were not processed
+        for lyr in passthrough:
+            progress.update(task, description=f"[dim]{lyr}[/]")
+            try:
+                gdf = gpd.read_file(str(gpkg), layer=lyr)
+                mode = "w" if first_write else "a"
+                gdf.to_file(str(tmp_path), layer=lyr, driver="GPKG", mode=mode)
+                first_write = False
+            except Exception as exc:
+                console.print(f"  [yellow]⚠[/]  Could not copy [bold]{lyr}[/]: {exc}")
+            progress.advance(task)
+    if os.path.exists(tmp_path):
+        import shutil
+
+        shutil.copy(tmp_path, output_path)
+        os.remove(tmp_path)
+
+    console.print(f"\n  [bold green]✓[/] Done → [bold]{output_path}[/]\n")
+
+
+if __name__ == "__main__":
+    main()
