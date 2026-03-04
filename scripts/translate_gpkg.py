@@ -57,7 +57,28 @@ ATTRIBUTES_TO_IGNORE = [
     "abor_depth_fm_a",
     "abor_depth_fm_b",
     "abor_ref_number",
+    "uuid",
+    "objectorigin",
+    "more_info",
+    "printed",
+    "map_symbol",
+    "label",
+    "_merge_source",
+    "symbol",
+    "rbed_litstrat_link",
+    "area_m2",
+    "map_angle",
+    "geol_mapping_unit_att_uuid",
+    "runc_litsrat_link",
+    "bearing_deg",
+    "strike_deg",
+    "azimuth",
+    "dip",
+    "hcon_depth",
+
 ]
+
+
 
 TRANSLATED_SUFFIXES = ("_desc", "_fr", "_de", "_it", "_en")
 
@@ -120,7 +141,7 @@ def is_geolcode_column(series: pd.Series, min_coverage: float) -> bool:
     elif pd.api.types.is_numeric_dtype(series):
         converted = series.astype("float64")
     else:
-        return False
+        return (False, "Cannot convert to numeric")
 
     # Step 2: keep only whole numbers (or NaN)
     converted = converted.where(converted.isna() | (converted % 1 == 0))
@@ -131,11 +152,12 @@ def is_geolcode_column(series: pd.Series, min_coverage: float) -> bool:
     # Step 4: continue with your existing logic
     valid = converted.dropna()
     if len(valid) == 0:
-        return False
+        return (False, "No valid integer")
 
-    coverage = len(valid) / len(series)
-    if coverage < min_coverage:
-        return False
+    # coverage = len(valid) / len(series)
+    # console.print(f"coverage: {coverage}")
+    # if coverage < min_coverage:
+    #    return False
 
     # Values inside the normal range
     in_range = valid.between(GEOLCODE_MIN, GEOLCODE_MAX)
@@ -143,7 +165,11 @@ def is_geolcode_column(series: pd.Series, min_coverage: float) -> bool:
     is_special = valid.isin(SPECIAL_GEOLCODES)
     valid_values = (in_range | is_special).sum()
 
-    return (valid_values / len(valid)) >= 0.90  # 90 % of valid values in range
+    valid_values_in_range = (valid_values / len(valid))
+    is_under_coverage = valid_values_in_range >= min_coverage
+
+
+    return  (is_under_coverage, "OK" if not is_under_coverage else f"Under {min_coverage}")  #0.90  # 90 % of valid values in range
 
 
 def _lowercase_gdf_columns(gdf):
@@ -174,6 +200,7 @@ def enrich_layer(
 ) -> tuple[gpd.GeoDataFrame, list[dict]]:
     """Add translated columns to GDF; return (enriched_gdf, stats_list)."""
     stats = []
+    ignored_cols = []
 
     # table = Table(title=f"Translating {layer_name}", show_lines=False, header_style="bold cyan")
     # console.print(table)
@@ -182,12 +209,22 @@ def enrich_layer(
     for col in non_geo_cols:
         # Already human-readable text – skip
         if col.lower().endswith(TRANSLATED_SUFFIXES):
+            console.print(
+                f"[orange]Ignoring {col} (already translated)[/orange]"
+            )
             continue
 
         if col.lower() in ATTRIBUTES_TO_IGNORE:
+            console.print(
+                f"[orange]Ignoring {col} (column to ignore)[/orange]"
+            )
             continue
 
-        if not is_geolcode_column(gdf[col], min_coverage):
+        is_valid_geolcode, reason = is_geolcode_column(gdf[col], min_coverage)
+        if not is_valid_geolcode:
+            console.print(
+                f"Ignoring {col} ({reason})",style="#FFA500"
+            )
             continue
 
         # Strip trailing _code for output names: tecto_code → tecto_de / tecto_fr
@@ -225,6 +262,7 @@ def enrich_layer(
                 {
                     "layer": layer_name,
                     "column": col,
+                    "ignored": ignored_cols,
                     "out_prefix": out_prefix,
                     "langs": ", ".join(added_langs),
                     "codes_found": int(n_codes),
@@ -280,7 +318,7 @@ def check_min_langs(translations: pd.DataFrame) -> None:
 )
 @click.option(
     "--min-coverage",
-    default=0.5,
+    default=0.4,
     show_default=True,
     type=float,
     help="Min. fraction of non-null values required to treat column as code column",
