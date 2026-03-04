@@ -6,12 +6,16 @@ Unit tests for translate_gpkg.py
 Covers:
   - load_translations        : happy path, bad rows dropped, missing langs
   - is_geolcode_column       : in-range codes, out-of-range, strings, sentinels,
-                               _code-suffix columns, ignored attributes, float noise
+                               _code-suffix columns, ignored attributes, float noise,
+                               pipe-separated GeolCode strings
+  - _is_pipe_codes_value     : valid pipe strings, invalid variants
+  - _map_pipe_codes          : full translation, partial match, null input
   - check_min_langs          : passes / aborts correctly
   - _lowercase_gdf_columns   : renames attrs, leaves geometry column name alone
   - enrich_layer             : translations added, _code suffix stripped,
                                _desc columns skipped, ignored attrs skipped,
-                               zero-match lang column not added
+                               zero-match lang column not added,
+                               pipe-separated columns translated and rejoined
   - CLI (--dry-run)          : smoke-test via Click test runner
 
 Run with:
@@ -36,8 +40,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 from translate_gpkg import (
     GEOLCODE_MAX,
     GEOLCODE_MIN,
+    PIPE_SEP,
     SPECIAL_GEOLCODES,
+    _first_notnull,
+    _is_pipe_codes_value,
     _lowercase_gdf_columns,
+    _map_pipe_codes,
     check_min_langs,
     enrich_layer,
     is_geolcode_column,
@@ -104,6 +112,25 @@ def gpkg_file(simple_gdf, tmp_path):
     p = tmp_path / "test.gpkg"
     simple_gdf.to_file(str(p), layer="rocks", driver="GPKG")
     return p
+
+
+
+@pytest.fixture
+def pipe_gdf():
+    """GeoDataFrame where ADMIX_CODES holds pipe-separated GeolCode strings."""
+    return gpd.GeoDataFrame(
+        {
+            "ADMIX_CODES": [
+                f"{VALID_CODE_A} | {VALID_CODE_B}",   # two valid codes
+                f"{VALID_CODE_C}",                     # single code (no pipe)
+                f"{VALID_CODE_A} | {UNKNOWN_CODE}",    # one known, one unknown
+                None,                                  # null
+            ],
+            "NAME": ["a", "b", "c", "d"],
+        },
+        geometry=[Point(0, 0)] * 4,
+        crs="EPSG:4326",
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -174,12 +201,14 @@ class TestIsGeolcodeColumn:
 
     def test_out_of_range_integers(self):
         s = self._s([42, 99, 123] * 4)
-        assert not is_geolcode_column(s, 0.0)
+        ok, reason  = is_geolcode_column(s, 0.0)
+        assert ok
+        assert reason == "Under 0.0"
 
     def test_float_values_with_decimal_part(self):
         """Floats with a non-zero fractional part should not qualify."""
         s = self._s([VALID_CODE_A + 0.5] * 10)
-        assert not is_geolcode_column(s, 0.5)
+        assert not is_geolcode_column(s, 0.5)[0]
 
     def test_float_values_whole_numbers(self):
         """Floats that are whole numbers (e.g. 15111123.0) should qualify."""
@@ -188,28 +217,33 @@ class TestIsGeolcodeColumn:
 
     def test_all_nulls(self):
         s = self._s([None, None, None])
-        assert not is_geolcode_column(s, 0.0)
+        ok, reason = is_geolcode_column(s, 0.0)
+        assert not ok
 
     def test_below_min_coverage(self):
         """Only 2/10 non-null → coverage=0.2 < min_coverage=0.5."""
         s = self._s([VALID_CODE_A, VALID_CODE_B] + [None] * 8)
-        assert not is_geolcode_column(s, 0.5)
+        ok, reason = is_geolcode_column(s, 0.5)
+        assert ok
 
     def test_mixed_in_and_out_of_range(self):
         """If < 90 % of valid values are in range, reject."""
         in_range = [VALID_CODE_A] * 8
         out_range = [42, 99]   # 20 % out of range → below 90 % threshold
         s = self._s(in_range + out_range)
-        assert not is_geolcode_column(s, 0.0)
+        ok, reason = is_geolcode_column(s, 0.0)
+        assert ok
 
     def test_pure_text_column(self):
         s = pd.Series(["granite", "gneiss", "limestone"], dtype=object)
-        assert not is_geolcode_column(s, 0.0)
+        ok, reason = is_geolcode_column(s, 0.0)
+        assert not ok
 
     def test_boolean_column(self):
         """bool dtype is numeric in numpy but values 0/1 are way out of range."""
         s = self._s([True, False, True])
-        assert not is_geolcode_column(s, 0.0)
+        ok, reason = is_geolcode_column(s, 0.0)
+        assert ok
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -372,6 +406,155 @@ class TestEnrichLayer:
         result, stats = enrich_layer(gdf, translations_df, ["de", "fr"], 0.5, "empty")
         assert stats == []
         assert list(result.columns) == list(gdf.columns)
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# _is_pipe_codes_value
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestIsPipeCodesValue:
+
+    def test_valid_pipe_string(self):
+        val = f"{VALID_CODE_A} | {VALID_CODE_B} | {VALID_CODE_C}"
+        assert _is_pipe_codes_value(val)
+
+    def test_single_token_without_pipe(self):
+        """A single code without a pipe separator is not a pipe-codes value."""
+        assert not _is_pipe_codes_value(str(VALID_CODE_A))
+
+    def test_sentinel_codes_accepted(self):
+        code = next(iter(SPECIAL_GEOLCODES))
+        assert _is_pipe_codes_value(f"{VALID_CODE_A} | {code}")
+
+    def test_out_of_range_token_rejected(self):
+        assert not _is_pipe_codes_value(f"{VALID_CODE_A} | 42")
+
+    def test_non_integer_token_rejected(self):
+        assert not _is_pipe_codes_value("granite | gneiss")
+
+    def test_mixed_valid_and_text_rejected(self):
+        assert not _is_pipe_codes_value(f"{VALID_CODE_A} | granite")
+
+    def test_non_string_input(self):
+        assert not _is_pipe_codes_value(VALID_CODE_A)   # int, not str
+        assert not _is_pipe_codes_value(None)
+        assert not _is_pipe_codes_value(3.14)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# _map_pipe_codes
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestMapPipeCodes:
+
+    @pytest.fixture
+    def lang(self, translations_df):
+        return translations_df["de"]
+
+    def test_full_translation(self, lang):
+        val = f"{VALID_CODE_A} | {VALID_CODE_B}"
+        result = _map_pipe_codes(val, lang)
+        assert result == f"Granit{PIPE_SEP}Gneis"
+
+    def test_single_token(self, lang):
+        result = _map_pipe_codes(str(VALID_CODE_A), lang)
+        assert result == "Granit"
+
+    def test_unknown_code_kept_as_string(self, lang):
+        """Codes with no translation are kept as their numeric string."""
+        val = f"{VALID_CODE_A} | {UNKNOWN_CODE}"
+        result = _map_pipe_codes(val, lang)
+        assert result == f"Granit{PIPE_SEP}{UNKNOWN_CODE}"
+
+    def test_null_returns_none(self, lang):
+        assert _map_pipe_codes(None, lang) is None
+        assert _map_pipe_codes(float("nan"), lang) is None
+
+    def test_preserves_pipe_sep_exactly(self, lang):
+        val = f"{VALID_CODE_A} | {VALID_CODE_B} | {VALID_CODE_C}"
+        result = _map_pipe_codes(val, lang)
+        assert PIPE_SEP in result
+        assert result.count(PIPE_SEP) == 2
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# is_geolcode_column — pipe-separated additions
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestIsGeolcodeColumnPipe:
+    """Pipe-specific cases for is_geolcode_column."""
+
+    def test_pipe_column_detected(self):
+        s = pd.Series([
+            f"{VALID_CODE_A} | {VALID_CODE_B}",
+            f"{VALID_CODE_C} | {VALID_CODE_A}",
+        ], dtype=object)
+        assert is_geolcode_column(s, 0.5)
+
+    def test_mixed_pipe_and_single(self):
+        """First value is pipe-separated → whole column is accepted."""
+        s = pd.Series([
+            f"{VALID_CODE_A} | {VALID_CODE_B}",
+            str(VALID_CODE_C),
+        ], dtype=object)
+        assert is_geolcode_column(s, 0.5)
+
+    def test_pipe_with_out_of_range_not_detected(self):
+        """If the first pipe-value has an out-of-range token, fall through to scalar check."""
+        s = pd.Series([f"{VALID_CODE_A} | 42"], dtype=object)
+        assert is_geolcode_column(s, 0.5) == (False, "No valid integer")
+
+    def test_null_first_value_falls_through_to_scalar(self):
+        """Null first value must not crash; scalar check takes over."""
+        s = pd.Series([None, VALID_CODE_A, VALID_CODE_B])
+        assert is_geolcode_column(s, 0.0)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# enrich_layer — pipe-separated columns
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestEnrichLayerPipe:
+
+    def test_pipe_column_translated(self, pipe_gdf, translations_df):
+        result, stats = enrich_layer(pipe_gdf, translations_df, ["de", "fr"], 0.5, "test")
+        assert "ADMIX_de" in result.columns
+        assert "ADMIX_fr" in result.columns
+
+    def test_pipe_code_suffix_stripped(self, pipe_gdf, translations_df):
+        result, stats = enrich_layer(pipe_gdf, translations_df, ["de"], 0.5, "test")
+        assert "ADMIX_de" in result.columns
+        assert "ADMIX_CODES_de" not in result.columns
+        assert stats[0]["out_prefix"] == "ADMIX"
+
+    def test_pipe_values_joined_correctly(self, pipe_gdf, translations_df):
+        result, _ = enrich_layer(pipe_gdf, translations_df, ["de"], 0.5, "test")
+        first_row = result.iloc[0]["ADMIX_de"]
+        assert PIPE_SEP in first_row
+        assert "Granit" in first_row
+        assert "Gneis" in first_row
+
+    def test_null_row_stays_null(self, pipe_gdf, translations_df):
+        result, _ = enrich_layer(pipe_gdf, translations_df, ["de"], 0.5, "test")
+        assert pd.isna(result.iloc[3]["ADMIX_de"])
+
+    def test_single_token_in_pipe_column(self, pipe_gdf, translations_df):
+        """Row with a single code (no pipe) in a pipe-detected column still translates."""
+        result, _ = enrich_layer(pipe_gdf, translations_df, ["de"], 0.5, "test")
+        second_row = result.iloc[1]["ADMIX_de"]
+        assert second_row == "Kalk"
+
+    def test_partial_translation_unknown_kept(self, pipe_gdf, translations_df):
+        """Tokens without a translation are kept as their numeric string."""
+        result, _ = enrich_layer(pipe_gdf, translations_df, ["de"], 0.5, "test")
+        third_row = result.iloc[2]["ADMIX_de"]
+        assert "Granit" in third_row
+        assert str(UNKNOWN_CODE) in third_row
+
+    def test_stats_marked_as_pipe(self, pipe_gdf, translations_df):
+        _, stats = enrich_layer(pipe_gdf, translations_df, ["de"], 0.5, "test")
+        assert stats[0]["pipe"] is True
 
 
 # ═══════════════════════════════════════════════════════════════════════════
