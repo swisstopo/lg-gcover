@@ -49,7 +49,7 @@ except ImportError:
     console.print("[red]PyArrow not installed[/red]")
 
 
-console.print("[yellow]Suppressing some OGR warning (unclosed rings, only CCW, etc.[/yellow]")
+console.print("[yellow]Suppressing some OGR warning (unclosed rings, only CCW, etc.)[/yellow]")
 # Suppress pandas fragmentation warnings
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 os.environ['OGR_GEOMETRY_ACCEPT_UNCLOSED_RING'] = 'NO'
