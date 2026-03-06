@@ -7,7 +7,7 @@ name = "gcover"
 dynamic = ["version"]
 description = "A library and CLI tool to work with geological vector data"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 license = {text = "BSD-3-Clause"}
 authors = [
     {name = "Marc Monnerat", email = "geocover@swisstopo.ch"},

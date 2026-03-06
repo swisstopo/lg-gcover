@@ -100,10 +100,19 @@ def _handle_special_functions(
     # Helper to convert any series to string, handling nullable types
     def to_string_safe(series: pd.Series) -> pd.Series:
         """Convert series to string, replacing NA representations with empty string."""
-        # First convert to string (Int64 NA becomes "<NA>", float NaN becomes "nan")
+        # Detect nulls BEFORE converting to string (works for all null types)
+        null_mask = pd.isna(series)
+
+        # Convert to string
         str_series = series.astype(str)
-        # Replace all NA representations with empty string
-        return str_series.replace({"<NA>": "", "nan": "", "None": "", "NaN": "", "<NaT>": ""})
+
+        # Replace nulls with empty string using the pre-computed mask
+        str_series = str_series.where(~null_mask, "")
+
+        # Also clean up any string representations that might slip through
+        str_series = str_series.replace({"<NA>": "", "nan": "", "None": "", "NaN": "", "<NaT>": ""})
+
+        return str_series
 
     # Handle concat(...)
     concat_match = re.match(r"concat\((.+)\)$", expression, re.IGNORECASE)
