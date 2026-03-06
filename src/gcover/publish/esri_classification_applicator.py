@@ -80,6 +80,81 @@ SUPPORTED_CASTS = {
 }
 
 
+
+
+def _handle_special_functions(
+        gdf: gpd.GeoDataFrame,
+        expression: str
+) -> Optional[pd.Series]:
+    """
+    Handle special function expressions that pandas.eval() can't process.
+
+    Supported functions:
+    - concat(field1, field2, ...) → concatenate with default separator " | "
+    - concat(field1, field2, sep='-') → concatenate with custom separator
+    - coalesce(field1, field2, ...) → first non-null value
+
+    Returns:
+        Series if expression matches a special function, None otherwise
+    """
+    expression = expression.strip()
+
+    # Handle concat(...)
+    concat_match = re.match(r"concat\((.+)\)$", expression, re.IGNORECASE)
+    if concat_match:
+        inner = concat_match.group(1)
+
+        # Extract separator if specified: sep='|' or sep="|"
+        sep = " | "  # Default
+        sep_match = re.search(r"sep\s*=\s*['\"](.+?)['\"]", inner)
+        if sep_match:
+            sep = sep_match.group(1)
+            # Remove sep=... from inner
+            inner = re.sub(r",?\s*sep\s*=\s*['\"].+?['\"]", "", inner)
+
+        # Parse field names
+        fields = [f.strip() for f in inner.split(",") if f.strip()]
+
+        if not fields:
+            raise ValueError("concat() requires at least one field")
+
+        # Check fields exist
+        missing = [f for f in fields if f not in gdf.columns]
+        if missing:
+            raise ValueError(f"concat(): missing fields {missing}")
+
+        # Build concatenated string
+        # Convert to string, handling NaN gracefully
+        result = gdf[fields[0]].fillna("").astype(str)
+        for field in fields[1:]:
+            result = result + sep + gdf[field].fillna("").astype(str)
+
+        return result
+
+    # Handle coalesce(...) - first non-null value
+    coalesce_match = re.match(r"coalesce\((.+)\)$", expression, re.IGNORECASE)
+    if coalesce_match:
+        inner = coalesce_match.group(1)
+        fields = [f.strip() for f in inner.split(",") if f.strip()]
+
+        if not fields:
+            raise ValueError("coalesce() requires at least one field")
+
+        missing = [f for f in fields if f not in gdf.columns]
+        if missing:
+            raise ValueError(f"coalesce(): missing fields {missing}")
+
+        # Use first non-null value
+        result = gdf[fields[0]].copy()
+        for field in fields[1:]:
+            result = result.fillna(gdf[field])
+
+        return result
+
+    # Not a special function
+    return None
+
+
 def _parse_expression_with_cast(expression: str) -> Tuple[str, Optional[str]]:
     """
     Parse expression for optional type cast suffix.
@@ -158,6 +233,9 @@ def apply_computed_fields(
     - Geometry properties: "geometry.length", "geometry.area", "geometry.bearing"
     - Mixed expressions: "geometry.area / 1_000_000"
     - Inline type casting: "geometry.bearing:int", "geometry.area:round"
+    - String concatenation: "concat(field1, field2, field3)"
+    - String concatenation with custom separator: "concat(field1, field2, sep='|')"
+    - Coalesce (first non-null): "coalesce(field1, field2, field3)"
 
     Supported cast types:
     - :int, :Int64, :Int32 → Nullable integer (rounds first)
@@ -188,7 +266,7 @@ def apply_computed_fields(
         return gdf
 
     gdf = gdf.copy()
-    geom_cache: Dict[str, str] = {}  # geom_key -> temp_column_name
+    geom_cache: Dict[str, str] = {}
 
     # Collect all expressions (without cast suffixes) to find geometry properties used
     all_expressions_clean = []
@@ -200,7 +278,6 @@ def apply_computed_fields(
     # Pre-compute geometry properties and store in temporary columns
     for geom_key, geom_func in GEOMETRY_PROPERTIES.items():
         if geom_key in all_expressions:
-            # Create safe temporary column name
             temp_col = f"__geom_{geom_key.replace('.', '_')}"
             try:
                 gdf[temp_col] = geom_func(gdf)
@@ -219,15 +296,18 @@ def apply_computed_fields(
             # Parse expression for optional cast
             clean_expression, cast_type = _parse_expression_with_cast(expression)
 
-            # Replace geometry references with temporary column names
-            eval_expr = clean_expression
-            for geom_key, temp_col in geom_cache.items():
-                eval_expr = eval_expr.replace(geom_key, temp_col)
+            # TRY SPECIAL FUNCTIONS FIRST (concat, coalesce, etc.)
+            result = _handle_special_functions(gdf, clean_expression)
 
-            # Evaluate expression
-            result = gdf.eval(eval_expr)
+            if result is None:
+                # Not a special function, use pandas eval
+                eval_expr = clean_expression
+                for geom_key, temp_col in geom_cache.items():
+                    eval_expr = eval_expr.replace(geom_key, temp_col)
 
-            # Handle scalar results (rare but possible)
+                result = gdf.eval(eval_expr)
+
+            # Handle scalar results
             if not isinstance(result, pd.Series):
                 result = pd.Series([result] * len(gdf), index=gdf.index)
 
@@ -260,13 +340,9 @@ def apply_computed_fields(
     temp_cols = list(geom_cache.values())
     if temp_cols:
         gdf.drop(columns=temp_cols, inplace=True, errors="ignore")
-        logger.debug(f"Cleaned up {len(temp_cols)} temporary geometry columns")
 
-    # Summary
     if computed_fields:
-        logger.info(
-            f"Computed fields: {success_count}/{len(computed_fields)} successful"
-        )
+        logger.info(f"Computed fields: {success_count}/{len(computed_fields)} successful")
 
     return gdf
 

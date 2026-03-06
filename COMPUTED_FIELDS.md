@@ -139,6 +139,38 @@ computed_fields:
   azimuth: "azimuth % 360"  # normalize in place
 ```
 
+## Concatenating and coalescing
+
+```yaml
+computed_fields:
+  # Default separator " | "
+  litho_combined: "concat(litho_main, litho_sec, litho_ter)"
+  # Result: "12000 | 300000 | 350000"
+  
+  # Custom separator
+  litho_pipe: "concat(litho_main, litho_sec, litho_ter, sep='|')"
+  # Result: "12000|300000|350000"
+  
+  # With spaces around pipe
+  litho_spaced: "concat(litho_main, litho_sec, litho_ter, sep=' | ')"
+  # Result: "12000 | 300000 | 350000"
+  
+  # Dash separator
+  code_combined: "concat(KIND, GMU_CODE, sep='-')"
+  # Result: "14334001-15203001"
+  
+  # Coalesce - first non-null value
+  litho_primary: "coalesce(litho_main, litho_sec, litho_ter)"
+```
+
+
+**Output:**
+```
+  ✓ Created 'litho_combined' = concat(litho_main, litho_sec, litho_ter)
+  ✓ Created 'litho_pipe' = concat(litho_main, litho_sec, litho_ter, sep='|')
+```
+The `coalesce()` function is a bonus — useful for getting the first non-null value from multiple fields.
+
 ## Execution Order
 
 1. Load GeoDataFrame
