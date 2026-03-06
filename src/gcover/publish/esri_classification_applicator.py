@@ -80,8 +80,6 @@ SUPPORTED_CASTS = {
 }
 
 
-
-
 def _handle_special_functions(
         gdf: gpd.GeoDataFrame,
         expression: str
@@ -98,6 +96,14 @@ def _handle_special_functions(
         Series if expression matches a special function, None otherwise
     """
     expression = expression.strip()
+
+    # Helper to convert any series to string, handling nullable types
+    def to_string_safe(series: pd.Series) -> pd.Series:
+        """Convert series to string, replacing NA representations with empty string."""
+        # First convert to string (Int64 NA becomes "<NA>", float NaN becomes "nan")
+        str_series = series.astype(str)
+        # Replace all NA representations with empty string
+        return str_series.replace({"<NA>": "", "nan": "", "None": "", "NaN": "", "<NaT>": ""})
 
     # Handle concat(...)
     concat_match = re.match(r"concat\((.+)\)$", expression, re.IGNORECASE)
@@ -123,11 +129,10 @@ def _handle_special_functions(
         if missing:
             raise ValueError(f"concat(): missing fields {missing}")
 
-        # Build concatenated string
-        # Convert to string, handling NaN gracefully
-        result = gdf[fields[0]].fillna("").astype(str)
+        # Build concatenated string using safe conversion
+        result = to_string_safe(gdf[fields[0]])
         for field in fields[1:]:
-            result = result + sep + gdf[field].fillna("").astype(str)
+            result = result + sep + to_string_safe(gdf[field])
 
         return result
 
