@@ -391,3 +391,453 @@ class TestGeometryPropertiesRegistry:
         ]
         for prop in expected:
             assert prop in GEOMETRY_PROPERTIES, f"Missing property: {prop}"
+
+# =============================================================================
+# TESTS: BEARING COMPUTATION
+# =============================================================================
+
+
+class TestBearingComputation:
+    """Test geometry.bearing and related properties."""
+
+    @pytest.fixture
+    def gdf_cardinal_lines(self):
+        """Lines pointing in cardinal directions from origin."""
+        return gpd.GeoDataFrame(
+            {
+                "direction": ["north", "east", "south", "west", "northeast"],
+                "geometry": [
+                    LineString([(0, 0), (0, 100)]),      # North: bearing = 0°
+                    LineString([(0, 0), (100, 0)]),     # East: bearing = 90°
+                    LineString([(0, 0), (0, -100)]),    # South: bearing = 180°
+                    LineString([(0, 0), (-100, 0)]),    # West: bearing = 270°
+                    LineString([(0, 0), (100, 100)]),   # NE: bearing = 45°
+                ],
+            },
+            crs="EPSG:2056",
+        )
+
+    def test_bearing_cardinal_directions(self, gdf_cardinal_lines):
+        """Test bearing for cardinal directions."""
+        computed = {"bearing": "geometry.bearing"}
+        result = apply_computed_fields(gdf_cardinal_lines, computed)
+
+        expected = [0.0, 90.0, 180.0, 270.0, 45.0]
+        np.testing.assert_array_almost_equal(
+            result["bearing"].values, expected, decimal=1
+        )
+
+    def test_bearing_as_integer(self, gdf_cardinal_lines):
+        """Test bearing cast to integer."""
+        computed = {"bearing_int": "geometry.bearing:int"}
+        result = apply_computed_fields(gdf_cardinal_lines, computed)
+
+        assert result["bearing_int"].dtype == "Int64"
+        assert list(result["bearing_int"]) == [0, 90, 180, 270, 45]
+
+    def test_strike(self, gdf_cardinal_lines):
+        """Test strike (0-180° range)."""
+        computed = {"strike": "geometry.strike"}
+        result = apply_computed_fields(gdf_cardinal_lines, computed)
+
+        # Strike normalizes to 0-180: 270° → 90°, 180° → 0°
+        expected = [0.0, 90.0, 0.0, 90.0, 45.0]
+        np.testing.assert_array_almost_equal(
+            result["strike"].values, expected, decimal=1
+        )
+
+    def test_bearing_to_map_angle(self, gdf_cardinal_lines):
+        """Test conversion from bearing to MapServer angle."""
+        computed = {"map_angle": "(90 - geometry.bearing) % 360:int"}
+        result = apply_computed_fields(gdf_cardinal_lines, computed)
+
+        # MapServer: 0=East, CCW positive
+        # North (bearing=0) → 90, East (bearing=90) → 0, etc.
+        expected = [90, 0, 270, 180, 45]
+        assert list(result["map_angle"]) == expected
+
+    def test_bearing_empty_geometry(self):
+        """Test bearing with empty geometry."""
+        gdf = gpd.GeoDataFrame(
+            {
+                "id": [1],
+                "geometry": [LineString()],  # Empty
+            },
+            crs="EPSG:2056",
+        )
+        computed = {"bearing": "geometry.bearing"}
+        result = apply_computed_fields(gdf, computed)
+
+        assert pd.isna(result["bearing"].iloc[0])
+
+    def test_bearing_point_geometry(self, gdf_points):
+        """Test that bearing returns NaN for non-line geometries."""
+        computed = {"bearing": "geometry.bearing"}
+        result = apply_computed_fields(gdf_points, computed)
+
+        assert all(pd.isna(result["bearing"]))
+
+
+# =============================================================================
+# TESTS: MULTILINESTRING BEARING
+# =============================================================================
+
+
+class TestMultiLineStringBearing:
+    """Test bearing for MultiLineString geometries."""
+
+    @pytest.fixture
+    def gdf_multilines(self):
+        """GeoDataFrame with MultiLineString geometries."""
+        from shapely.geometry import MultiLineString as MLS
+
+        return gpd.GeoDataFrame(
+            {
+                "id": [1, 2],
+                "geometry": [
+                    # Two segments: short east, long north
+                    MLS([
+                        LineString([(0, 0), (10, 0)]),    # 10m east
+                        LineString([(0, 0), (0, 100)]),   # 100m north
+                    ]),
+                    # Single segment
+                    MLS([
+                        LineString([(0, 0), (50, 50)]),   # NE diagonal
+                    ]),
+                ],
+            },
+            crs="EPSG:2056",
+        )
+
+    def test_bearing_uses_longest(self, gdf_multilines):
+        """Test that geometry.bearing uses the longest segment."""
+        computed = {"bearing": "geometry.bearing"}
+        result = apply_computed_fields(gdf_multilines, computed)
+
+        # First: longest is north (100m) → bearing 0°
+        # Second: single NE segment → bearing 45°
+        expected = [0.0, 45.0]
+        np.testing.assert_array_almost_equal(
+            result["bearing"].values, expected, decimal=1
+        )
+
+    def test_bearing_weighted(self, gdf_multilines):
+        """Test length-weighted bearing average."""
+        computed = {"bearing_w": "geometry.bearing_weighted"}
+        result = apply_computed_fields(gdf_multilines, computed)
+
+        # Weighted average should be closer to north (longer segment)
+        # but not exactly 0° due to east segment contribution
+        assert 0 < result["bearing_w"].iloc[0] < 45
+
+
+# =============================================================================
+# TESTS: TYPE CASTING
+# =============================================================================
+
+
+class TestTypeCasting:
+    """Test inline type casting with :type suffix."""
+
+    def test_cast_to_int(self, gdf_lines):
+        """Test :int cast."""
+        computed = {"length_int": "geometry.length:int"}
+        result = apply_computed_fields(gdf_lines, computed)
+
+        assert result["length_int"].dtype == "Int64"
+        assert list(result["length_int"]) == [100, 200, 71]  # Rounded
+
+    def test_cast_to_int64(self, gdf_lines):
+        """Test :Int64 cast (explicit)."""
+        computed = {"length_int64": "geometry.length:Int64"}
+        result = apply_computed_fields(gdf_lines, computed)
+
+        assert result["length_int64"].dtype == "Int64"
+
+    def test_cast_to_float(self, gdf_lines):
+        """Test :float cast."""
+        computed = {"value_float": "value_a:float"}
+        result = apply_computed_fields(gdf_lines, computed)
+
+        assert result["value_float"].dtype == "float64"
+
+    def test_cast_to_string(self, gdf_lines):
+        """Test :str cast."""
+        computed = {"value_str": "value_a:str"}
+        result = apply_computed_fields(gdf_lines, computed)
+
+        assert result["value_str"].dtype == "string"
+        assert result["value_str"].iloc[0] == "100"
+
+    def test_cast_round(self, gdf_lines):
+        """Test :round cast."""
+        computed = {"length_round": "geometry.length:round"}
+        result = apply_computed_fields(gdf_lines, computed)
+
+        # Should be rounded but still float
+        np.testing.assert_array_almost_equal(
+            result["length_round"].values, [100.0, 200.0, 71.0], decimal=0
+        )
+
+    def test_cast_with_expression(self, gdf_polygons):
+        """Test casting with arithmetic expression."""
+        computed = {"area_km2": "geometry.area / 1000000:round"}
+        result = apply_computed_fields(gdf_polygons, computed)
+
+        assert list(result["area_km2"]) == [0.0, 1.0]
+
+    def test_cast_preserves_nan(self):
+        """Test that casting preserves NaN values."""
+        gdf = gpd.GeoDataFrame(
+            {
+                "value": [1.5, np.nan, 3.7],
+                "geometry": [Point(0, 0), Point(1, 1), Point(2, 2)],
+            },
+            crs="EPSG:2056",
+        )
+        computed = {"value_int": "value:int"}
+        result = apply_computed_fields(gdf, computed)
+
+        assert result["value_int"].iloc[0] == 2  # Rounded
+        assert pd.isna(result["value_int"].iloc[1])  # NaN preserved
+        assert result["value_int"].iloc[2] == 4
+
+
+# =============================================================================
+# TESTS: CONCAT FUNCTION
+# =============================================================================
+
+
+class TestConcatFunction:
+    """Test concat() special function."""
+
+    @pytest.fixture
+    def gdf_litho(self):
+        """GeoDataFrame with lithology codes."""
+        return gpd.GeoDataFrame(
+            {
+                "litho_main": [15101001, 15101002, 15101003],
+                "litho_sec": [15102001, 15102002, 0],
+                "litho_ter": [15103001, 0, 0],
+                "geometry": [Point(0, 0), Point(1, 1), Point(2, 2)],
+            },
+            crs="EPSG:2056",
+        )
+
+    def test_concat_default_separator(self, gdf_litho):
+        """Test concat with default separator ' | '."""
+        computed = {"combined": "concat(litho_main, litho_sec, litho_ter)"}
+        result = apply_computed_fields(gdf_litho, computed)
+
+        assert "combined" in result.columns
+        assert result["combined"].iloc[0] == "15101001 | 15102001 | 15103001"
+
+    def test_concat_custom_separator(self, gdf_litho):
+        """Test concat with custom separator."""
+        computed = {"combined": "concat(litho_main, litho_sec, sep='|')"}
+        result = apply_computed_fields(gdf_litho, computed)
+
+        assert result["combined"].iloc[0] == "15101001|15102001"
+
+    def test_concat_dash_separator(self, gdf_litho):
+        """Test concat with dash separator."""
+        computed = {"combined": "concat(litho_main, litho_sec, sep='-')"}
+        result = apply_computed_fields(gdf_litho, computed)
+
+        assert result["combined"].iloc[0] == "15101001-15102001"
+
+    def test_concat_single_field(self, gdf_litho):
+        """Test concat with single field."""
+        computed = {"single": "concat(litho_main)"}
+        result = apply_computed_fields(gdf_litho, computed)
+
+        assert result["single"].iloc[0] == "15101001"
+
+    def test_concat_with_zeros(self, gdf_litho):
+        """Test that concat includes zero values as '0'."""
+        computed = {"combined": "concat(litho_main, litho_sec, litho_ter)"}
+        result = apply_computed_fields(gdf_litho, computed)
+
+        # Row with zeros should show them
+        assert "0" in result["combined"].iloc[2]
+
+
+# =============================================================================
+# TESTS: CONCAT WITH NULLS
+# =============================================================================
+
+
+class TestConcatWithNulls:
+    """Test concat() handling of NULL values."""
+
+    @pytest.fixture
+    def gdf_with_nulls(self):
+        """GeoDataFrame with NULL values."""
+        return gpd.GeoDataFrame(
+            {
+                "field_a": ["alpha", "beta", None],
+                "field_b": ["one", None, "three"],
+                "field_c": [100, 200, 300],
+                "geometry": [Point(0, 0), Point(1, 1), Point(2, 2)],
+            },
+            crs="EPSG:2056",
+        )
+
+    def test_concat_replaces_null_with_empty(self, gdf_with_nulls):
+        """Test that NULL values become empty strings in concat."""
+        computed = {"combined": "concat(field_a, field_b, sep='|')"}
+        result = apply_computed_fields(gdf_with_nulls, computed)
+
+        assert result["combined"].iloc[0] == "alpha|one"
+        assert result["combined"].iloc[1] == "beta|"  # NULL → empty
+        assert result["combined"].iloc[2] == "|three"  # NULL → empty
+
+
+# =============================================================================
+# TESTS: COALESCE FUNCTION
+# =============================================================================
+
+
+class TestCoalesceFunction:
+    """Test coalesce() special function."""
+
+    @pytest.fixture
+    def gdf_sparse(self):
+        """GeoDataFrame with sparse data (many NULLs)."""
+        return gpd.GeoDataFrame(
+            {
+                "primary": [100, None, None, 400],
+                "secondary": [None, 200, None, 500],
+                "tertiary": [None, None, 300, 600],
+                "geometry": [Point(i, i) for i in range(4)],
+            },
+            crs="EPSG:2056",
+        )
+
+    def test_coalesce_basic(self, gdf_sparse):
+        """Test coalesce returns first non-null value."""
+        computed = {"result": "coalesce(primary, secondary, tertiary)"}
+        result = apply_computed_fields(gdf_sparse, computed)
+
+        expected = [100.0, 200.0, 300.0, 400.0]
+        assert list(result["result"]) == expected
+
+    def test_coalesce_two_fields(self, gdf_sparse):
+        """Test coalesce with two fields."""
+        computed = {"result": "coalesce(primary, secondary)"}
+        result = apply_computed_fields(gdf_sparse, computed)
+
+        # Third row: both primary and secondary are NULL → stays NULL
+        assert result["result"].iloc[0] == 100.0
+        assert result["result"].iloc[1] == 200.0
+        assert pd.isna(result["result"].iloc[2])
+        assert result["result"].iloc[3] == 400.0
+
+    def test_coalesce_single_field(self, gdf_sparse):
+        """Test coalesce with single field (identity)."""
+        computed = {"result": "coalesce(primary)"}
+        result = apply_computed_fields(gdf_sparse, computed)
+
+        assert result["result"].iloc[0] == 100.0
+        assert pd.isna(result["result"].iloc[1])
+
+    def test_coalesce_all_null(self):
+        """Test coalesce when all values are NULL."""
+        gdf = gpd.GeoDataFrame(
+            {
+                "a": [None, None],
+                "b": [None, None],
+                "geometry": [Point(0, 0), Point(1, 1)],
+            },
+            crs="EPSG:2056",
+        )
+        computed = {"result": "coalesce(a, b)"}
+        result = apply_computed_fields(gdf, computed)
+
+        assert all(pd.isna(result["result"]))
+
+
+# =============================================================================
+# TESTS: COMBINED FEATURES
+# =============================================================================
+
+
+class TestCombinedFeatures:
+    """Test combining multiple new features."""
+
+    def test_bearing_cast_and_concat(self):
+        """Test bearing, casting, and concat together."""
+        gdf = gpd.GeoDataFrame(
+            {
+                "name": ["fault_1", "fault_2"],
+                "type_code": [101, 102],
+                "geometry": [
+                    LineString([(0, 0), (100, 100)]),  # NE: 45°
+                    LineString([(0, 0), (0, 100)]),   # N: 0°
+                ],
+            },
+            crs="EPSG:2056",
+        )
+
+        computed = {
+            "bearing": "geometry.bearing:int",
+            "info": "concat(name, type_code, sep=' - ')",
+        }
+        result = apply_computed_fields(gdf, computed)
+
+        assert result["bearing"].iloc[0] == 45
+        assert result["bearing"].iloc[1] == 0
+        assert result["info"].iloc[0] == "fault_1 - 101"
+
+    def test_coalesce_then_concat(self):
+        """Test coalesce followed by concat."""
+        gdf = gpd.GeoDataFrame(
+            {
+                "code_main": [100, None],
+                "code_backup": [999, 200],
+                "label": ["A", "B"],
+                "geometry": [Point(0, 0), Point(1, 1)],
+            },
+            crs="EPSG:2056",
+        )
+
+        computed = {
+            "code": "coalesce(code_main, code_backup)",
+            "combined": "concat(label, code_main, sep=':')",  # Uses original
+        }
+        result = apply_computed_fields(gdf, computed)
+
+        assert result["code"].iloc[0] == 100.0
+        assert result["code"].iloc[1] == 200.0
+
+
+# =============================================================================
+# TESTS: VALIDATION WITH NEW FEATURES
+# =============================================================================
+
+
+class TestValidationNewFeatures:
+    """Test validation of new computed field features."""
+
+    def test_validate_invalid_cast(self, gdf_lines):
+        """Test validation rejects invalid cast types."""
+        computed = {"result": "value_b:invalid_type"}
+        issues = validate_computed_fields(gdf_lines, computed)
+
+        assert len(issues) == 1
+        assert issues[0]["issue"] == "invalid_cast"
+
+    def test_validate_concat_missing_field(self, gdf_lines):
+        """Test validation detects missing fields in concat."""
+        computed = {"result": "concat(value_a, nonexistent)"}
+        # This will fail at runtime, not validation (could be enhanced)
+        result = apply_computed_fields(gdf_lines, computed, strict=False)
+        # Should warn but not crash
+        assert "result" not in result.columns or pd.isna(result["result"]).all()
+
+    def test_validate_bearing_property_exists(self, gdf_lines):
+        """Test that geometry.bearing is recognized as valid."""
+        computed = {"bearing": "geometry.bearing"}
+        issues = validate_computed_fields(gdf_lines, computed)
+
+        assert len(issues) == 0

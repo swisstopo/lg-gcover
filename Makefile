@@ -28,11 +28,22 @@ TABLES_TO_IMPORT := GC_GEOL_MAPPING_UNIT GC_LITSTRAT_FORMATION_BANK GC_CHRONO \
 .DEFAULT_GOAL := help
 
 ## help: Show this help message
+
 help:
 	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Targets:"
-	@sed -n 's/^##//p' $(MAKEFILE_LIST) | column -t -s ':' |  sed -e 's/^/ /'
+	@( \
+	sed -n \
+        -e '/^## help:/d' \
+        -e 's/^### \(.*\)/\1/p' \
+        -e 's/^## \(.*\)/  \1/p' \
+        $(MAKEFILE_LIST); \
+	sed -n 's/^## help:/help:/p' $(MAKEFILE_LIST); \
+	) | column -t -s ':' | sed -e 's/^/ /'
+	@echo ""
+
+	@echo ""
 	@echo ""
 	@echo "Master GDB:			$(MASTER_GDB)"
 	@echo "Styles dir:			$(STYLES_DIR)"
@@ -44,8 +55,14 @@ help:
 	@echo "Output dir:			$(OUTPUT_DIR)"
 
 
+.PHONY: merge-diagnostic translate classify denormalize
+### Data
 ## all: Run the entire workflow (Merge -> Import -> Denormalize -> Symbolize)
 all: merge $(CLASSIFIED_PATH)
+
+
+## merge: Only perform the gcover merge and diagnosis
+merge: $(MASTER_GDB)/timestamps
 
 # 1. Merge sources and run diagnosis
 $(MASTER_GDB)/timestamps: $(DELIVERY_DIR)RC1.gdb $(DELIVERY_DIR)RC2.gdb
@@ -56,14 +73,13 @@ $(MASTER_GDB)/timestamps: $(DELIVERY_DIR)RC1.gdb $(DELIVERY_DIR)RC2.gdb
 		--custom-sources-dir $(DELIVERY_DIR) \
 		--force-2d --output $(MASTER_GDB) \
 		--no-clip-to-swiss-border
-.PHONY: merge-diagnostic
+
 ## merge-diagnostic: Merge diagnostic
 merge-diagnostic:
 	@echo "--- Running Diagnosis ---"
 	python scripts/diagnose_merge.py $(DELIVERY_DIR)RC1.gdb $(DELIVERY_DIR)RC2.gdb data/administrative_zones.gpkg
 
-## merge: Only perform the gcover merge and diagnosis
-merge: $(MASTER_GDB)/timestamps
+
 
 # 2. Add missing tables and Denormalize
 $(DENORMALIZED_PATH): $(MASTER_GDB)/timestamps
@@ -87,15 +103,14 @@ $(CLASSIFIED_PATH): $(DENORMALIZED_PATH)
 	@gcover --env sandisk publish apply-config --styles-dir $(STYLES_DIR) \
 		$(DENORMALIZED_PATH) config/esri_classifier_denormalized_geocover.yaml
 
-.PHONY: translate classify denormalize
 ## denormalize: Only run the table import and denormalization (requires master GDB)
 denormalize: $(DENORMALIZED_PATH)
 
-## translate: Add human-readable values for geolcodes
-translate: $(TRANSLATED_PATH)
-
 ## classify: Apply classification from .lyrx to denormalized data
 classify: $(CLASSIFIED_PATH)
+
+## translate: Add human-readable values for geolcodes
+translate: $(TRANSLATED_PATH)
 
 
 ## surfaces-aux: Create auxilliary grid sur surfaces/unco deposits
@@ -123,13 +138,12 @@ clean-all: clean-denormalize
 
 # Makefile for easy test execution
 .PHONY: test lint format smoke install-dev doc
+
+### Code
 ## install-dev:  Install development dependencies
 install-dev:
 	pip install -e ".[dev]"
 
-## smoke: Run smoke tests only (fastest) no coverage
-smoke:
-	pytest tests/test_imports.py tests/test_cli_smoke.py -v --no-cov
 
 ## format: ruff format the code
 format:
@@ -142,6 +156,10 @@ lint: format
 ## test: Run all tests
 test:
 	pytest tests/ -v
+
+## smoke: Run smoke tests only (fastest) no coverage
+smoke:
+	pytest tests/test_imports.py tests/test_cli_smoke.py -v --no-cov
 ## doc: Generate the doc
 doc:
 	pdoc src/gcover  gcover.config.models gcover.publish.style_config  gcover.publish.esri_classification_extractor  --docformat google

@@ -587,6 +587,8 @@ layers:
       template: templates/bedrock.html
       computed_fields:
         area_m2: "geometry.area"
+        litho_combined_code: "concat(litho_main_code, litho_sec_code, litho_ter_code):str"
+        chrono_combined_code: "concat(chrono_base_code,chrono_top_code):str"
       field_types:
         KIND: Int64
         RBED_EXOTIC_ELE: Int64
