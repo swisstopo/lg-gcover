@@ -40,16 +40,9 @@ help:
 	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Targets:"
-	@( \
-	sed -n \
-        -e '/^## help:/d' \
-        -e 's/^### \(.*\)/\1/p' \
-        -e 's/^## \(.*\)/  \1/p' \
-        $(MAKEFILE_LIST); \
-	sed -n 's/^## help:/help:/p' $(MAKEFILE_LIST); \
-	) | column -t -s ':' | sed -e 's/^/ /'
-	@echo ""
-
+	@awk '/^### / { printf "\n%s\n", substr($$0, 5) } \
+		 /^## /  { printf "  %-20s %s\n", $$2, substr($$0, index($$0, $$3)) }' \
+		 $(MAKEFILE_LIST) | sed 's/://'
 	@echo ""
 	@echo ""
 	@echo "Master GDB:           $(MASTER_GDB)"
@@ -64,7 +57,7 @@ help:
 
 
 
-.PHONY: merge-diagnostic translate classify denormalize
+.PHONY: merge-diagnostic translate classify denormalize test lint format smoke install-dev doc
 ### Data
 ## all: Run the entire workflow (Merge -> Import -> Denormalize -> Symbolize)
 all: merge $(CLASSIFIED_PATH)
@@ -129,19 +122,8 @@ surfaces-aux:
 
 .PHONY: mapfiles
 
-## mapfiles: Generate prod mapfiles
-mapfiles:
-	gcover --env production publish mapserver    \
-		--use-symbol-field  \
-		--output-dir $(MAPSERVER_OUTPUT)  \
-		--generate-combined \
-		--styles-dir $(STYLES_DIR)/styles \
-		--pattern-file config/patterns_catalog.yaml  \
-		--gml-items label  \
-		config/esri_classifier_denormalized_geocover.yaml
 
-
-## clean-translate: Clean denormalized artefacts
+## clean-denormalize: Clean denormalized artefacts
 clean-denormalize: clean-translate
 	rm -rf $(DENORMALIZED_PATH)
 
@@ -159,8 +141,18 @@ clean-all: clean-denormalize
 	rm -rf $(OUTPUT_DIR)surfaces_aux.gpkg
 
 
-# Makefile for easy test execution
-.PHONY: test lint format smoke install-dev doc
+### Mapfiles
+## mapfiles: Generate prod mapfiles
+mapfiles:
+	gcover --env production publish mapserver    \
+		--use-symbol-field  \
+		--output-dir $(MAPSERVER_OUTPUT)  \
+		--generate-combined \
+		--styles-dir $(STYLES_DIR)/styles \
+		--pattern-file config/patterns_catalog.yaml  \
+		--gml-items label  \
+		config/esri_classifier_denormalized_geocover.yaml
+
 
 ### Code
 ## install-dev:  Install development dependencies
