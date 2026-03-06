@@ -125,10 +125,11 @@ def pipe_gdf():
                 f"{VALID_CODE_C}",                     # single code (no pipe)
                 f"{VALID_CODE_A} | {UNKNOWN_CODE}",    # one known, one unknown
                 None,                                  # null
+                f"{VALID_CODE_A} | {VALID_CODE_A}",  # two same codes
             ],
-            "NAME": ["a", "b", "c", "d"],
+            "NAME": ["a", "b", "c", "d", "e"],
         },
-        geometry=[Point(0, 0)] * 4,
+        geometry=[Point(0, 0)] * 5,
         crs="EPSG:4326",
     )
 
@@ -534,6 +535,13 @@ class TestEnrichLayerPipe:
         assert PIPE_SEP in first_row
         assert "Granit" in first_row
         assert "Gneis" in first_row
+
+    def test_pipe_same_values_stripped_correctly(self, pipe_gdf, translations_df):
+        result, _ = enrich_layer(pipe_gdf, translations_df, ["de"], 0.5, "test")
+        fourth_row = result.iloc[4]["ADMIX_de"]
+        assert PIPE_SEP not in fourth_row
+        assert "Granit" == fourth_row
+        assert "Gneis" not in fourth_row
 
     def test_null_row_stays_null(self, pipe_gdf, translations_df):
         result, _ = enrich_layer(pipe_gdf, translations_df, ["de"], 0.5, "test")

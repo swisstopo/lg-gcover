@@ -119,23 +119,39 @@ def _is_pipe_codes_value(val) -> bool:
     )
 
 def _map_pipe_codes(val, lang_series: pd.Series) -> "str | None":
-    """Translate a pipe-separated string of GeolCodes.
+        """Translate a pipe-separated string of GeolCodes.
 
-    Each integer token is looked up in lang_series; untranslated tokens are
-    kept as their numeric string so no information is silently lost.
-    Returns None when val is null.
-    """
-    if pd.isna(val):
-        return None
-    parts = [p.strip() for p in str(val).split("|") if p.strip()]
-    translated = []
-    for part in parts:
-        try:
-            label = lang_series.get(int(part))
-            translated.append(label if label is not None else part)
-        except ValueError:
-            translated.append(part)
-    return PIPE_SEP.join(translated) if translated else None
+        Each integer token is looked up in lang_series; untranslated tokens are
+        kept as their numeric string so no information is silently lost.
+
+        If all translated values are identical, returns a single value instead
+        of repeating it — e.g. "15001025 | 15001025" → "Burdigalien".
+        """
+        if pd.isna(val):
+            return None
+        parts = [p.strip() for p in str(val).split("|") if p.strip()]
+        translated = []
+        for part in parts:
+            try:
+                label = lang_series.get(int(part))
+                translated.append(label if label is not None else part)
+            except ValueError:
+                translated.append(part)
+
+        if not translated:
+            return None
+
+        # Deduplicate while preserving order —
+        # "Burdigalien | Burdigalien" → "Burdigalien"
+        # "Burdigalien | Aquitanien"  → "Burdigalien | Aquitanien"  (unchanged)
+        seen: set = set()
+        deduped: list = []
+        for t in translated:
+            if t not in seen:
+                seen.add(t)
+                deduped.append(t)
+
+        return PIPE_SEP.join(deduped)
 
 def load_translations(path: Path, langs: list[str]) -> pd.DataFrame:
     """Load translations CSV, keep only requested language columns.
