@@ -7,6 +7,8 @@ global:
     label_field: label
     overwrite: False
     identifier_mode: label  # Possible value: 'label' (default), 'index', or 'field'
+    languages: "de,fr"
+    default_language: "de"
 
 # Layer configurations
 layers:
@@ -561,7 +563,7 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}unco_chrono_b
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}unconsolidated
-          include_items: "label,kind,runc_litho,runc_glac_typ,runc_chrono_b"
+          include_items: "label,kind,map_symbol,runc_chrono_t,runc_chrono_b,runc_litho,runc_litstrat,runc_structur,runc_morpholo,runc_glac_typ,runc_thin_cov,charcat,composit,litho"
           maxscaledenom: 50000
           map_label: False
           mapfile_config:
@@ -570,6 +572,19 @@ layers:
             metadata:
               wms_group_title: Unconsolidated
           data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}unco_deposits  USING UNIQUE gid USING SRID=2056"
+          lang_fields:
+            runc_chrono_t: "runc_chrono_t_%lang%"
+            runc_chrono_b: "runc_chrono_b_%lang%"
+            runc_litho: "runc_litho_%lang%"
+            runc_litstrat: "runc_litstrat_%lang%"
+            runc_structur: "runc_structur_%lang%"
+            runc_morpholo: "runc_morpholo_%lang%"
+            runc_glac_typ: "runc_glac_typ_%lang%"
+            runc_thin_cov: "runc_thin_cov_%lang%"
+            charcat: "charcat_%lang%"
+            composit: "composit_%lang%"
+            litho: "litho_%lang%"
+
           symbol_prefix: unco_chrono_b
           filter: RUNC_LITHO IN (15101009, 15101015)
           fields:
@@ -607,8 +622,21 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}bedrock
           # mapfile_group: ${GCOVER_LAYERNAME_PREFIX}bedrock
           map_label: False
-          data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}bedrock  USING UNIQUE gid USING SRID=2056"
-          include_items: "label,uuid,kind,gmu_desc,tecto_desc,litho_main_desc,litho_sec_desc,litho_ter_desc,chrono_base_desc,chrono_top_desc,correlation_desc"
+          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}bedrock USING UNIQUE gid USING SRID=2056"
+          # Constant alias names → language-specific columns
+          lang_fields:
+              gmu_desc: "gmu_%lang%"
+              tecto_desc: "tecto_%lang%"
+              litho_main_desc: "litho_main_%lang%"
+              litho_sec_desc: "litho_sec_%lang%"
+              litho_ter_desc: "litho_ter_%lang%"
+              chrono_base_desc: "chrono_base_%lang%"
+              chrono_top_desc: "chrono_top_%lang%"
+              correlation_desc: "correlation_%lang%"
+              litstrat_formation_bank: "litstrat_formation_bank_%lang%"
+
+          # These names stay stable for all clients regardless of LANGUAGE= param
+          include_items: "label,gmu_desc,tecto_desc,litho_main_desc,litho_sec_desc,litho_ter_desc,chrono_base_desc,chrono_top_desc,correlation_desc"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             GMU_CODE: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT

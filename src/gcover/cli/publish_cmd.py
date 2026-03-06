@@ -17,6 +17,7 @@ import geopandas as gpd
 import pandas as pd
 import yaml
 from loguru import logger
+from mypy.modulefinder import default_lib_path
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -1054,6 +1055,8 @@ def mapserver(
     symbol_field = None
     mapfile_configs = {}
     identifier_fields = {}
+    lang_fields_dict = {}
+    translations_dict = {}
 
 
     env = ctx.obj.get('environment')
@@ -1168,6 +1171,8 @@ def mapserver(
                     include_items_dict[key] = class_config.include_items
                     max_scaledenoms[key] = class_config.maxscaledenom
                     mapfile_configs[key]  = class_config.mapfile_config
+                    translations_dict[key] = class_config.translations
+                    lang_fields_dict[key] = class_config.lang_fields
                     if class_config.symbol_prefix:
                         prefix_map[key] = class_config.symbol_prefix
                     if class_config.mapfile_group:
@@ -1245,7 +1250,10 @@ def mapserver(
         pattern_catalog=pattern_file,
         gml_items=gml_items,
         output_dir=output_dir,
+        languages=batch_config.languages,
+        default_language=batch_config.default_language,
     )
+
 
     for (
         style_file,
@@ -1307,6 +1315,10 @@ def mapserver(
             include_items = include_items_dict.get(layer_name)
             mapfile_config = mapfile_configs.get(layer_name)
 
+            translations = translations_dict.get(layer_name)
+            lang_fields = lang_fields_dict.get(layer_name)
+
+
             # 2. Robust include_items logic
             # TODO: re-do the items logic
             raw_include = include_items_dict.get(layer_name) or ""
@@ -1366,6 +1378,8 @@ def mapserver(
                 include_items=include_items,
                 mapfile_config=mapfile_config,
                 staging_mode=staging_mode,
+                lang_fields=lang_fields,
+                translations=translations,
             )
 
 

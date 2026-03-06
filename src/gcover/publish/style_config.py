@@ -157,6 +157,15 @@ class ClassificationApplicationConfig:
     computed_fields: Optional[Dict[str, str]] = None
     # Mapfile generation configuration
     mapfile_config: Optional[MapfileGenerationConfig] = None
+    # Comma-separated fields for GetFeatureInfo — use constant alias names here,
+    # not language-specific column names (e.g. "label,kind,tecto_desc" not "tecto_eng")
+    include_items: Optional[str] = None
+    # Alias → column pattern with %lang% placeholder
+    # e.g. {"tecto_desc": "tecto_%lang%", "litho_desc": "litho_%lang%"}
+    lang_fields: Optional[Dict[str, str]] = None
+    # Per-metadata translations for WMS capabilities
+    # e.g. {"wms_title": {"eng": "Bedrock", "ger": "Festgestein", "fra": "..."}}
+    translations: Optional[Dict[str, Dict[str, str]]] = None
 
     def __post_init__(self):
         """Validate and initialize nested configurations"""
@@ -412,8 +421,29 @@ class BatchClassificationConfig:
         self.symbol_field = self.global_settings.get("symbol_field", "SYMBOL")
         self.label_field = self.global_settings.get("label_field", "LABEL")
         self.overwrite = self.global_settings.get("overwrite", False)
+        self.available_langs = self.global_settings.get("available_langs", ["de", "fr"])
         # Global default identifier mode (can be overridden per classification)
         self.default_identifier_mode = self.global_settings.get("identifier_mode", "label")
+
+        # --- Multi-language support ---
+        # Accepts comma-separated string or YAML list
+        raw_langs = self.global_settings.get("languages", "de")
+        if isinstance(raw_langs, list):
+            self.languages: List[str] = [str(l).strip() for l in raw_langs]
+        else:
+            self.languages = [l.strip() for l in str(raw_langs).split(",")]
+
+
+        # Default = explicit setting or first in list
+        self.default_language: str = self.global_settings.get(
+            "default_language", self.languages[0]
+        )
+        if self.default_language not in self.languages:
+            logger.warning(
+                f"default_language '{self.default_language}' not in {self.languages}, "
+                f"falling back to '{self.languages[0]}'"
+            )
+            self.default_language = self.languages[0]
 
         # Parse layer configurations
         self.layers: List[LayerConfig] = []
@@ -486,6 +516,8 @@ class BatchClassificationConfig:
                     minscaledenom=class_dict.get("minscaledenom"),
                     computed_fields=class_dict.get("computed_fields"),
                     mapfile_config=mapfile_config,
+                    lang_fields=class_dict.get("lang_fields"),
+                    translations=class_dict.get("translations"),
                 )
             )
 
