@@ -155,75 +155,37 @@ def _handle_special_functions(
     return None
 
 
-def _parse_expression_with_cast(expression: str) -> Tuple[str, Optional[str]]:
+def _parse_expression_with_cast(expression: str) -> Tuple[str, Optional[str], bool]:
     """
     Parse expression for optional type cast suffix.
 
     Syntax: "expression:cast_type"
 
-    Examples:
-        "geometry.bearing:int" → ("geometry.bearing", "int")
-        "geometry.area / 1_000_000:round" → ("geometry.area / 1_000_000", "round")
-        "geometry.length" → ("geometry.length", None)
-
     Returns:
-        Tuple of (clean_expression, cast_type or None)
+        Tuple of (clean_expression, cast_type or None, is_valid_cast)
     """
     if ":" not in expression:
-        return expression, None
+        return expression, None, True
 
-    # Split from the right to handle expressions that might contain colons
-    # (though unlikely in pandas eval expressions)
     parts = expression.rsplit(":", 1)
-
     potential_cast = parts[-1].strip()
 
-    if potential_cast in SUPPORTED_CASTS:
-        return parts[0].strip(), potential_cast
+    # Check if it looks like a cast (single word, no spaces)
+    if re.match(r"^[a-zA-Z][a-zA-Z0-9]*$", potential_cast):
+        if potential_cast in SUPPORTED_CASTS:
+            return parts[0].strip(), potential_cast, True
+        else:
+            # Looks like a cast but not recognized
+            return parts[0].strip(), potential_cast, False
 
-    # Not a recognized cast, return original expression
-    return expression, None
-
-
-def _apply_cast(series: pd.Series, cast_type: str) -> pd.Series:
-    """
-    Apply type cast to a pandas Series.
-
-    Args:
-        series: Input Series
-        cast_type: One of SUPPORTED_CASTS
-
-    Returns:
-        Casted Series
-    """
-    if cast_type in ("int", "Int64"):
-        # Use nullable integer to preserve NaN
-        return series.round().astype("Int64")
-
-    elif cast_type == "Int32":
-        return series.round().astype("Int32")
-
-    elif cast_type in ("float", "float64"):
-        return series.astype("float64")
-
-    elif cast_type in ("str", "string"):
-        return series.astype("string")
-
-    elif cast_type == "round":
-        return series.round()
-
-    elif cast_type == "bool":
-        return series.astype("boolean")
-
-    else:
-        logger.warning(f"Unknown cast type '{cast_type}', returning unchanged")
-        return series
+    # Not a cast pattern, return original
+    return expression, None, True
 
 
 def apply_computed_fields(
-    gdf: gpd.GeoDataFrame,
-    computed_fields: Optional[Dict[str, str]],
-    strict: bool = False,
+        gdf: gpd.GeoDataFrame,
+        computed_fields: Optional[Dict[str, str]],
+        strict: bool = False,
 ) -> gpd.GeoDataFrame:
     """
     Add or update computed fields using pandas eval expressions.
@@ -251,16 +213,6 @@ def apply_computed_fields(
 
     Returns:
         GeoDataFrame with computed fields added/updated
-
-    Examples:
-        >>> computed_fields = {
-        ...     "map_angle": "(90 - azimuth) % 360",
-        ...     "area_m2": "geometry.area",
-        ...     "area_km2": "geometry.area / 1_000_000:round",
-        ...     "bearing": "geometry.bearing:int",
-        ...     "length_km": "geometry.length / 1000:float",
-        ... }
-        >>> gdf = apply_computed_fields(gdf, computed_fields)
     """
     if not computed_fields:
         return gdf
@@ -268,10 +220,12 @@ def apply_computed_fields(
     gdf = gdf.copy()
     geom_cache: Dict[str, str] = {}
 
-    # Collect all expressions (without cast suffixes) to find geometry properties used
+    # =========================================================================
+    # FIRST PASS: Collect expressions to detect geometry properties
+    # =========================================================================
     all_expressions_clean = []
     for expr in computed_fields.values():
-        clean_expr, _ = _parse_expression_with_cast(expr)
+        clean_expr, _, _ = _parse_expression_with_cast(expr)  # ← UPDATED: 3 values
         all_expressions_clean.append(clean_expr)
     all_expressions = " ".join(all_expressions_clean)
 
@@ -289,12 +243,23 @@ def apply_computed_fields(
                     raise ValueError(msg)
                 logger.warning(msg)
 
-    # Process each computed field
+    # =========================================================================
+    # SECOND PASS: Process each computed field
+    # =========================================================================
     success_count = 0
     for field_name, expression in computed_fields.items():
         try:
             # Parse expression for optional cast
-            clean_expression, cast_type = _parse_expression_with_cast(expression)
+            clean_expression, cast_type, is_valid_cast = _parse_expression_with_cast(expression)  # ← UPDATED
+
+            # Check for invalid cast type
+            if cast_type and not is_valid_cast:
+                msg = f"Invalid cast type '{cast_type}'. Supported: {SUPPORTED_CASTS}"
+                if strict:
+                    raise ValueError(msg)
+                console.print(f"  [red]✗ {field_name}[/red]: {msg}")
+                logger.warning(f"Field '{field_name}': {msg}")
+                continue
 
             # TRY SPECIAL FUNCTIONS FIRST (concat, coalesce, etc.)
             result = _handle_special_functions(gdf, clean_expression)
@@ -346,37 +311,87 @@ def apply_computed_fields(
 
     return gdf
 
-
-def validate_computed_fields(
-    gdf: gpd.GeoDataFrame,
-    computed_fields: Dict[str, str],
-) -> List[Dict[str, Any]]:
+def _apply_cast(series: pd.Series, cast_type: str) -> pd.Series:
     """
-    Validate computed field expressions without applying them.
+    Apply type cast to a pandas Series.
 
     Args:
-        gdf: GeoDataFrame to validate against
-        computed_fields: Dict of {field_name: expression}
+        series: Input Series
+        cast_type: One of SUPPORTED_CASTS
 
     Returns:
-        List of issues found, empty if all valid
+        Casted Series
     """
+    if cast_type in ("int", "Int64"):
+        # Use nullable integer to preserve NaN
+        return series.round().astype("Int64")
+
+    elif cast_type == "Int32":
+        return series.round().astype("Int32")
+
+    elif cast_type in ("float", "float64"):
+        return series.astype("float64")
+
+    elif cast_type in ("str", "string"):
+        return series.astype("string")
+
+    elif cast_type == "round":
+        return series.round()
+
+    elif cast_type == "bool":
+        return series.astype("boolean")
+
+    else:
+        logger.warning(f"Unknown cast type '{cast_type}', returning unchanged")
+        return series
+
+def _parse_expression_with_cast(expression: str) -> Tuple[str, Optional[str], bool]:
+    """
+    Parse expression for optional type cast suffix.
+
+    Syntax: "expression:cast_type"
+
+    Returns:
+        Tuple of (clean_expression, cast_type or None, is_valid_cast)
+    """
+    if ":" not in expression:
+        return expression, None, True
+
+    parts = expression.rsplit(":", 1)
+    potential_cast = parts[-1].strip()
+
+    # Check if it looks like a cast (single word, no spaces)
+    if re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", potential_cast):
+
+        if potential_cast in SUPPORTED_CASTS:
+            return parts[0].strip(), potential_cast, True
+        else:
+            # Looks like a cast but not recognized
+            return parts[0].strip(), potential_cast, False
+
+    # Not a cast pattern, return original
+    return expression, None, True
+
+
+def validate_computed_fields(
+        gdf: gpd.GeoDataFrame,
+        computed_fields: Dict[str, str],
+) -> List[Dict[str, Any]]:
+    """Validate computed field expressions without applying them."""
     issues = []
 
     for field_name, expression in computed_fields.items():
         # Parse out cast type for validation
-        clean_expression, cast_type = _parse_expression_with_cast(expression)
+        clean_expression, cast_type, is_valid_cast = _parse_expression_with_cast(expression)  # ← UPDATED
 
-        # Check for valid cast type
-        if cast_type and cast_type not in SUPPORTED_CASTS:
-            issues.append(
-                {
-                    "field": field_name,
-                    "expression": expression,
-                    "issue": "invalid_cast",
-                    "details": f"Unknown cast type '{cast_type}'. Supported: {SUPPORTED_CASTS}",
-                }
-            )
+        # Check for invalid cast type
+        if cast_type and not is_valid_cast:
+            issues.append({
+                "field": field_name,
+                "expression": expression,
+                "issue": "invalid_cast",
+                "details": f"Unknown cast type '{cast_type}'. Supported: {SUPPORTED_CASTS}",
+            })
             continue
 
         # Check for geometry properties
@@ -384,43 +399,35 @@ def validate_computed_fields(
         for geom_key in GEOMETRY_PROPERTIES.keys():
             eval_expr = eval_expr.replace(geom_key, "0")  # Replace with dummy
 
-        # Try to parse expression (doesn't execute)
+        # Try to parse expression
         try:
-            # Extract column references from expression
-            # Simple heuristic: words that aren't Python keywords or numbers
             import keyword
-            import re
 
             tokens = re.findall(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b", eval_expr)
+
             column_refs = [
-                t
-                for t in tokens
+                t for t in tokens
                 if not keyword.iskeyword(t)
-                and t not in ("and", "or", "not", "in", "True", "False", "None")
-                and not t.startswith("__geom_")
+                   and t not in ("and", "or", "not", "in", "True", "False", "None")
+                   and not t.startswith("__geom_")
             ]
 
-            # Check if referenced columns exist
             missing = [col for col in column_refs if col not in gdf.columns]
             if missing:
-                issues.append(
-                    {
-                        "field": field_name,
-                        "expression": expression,
-                        "issue": "missing_columns",
-                        "details": missing,
-                    }
-                )
-
-        except Exception as e:
-            issues.append(
-                {
+                issues.append({
                     "field": field_name,
                     "expression": expression,
-                    "issue": "parse_error",
-                    "details": str(e),
-                }
-            )
+                    "issue": "missing_columns",
+                    "details": missing,
+                })
+
+        except Exception as e:
+            issues.append({
+                "field": field_name,
+                "expression": expression,
+                "issue": "parse_error",
+                "details": str(e),
+            })
 
     return issues
 
