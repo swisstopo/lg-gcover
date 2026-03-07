@@ -339,6 +339,7 @@ class MapServerGenerator:
             include_items: Optional[str] = None,
             symbol_field: Optional[str] = None,
             geom_col: Optional[str] = None,
+            label_col: Optional[str] = None,
     ) -> str:
         """
         Inject language-aliased columns into a DATA string, keeping %language%
@@ -367,8 +368,10 @@ class MapServerGenerator:
         # ------------------------------------------------------------------
         # Start with mandatory columns (order matters for readability)
         mandatory = ["gid", geom_col or "geom", "label"]
-        if symbol_field:
+        if symbol_field and symbol_field not in mandatory:
             mandatory.append(symbol_field)
+        if label_col and label_col not in mandatory:
+            mandatory.append(label_col)
 
         # Add all columns from include_items, excluding those already covered
         # by lang_fields aliases (which will be emitted as expressions, not plain cols)
@@ -538,6 +541,22 @@ class MapServerGenerator:
 
         logger.info(f"=== {layer_name} ===")
 
+        def _get_label_field(classification, map_label):
+
+
+          try:
+            if classification.label_classes:
+                label_info = classification.label_classes[0]
+                label_item = label_info.get_simple_field_name()
+          except Exception:
+            logger.error("Error while retrieving labels info")
+
+          if label_item and map_label is None:
+            return label_item.lower()
+          elif isinstance(map_label, str):
+            return map_label.lower()
+          return None
+
         # --- Rotation extraction ---
 
         try:
@@ -549,12 +568,14 @@ class MapServerGenerator:
 
         # Resolve language-specific column aliases in DATA string
         if data and (lang_fields or "%lang%" in (data or "")):
+            label_col = _get_label_field(classification, map_label)
             data = self._build_lang_data(
                 data=data,
                 lang_fields=lang_fields or {},
                 include_items=include_items,
                 symbol_field=self.symbol_field,  # e.g. "map_symbol"
                 geom_col="geom",  # or pull from connection config
+                label_col=label_col,
             )
 
 
