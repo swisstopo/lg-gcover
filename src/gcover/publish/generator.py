@@ -562,7 +562,15 @@ class MapServerGenerator:
         try:
             rotation_info = classification.rotation_info
             if rotation_info:
-                rotation_field = rotation_info.field_name
+                console.print(f"=== Rotation field ===")
+                if mapfile_config and mapfile_config.rotation_field is not None:
+                    # TODO: ugly
+                    rotation_info.field_name = mapfile_config.rotation_field
+                    console.print(f"[yellow]Using  {mapfile_config.rotation_field} from config YAML[/yellow]")
+
+                else:
+                    rotation_field = rotation_info.field_name
+                    console.print(f"Using {rotation_field} from ESRI .lyrx")
         except Exception:
             logger.error("Error while retrieving rotation info")
 
@@ -606,9 +614,6 @@ class MapServerGenerator:
                     label_item = label_info.get_simple_field_name()
             except Exception:
                 logger.error("Error while retrieving labels info")
-
-            # --- Rotation extraction ---
-            rotation_field = None
 
 
             # --- Base LAYER header ---
@@ -1270,7 +1275,7 @@ class MapServerGenerator:
                 has_fill = True
 
             elif fill_type == "hatch":
-                logger.info("Found hatch")
+                logger.debug("Found hatch")
                 self._add_hatch_fill_style(
                     lines,
                     fill_info,
