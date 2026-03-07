@@ -1,3 +1,7 @@
+
+
+BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
+
 # --- Variables ---
 DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/R16/
 OUTPUT_DIR   := ${HOME}/DATA/Derivations/output/R16/
@@ -14,6 +18,7 @@ TRANSLATED_GPKG   := denormalized_classified_translated.gpkg
 TRANSLATED_PATH   := $(OUTPUT_DIR)$(TRANSLATED_GPKG)
 FULL_GDB_PATH     := $(DELIVERY_DIR)RC2.gdb
 SURFACES_AUX_PATH := $(OUTPUT_DIR)surfaces_aux.gpkg
+MAPSERVER_OUTPUT  := mapserver_$(BRANCH)
 
 # Layers for denormalization
 LAYERS := fossils exploit_polygons exploit_points linear_objects point_objects bedrock surfaces unco_deposits
@@ -21,6 +26,8 @@ TABLES_TO_IMPORT := GC_GEOL_MAPPING_UNIT GC_LITSTRAT_FORMATION_BANK GC_CHRONO \
                     GC_EX_GEO_PLG_EXP_UNIT_GC_GMU GC_EX_GEO_PNT_EXP_UNIT_GC_GMU \
                     GC_FOSS_SYSTEM_GC_SYSTEM \
                     GC_UN_DEP_CHARACT_GC_CHARCAT GC_UN_DEP_COMPOSIT_GC_COMPOS GC_UN_DEP_MAT_TYPE_GC_LITHO
+
+
 
 
 # --- Targets ---
@@ -33,29 +40,24 @@ help:
 	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Targets:"
-	@( \
-	sed -n \
-        -e '/^## help:/d' \
-        -e 's/^### \(.*\)/\1/p' \
-        -e 's/^## \(.*\)/  \1/p' \
-        $(MAKEFILE_LIST); \
-	sed -n 's/^## help:/help:/p' $(MAKEFILE_LIST); \
-	) | column -t -s ':' | sed -e 's/^/ /'
-	@echo ""
-
+	@awk '/^### / { printf "\n%s\n", substr($$0, 5) } \
+		 /^## /  { printf "  %-20s %s\n", $$2, substr($$0, index($$0, $$3)) }' \
+		 $(MAKEFILE_LIST) | sed 's/://'
 	@echo ""
 	@echo ""
-	@echo "Master GDB:			$(MASTER_GDB)"
-	@echo "Styles dir:			$(STYLES_DIR)"
-	@echo "DENORMALIZED GPKG:	$(DENORMALIZED_PATH)"
-	@echo "Classified:			$(CLASSIFIED_PATH)"
-	@echo "Translation:			$(TRANSLATION_CSV)"
-	@echo "Translated:			$(TRANSLATED_PATH)"
-	@echo "Surfaces auxilliary:	$(SURFACES_AUX_PATH)"
-	@echo "Output dir:			$(OUTPUT_DIR)"
+	@echo "Master GDB:           $(MASTER_GDB)"
+	@echo "Styles dir:           $(STYLES_DIR)"
+	@echo "DENORMALIZED GPKG:    $(DENORMALIZED_PATH)"
+	@echo "Classified:           $(CLASSIFIED_PATH)"
+	@echo "Translation:          $(TRANSLATION_CSV)"
+	@echo "Translated:           $(TRANSLATED_PATH)"
+	@echo "Surfaces auxilliary:  $(SURFACES_AUX_PATH)"
+	@echo "Output dir:           $(OUTPUT_DIR)"
+	@echo "Mapserver dir         $(MAPSERVER_OUTPUT)"
 
 
-.PHONY: merge-diagnostic translate classify denormalize
+
+.PHONY: merge-diagnostic translate classify denormalize test lint format smoke install-dev doc
 ### Data
 ## all: Run the entire workflow (Merge -> Import -> Denormalize -> Symbolize)
 all: merge $(CLASSIFIED_PATH)
@@ -118,7 +120,10 @@ surfaces-aux:
 	python scripts/surfaces_auxilliary_points.py --copy-polygons -i $(CLASSIFIED_PATH) -l surfaces -s 80 -b 25 --output $(SURFACES_AUX_PATH)
 	python scripts/surfaces_auxilliary_points.py --copy-polygons -i $(CLASSIFIED_PATH) -l unco_deposits -s 80 -b 25 --output $(SURFACES_AUX_PATH)
 
-## clean-translate: Clean denormalized artefacts
+.PHONY: mapfiles
+
+
+## clean-denormalize: Clean denormalized artefacts
 clean-denormalize: clean-translate
 	rm -rf $(DENORMALIZED_PATH)
 
@@ -136,8 +141,18 @@ clean-all: clean-denormalize
 	rm -rf $(OUTPUT_DIR)surfaces_aux.gpkg
 
 
-# Makefile for easy test execution
-.PHONY: test lint format smoke install-dev doc
+### Mapfiles
+## mapfiles: Generate prod mapfiles
+mapfiles:
+	gcover --env production publish mapserver    \
+		--use-symbol-field  \
+		--output-dir $(MAPSERVER_OUTPUT)  \
+		--generate-combined \
+		--styles-dir $(STYLES_DIR)/styles \
+		--pattern-file config/patterns_catalog.yaml  \
+		--gml-items label  \
+		config/esri_classifier_denormalized_geocover.yaml
+
 
 ### Code
 ## install-dev:  Install development dependencies

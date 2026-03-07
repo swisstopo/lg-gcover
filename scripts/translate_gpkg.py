@@ -57,16 +57,103 @@ ATTRIBUTES_TO_IGNORE = [
     "abor_depth_fm_a",
     "abor_depth_fm_b",
     "abor_ref_number",
+    "uuid",
+    "objectorigin",
+    "more_info",
+    "printed",
+    "map_symbol",
+    "label",
+    "_merge_source",
+    "symbol",
+    "rbed_litstrat_link",
+    "area_m2",
+    "map_angle",
+    "geol_mapping_unit_att_uuid",
+    "runc_litsrat_link",
+    "bearing_deg",
+    "strike_deg",
+    "azimuth",
+    "dip",
+    "hcon_depth",
+    "length_m",
+    "ttec_name",
+    "runc_orig_descr",
+    "lpro_orig_descr",
+
 ]
+
+
 
 TRANSLATED_SUFFIXES = ("_desc", "_fr", "_de", "_it", "_en")
 
+FIXED_FIRST_COLUMNS = ["gid", "kind", "kind_de", "kind_fr", "kind_it", "kind_en", "uuid","label", "map_symbol"]
 
+PIPE_SEP = " | "
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+
+def _first_notnull(series: pd.Series):
+    """Return the first non-null value of a Series, or None."""
+    notnull = series.dropna()
+    return notnull.iloc[0] if len(notnull) else None
+
+
+def _is_pipe_codes_value(val) -> bool:
+    """Return True if val looks like a pipe-separated list of GeolCodes.
+
+    Example: "14511001 | 14511003 | 14511005"
+    All tokens must be integers in the valid GeolCode range (or sentinel values).
+    """
+    if not isinstance(val, str) or PIPE_SEP not in val:
+        return False
+    try:
+        codes = [int(p.strip()) for p in val.split("|") if p.strip()]
+    except ValueError:
+        return False
+    if not codes:
+        return False
+    return all(
+        (GEOLCODE_MIN <= c <= GEOLCODE_MAX) or c in SPECIAL_GEOLCODES
+        for c in codes
+    )
+
+def _map_pipe_codes(val, lang_series: pd.Series) -> "str | None":
+        """Translate a pipe-separated string of GeolCodes.
+
+        Each integer token is looked up in lang_series; untranslated tokens are
+        kept as their numeric string so no information is silently lost.
+
+        If all translated values are identical, returns a single value instead
+        of repeating it — e.g. "15001025 | 15001025" → "Burdigalien".
+        """
+        if pd.isna(val):
+            return None
+        parts = [p.strip() for p in str(val).split("|") if p.strip()]
+        translated = []
+        for part in parts:
+            try:
+                label = lang_series.get(int(part))
+                translated.append(label if label is not None else part)
+            except ValueError:
+                translated.append(part)
+
+        if not translated:
+            return None
+
+        # Deduplicate while preserving order —
+        # "Burdigalien | Burdigalien" → "Burdigalien"
+        # "Burdigalien | Aquitanien"  → "Burdigalien | Aquitanien"  (unchanged)
+        seen: set = set()
+        deduped: list = []
+        for t in translated:
+            if t not in seen:
+                seen.add(t)
+                deduped.append(t)
+
+        return PIPE_SEP.join(deduped)
 
 def load_translations(path: Path, langs: list[str]) -> pd.DataFrame:
     """Load translations CSV, keep only requested language columns.
@@ -102,25 +189,24 @@ def load_translations(path: Path, langs: list[str]) -> pd.DataFrame:
 
 
 def is_geolcode_column(series: pd.Series, min_coverage: float) -> bool:
-    """Return True if enough non-null values in series are GeolCodes."""
-    """if series.dtype == object:
-        # try numeric coercion
-        converted = pd.to_numeric(series, errors="coerce")
-    elif pd.api.types.is_numeric_dtype(series):
-        converted = series.astype("float64")
-    else:
-        return False
+    """Return True if the series contains plain GeolCodes OR pipe-separated GeolCodes.
 
-    valid = converted.dropna()
-    if len(valid) == 0:
-        return False"""
+    Pipe-separated detection is based on the first non-null value only, which is
+    sufficient because denormalized columns are consistently formatted throughout.
+    """
+    # ── Fast path: pipe-separated check on the first non-null value ──────────
+    first = _first_notnull(series)
+    if first is not None and _is_pipe_codes_value(str(first)):
+        return (True, "Pipe values")
+
+    # ── Normal path: scalar integer codes ────────────────────────────────────
     # Step 1: convert to numeric (float), coercing errors to NaN
     if series.dtype == object:
         converted = pd.to_numeric(series, errors="coerce")
     elif pd.api.types.is_numeric_dtype(series):
         converted = series.astype("float64")
     else:
-        return False
+        return (False, "Cannot convert to numeric")
 
     # Step 2: keep only whole numbers (or NaN)
     converted = converted.where(converted.isna() | (converted % 1 == 0))
@@ -131,11 +217,12 @@ def is_geolcode_column(series: pd.Series, min_coverage: float) -> bool:
     # Step 4: continue with your existing logic
     valid = converted.dropna()
     if len(valid) == 0:
-        return False
+        return (False, "No valid integer")
 
-    coverage = len(valid) / len(series)
-    if coverage < min_coverage:
-        return False
+    # coverage = len(valid) / len(series)
+    # console.print(f"coverage: {coverage}")
+    # if coverage < min_coverage:
+    #    return False
 
     # Values inside the normal range
     in_range = valid.between(GEOLCODE_MIN, GEOLCODE_MAX)
@@ -143,7 +230,11 @@ def is_geolcode_column(series: pd.Series, min_coverage: float) -> bool:
     is_special = valid.isin(SPECIAL_GEOLCODES)
     valid_values = (in_range | is_special).sum()
 
-    return (valid_values / len(valid)) >= 0.90  # 90 % of valid values in range
+    valid_values_in_range = (valid_values / len(valid))
+    is_under_coverage = valid_values_in_range >= min_coverage
+
+
+    return  (is_under_coverage, "OK" if not is_under_coverage else f"Under {min_coverage}")  #0.90  # 90 % of valid values in range
 
 
 def _lowercase_gdf_columns(gdf):
@@ -164,6 +255,19 @@ def _lowercase_gdf_columns(gdf):
         )
     return gdf.rename(columns=rename_map)
 
+def _reorder_columns(
+    gdf: gpd.GeoDataFrame,
+    fixed_first: list[str],
+) -> gpd.GeoDataFrame:
+    """Reorder columns: pinned columns first, then all others alphabetically, geometry last."""
+    geom_col = gdf.geometry.name
+    head = [c for c in fixed_first if c in gdf.columns]
+    rest = sorted(
+        c for c in gdf.columns
+        if c not in head and c != geom_col
+    )
+    return gdf[head + rest + [geom_col]]
+
 
 def enrich_layer(
     gdf: gpd.GeoDataFrame,
@@ -174,6 +278,7 @@ def enrich_layer(
 ) -> tuple[gpd.GeoDataFrame, list[dict]]:
     """Add translated columns to GDF; return (enriched_gdf, stats_list)."""
     stats = []
+    ignored_cols = []
 
     # table = Table(title=f"Translating {layer_name}", show_lines=False, header_style="bold cyan")
     # console.print(table)
@@ -182,24 +287,35 @@ def enrich_layer(
     for col in non_geo_cols:
         # Already human-readable text – skip
         if col.lower().endswith(TRANSLATED_SUFFIXES):
+            console.print(
+                f"[orange]Ignoring {col} (already translated)[/orange]"
+            )
             continue
 
         if col.lower() in ATTRIBUTES_TO_IGNORE:
+            console.print(
+                f"[orange]Ignoring {col} (column to ignore)[/orange]"
+            )
             continue
 
-        if not is_geolcode_column(gdf[col], min_coverage):
+        is_valid_geolcode, reason = is_geolcode_column(gdf[col], min_coverage)
+        if not is_valid_geolcode:
+            console.print(
+                f"Ignoring {col} ({reason})",style="#FFA500"
+            )
             continue
 
-        # Strip trailing _code for output names: tecto_code → tecto_de / tecto_fr
-        out_prefix = col[: -len("_code")] if col.lower().endswith("_code") else col
+        col_lower = col.lower()
+        if col_lower.endswith("_codes"):
+            out_prefix = col[: -len("_codes")]
+        elif col_lower.endswith("_code"):
+            out_prefix = col[: -len("_code")]
+        else:
+            out_prefix = col
 
-        # Coerce to int64 for joining
-        # codes = pd.to_numeric(gdf[col], errors="coerce").astype("Int64")
-        codes = (
-            pd.to_numeric(gdf[col], errors="coerce")
-            .where(lambda s: s.isna() | (s % 1 == 0))  # keep only whole numbers
-            .astype("Int64")
-        )
+        # Detect whether the column holds pipe-separated values
+        first = _first_notnull(gdf[col])
+        is_pipe = first is not None and _is_pipe_codes_value(str(first))
 
         added_langs = []
 
@@ -207,33 +323,51 @@ def enrich_layer(
             if lang not in translations.columns:
                 continue
             out_col = f"{out_prefix}_{lang}"
-            mapped = codes.map(translations[lang])
-            # Only add the column if at least DE+FR exist (checked at caller),
-            # but skip column entirely if 0 % match
+            lang_series = translations[lang]
+
+            if is_pipe:
+                mapped = gdf[col].apply(_map_pipe_codes, lang_series=lang_series)
+            else:
+                codes = (
+                    pd.to_numeric(gdf[col], errors="coerce")
+                    .where(lambda s: s.isna() | (s % 1 == 0))
+                    .astype("Int64")
+                )
+                mapped = codes.map(lang_series)
+
             if mapped.notna().sum() == 0:
                 continue
             gdf[out_col] = mapped
             added_langs.append(lang)
 
         if added_langs:
-            n_codes = codes.notna().sum()
-            ref_lang = next((l for l in langs if l in translations.columns), None)
-            n_translated = (
-                codes.map(translations[ref_lang]).notna().sum() if ref_lang else 0
-            )
-            stats.append(
-                {
-                    "layer": layer_name,
-                    "column": col,
-                    "out_prefix": out_prefix,
-                    "langs": ", ".join(added_langs),
-                    "codes_found": int(n_codes),
-                    "translated": int(n_translated),
-                    "coverage": f"{n_translated / n_codes * 100:.1f}%"
-                    if n_codes
-                    else "–",
-                }
-            )
+            if is_pipe:
+                n_codes = gdf[col].notna().sum()
+                ref_lang = next((l for l in langs if l in translations.columns), None)
+                n_translated = (
+                    gdf[col].apply(_map_pipe_codes, lang_series=translations[ref_lang]).notna().sum()
+                    if ref_lang else 0
+                )
+            else:
+                codes = (
+                    pd.to_numeric(gdf[col], errors="coerce")
+                    .where(lambda s: s.isna() | (s % 1 == 0))
+                    .astype("Int64")
+                )
+                n_codes = codes.notna().sum()
+                ref_lang = next((l for l in langs if l in translations.columns), None)
+                n_translated = codes.map(translations[ref_lang]).notna().sum() if ref_lang else 0
+
+            stats.append({
+                "layer": layer_name,
+                "column": col,
+                "out_prefix": out_prefix,
+                "langs": ", ".join(added_langs),
+                "codes_found": int(n_codes),
+                "translated": int(n_translated),
+                "coverage": f"{n_translated / n_codes * 100:.1f}%" if n_codes else "–",
+                "pipe": is_pipe,
+            })
 
     return gdf, stats
 
@@ -280,7 +414,7 @@ def check_min_langs(translations: pd.DataFrame) -> None:
 )
 @click.option(
     "--min-coverage",
-    default=0.5,
+    default=0.4,
     show_default=True,
     type=float,
     help="Min. fraction of non-null values required to treat column as code column",
@@ -454,8 +588,10 @@ def main(
 
         # Write enriched layers
         first_write = True
+
         for lyr, gdf in enriched.items():
             progress.update(task, description=f"[cyan]{lyr}[/]")
+            gdf = _reorder_columns(gdf, fixed_first=FIXED_FIRST_COLUMNS)
             mode = "w" if first_write else "a"
             gdf.to_file(str(tmp_path), layer=lyr, driver="GPKG", mode=mode)
             first_write = False
@@ -466,6 +602,7 @@ def main(
             progress.update(task, description=f"[dim]{lyr}[/]")
             try:
                 gdf = gpd.read_file(str(gpkg), layer=lyr)
+                gdf = _reorder_columns(gdf, fixed_first=FIXED_FIRST_COLUMNS)
                 mode = "w" if first_write else "a"
                 gdf.to_file(str(tmp_path), layer=lyr, driver="GPKG", mode=mode)
                 first_write = False

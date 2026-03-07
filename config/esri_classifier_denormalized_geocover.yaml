@@ -7,6 +7,8 @@ global:
     label_field: label
     overwrite: False
     identifier_mode: label  # Possible value: 'label' (default), 'index', or 'field'
+    languages: "de,fr"
+    default_language: "de"
 
 # Layer configurations
 layers:
@@ -28,7 +30,11 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}exploit_geomat_pt
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}exploit_points USING UNIQUE gid USING SRID=2056"
-          include_items: "label,kin,aexp_status,aexp_targ_mat,aexp_depth_tot"
+          include_items: "kind_desc,aexp_status,aexp_targ_mat_desc,aexp_depth_tot"
+          lang_fields:
+            kind_desc: "kind_%lang%"
+            aexp_status: "aexp_status_%lang%"
+            aexp_targ_mat_desc: "aexp_targ_mat_%lang%"
           map_label: False
           mapfile_config:
             symbol_scale: 20000
@@ -55,7 +61,11 @@ layers:
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
           map_label: False
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}fossils USING UNIQUE gid USING SRID=2056"
-          include_items: "label,kind,system_desc"
+          lang_fields:
+            kind_desc: "kind_%lang%"
+            lfos_division_desc: "lfos_division_%lang%"
+            lfos_status_desc: "lfos_status_%lang%"
+          include_items: "kind_desc,lfos_division_desc,lfos_status_desc"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -98,10 +108,15 @@ layers:
               point_size_multiplier: 1.5
             metadata:
               wms_group_title: Point Objects
+            rotation_field: map_angle
           filter: KIND IN (13801001,13801002, 13801004, 13801003, 13801005, 13801006)
           # Convert angles.. but keep the name TODO
-          data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, dip::int, map_symbol, (360 - azimuth::int) % 360 AS azimuth FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360) AS subquery  USING UNIQUE gid USING SRID=2056"
-          include_items: "label,mfol_phase,mpla_polarity,mpla_phase,mpla_ob_dip_slo,mpla_phase_ref"
+          data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, map_symbol, map_angle FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360) AS subquery  USING UNIQUE gid USING SRID=2056"
+          include_items: "kind_desc,dip,map_angle,mpla_polarity_desc,mpla_phase_desc,mpla_ob_dip_slo,mpla_phase_ref"
+          lang_fields:
+            kind_desc: "kind_%lang%"
+            mpla_polarity_desc: "mpla_polarity_%lang%"
+            mpla_phase_desc: "mpla_phase_%lang%"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -114,11 +129,14 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}achsenflaeche
           active: True
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
-          include_items: "label"
+          include_items: "kind_desc,map_angle,dip"
           # Only a few 100s features
-          data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, map_symbol, (360 - azimuth::int) % 360 AS azimuth FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360 AND map_symbol ILIKE '%achsen%') AS subquery  USING UNIQUE gid USING SRID=2056"
+          data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, map_symbol, dip, map_angle FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360 AND map_symbol ILIKE '%achsen%') AS subquery  USING UNIQUE gid USING SRID=2056"
+          lang_fields:
+            kind_desc: "kind_%lang%"
           map_label: False
           mapfile_config:
+            rotation_field: map_angle
             symbol_adjustments:
               point_size_multiplier: 1.5
             metadata:
@@ -136,15 +154,18 @@ layers:
           mapfile_name: pnt_orient
           mapfile_group: point_features
           maxscaledenom: 50000
-          include_items: "label"
           map_label: True  # Use the .lyrx defined, if exists
           mapfile_config:
+            rotation_field: map_angle
             symbol_adjustments:
               point_size_multiplier: 1.5
             metadata:
               wms_group_title: Point Objects
           active: True
-          data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, ltyp_name, map_symbol, (360 - azimuth::int) % 360 AS azimuth FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360) AS subquery  USING UNIQUE gid USING SRID=2056"
+          data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, ltyp_name, map_symbol, map_angle FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360) AS subquery  USING UNIQUE gid USING SRID=2056"
+          include_items: "kind_desc"
+          lang_fields:
+            kind_desc: "kind_%lang%"
           filter: KIND IN (11901001,12501002,12501003,12501004,12501006,12101006,13601001,13601002 ,13601003,13701001,13701002,13701004,14601004)
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -160,10 +181,19 @@ layers:
           active: True
           map_label: abor_depth_tot
           mapfile_config:
+            symbol_adjustments:
+              point_size_multiplier: 1.5
             metadata:
               wms_group_title: Point Objects
           # data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
           data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, abor_depth_tot, map_symbol FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects) AS subquery  USING UNIQUE gid USING SRID=2056"
+          include_items: "kind_desc,abor_depth_bedr,abor_fm_a_desc,abor_fm_b_desc,abor_main_tar_desc,abor_targ_mat_desc,abor_depth_bedr,abor_depth_tot"
+          lang_fields:
+            kind_desc: "kind_%lang%"
+            abor_fm_a_desc: "abor_fm_a_%lang%"
+            abor_fm_b_desc: "abor_fm_b_%lang%"
+            abor_main_tar_desc: "abor_main_tar_%lang%"
+            abor_targ_mat_desc: "abor_targ_mat_%lang%"
           filter: KIND=10501001 AND ABOR_DEPTH_BEDR<>999
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -176,13 +206,19 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}sondierung
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
           maxscaledenom: 50000
-          include_items: "label,kind,abor_depth_bedr,abor_fm_a,abor_fm_b,abor_depth_tot,abor_depth_fm_a,abor_depth_fm_b"
+          include_items: "kind_desc,abor_depth_bedr,abor_fm_a_desc,abor_fm_b_desc,abor_main_tar_desc,abor_targ_mat_desc,abor_depth_bedr,abor_depth_tot"
+          lang_fields:
+            kind_desc: "kind_%lang%"
+            abor_fm_a_desc: "abor_fm_a_%lang%"
+            abor_fm_b_desc: "abor_fm_b_%lang%"
+            abor_main_tar_desc: "abor_main_tar_%lang%"
+            abor_targ_mat_desc: "abor_targ_mat_%lang%"
           active: True
           map_label: False
           mapfile_config:
             metadata:
               wms_group_title: Point Objects
-          data: "${GCOVER_POSTGIS_GEOM} FROM  (select * from geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE map_symbol ilike '%sondier%') as subselect  USING UNIQUE gid USING SRID=2056"
+          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
           include_items: "kind,label"
           filter: KIND IN (1051002,10501003,10501004,10501005)
           symbol_prefix: sondierung
@@ -196,13 +232,20 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}bohrung_fels_nicht_erreicht
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
           maxscaledenom: 50000
-          include_items: "label,kind,abor_depth_bedr"
+          include_items: "kind_desc,abor_depth_bedr,abor_fm_a_desc,abor_fm_b_desc,abor_main_tar_desc,abor_targ_mat_desc,abor_depth_bedr,abor_depth_tot"
           active: True
           map_label: False
           mapfile_config:
             metadata:
               wms_group_title: Point Objects
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
+          lang_fields:
+            kind_desc: "kind_%lang%"
+            abor_fm_a_desc: "abor_fm_a_%lang%"
+            abor_fm_b_desc: "abor_fm_b_%lang%"
+            abor_main_tar_desc: "abor_main_tar_%lang%"
+            abor_targ_mat_desc: "abor_targ_mat_%lang%"
+
           filter: KIND=10501001 AND ABOR_DEPTH_BEDR = 999
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -223,7 +266,13 @@ layers:
             metadata:
               wms_group_title: Point Objects
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
-          include_items: "label,hsur_status,hsur_flow_con,hsur_type,hsur_combi"
+          include_items: "kind_desc,hsur_status_desc,hsur_flow_con_desc,hsur_type_desc,hsur_combi_desc,hsur_temp,hsur_chemistry"
+          lang_fields:
+            kind_desc: "kind_%lang%"
+            hsur_status_desc: "hsur_status_%lang%"
+            hsur_type_desc: "hsur_type_%lang%"
+            hsur_flow_con_desc: "hsur_flow_con_%lang%"
+            hsur_combi_desc: "hsur_combi_%lang%"
           filter: KIND=12501001
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -245,8 +294,15 @@ layers:
             metadata:
               wms_group_title: Point Objects
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
+          lang_fields:
+            kind_desc: "kind_%lang%"
+            runc_rock_typ_desc: "runc_rock_typ_%lang%"
+            runc_rock_spe_desc: "runc_rock_spe_%lang%"
+            runc_protected_desc: "runc_protected_%lang%"
+            runc_status_desc: "runc_status_%lang%"
+
           # TODO: missing AND (PRINTED = 1 OR PRINTED IS NULL)
-          include_items: "label,kind,runc_rock_typ,runc_protected"
+          include_items: "kind_desc,runc_rock_typ_desc,runc_rock_spe_desc,runc_protected_desc,runc_status_desc"
           filter: KIND IN (14401001,14401002)
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -283,7 +339,7 @@ layers:
           filter: KIND=11301001
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_moraenenwall
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
-          include_items: "label,ggla_glac_typ,ggla_ice_m_p,ggla_quat_str"
+          include_items: "kind_desc,ggla_glac_typ_desc,ggla_morai_mo_desc"
           mapfile_config:
             classes_mode: frozen
             symbol_scale: 12500
@@ -291,6 +347,10 @@ layers:
               wms_group_title: Linear Objects
           map_label: False
           data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, map_angle, strike_deg, map_symbol FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects) AS subquery  USING UNIQUE gid USING SRID=2056"
+          lang_fields:
+            kind_desc: "kind_%lang%"
+            ggla_glac_typ_desc: "ggla_glac_typ_%lang%"
+            ggla_morai_mo_desc: "ggla_morai_mo_%lang%"
           fields:
             KIND: KIND
             GGLA_GLAC_TYP: GGLA_GLAC_TYP
@@ -309,8 +369,15 @@ layers:
             metadata:
               wms_group_title: Linear Objects
           map_label: False  # Don't use mapfile LABEL, even if defined in .lyrx
-          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects  USING UNIQUE gid USING SRID=2056"
-          include_items: "label"
+          data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, map_angle, strike_deg, map_symbol FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects) AS subquery  USING UNIQUE gid USING SRID=2056"
+
+          lang_fields:
+            kind_desc: "kind_%lang%"
+            aarc_epoch_desc: "aarc_epoch_%lang%"
+            aarc_period_desc: "aarc_period_%lang%"
+            lpro_litho_desc: "lpro_litho_%lang%"
+            aexp_status_desc: "aexp_status_%lang%"
+          include_items: "kind_desc,aexp_status_desc,aarc_epoch_desc,aarc_period_desc,lpro_litho_desc"
           # El cheapo filter
           filter: KIND IN (10201002,10201007,10201006,10201001,10201005,10201004,10201003,10701001,10701002,10901002,10901001,11101001,11101003,11101002,11301007,11301003,11301002,11301006,11301005,11301008,11301009,11301004,11701003,11701002,11701001,11701004,12201001,12201002,12301001,12301004,12301006,12301002,12301007,12301005,12301003,12401001,12601002,12601001,13001001,13301001,13901001,14001001,14701001)
           fields:
@@ -323,7 +390,7 @@ layers:
           classification_name: Linear Objects_GeolKontur
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}geolkontur
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
-          include_items: "label"
+          include_items: "kind_spec"
           mapfile_config:
             metadata:
               wms_group_title: Linear Objects
@@ -331,8 +398,8 @@ layers:
           data: "${GCOVER_POSTGIS_GEOM} FROM  (select * from geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects where map_symbol in ('geolkontur_1' , 'geolkontur_0')) as a  USING UNIQUE gid USING SRID=2056"
           filter: KIND = 13001001
           fields:
-                KIND: KIND
-                LGEO_STATUS: LGEO_STATUS
+              KIND: KIND
+              LGEO_STATUS: LGEO_STATUS
           maxscaledenom: 50000
           symbol_prefix: geolkontur
 
@@ -347,10 +414,15 @@ layers:
             metadata:
               wms_group_title: Linear Objects
           map_label: False
-          include_items: "label,lpro_litho,lpro_cong_spe,lpro_name_horiz"
+          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects  USING UNIQUE gid USING SRID=2056"
+          include_items: "kind_desc,lpro_cong_spe_desc,lpro_litho_desc"
+          lang_fields:
+              kind_desc: "kind_%lang%"
+              lpro_cong_spe_desc: "lpro_cong_spe_%lang%"
+              lpro_litho_desc: "lpro_litho_%lang%"
           fields:
-            KIND: KIND
-            LPRO_LITHO: LPRO_LITHO
+              KIND: KIND
+              LPRO_LITHO: LPRO_LITHO
           symbol_prefix: gesteinhorizont
           filter: KIND = 13101001
         - style_file: styles/Linear Objects_Hilfs_Karto.lyrx
@@ -362,7 +434,7 @@ layers:
           map_label: False
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects  USING UNIQUE gid USING SRID=2056"
           fields:
-            KIND: KIND
+              KIND: KIND
           maxscaledenom: 50000
           symbol_prefix: hilfs_karto
           filter: KIND IN (15601001, 15601002)
@@ -373,13 +445,18 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_bruch
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
-          include_items: "label,kind,ttec_name,ttec_fault_mo,ttec_verti_mo,ttec_horiz_mo,ttec_status,ttec_lim_typ,ttec_hiera,ttec_activity,ttec_lim_tect_b"
+          include_items: "kind_desc,ttec_name,ttec_lim_typ_desc,ttec_status_desc,ttec_lim_tect_b_desc"
           mapfile_config:
             classes_mode: frozen
             metadata:
               wms_group_title: Linear Objects
           map_label: False
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects  USING UNIQUE gid USING SRID=2056"
+          lang_fields:
+              kind_desc: "kind_%lang%"
+              ttec_status_desc: "ttec_status_%lang%"
+              ttec_lim_typ_desc: "ttec_lim_typ_%lang%"
+              ttec_lim_tect_b_desc: "ttec_lim_tect_b_%lang%"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -392,7 +469,7 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_ueberschiebung
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
-          include_items: "label,kind,ttec_name,ttec_fault_mo,ttec_verti_mo,ttec_horiz_mo,ttec_status,ttec_lim_typ,ttec_hiera,ttec_activity,ttec_lim_tect_b"
+          include_items: "kind_desc,ttec_status_desc,ttec_lim_typ_desc,ttec_lim_tect_b_desc"
           mapfile_config:
             classes_mode: frozen
             symbol_scale: 12500
@@ -400,6 +477,11 @@ layers:
               wms_group_title: Linear Objects
           map_label: False
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects  USING UNIQUE gid USING SRID=2056"
+          lang_fields:
+              kind_desc: "kind_%lang%"
+              ttec_status_desc: "ttec_status_%lang%"
+              ttec_lim_typ_desc: "ttec_lim_typ_%lang%"
+              ttec_lim_tect_b_desc: "ttec_lim_tect_b_%lang%"
           filter: KIND = 14901001
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -450,10 +532,13 @@ layers:
           mapfile_config:
             classes_mode: frozen
             symbol_scale: 12000
-          include_items: "label,more_info,kind,aarc_epoch"
+          include_items: "label,kind_desc,aarc_epoch_desc"
           map_label: False
           #data: "geom from (SELECT * from surfaces where map_symbol IS NOT NULL) as blabla using unique gid using srid=2056"
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}surfaces USING UNIQUE gid USING SRID=2056"
+          lang_fields:
+            kind_desc: "kind_%lang%"
+            aarc_epoch_desc: "aarc_epoch_%lang%"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -465,8 +550,9 @@ layers:
       gcover_layer: GC_ROCK_BODIES/GC_UNCO_DESPOSIT
       connection_ref: postgis_wms
       layer_type: polygon
-      computed_fields:
+      computed_fields:  # Still uppercase!
         area_m2: "geometry.area"
+        runc_chrono_combined: "concat(RUNC_CHRONO_B, RUNC_CHRONO_T):str"
       field_types:
         KIND: Int64
         RUNC_LITHO: Int64
@@ -483,7 +569,7 @@ layers:
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}unconsolidated
           maxscaledenom: 50000
           map_label: False
-          include_items: "label,kind"
+          include_items: "runc_litho,runc_litstrat,runc_chrono"
           mapfile_config:
             classes_mode: frozen
             symbol_scale: 12000
@@ -491,6 +577,10 @@ layers:
               wms_group_title: Unconsolidated
           data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}unco_deposits  USING UNIQUE gid USING SRID=2056"
           # filter: RUNC_LITHO NOT IN (15101009, 15101015,15101019, 15101021, 15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101041,15101046, 15101047, 15101048, 15101049, 15101055, 15101058, 15101040)
+          lang_fields:
+            runc_litstrat: "runc_litstrat_%lang%"
+            runc_litho: "runc_litho_%lang%"
+            runc_chrono: "runc_chrono_combined_%lang%"
           symbol_prefix: unco_bachschutt
           filter: RUNC_LITHO=15101041
           fields:
@@ -507,8 +597,12 @@ layers:
           symbol_prefix:  ${GCOVER_LAYERNAME_PREFIX}unco_litho
           mapfile_group: unconsolidated
           data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}unco_deposits  USING UNIQUE gid USING SRID=2056"
+          lang_fields:
+            runc_litstrat: "runc_litstrat_%lang%"
+            runc_litho: "runc_litho_%lang%"
+            runc_chrono: "runc_chrono_combined_%lang%"
           map_label: False
-          include_items: "label,kind"
+          include_items: "runc_litho,runc_litstrat,runc_chrono"
           mapfile_config:
             metadata:
               wms_group_title: Unconsolidated
@@ -525,7 +619,14 @@ layers:
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}unconsolidated
           maxscaledenom: 50000
           map_label: False
-          include_items: "label,kind"
+          include_items: "runc_litstrat,runc_litho,runc_glac_typ,runc_chrono,runc_structur,runc_morpholo"
+          lang_fields:
+            runc_litstrat: "runc_litstrat_%lang%"
+            runc_litho:    "runc_litho_%lang%"
+            runc_glac_typ: "runc_glac_typ_%lang%"
+            runc_chrono:   "runc_chrono_combined_%lang%"
+            runc_structur: "runc_structur_%lang%"
+            runc_morpholo: "runc_morpholo_%lang%"
           mapfile_config:
             metadata:
               wms_group_title: Unconsolidated
@@ -547,8 +648,14 @@ layers:
             metadata:
               wms_group_title: Unconsolidated
           symbol_prefix: unco_chrono_t
-          data: "${GCOVER_POSTGIS_GEOM} FROM  (select * from geol.${GCOVER_POSTGIS_TABLE_PREFIX}unco_deposits WHERE map_symbol ilike 'unco_chrono_t%') as subselect  USING UNIQUE gid USING SRID=2056"
-          include_items: "label,kind,runc_litho,runc_glac_typ,runc_chrono_t"
+          data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}unco_deposits USING UNIQUE gid USING SRID=2056"
+          lang_fields:
+            runc_chrono: "runc_chrono_combined_%lang%"
+            runc_litstrat: "runc_litstrat_%lang%"
+            runc_litho: "runc_litho_%lang%"
+            runc_structur: "runc_structur_%lang%"
+            runc_morpholo: "runc_morpholo_%lang%"
+          include_items: "label,runc_litho,runc_litstrat,runc_chrono,runc_structur,runc_morpholo"
           filter: RUNC_LITHO IN (15101019,15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101040, 15101046, 15101047, 15101048, 15101049, 15101055, 15101058)
           fields:
             KIND: KIND
@@ -561,7 +668,7 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}unco_chrono_b
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}unconsolidated
-          include_items: "label,kind,runc_litho,runc_glac_typ,runc_chrono_b"
+          include_items: "label,runc_chrono,runc_litho,runc_litstrat,runc_structur,runc_morpholo,"
           maxscaledenom: 50000
           map_label: False
           mapfile_config:
@@ -570,6 +677,14 @@ layers:
             metadata:
               wms_group_title: Unconsolidated
           data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}unco_deposits  USING UNIQUE gid USING SRID=2056"
+          lang_fields:
+            runc_chrono: "runc_chrono_combined_%lang%"
+            runc_litho: "runc_litho_%lang%"
+            runc_litstrat: "runc_litstrat_%lang%"
+            runc_structur: "runc_structur_%lang%"
+            runc_morpholo: "runc_morpholo_%lang%"
+            runc_glac_typ: "runc_glac_typ_%lang%"
+
           symbol_prefix: unco_chrono_b
           filter: RUNC_LITHO IN (15101009, 15101015)
           fields:
@@ -607,8 +722,17 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}bedrock
           # mapfile_group: ${GCOVER_LAYERNAME_PREFIX}bedrock
           map_label: False
-          data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}bedrock  USING UNIQUE gid USING SRID=2056"
-          include_items: "label,uuid,kind,gmu_desc,tecto_desc,litho_main_desc,litho_sec_desc,litho_ter_desc,chrono_base_desc,chrono_top_desc,correlation_desc"
+          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}bedrock USING UNIQUE gid USING SRID=2056"
+          # Constant alias names → language-specific columns
+          lang_fields:
+              gmu_desc: "gmu_%lang%"
+              tecto_desc: "tecto_%lang%"
+              litho_desc: "litho_combined_%lang%"
+              chrono_desc: "chrono_combined_%lang%"
+              correlation_desc: "correlation_%lang%"
+              litstrat_formation_bank: "litstrat_formation_bank_%lang%"
+          # These names stay stable for all clients regardless of LANGUAGE= param
+          include_items: "label,gmu_desc,tecto_desc,litho_desc,chrono_desc,correlation_desc"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             GMU_CODE: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT

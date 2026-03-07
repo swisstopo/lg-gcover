@@ -904,7 +904,7 @@ class GeoCoverDenormalizer:
 
                 field_mapping = {
                     "DESCRIPTION": f"{config['field_prefix']}_DESC",
-                    "GEOLCODE": f"{config['field_prefix']}_CODES",
+                    "GEOLCODE": f"{config['field_prefix']}_CODE",   # was _CODES
                 }
                 aggregated = aggregated.rename(columns=field_mapping)
 

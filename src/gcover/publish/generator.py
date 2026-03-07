@@ -10,6 +10,7 @@ ENHANCED: Support for pattern catalog with PIXMAP symbols for polygon fills.
 """
 
 import json
+import re
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple, Union
@@ -200,12 +201,15 @@ class MapServerGenerator:
             self,
             layer_type: str = "Polygon",
             use_symbol_field: bool = False,
-            symbol_field: str = "SYMBOL",
+            symbol_field: str = None,
             font_name_prefix: str = "esri",
             no_scale: bool = False,
+            default_language: str = "de",
             pattern_catalog: Optional[Path] = None,
             gml_items: Optional[str] = 'default',
-            output_dir: Optional[Path] = None
+            output_dir: Optional[Path] = None,
+            languages: Optional[List[str]] = None,
+
     ):
         """
         Initialize generator.
@@ -233,6 +237,10 @@ class MapServerGenerator:
         # NEW: Pattern catalog for PIXMAP symbols
         self.pattern_catalog = PatternCatalogReader(pattern_catalog)
         self.pixmap_symbols_used: Set[str] = set()
+        # Languages
+        self.default_language = default_language
+        self.languages = languages
+
 
     def render_maxscale(self, layer_scale: Optional[bool | int],
                         style_scale: Optional[int]) -> Optional[str]:
@@ -321,6 +329,152 @@ class MapServerGenerator:
         return staging_file
 
     # ========================================================================
+    # MULTI-LANGUAGE DATA HELPER
+    # ========================================================================
+
+    def _build_lang_data(
+            self,
+            data: str,
+            lang_fields: Dict[str, str],
+            include_items: Optional[str] = None,
+            symbol_field: Optional[str] = None,
+            geom_col: Optional[str] = None,
+            label_col: Optional[str] = None,
+    ) -> str:
+        """
+        Inject language-aliased columns into a DATA string, keeping %language%
+        as a runtime placeholder (resolved by MapServer VALIDATION block).
+
+        Replaces SELECT * with an explicit column list built from:
+          - mandatory columns: geom, gid, label
+          - symbol_field (map_symbol) if provided
+          - all fields listed in include_items
+          - lang_fields alias expressions  (col_%language% AS alias)
+
+        Case A — plain table ref:
+            "geom FROM schema.table USING UNIQUE gid USING SRID=2056"
+            → wraps in subquery with explicit column list
+
+        Case B — existing subquery:
+            "geom FROM (SELECT col1, col2, ... FROM ...) AS sub USING ..."
+            → appends alias expressions to the existing SELECT list,
+              and ensures mandatory columns are present
+        """
+        if not lang_fields:
+            return data
+
+        # ------------------------------------------------------------------
+        # Build the explicit base column list
+        # ------------------------------------------------------------------
+        # Start with mandatory columns (order matters for readability)
+        mandatory = ["gid", geom_col or "geom", "label"]
+        if symbol_field and symbol_field not in mandatory:
+            mandatory.append(symbol_field)
+        if label_col and label_col not in mandatory:
+            mandatory.append(label_col)
+
+        # Add all columns from include_items, excluding those already covered
+        # by lang_fields aliases (which will be emitted as expressions, not plain cols)
+        lang_aliases = set(lang_fields.keys())  # alias names, e.g. {"gmu_desc", "tecto_desc"}
+
+        extra_cols: List[str] = []
+        if include_items:
+            for col in [c.strip() for c in include_items.split(",") if c.strip()]:
+                if col not in lang_aliases:  # aliases come from lang_fields, skip here
+                    extra_cols.append(col)
+
+        # Deduplicate while preserving order
+        seen: set = set()
+        plain_cols: List[str] = []
+        for col in mandatory + extra_cols:
+            if col and col not in seen:
+                seen.add(col)
+                plain_cols.append(col)
+
+        # Build alias expressions — %language% kept as runtime placeholder
+        # e.g. "gmu_%language% AS gmu_desc"
+        alias_exprs = [
+            f"{col_pattern} AS {alias}"
+            for alias, col_pattern in lang_fields.items()
+        ]
+
+        full_select = ", ".join(plain_cols + alias_exprs)
+
+        # ------------------------------------------------------------------
+        # Case B: already has a subquery — replace its SELECT list
+        # ------------------------------------------------------------------
+        subquery_match = re.match(
+            r"(?i)^(\S+)\s+FROM\s+\(\s*SELECT\s+(.*?)\s+FROM\s+(.*?)\)\s+AS\s+(\w+)\s+(USING.*)$",
+            data.strip(),
+            re.DOTALL,
+        )
+        if subquery_match:
+            geom_ref = subquery_match.group(1)
+            existing_cols = subquery_match.group(2)  # original SELECT list
+            from_clause = subquery_match.group(3)
+            alias_name = subquery_match.group(4)
+            using_clause = subquery_match.group(5)
+
+            # Merge existing columns with our required list, deduplicating
+            existing_plain = [
+                c.strip() for c in existing_cols.split(",") if c.strip()
+            ]
+            for col in existing_plain:
+                bare = col.split()[-1]  # handle "expr AS alias" → take alias
+                if bare not in seen:
+                    seen.add(bare)
+                    plain_cols.append(col)  # preserve original expression
+
+            merged_select = ", ".join(plain_cols + alias_exprs)
+
+            return (
+                f"{geom_ref} FROM "
+                f"(SELECT {merged_select} FROM {from_clause}) AS {alias_name} "
+                f"{using_clause}"
+            )
+
+        # ------------------------------------------------------------------
+        # Case A: plain table reference — wrap in explicit subquery
+        # ------------------------------------------------------------------
+        plain_match = re.match(
+            r"(?i)^(\S+)\s+FROM\s+(\S+)\s+(USING.*)$",
+            data.strip(),
+        )
+        if plain_match:
+            geom_ref = plain_match.group(1)
+            table_ref = plain_match.group(2)
+            using_clause = plain_match.group(3)
+
+            return (
+                f"{geom_ref} FROM "
+                f"(SELECT {full_select} FROM {table_ref}) AS lang_sub "
+                f"{using_clause}"
+            )
+
+        logger.warning(f"Could not parse DATA string for lang_fields injection: {data!r}")
+        return data
+
+    def _build_validation_block(
+            self,
+    ) -> List[str]:
+        """
+        Generate MapServer VALIDATION block for %lang% runtime substitution.
+
+        The regex anchors exact matches to prevent SQL injection, e.g.:
+            "lang" "^(eng|ger|fra|ita)$"
+        """
+        languages = self.languages or [self.default_language]
+        default_language = self.default_language
+
+        lang_pattern = "|".join(re.escape(l) for l in languages)
+        return [
+            "  VALIDATION",
+            f'    "lang"         "^({lang_pattern})$"',
+            f'    "default_lang" "{default_language}"',
+            "  END",
+        ]
+
+    # ========================================================================
     # LAYER AND CLASS GENERATION
     # ========================================================================
 
@@ -341,6 +495,9 @@ class MapServerGenerator:
             include_items: Optional[str] = 'all',
             mapfile_config: Optional[MapfileGenerationConfig] = None,
             staging_mode: bool = False,
+            lang_fields: Optional[Dict[str, str]] = None,
+            translations: Optional[Dict[str, Dict[str, str]]] = None,
+
     ) -> str:
         """
         Generate complete MapServer LAYER block.
@@ -384,14 +541,51 @@ class MapServerGenerator:
 
         logger.info(f"=== {layer_name} ===")
 
+        def _get_label_field(classification, map_label):
+
+
+          try:
+            if classification.label_classes:
+                label_info = classification.label_classes[0]
+                label_item = label_info.get_simple_field_name()
+          except Exception:
+            logger.error("Error while retrieving labels info")
+
+          if label_item and map_label is None:
+            return label_item.lower()
+          elif isinstance(map_label, str):
+            return map_label.lower()
+          return None
+
         # --- Rotation extraction ---
 
         try:
             rotation_info = classification.rotation_info
             if rotation_info:
-                rotation_field = rotation_info.field_name
+                console.print(f"=== Rotation field ===")
+                if mapfile_config and mapfile_config.rotation_field is not None:
+                    # TODO: ugly
+                    rotation_info.field_name = mapfile_config.rotation_field
+                    console.print(f"[yellow]Using  {mapfile_config.rotation_field} from config YAML[/yellow]")
+
+                else:
+                    rotation_field = rotation_info.field_name
+                    console.print(f"Using {rotation_field} from ESRI .lyrx")
         except Exception:
             logger.error("Error while retrieving rotation info")
+
+        # Resolve language-specific column aliases in DATA string
+        if data and (lang_fields or "%lang%" in (data or "")):
+            label_col = _get_label_field(classification, map_label)
+            data = self._build_lang_data(
+                data=data,
+                lang_fields=lang_fields or {},
+                include_items=include_items,
+                symbol_field=self.symbol_field,  # e.g. "map_symbol"
+                geom_col="geom",  # or pull from connection config
+                label_col=label_col,
+            )
+
 
         def build_layer_block(
                 classification,
@@ -420,9 +614,6 @@ class MapServerGenerator:
                     label_item = label_info.get_simple_field_name()
             except Exception:
                 logger.error("Error while retrieving labels info")
-
-            # --- Rotation extraction ---
-            rotation_field = None
 
 
             # --- Base LAYER header ---
@@ -478,6 +669,14 @@ class MapServerGenerator:
                     "  END",
                 ]
             )
+
+            # VALIDATION block for %lang% runtime substitution
+            # Required whenever lang_fields or %lang% appears in the DATA string
+            if lang_fields or (data and "%lang%" in data):
+                lines.extend(
+                    self._build_validation_block(
+                    )
+                )
 
             # Special case
             if "bedrock" in layer_name and layer_group and "geocover" in layer_group:
@@ -1076,7 +1275,7 @@ class MapServerGenerator:
                 has_fill = True
 
             elif fill_type == "hatch":
-                logger.info("Found hatch")
+                logger.debug("Found hatch")
                 self._add_hatch_fill_style(
                     lines,
                     fill_info,
