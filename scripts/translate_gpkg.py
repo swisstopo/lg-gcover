@@ -86,6 +86,8 @@ ATTRIBUTES_TO_IGNORE = [
 
 TRANSLATED_SUFFIXES = ("_desc", "_fr", "_de", "_it", "_en")
 
+FIXED_FIRST_COLUMNS = ["gid", "kind", "kind_de", "kind_fr", "kind_it", "kind_en", "uuid","label", "map_symbol"]
+
 PIPE_SEP = " | "
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -252,6 +254,19 @@ def _lowercase_gdf_columns(gdf):
             f"  Lowercasing {len(rename_map)} column(s): {list(rename_map.keys())}"
         )
     return gdf.rename(columns=rename_map)
+
+def _reorder_columns(
+    gdf: gpd.GeoDataFrame,
+    fixed_first: list[str],
+) -> gpd.GeoDataFrame:
+    """Reorder columns: pinned columns first, then all others alphabetically, geometry last."""
+    geom_col = gdf.geometry.name
+    head = [c for c in fixed_first if c in gdf.columns]
+    rest = sorted(
+        c for c in gdf.columns
+        if c not in head and c != geom_col
+    )
+    return gdf[head + rest + [geom_col]]
 
 
 def enrich_layer(
@@ -573,8 +588,10 @@ def main(
 
         # Write enriched layers
         first_write = True
+
         for lyr, gdf in enriched.items():
             progress.update(task, description=f"[cyan]{lyr}[/]")
+            gdf = _reorder_columns(gdf, fixed_first=FIXED_FIRST_COLUMNS)
             mode = "w" if first_write else "a"
             gdf.to_file(str(tmp_path), layer=lyr, driver="GPKG", mode=mode)
             first_write = False
@@ -585,6 +602,7 @@ def main(
             progress.update(task, description=f"[dim]{lyr}[/]")
             try:
                 gdf = gpd.read_file(str(gpkg), layer=lyr)
+                gdf = _reorder_columns(gdf, fixed_first=FIXED_FIRST_COLUMNS)
                 mode = "w" if first_write else "a"
                 gdf.to_file(str(tmp_path), layer=lyr, driver="GPKG", mode=mode)
                 first_write = False

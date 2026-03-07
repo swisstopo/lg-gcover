@@ -46,6 +46,7 @@ from translate_gpkg import (
     _is_pipe_codes_value,
     _lowercase_gdf_columns,
     _map_pipe_codes,
+    _reorder_columns,
     check_min_langs,
     enrich_layer,
     is_geolcode_column,
@@ -98,8 +99,9 @@ def simple_gdf():
     """GeoDataFrame with one code column and one geometry."""
     return gpd.GeoDataFrame(
         {
+            "NAME": ["a", "b", "d", "c"],
             "LITHO_CODE": [VALID_CODE_A, VALID_CODE_B, VALID_CODE_C, UNKNOWN_CODE],
-            "NAME": ["a", "b", "c", "d"],
+
         },
         geometry=[Point(0, 0)] * 4,
         crs="EPSG:4326",
@@ -564,6 +566,148 @@ class TestEnrichLayerPipe:
         _, stats = enrich_layer(pipe_gdf, translations_df, ["de"], 0.5, "test")
         assert stats[0]["pipe"] is True
 
+# ═══════════════════════════════════════════════════════════════════════════
+# _reorder_columns
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestReorderColumns:
+    """Tests for _reorder_columns(gdf, fixed_first)."""
+
+    def _make_gdf(self, cols: dict) -> gpd.GeoDataFrame:
+        n = max(len(v) for v in cols.values())
+        return gpd.GeoDataFrame(
+            cols, geometry=[Point(i, 0) for i in range(n)], crs="EPSG:4326"
+        )
+
+    # ── basic ordering ────────────────────────────────────────────────────
+
+    def test_pinned_columns_come_first(self):
+        gdf = self._make_gdf({"uuid": [1], "zebra": [2], "gid": [3], "alpha": [4]})
+        result = _reorder_columns(gdf, fixed_first=["gid", "uuid"])
+        non_geom = [c for c in result.columns if c != result.geometry.name]
+        assert non_geom[0] == "gid"
+        assert non_geom[1] == "uuid"
+
+    def test_remaining_columns_sorted_alphabetically(self):
+        gdf = self._make_gdf({"gid": [1], "zebra": [2], "alpha": [3], "mango": [4]})
+        result = _reorder_columns(gdf, fixed_first=["gid"])
+        non_geom = [c for c in result.columns if c != result.geometry.name]
+        assert non_geom == ["gid", "alpha", "mango", "zebra"]
+
+    def test_geometry_column_is_last(self):
+        gdf = self._make_gdf({"gid": [1], "kind": [2], "uuid": [3], "attr": [4]})
+        result = _reorder_columns(gdf, fixed_first=["gid", "kind", "uuid"])
+        assert result.columns[-1] == result.geometry.name
+
+    def test_geometry_still_active_after_reorder(self):
+        """geopandas must still recognise the geometry column after reordering."""
+        gdf = self._make_gdf({"gid": [1], "attr": [2]})
+        result = _reorder_columns(gdf, fixed_first=["gid"])
+        assert result.geometry is not None
+        assert len(result.geometry) == 1
+
+    # ── edge cases for fixed_first ────────────────────────────────────────
+
+    def test_missing_pinned_column_silently_skipped(self):
+        """A name in fixed_first but absent from the GDF must be ignored."""
+        gdf = self._make_gdf({"gid": [1], "beta": [2]})
+        result = _reorder_columns(gdf, fixed_first=["gid", "does_not_exist"])
+        non_geom = [c for c in result.columns if c != result.geometry.name]
+        assert "does_not_exist" not in non_geom
+        assert non_geom[0] == "gid"
+
+    def test_empty_fixed_first_gives_fully_sorted_columns(self):
+        gdf = self._make_gdf({"zebra": [1], "alpha": [2], "mango": [3]})
+        result = _reorder_columns(gdf, fixed_first=[])
+        non_geom = [c for c in result.columns if c != result.geometry.name]
+        assert non_geom == sorted(non_geom)
+
+    def test_all_columns_pinned_preserves_fixed_first_order(self):
+        """If every non-geometry column is pinned, order follows fixed_first exactly."""
+        gdf = self._make_gdf({"gid": [1], "kind": [2], "uuid": [3]})
+        result = _reorder_columns(gdf, fixed_first=["gid", "kind", "uuid"])
+        non_geom = [c for c in result.columns if c != result.geometry.name]
+        assert non_geom == ["gid", "kind", "uuid"]
+
+    def test_fixed_first_order_overrides_original_column_order(self):
+        """fixed_first declaration order takes precedence over GDF column order."""
+        gdf = self._make_gdf({"uuid": [1], "kind": [2], "gid": [3]})
+        result = _reorder_columns(gdf, fixed_first=["gid", "kind", "uuid"])
+        non_geom = [c for c in result.columns if c != result.geometry.name]
+        assert non_geom[:3] == ["gid", "kind", "uuid"]
+
+    def test_pinned_columns_not_duplicated(self):
+        """gid/uuid must each appear exactly once in the output columns."""
+        gdf = self._make_gdf({"gid": [1], "uuid": [2], "attr": [3]})
+        result = _reorder_columns(gdf, fixed_first=["gid", "uuid"])
+        non_geom = [c for c in result.columns if c != result.geometry.name]
+        assert non_geom.count("gid") == 1
+        assert non_geom.count("uuid") == 1
+
+    # ── interaction with translation columns ─────────────────────────────
+
+    def test_translation_siblings_sorted_among_rest(self):
+        """_de / _fr siblings appended by enrich_layer are sorted with the rest."""
+        gdf = self._make_gdf({
+            "gid":      [1],
+            "uuid":     [2],
+            "litho_de": [3],
+            "admix_de": [4],
+            "litho_fr": [5],
+            "admix_fr": [6],
+        })
+        result = _reorder_columns(gdf, fixed_first=["gid", "uuid"])
+        non_geom = [c for c in result.columns if c != result.geometry.name]
+        rest = non_geom[2:]   # after the two pinned columns
+        assert rest == sorted(rest)
+
+    def test_source_code_column_sorted_with_siblings(self):
+        """The original code column and its _de/_fr siblings all sort together."""
+        gdf = self._make_gdf({
+            "gid":       [1],
+            "litho_code": [VALID_CODE_A],
+            "litho_de":  ["Granit"],
+            "litho_fr":  ["Granite"],
+            "name":      ["x"],
+        })
+        result = _reorder_columns(gdf, fixed_first=["gid"])
+        non_geom = [c for c in result.columns if c != result.geometry.name]
+        rest = non_geom[1:]
+        assert rest == sorted(rest)
+
+    # ── integration: CLI full run preserves expected column order ─────────
+
+    def test_full_run_column_order_via_cli(self, gpkg_file, translations_csv, tmp_path):
+        """End-to-end smoke-test: non-geometry columns in the written GPKG are sorted."""
+        from click.testing import CliRunner
+        from translate_gpkg import main
+
+        output = tmp_path / "ordered.gpkg"
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            [
+                str(gpkg_file),
+                "-t", str(translations_csv),
+                "-o", str(output),
+                "--langs", "de,fr",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        gdf = gpd.read_file(str(output), layer="rocks")
+        geom_col = gdf.geometry.name
+
+        # geometry must be the last column
+        assert gdf.columns[-1] == geom_col
+
+        # non-geometry, non-pinned columns must be alphabetically sorted
+        pinned = ["gid", "kind", "uuid"]
+        present_pinned = [c for c in pinned if c in gdf.columns]
+        rest = [c for c in gdf.columns if c not in present_pinned and c != geom_col]
+        assert rest == sorted(rest), (
+            f"Expected alphabetically sorted columns after pinned, got: {rest}"
+        )
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CLI smoke test (--dry-run)
@@ -646,3 +790,36 @@ class TestCli:
         gdf = gpd.read_file(str(output), layer="rocks")
         assert "LITHO_de" in gdf.columns
         assert "LITHO_fr" in gdf.columns
+        # column ordering contract
+        geom_col = gdf.geometry.name
+        assert gdf.columns[-1] == geom_col
+        non_geom = [c for c in gdf.columns if c != geom_col]
+        assert non_geom == sorted(non_geom)
+
+    def test_full_run_writes_gpkg_lowercase(self, gpkg_file, translations_csv, tmp_path):
+        from click.testing import CliRunner
+        from translate_gpkg import main
+
+        output = tmp_path / "out_lower.gpkg"
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            [
+                str(gpkg_file),
+                "-t", str(translations_csv),
+                "-o", str(output),
+                "--langs", "de,fr",
+                "--lowercase-columns",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        gdf = gpd.read_file(str(output), layer="rocks")
+
+        assert "litho_de" in gdf.columns
+        assert "litho_fr" in gdf.columns
+
+        geom_col = gdf.geometry.name
+        non_geom = [c for c in gdf.columns if c != geom_col]
+        assert all(c == c.lower() for c in non_geom), (
+            f"Expected all lowercase columns, found: {[c for c in non_geom if c != c.lower()]}"
+        )
