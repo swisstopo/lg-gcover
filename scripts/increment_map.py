@@ -264,8 +264,20 @@ def build_map(
 ) -> None:
     th = THEMES[theme_name]
 
+    # ── Determine the viewport ONCE; never derived from layer content ──────────
+    # Bogus features at (0, 0) must never influence the view extent.
+    if zoom is not None:
+        view = zoom                     # (xmin, ymin, xmax, ymax)
+    else:
+        bx, by, bX, bY = CH_BOUNDS_LV95
+        view = (bx, by, bX, bY)        # fixed Swiss extent
+
     fig, ax = plt.subplots(figsize=(16, 10), facecolor=th["fig_bg"])
     ax.set_facecolor(th["ax_bg"])
+
+    # Pin the view before any plotting so gdf.plot() cannot auto-expand it
+    ax.set_xlim(view[0], view[2])
+    ax.set_ylim(view[1], view[3])
 
     # ── background ──
     if background is not None:
@@ -278,8 +290,6 @@ def build_map(
         )
     else:
         bx, by, bX, bY = CH_BOUNDS_LV95
-        ax.set_xlim(bx, bX)
-        ax.set_ylim(by, bY)
         ax.add_patch(Rectangle(
             (bx, by), bX - bx, bY - by,
             linewidth=0.5,
@@ -288,10 +298,7 @@ def build_map(
             zorder=1,
         ))
 
-    # ── apply zoom window (after background so axes are already set) ──
-    if zoom is not None:
-        ax.set_xlim(zoom[0], zoom[2])
-        ax.set_ylim(zoom[1], zoom[3])
+
 
     # ── change layers ──
     plotted: set[str] = set()
@@ -317,6 +324,11 @@ def build_map(
             gdf.plot(ax=ax, color=color, alpha=alpha,
                      markersize=style["markersize"], marker="o", zorder=zorder)
         plotted.add(change_key)
+
+    # Re-enforce viewport — gdf.plot() may have silently expanded the axes
+    # if any feature has a bogus geometry (e.g. snapped to 0, 0).
+    ax.set_xlim(view[0], view[2])
+    ax.set_ylim(view[1], view[3])
 
     # ── legend ──
     handles = [
