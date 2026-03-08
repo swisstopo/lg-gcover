@@ -72,6 +72,7 @@ BG_LAYERS: dict[str, tuple[str, str]] = {
     "mapsheets": ("mapsheets_with_sources", "MSH_MAP_NBR"),
     "lots":      ("lots",                   "LOT_NR"),
     "wu":        ("work_units",             "WU_NAME"),
+    "sources":   ("mapsheets_with_sources", "SOURCE_RC"),   # dissolved by RC1/RC2
 }
 
 # ── Themes ────────────────────────────────────────────────────────────────────
@@ -184,10 +185,18 @@ def load_background(
     try:
         gdf = gpd.read_file(str(gpkg_path), layer=gpkg_layer)
         gdf = reproject(gdf)
-        console.print(
-            f"[dim]Background: layer=[bold]{gpkg_layer}[/bold]  "
-            f"({len(gdf)} features, id={id_field})[/dim]"
-        )
+
+        if layer_key == "sources":
+            gdf = gdf.dissolve(by="SOURCE_RC", as_index=False)[["SOURCE_RC", "geometry"]]
+            console.print(
+                f"[dim]Background: layer=[bold]{gpkg_layer}[/bold] dissolved by SOURCE_RC"
+                f"  ({len(gdf)} regions: {', '.join(gdf['SOURCE_RC'].tolist())})[/dim]"
+            )
+        else:
+            console.print(
+                f"[dim]Background: layer=[bold]{gpkg_layer}[/bold]  "
+                f"({len(gdf)} features, id={id_field})[/dim]"
+            )
         return gdf
     except Exception as exc:
         console.print(f"[yellow]Could not load background layer '{gpkg_layer}': {exc}[/yellow]")
@@ -280,14 +289,40 @@ def build_map(
     ax.set_ylim(view[1], view[3])
 
     # ── background ──
+    # RC1/RC2 always get fixed colours; any other SOURCE_RC value (e.g. "Saas.gdb",
+    # "BKP.gdb") is assigned a colour sequentially from the extras palette.
+    RC_FIXED = {
+        "dark":  {"RC1": "#1a3a5c", "RC2": "#2d1b4e"},
+        "light": {"RC1": "#c8dff5", "RC2": "#e8d5f0"},
+    }
+
     if background is not None:
-        background.plot(
-            ax=ax,
-            color=th["bg_face"],
-            edgecolor=th["bg_edge"],
-            linewidth=th["bg_lw"],
-            zorder=1,
-        )
+        if "SOURCE_RC" in background.columns:
+            # Dissolved sources layer — fixed colours for RC1/RC2, sequential for others
+            rc_color_map: dict[str, str] = {}
+            extras_cycle = iter(RC_EXTRAS[theme_name] * 10)   # repeat if > 4 extras
+            for rc_val in sorted(background["SOURCE_RC"].unique()):
+                if rc_val in RC_FIXED[theme_name]:
+                    rc_color_map[rc_val] = RC_FIXED[theme_name][rc_val]
+                else:
+                    rc_color_map[rc_val] = next(extras_cycle)
+            for rc_val, grp in background.groupby("SOURCE_RC"):
+                grp.plot(
+                    ax=ax,
+                    color=rc_color_map[rc_val],
+                    edgecolor=th["bg_edge"],
+                    linewidth=th["bg_lw"],
+                    zorder=1,
+                 
+                )
+        else:
+            background.plot(
+                ax=ax,
+                color=th["bg_face"],
+                edgecolor=th["bg_edge"],
+                linewidth=th["bg_lw"],
+                zorder=1,
+            )
     else:
         bx, by, bX, bY = CH_BOUNDS_LV95
         ax.add_patch(Rectangle(
@@ -297,8 +332,6 @@ def build_map(
             facecolor=th["bg_face"],
             zorder=1,
         ))
-
-
 
     # ── change layers ──
     plotted: set[str] = set()
@@ -339,6 +372,11 @@ def build_map(
         )
         for k in ("A", "D", "M", "MG") if k in plotted
     ]
+    if background is not None and "SOURCE_RC" in background.columns:
+        handles += [
+            mpatches.Patch(facecolor=rc_color_map[rc], label=rc, alpha=0.9)
+            for rc in sorted(rc_color_map)
+        ]
     legend = ax.legend(
         handles=handles,
         loc="lower right",
@@ -391,7 +429,7 @@ def build_map(
               default="dark", show_default=True,
               help="'dark' for screen, 'light' for print.")
 @click.option("--bg", "-b", "bg_path",
-              default=DEFAULT_ZONES_PATH, type=click.Path(exists=True),
+              default=None, type=click.Path(exists=True),
               help="Path to administrative_zones.gpkg.")
 @click.option("--bg-layer", "bg_layer",
               type=click.Choice(list(BG_LAYERS.keys()), case_sensitive=False),
@@ -400,7 +438,8 @@ def build_map(
                   "Background layer to draw:\n\n"
                   "  mapsheets → mapsheets_with_sources (MSH_MAP_NBR)\n"
                   "  lots      → lots                   (LOT_NR)\n"
-                  "  wu        → work_units             (WU_NAME)"
+                  "  wu        → work_units             (WU_NAME)\n"
+                  "  sources   → mapsheets dissolved by SOURCE_RC (RC1/RC2)"
               ))
 @click.option("--zoom-mapsheet", "zoom_mapsheet",
               default=None, type=int,
@@ -424,8 +463,9 @@ def main(
     meta = parse_gdb_meta(gdb)
 
     if output is None:
-        suffix   = f"_ms{zoom_mapsheet}" if zoom_mapsheet else ""
-        out_path = gdb.parent / f"{meta['stem']}_increment_map{suffix}_{theme}.png"
+        extent_tag = f"ms{zoom_mapsheet}" if zoom_mapsheet else "ch"
+        bg_tag     = f"_{bg_layer}" if bg_path else ""
+        out_path   = gdb.parent / f"{meta['stem']}_increment_map_{extent_tag}{bg_tag}_{theme}.png"
     else:
         out_path = Path(output)
 
