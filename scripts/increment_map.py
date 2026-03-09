@@ -29,7 +29,6 @@ import sys
 from pathlib import Path
 from importlib.resources import files
 
-
 import click
 import fiona
 import geopandas as gpd
@@ -40,11 +39,10 @@ from rich import box as rbox
 from rich.console import Console
 from rich.table import Table
 
+console = Console()
+
 DEFAULT_ZONES_PATH = files("gcover.data").joinpath("administrative_zones.gpkg")
 
-
-
-console = Console()
 
 # ── Change-type configuration ─────────────────────────────────────────────────
 
@@ -284,16 +282,17 @@ def build_map(
     fig, ax = plt.subplots(figsize=(16, 10), facecolor=th["fig_bg"])
     ax.set_facecolor(th["ax_bg"])
 
-    # Pin the view before any plotting so gdf.plot() cannot auto-expand it
-    ax.set_xlim(view[0], view[2])
-    ax.set_ylim(view[1], view[3])
-
+    
     # ── background ──
     # RC1/RC2 always get fixed colours; any other SOURCE_RC value (e.g. "Saas.gdb",
     # "BKP.gdb") is assigned a colour sequentially from the extras palette.
     RC_FIXED = {
         "dark":  {"RC1": "#1a3a5c", "RC2": "#2d1b4e"},
         "light": {"RC1": "#c8dff5", "RC2": "#e8d5f0"},
+    }
+    RC_EXTRAS = {
+        "dark":  ["#1a4a2e", "#4a2e1a", "#1a4a4a", "#4a1a2e"],
+        "light": ["#d0f0d8", "#f5e0c8", "#c8f0f0", "#f5c8d8"],
     }
 
     if background is not None:
@@ -313,7 +312,6 @@ def build_map(
                     edgecolor=th["bg_edge"],
                     linewidth=th["bg_lw"],
                     zorder=1,
-                 
                 )
         else:
             background.plot(
@@ -332,6 +330,11 @@ def build_map(
             facecolor=th["bg_face"],
             zorder=1,
         ))
+
+    # Re-enforce viewport after background — gdf.plot() calls autoscale_view()
+    # internally and will expand the limits if the background extent differs.
+    ax.set_xlim(view[0], view[2])
+    ax.set_ylim(view[1], view[3])
 
     # ── change layers ──
     plotted: set[str] = set()
@@ -416,10 +419,32 @@ def build_map(
     console.print(f"[green]✓[/green] Map saved → [bold]{output_path}[/bold]")
 
 
+
+def validate_gdb_path(ctx, param, value):
+    p = Path(value)
+
+    if not p.exists():
+        raise click.BadParameter(f"Path does not exist: {p}")
+
+    # GPKG must be a file
+    if p.suffix == ".gpkg":
+        if not p.is_file():
+            raise click.BadParameter(f"{p} ends with .gpkg but is not a file")
+        return p
+
+    # GDB must be a directory
+    if p.suffix == ".gdb":
+        if not p.is_dir():
+            raise click.BadParameter(f"{p} ends with .gdb but is not a directory")
+        return p
+
+    raise click.BadParameter("Expected a .gpkg file or a .gdb directory")
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 @click.command(context_settings={"help_option_names": ["-h", "--help"]})
-@click.argument("gdb_path", type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.argument("gdb_path", type=click.Path(exists=True, file_okay=True, dir_okay=True), callback=validate_gdb_path)
 @click.option("--output",  "-o", default=None,
               help="Output PNG. Default: <gdb_stem>_increment_map[_msNNN]_<theme>.png.")
 @click.option("--dpi", default=150, show_default=True,
@@ -429,7 +454,7 @@ def build_map(
               default="dark", show_default=True,
               help="'dark' for screen, 'light' for print.")
 @click.option("--bg", "-b", "bg_path",
-              default=None, type=click.Path(exists=True),
+              default=DEFAULT_ZONES_PATH, type=click.Path(exists=True),
               help="Path to administrative_zones.gpkg.")
 @click.option("--bg-layer", "bg_layer",
               type=click.Choice(list(BG_LAYERS.keys()), case_sensitive=False),
