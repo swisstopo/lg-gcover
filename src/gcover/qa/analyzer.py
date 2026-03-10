@@ -61,7 +61,7 @@ class QAAnalyzer:
         "Code",
     ]
 
-    def __init__(self, zones_file: Union[str, Path]):
+    def __init__(self, zones_file: Union[str, Path], use_arcgis_pro: Optional[bool] = True):
         """
         Initialize QA Analyzer with administrative zones.
 
@@ -71,6 +71,7 @@ class QAAnalyzer:
         self.zones_file = Path(zones_file)
         self.zones_data = {}
         self._load_administrative_zones()
+        self.use_arcgis_pro = use_arcgis_pro
 
     def _load_administrative_zones(self) -> None:
         """Load administrative zones from GPKG file."""
@@ -1194,7 +1195,11 @@ class QAAnalyzer:
                     layer=layer_name,
                     driver=driver,
                     mode="a" if output_file.exists() else "w",
-                    layer_options={ "TARGET_ARCGIS_VERSION": "ARCGIS_PRO_3_2_OR_LATER"}
+                    layer_options=(
+                        {"TARGET_ARCGIS_VERSION": "ARCGIS_PRO_3_2_OR_LATER"}
+                        if self.use_arcgis_pro
+                        else None
+                    ),
                 )
 
                 logger.info(f"Wrote {len(gdf)} features to layer '{layer_name}'")
