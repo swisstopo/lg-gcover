@@ -563,6 +563,33 @@ class MergeConfig:
         "GC_ROCK_BODIES/GC_EXPLOIT_GEOMAT_PLG",
         "GC_ROCK_BODIES/GC_EXPLOIT_GEOMAT_PT",
         "GC_ROCK_BODIES/GC_MAPSHEET",
+        # For Increment
+        "D_GC_EXPLOIT_GEOMAT_PLG",
+        "M_GC_EXPLOIT_GEOMAT_PLG",
+        "MG_GC_EXPLOIT_GEOMAT_PLG",
+        "D_GC_LINEAR_OBJECTS",
+        "A_GC_LINEAR_OBJECTS",
+        "M_GC_LINEAR_OBJECTS",
+        "MG_GC_LINEAR_OBJECTS",
+        "D_GC_POINT_OBJECTS",
+        "A_GC_POINT_OBJECTS",
+        "M_GC_POINT_OBJECTS",
+        "MG_GC_POINT_OBJECTS",
+        "M_GC_FOSSILS",
+        "MG_GC_FOSSILS",
+        "D_GC_UNCO_DESPOSIT",
+        "A_GC_UNCO_DESPOSIT",
+        "M_GC_UNCO_DESPOSIT",
+        "MG_GC_UNCO_DESPOSIT",
+        "D_GC_BEDROCK",
+        "A_GC_BEDROCK",
+        "M_GC_BEDROCK",
+        "MG_GC_BEDROCK",
+        "D_GC_SURFACES",
+        "A_GC_SURFACES",
+        "M_GC_SURFACES",
+        "MG_GC_SURFACES",
+
     ])
     
     non_spatial_tables: List[str] = field(default_factory=lambda: [
