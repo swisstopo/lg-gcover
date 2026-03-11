@@ -7,6 +7,7 @@ DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/R16/
 OUTPUT_DIR   := ${HOME}/DATA/Derivations/output/R16/
 STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/R16/styles/2026-02-19/
 TRANSLATION_CSV := ${HOME}/code/github.com/lg-geology-data-model/exports/2026-02-12/geolcodes_translated.csv
+STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/R16/Excels/2026a_Update_stratiLINK.xlsx
 
 # File Paths
 MASTER_GDB        := $(OUTPUT_DIR)master_R16.gdb
@@ -53,7 +54,9 @@ help:
 	@echo "Translated:           $(TRANSLATED_PATH)"
 	@echo "Surfaces auxilliary:  $(SURFACES_AUX_PATH)"
 	@echo "Output dir:           $(OUTPUT_DIR)"
-	@echo "Mapserver dir         $(MAPSERVER_OUTPUT)"
+	@echo "Mapserver dir:        $(MAPSERVER_OUTPUT)"
+	@echo "Strati link xlsx:     $(STRATI_LINK_PATH)"
+	@echo "Translation CSV:      $(TRANSLATION_CSV)"
 
 
 
@@ -98,6 +101,7 @@ $(DENORMALIZED_PATH): $(MASTER_GDB)/timestamps
 $(TRANSLATED_PATH): $(CLASSIFIED_PATH)
 	@echo "Saving to $(TRANSLATED_PATH)"
 	python ./scripts/translate_gpkg.py -t $(TRANSLATION_CSV) \
+		--strati-links $(STRATI_LINK_PATH) \
 		--lowercase-columns --output $(TRANSLATED_PATH)  --langs de,fr  $(CLASSIFIED_PATH)
 
 $(CLASSIFIED_PATH): $(DENORMALIZED_PATH)

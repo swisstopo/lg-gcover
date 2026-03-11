@@ -372,6 +372,31 @@ def enrich_layer(
     return gdf, stats
 
 
+def _strati_links(bedrock: gpd.GeoDataFrame,xlsx_path
+    ) -> tuple[gpd.GeoDataFrame, list[dict]]:
+    """Add translated columns to GDF; return (enriched_gdf, stats_list)."""
+    stats = []
+
+    # --- Lire la table de correspondance depuis le xlsx ---
+    strati_df = pd.read_excel(
+        xlsx_path,
+        usecols=["GeolCode_GMU", "stratiLINK"],
+        dtype={"GeolCode_GMU": "Int64"},  # nullable int, cohérent avec le GPKG
+    )
+    strati_df = strati_df.dropna(subset=["GeolCode_GMU"])
+
+
+    # --- Merge (left join pour garder toutes les features) ---
+    bedrock = bedrock.merge(
+        strati_df,
+        left_on="GMU_CODE",
+        right_on="GeolCode_GMU",
+        how="left",
+    ).drop(columns=["GeolCode_GMU"])  # supprime la colonne redondante
+
+    return bedrock
+
+
 def check_min_langs(translations: pd.DataFrame) -> None:
     """Abort if DE and FR are not both present."""
     missing = [lang for lang in ("de", "fr") if lang not in translations.columns]
@@ -396,6 +421,14 @@ def check_min_langs(translations: pd.DataFrame) -> None:
     required=True,
     type=click.Path(exists=True, path_type=Path),
     help="Path to translations.csv (GeolCodeInt, DE, FR, IT, EN, ...)",
+)
+@click.option(
+    "-s",
+    "--strati-links",
+    "strati_links_path",
+    required=False,
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to strati links xlsx",
 )
 @click.option(
     "-l",
@@ -448,6 +481,7 @@ def main(
     min_coverage: float,
     langs: str,
     lowercase_columns: bool,
+    strati_links_path: Optional[Path],
     dry_run: bool,
 ) -> None:
     """Add GeolCode translation columns (_de, _fr, …) to every layer of a GPKG."""
@@ -510,9 +544,15 @@ def main(
                 console.print(f"  [yellow]⚠[/]  Skipping [bold]{lyr}[/]: {exc}")
                 progress.advance(task)
                 continue
+
+            if strati_links_path and 'bedrock' in lyr:
+                console.print("Adding strati links to Bedrock")
+                gdf = _strati_links(gdf, strati_links_path)
+
             if lowercase_columns:
                 console.print(f" [blue] Converting to lower case[/blue]")
                 gdf = _lowercase_gdf_columns(gdf)
+
 
             gdf, stats = enrich_layer(
                 gdf, translations, available_langs, min_coverage, lyr

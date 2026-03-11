@@ -69,3 +69,44 @@
     END
     FILLED TRUE
   END
+
+  SYMBOL
+    NAME "triangle-end"
+    TYPE vector
+    FILLED true
+    POINTS
+      0 0     # Bottom-left corner
+      10 5    # THE TIP (Center-right)
+      0 10    # Top-left corner
+      0 0     # Close polygon
+    END
+    ANCHORPOINT 0.1 0.5  # Pins the tip (X=10) to the near end of the line
+  END
+
+  SYMBOL
+    NAME "dagger-end"
+    TYPE vector
+    FILLED true
+    POINTS
+      0 2
+      0.5 0
+      1 2
+      0 2
+    END
+    # CENTER 6 2        # Center of the bounding box
+    ANCHORPOINT 0 1.0  # Pins the tip  to the end of the line
+  END
+
+  SYMBOL
+    NAME "inverted-dagger-end"
+    TYPE vector
+    FILLED true
+    POINTS
+      0 0
+      0.5 2
+      1.0 0
+      0 0
+    END
+    # CENTER 6 2        # Center of the bounding box
+    ANCHORPOINT 0.5 0  # Pins the tip  to the end of the line
+  END
