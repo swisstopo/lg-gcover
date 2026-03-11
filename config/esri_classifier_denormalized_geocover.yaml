@@ -742,7 +742,7 @@ layers:
               correlation_desc: "correlation_%lang%"
               litstrat_formation_bank: "litstrat_formation_bank_%lang%"
           # These names stay stable for all clients regardless of LANGUAGE= param
-          include_items: "label,gmu_desc,tecto_desc,litho_desc,chrono_desc,correlation_desc"
+          include_items: "label,gmu_desc,tecto_desc,litho_desc,chrono_desc,correlation_desc,stratilink"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             GMU_CODE: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT
