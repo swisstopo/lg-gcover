@@ -724,6 +724,16 @@ class MapServerGenerator:
                         ]
                     )
 
+            # Tolerance
+            if mapfile_config:
+                tolerance = getattr(mapfile_config, "tolerance", None)
+                if tolerance:
+                    lines.append(f'  TOLERANCE      {tolerance}')
+                    lines.append(f'  TOLERANCEUNITS pixels')
+
+
+
+
             # --- Projection ---
             lines.extend(
                 [

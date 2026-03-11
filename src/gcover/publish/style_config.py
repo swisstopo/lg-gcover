@@ -96,6 +96,9 @@ class MapfileGenerationConfig:
 
     rotation_field: Optional[str] = None
 
+    tolerance: Optional[int] = None
+    toleranceunits: Optional[str] = None
+
     def __post_init__(self):
         """Validate configuration"""
         if self.generation_mode == "manual" and not self.manual_mapfile_path:

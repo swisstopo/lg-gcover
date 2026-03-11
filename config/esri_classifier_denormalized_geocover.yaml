@@ -343,6 +343,7 @@ layers:
           mapfile_config:
             classes_mode: frozen
             symbol_scale: 12500
+            tolerance: 50
             metadata:
               wms_group_title: Linear Objects
           map_label: False
@@ -366,6 +367,7 @@ layers:
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
           mapfile_config:
             classes_mode: frozen
+            tolerance: 50
             metadata:
               wms_group_title: Linear Objects
           map_label: False  # Don't use mapfile LABEL, even if defined in .lyrx
@@ -392,6 +394,7 @@ layers:
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
           include_items: "kind_spec"
           mapfile_config:
+            tolerance: 50
             metadata:
               wms_group_title: Linear Objects
           map_label: False
@@ -411,6 +414,7 @@ layers:
           mapfile_config:
             classes_mode: frozen
             symbol_scale: 12500
+            tolerance: 50
             metadata:
               wms_group_title: Linear Objects
           map_label: False
@@ -431,6 +435,8 @@ layers:
           active: False
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}hilfs_karto
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
+          mapfile_config:
+            tolerance: 50
           map_label: False
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects  USING UNIQUE gid USING SRID=2056"
           fields:
@@ -448,6 +454,7 @@ layers:
           include_items: "kind_desc,ttec_name,ttec_lim_typ_desc,ttec_status_desc,ttec_lim_tect_b_desc"
           mapfile_config:
             classes_mode: frozen
+            tolerance: 50
             metadata:
               wms_group_title: Linear Objects
           map_label: False
@@ -473,6 +480,7 @@ layers:
           mapfile_config:
             classes_mode: frozen
             symbol_scale: 12500
+            tolerance: 50
             metadata:
               wms_group_title: Linear Objects
           map_label: False
