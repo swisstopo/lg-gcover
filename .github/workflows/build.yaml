@@ -20,12 +20,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Install miniconda
-        uses: conda-incubator/setup-miniconda@v3
+        uses: conda-incubator/setup-miniconda@v3.3.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           auto-update-conda: true
@@ -35,7 +35,7 @@ jobs:
 
 
       - name: Cache conda environment
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         with:
           path: |
             /usr/share/miniconda3/envs/${{ env.CONDA_ENV }}
@@ -115,12 +115,12 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         fetch-depth: 0
 
     - name: Install miniconda
-      uses: conda-incubator/setup-miniconda@v3
+      uses: conda-incubator/setup-miniconda@v3.3.0
       with:
           python-version: ${{ env.PYTHON_VERSION }}
           auto-update-conda: true
@@ -129,7 +129,7 @@ jobs:
           activate-environment: ${{ env.CONDA_ENV }}
 
     - name: Cache conda environment
-      uses: actions/cache@v3
+      uses: actions/cache@v5
       with:
           path: |
             /usr/share/miniconda3/envs/${{ env.CONDA_ENV }}
@@ -184,7 +184,7 @@ jobs:
         conda build conda-recipe
 
     - name: Upload Conda build artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7.0.0
       with:
           name: conda-artifacts
           path: ${{ steps.find_artifacts.outputs.conda_build_path }}
@@ -196,7 +196,7 @@ jobs:
               python -m build
 
     - name: Upload built artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7.0.0
       with:
               name: dist-artifacts
               path: dist/
