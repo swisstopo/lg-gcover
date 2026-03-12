@@ -20,12 +20,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Install miniconda
-        uses: conda-incubator/setup-miniconda@v3
+        uses: conda-incubator/setup-miniconda@v3.3.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           auto-update-conda: true
@@ -35,7 +35,7 @@ jobs:
 
 
       - name: Cache conda environment
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         with:
           path: |
             /usr/share/miniconda3/envs/${{ env.CONDA_ENV }}
