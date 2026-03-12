@@ -110,3 +110,18 @@
     # CENTER 6 2        # Center of the bounding box
     ANCHORPOINT 0.5 0  # Pins the tip  to the end of the line
   END
+
+  # For Erosionsrand
+  SYMBOL
+    NAME "vertline"
+    TYPE vector
+    FILLED true
+    POINTS
+      0 0
+      0 8
+      2 8
+      2 0
+      0 0
+    END # POINTS
+    ANCHORPOINT 0.5 0
+  END # SYMBOL

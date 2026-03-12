@@ -29,6 +29,13 @@ TABLES_TO_IMPORT := GC_GEOL_MAPPING_UNIT GC_LITSTRAT_FORMATION_BANK GC_CHRONO \
                     GC_UN_DEP_CHARACT_GC_CHARCAT GC_UN_DEP_COMPOSIT_GC_COMPOS GC_UN_DEP_MAT_TYPE_GC_LITHO
 
 
+# ANSI color codes
+RED    := \033[31m
+GREEN  := \033[32m
+YELLOW := \033[33m
+BLUE   := \033[34m
+BOLD   := \033[1m
+RESET  := \033[0m
 
 
 # --- Targets ---
@@ -41,22 +48,30 @@ help:
 	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Targets:"
-	@awk '/^### / { printf "\n%s\n", substr($$0, 5) } \
+	@awk '/^### / { printf "\n$(YELLOW)%s$(RESET)\n", substr($$0, 5) } \
 		 /^## /  { printf "  %-20s %s\n", $$2, substr($$0, index($$0, $$3)) }' \
 		 $(MAKEFILE_LIST) | sed 's/://'
 	@echo ""
 	@echo ""
-	@echo "Master GDB:           $(MASTER_GDB)"
-	@echo "Styles dir:           $(STYLES_DIR)"
-	@echo "DENORMALIZED GPKG:    $(DENORMALIZED_PATH)"
-	@echo "Classified:           $(CLASSIFIED_PATH)"
-	@echo "Translation:          $(TRANSLATION_CSV)"
-	@echo "Translated:           $(TRANSLATED_PATH)"
-	@echo "Surfaces auxilliary:  $(SURFACES_AUX_PATH)"
-	@echo "Output dir:           $(OUTPUT_DIR)"
-	@echo "Mapserver dir:        $(MAPSERVER_OUTPUT)"
-	@echo "Strati link xlsx:     $(STRATI_LINK_PATH)"
-	@echo "Translation CSV:      $(TRANSLATION_CSV)"
+	@echo "$(YELLOW)Input$(RESET)"
+	@echo "  Delivery GDBs:        $(DELIVERY_DIR)"
+	@echo "  Styles:               $(STYLES_DIR)"
+	@echo "  Translation CSV:      $(TRANSLATION_CSV)"
+	@echo "  Strati link xlsx:     $(STRATI_LINK_PATH)"
+	@echo ""
+	@echo "$(YELLOW)Output$(RESET)"
+	@echo "  Output dir:           $(OUTPUT_DIR)"
+	@echo "  Master GDB:           $(MASTER_GDB)"
+	@echo "  Denormalized GPKG:    $(DENORMALIZED_PATH)"
+	@echo "  Classified:           $(CLASSIFIED_PATH)"
+	@echo "  Translation:          $(TRANSLATION_CSV)"
+	@echo "  Translated:           $(TRANSLATED_PATH)"
+	@echo "  Surfaces auxilliary:  $(SURFACES_AUX_PATH)"
+	@echo ""
+	@echo "$(YELLOW)Mapserver$(RESET)"
+	@echo "  Mapserver dir:        $(MAPSERVER_OUTPUT)"
+
+
 
 
 

@@ -173,8 +173,32 @@ layers:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
           symbol_prefix: orient
+        - style_file: styles/Point_Objects.lyrx
+          index: 22
+          classification_name: Point_Objects
+          mapfile_name: pnt_objects
+          mapfile_group: point_features
+          maxscaledenom: 50000
+          map_label: True  # Use the .lyrx defined, if exists
+          mapfile_config:
+            rotation_field: map_angle
+            tolerance: 50
+            symbol_adjustments:
+              point_size_multiplier: 1.5
+            metadata:
+              wms_group_title: Point Objects
+          active: True
+          data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, map_symbol, map_angle FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects ) AS subquery  USING UNIQUE gid USING SRID=2056"
+          include_items: "kind_desc"
+          lang_fields:
+            kind_desc: "kind_%lang%"
+          filter: KIND NOT IN (10501001,10501002,10501003,10501004,10501005,11901001,12501001,12101006,12501002,12501003,12501004,12501006,13601001,13601002,13601003,13701001,13701002,13701004,13801001,13801002,13801003,13801004,13801005,13801006,14401001,14401002,14601004,14601006)
+          fields:
+            # Map GPKG field to classification field (can be complex paths)
+            KIND: KIND
+          symbol_prefix: pnt_objects
         - style_file: styles/Point_Objects_Bohrung_Fels_erreicht.lyrx
-          index: 23
+          index: 26
           classification_name: Point_Objects_Bohrung_Fels_erreicht
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}bohrung_fels_erreicht
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
@@ -183,6 +207,8 @@ layers:
           active: True
           map_label: abor_depth_tot
           mapfile_config:
+            symbol_scale: 12500
+            tolerance: 20
             symbol_adjustments:
               point_size_multiplier: 1.5
             metadata:
@@ -202,8 +228,9 @@ layers:
             KIND: KIND
             ABOR_FM_A: ABOR_FM_A
           symbol_prefix: bohrung_fels_erreicht
+
         - style_file: styles/Point_Objects_Sondierung.lyrx
-          index: 24
+          index: 27
           classification_name: Point_Objects_Sondierung
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}sondierung
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
@@ -229,7 +256,7 @@ layers:
             ABOR_DEPTH_BEDR: ABOR_DEPTH_BEDR
 
         - style_file: styles/Point_Objects_Bohrung_Fels_nicht_erreicht.lyrx
-          index: 25
+          index: 28
           classification_name: Point_Objects_Bohrung_Fels_nicht_erreicht
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}bohrung_fels_nicht_erreicht
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
@@ -255,7 +282,7 @@ layers:
             ABOR_DEPTH_BEDR: ABOR_DEPTH_BEDR
           symbol_prefix: bohrung_fels_nicht_erreicht
         - style_file: styles/Point Objects_Quelle.lyrx
-          index: 26
+          index: 29
           classification_name: Point Objects_Quelle
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}quelle
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
@@ -283,7 +310,7 @@ layers:
             HSUR_STATUS: HSUR_STATUS
           symbol_prefix: point_quelle
         - style_file: styles/Point Objects_Erraticker.lyrx
-          index: 27
+          index: 30
           classification_name: Point Objects_Erraticker
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}erratiker
@@ -345,7 +372,7 @@ layers:
           mapfile_config:
             classes_mode: frozen
             symbol_scale: 12500
-            tolerance: 50
+            tolerance: 20
             metadata:
               wms_group_title: Linear Objects
           map_label: False
