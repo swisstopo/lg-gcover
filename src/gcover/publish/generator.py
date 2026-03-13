@@ -363,96 +363,75 @@ class MapServerGenerator:
         if not lang_fields:
             return data
 
-        # ------------------------------------------------------------------
-        # Build the explicit base column list
-        # ------------------------------------------------------------------
-        # Start with mandatory columns (order matters for readability)
-        mandatory = ["gid", geom_col or "geom", "label"]
-        if symbol_field and symbol_field not in mandatory:
-            mandatory.append(symbol_field)
-        if label_col and label_col not in mandatory:
-            mandatory.append(label_col)
+            # 1. Define Priority Groups
+        head_names = ["gid", geom_col or "geom"]
+        tail_names = [n for n in [symbol_field, label_col or "label"] if n]
+        include_list = [c.strip() for c in (include_items or "").split(",") if c.strip()]
+        lang_aliases = set(lang_fields.keys())
 
-        # Add all columns from include_items, excluding those already covered
-        # by lang_fields aliases (which will be emitted as expressions, not plain cols)
-        lang_aliases = set(lang_fields.keys())  # alias names, e.g. {"gmu_desc", "tecto_desc"}
+        # 2. Parsing the MapServer DATA string
+        # Flag (?i) moved to the absolute start
+        pattern = r"(?i)^\s*(?P<geom_ref>\S+)\s+FROM\s+(?P<source>.*?)\s+(?P<clauses>USING.*)$"
+        match = re.match(pattern, data.strip(), re.DOTALL)
 
-        extra_cols: List[str] = []
-        if include_items:
-            for col in [c.strip() for c in include_items.split(",") if c.strip()]:
-                if col not in lang_aliases:  # aliases come from lang_fields, skip here
-                    extra_cols.append(col)
+        if not match:
+            return f"{geom_col or 'geom'} FROM ({data}) AS lang_sub USING UNIQUE gid"
 
-        # Deduplicate while preserving order
-        seen: set = set()
-        plain_cols: List[str] = []
-        for col in mandatory + extra_cols:
-            if col and col not in seen:
-                seen.add(col)
-                plain_cols.append(col)
+        geom_ref = match.group("geom_ref")
+        source_content = match.group("source").strip()
+        using_clauses = match.group("clauses").strip()
 
-        # Build alias expressions — %language% kept as runtime placeholder
-        # e.g. "gmu_%language% AS gmu_desc"
-        alias_exprs = [
-            f"{col_pattern} AS {alias}"
-            for alias, col_pattern in lang_fields.items()
-        ]
+        # FIXED REGEX: (?i) is now at the start, before the literal escaped parenthesis \(
+        subquery_pattern = r"(?i)\(\s*SELECT\s+(?P<cols>.*?)\s+FROM\s+(?P<table>.*?)\)\s+AS\s+(?P<alias>\w+)"
+        subquery_match = re.match(subquery_pattern, source_content, re.DOTALL)
 
-        full_select = ", ".join(plain_cols + alias_exprs)
-
-        # ------------------------------------------------------------------
-        # Case B: already has a subquery — replace its SELECT list
-        # ------------------------------------------------------------------
-        subquery_match = re.match(
-            r"(?i)^(\S+)\s+FROM\s+\(\s*SELECT\s+(.*?)\s+FROM\s+(.*?)\)\s+AS\s+(\w+)\s+(USING.*)$",
-            data.strip(),
-            re.DOTALL,
-        )
+        existing_cols = []
         if subquery_match:
-            geom_ref = subquery_match.group(1)
-            existing_cols = subquery_match.group(2)  # original SELECT list
-            from_clause = subquery_match.group(3)
-            alias_name = subquery_match.group(4)
-            using_clause = subquery_match.group(5)
+            existing_cols = [c.strip() for c in subquery_match.group("cols").split(",") if c.strip()]
+            from_table = subquery_match.group("table").strip()
+            alias_name = subquery_match.group("alias")
+        else:
+            from_table = source_content
+            alias_name = "lang_sub"
 
-            # Merge existing columns with our required list, deduplicating
-            existing_plain = [
-                c.strip() for c in existing_cols.split(",") if c.strip()
-            ]
-            for col in existing_plain:
-                bare = col.split()[-1]  # handle "expr AS alias" → take alias
-                if bare not in seen:
-                    seen.add(bare)
-                    plain_cols.append(col)  # preserve original expression
+        # 3. Assemble the ordered column dictionary
+        final_cols = {}
 
-            merged_select = ", ".join(plain_cols + alias_exprs)
+        def add_col(name: str, expr: str, force_tail: bool = False):
+            if name in tail_names and not force_tail:
+                return
+            if name not in final_cols:
+                final_cols[name] = expr
 
-            return (
-                f"{geom_ref} FROM "
-                f"(SELECT {merged_select} FROM {from_clause}) AS {alias_name} "
-                f"{using_clause}"
-            )
+        # TIER 1: Technical Head
+        for col in head_names:
+            add_col(col, col)
 
-        # ------------------------------------------------------------------
-        # Case A: plain table reference — wrap in explicit subquery
-        # ------------------------------------------------------------------
-        plain_match = re.match(
-            r"(?i)^(\S+)\s+FROM\s+(\S+)\s+(USING.*)$",
-            data.strip(),
-        )
-        if plain_match:
-            geom_ref = plain_match.group(1)
-            table_ref = plain_match.group(2)
-            using_clause = plain_match.group(3)
+        # TIER 2: Main Body (Include items + Translations)
+        for col in include_list:
+            if col in lang_aliases:
+                add_col(col, f"{lang_fields[col]} AS {col}")
+            else:
+                add_col(col, col)
 
-            return (
-                f"{geom_ref} FROM "
-                f"(SELECT {full_select} FROM {table_ref}) AS lang_sub "
-                f"{using_clause}"
-            )
+        # TIER 3: Residual Translations
+        for alias, pattern_str in lang_fields.items():
+            add_col(alias, f"{pattern_str} AS {alias}")
 
-        logger.warning(f"Could not parse DATA string for lang_fields injection: {data!r}")
-        return data
+        # TIER 4: Residual Subquery columns
+        for col_expr in existing_cols:
+            clean_name = col_expr.split()[-1] if " AS " in col_expr.upper() else col_expr
+            add_col(clean_name, col_expr)
+
+        # TIER 5: Technical Tail
+        for col in tail_names:
+            add_col(col, col, force_tail=True)
+
+        full_select = ", ".join(final_cols.values())
+
+        # 4. Final Reconstruction
+        # We ensure there's a space before USING to avoid "subqueryUSING"
+        return f"{geom_ref} FROM (SELECT {full_select} FROM {from_table}) AS {alias_name} {using_clauses}"
 
     def _build_validation_block(
             self,

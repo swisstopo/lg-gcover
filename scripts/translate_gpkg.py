@@ -377,12 +377,15 @@ def _strati_links(bedrock: gpd.GeoDataFrame,xlsx_path
     """Add translated columns to GDF; return (enriched_gdf, stats_list)."""
     stats = []
 
+    strati_link_col = "stratiLINK"
+
     # --- Lire la table de correspondance depuis le xlsx ---
     strati_df = pd.read_excel(
         xlsx_path,
-        usecols=["GeolCode_GMU", "stratiLINK"],
+        usecols=["GeolCode_GMU", strati_link_col],
         dtype={"GeolCode_GMU": "Int64"},  # nullable int, cohérent avec le GPKG
     )
+    strati_df = strati_df.rename(columns={strati_link_col: "strati_link"})
     strati_df = strati_df.dropna(subset=["GeolCode_GMU"])
 
 

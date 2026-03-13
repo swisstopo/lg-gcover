@@ -10,7 +10,7 @@ TRANSLATION_CSV := ${HOME}/code/github.com/lg-geology-data-model/exports/2026-02
 STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/R16/Excels/2026a_Update_stratiLINK.xlsx
 
 # File Paths
-MASTER_GDB        := $(OUTPUT_DIR)master_R16.gdb
+MASTER_GDB        := $(OUTPUT_DIR)merged_master.gdb
 DENORMALIZED_GPKG := denormalized.gpkg
 DENORMALIZED_PATH := $(OUTPUT_DIR)$(DENORMALIZED_GPKG)  # name auto
 CLASSIFIED_GPKG	  := denormalized_classified.gpkg
@@ -78,7 +78,7 @@ help:
 .PHONY: merge-diagnostic translate classify denormalize test lint format smoke install-dev doc
 ### Data
 ## all: Run the entire workflow (Merge -> Import -> Denormalize -> Symbolize)
-all: merge $(CLASSIFIED_PATH)
+all: merge $(CLASSIFIED_PATH) $(TRANSLATED_PATH)
 
 
 ## merge: Only perform the gcover merge and diagnosis
@@ -92,7 +92,8 @@ $(MASTER_GDB)/timestamps: $(DELIVERY_DIR)RC1.gdb $(DELIVERY_DIR)RC2.gdb
 		--rc2 $(DELIVERY_DIR)RC2.gdb \
 		--custom-sources-dir $(DELIVERY_DIR) \
 		--force-2d --output $(MASTER_GDB) \
-		--no-clip-to-swiss-border
+		--no-clip-to-swiss-border \
+		--enrich-mapsheet-links
 
 ## merge-diagnostic: Merge diagnostic
 merge-diagnostic:
