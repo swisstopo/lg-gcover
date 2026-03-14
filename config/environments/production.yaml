@@ -37,6 +37,6 @@ gdb:
   processing:
     max_workers: 2
     compression_level: 9
-  db_path: "data/prod_gdb_metadata.duckdb"
+  db_path: ${GCOVER_GDB_DUCKDB}
 
 
