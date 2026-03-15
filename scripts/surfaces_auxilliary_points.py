@@ -14,7 +14,7 @@ from rich.table import Table
 @click.option('--output', '-o', default="hex_multipoints.gpkg", help="Output filename.")
 @click.option('--spacing', '-s', default=80.0, help="Distance between points in meters.")
 @click.option('--buffer', '-b', default=40.0, help="Inset distance from polygon edge.")
-@click.option('--copy-polygons', '-d', is_flag=True, default=False, help="Copy the original polygons in GPKG")
+@click.option('--copy-polygons/--no-copy-polygons', '-d', is_flag=True, default=True, help="Copy the original polygons in GPKG")
 def generate_grid(input, layer, output, spacing, buffer, copy_polygons):
     """Generates a hexagonal MultiPoint grid within specified geologic features."""
 

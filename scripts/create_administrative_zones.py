@@ -10,6 +10,7 @@ Simplified script that handles the real data sources with their actual attribute
 2025-10-14  Added borders_100m layer (100m buffer around mapsheet borders)
 2026-01-28  Only warning if missing  `QA_SOURCE`
 2026-03-13  Adding BER and ERL, as well as complete links
+2026-03-15  Removed the `QA_SOURCE` completly
 """
 
 import os
@@ -30,9 +31,6 @@ from shapely.ops import unary_union
 warnings.filterwarnings("ignore", category=UserWarning)
 
 DEFAULT_CRS = "EPSG:2056"
-
-ERLAUETERUNG_LINK = "https://data.geo.admin.ch/ch.swisstopo.geologie-geologischer_atlas/erlaeuterungen/GA25-ERL-"
-BERICHT_LINK =      "https://data.geo.admin.ch/ch.swisstopo.geologie-geocover/berichte/BER_"
 
 console = Console()
 
@@ -183,25 +181,11 @@ def load_sources(sources_path: Path) -> pd.DataFrame:
             "SOURCE_QA",
             "Version",
             "Notice",
-            "Remark",
-            "BER",
-            "ERL"
         ]:
             if col in sources_df.columns:
                 keep_cols.append(col)
 
         sources_clean = sources_df[keep_cols].copy()
-
-        # Link
-
-        sources_clean["erl_link"] = sources_clean.apply(
-            lambda row: f"{ERLAUETERUNG_LINK}{row['MSH_MAP_NBR']}.pdf" if row["ERL"] == "y" else "",
-            axis=1
-        )
-        sources_clean["ber_link"] = sources_clean.apply(
-            lambda row: f"{BERICHT_LINK}{row['MSH_MAP_NBR']}.pdf" if row["BER"] == "y" else "",
-            axis=1
-        )
 
         logger.info(
             f"Loaded {len(sources_clean)} source records with columns: {list(sources_clean.columns)}"
@@ -572,11 +556,11 @@ def create_administrative_zones(
 ):
     """
     Create administrative_zones.gpkg for QA analysis.
-    
+
     This script processes the 4 standardized source files into a single GPKG
     with separate layers for QA analysis. It handles the real data structure
     and attributes without assuming perfect standardization.
-    
+
     Example:
         python scripts/create_administrative_zones.py \\
             --lots-file data/lots.geojson \\
@@ -586,8 +570,7 @@ def create_administrative_zones(
             --output gcover/data/administrative_zones.gpkg \\
             --overwrite
     """
-    has_qa_source_column = False
-    
+
     if verbose:
         logger.add(lambda msg: click.echo(msg, err=True), level="DEBUG")
 
@@ -690,13 +673,15 @@ def create_administrative_zones(
                "Version",
         ]
 
-        if 'SOURCE_QA' in sources_df.columns:
-            mapsheet_cols.append('SOURCE_QA')
-            has_qa_source_column = True
-            SOURCES_COLUMNS = ("SOURCE_RC", "SOURCE_QA")
-        else:
-            click.echo(click.style(f"WARNING: Missing column `SOURCE_QA`", fg='red'))
-            SOURCES_COLUMNS = ("SOURCE_RC", )
+        missing_cols = sorted(set(mapsheet_cols) - set(sources_df.columns))
+
+        if missing_cols:
+            click.secho("Error: The DataFrame is missing required columns:", fg="red", bold=True)
+            for col in missing_cols:
+                click.secho(f"  • {col}", fg="yellow")
+            # raise click.Abort()
+        SOURCES_COLUMNS = ("SOURCE_RC",)
+
 
 
 
@@ -808,16 +793,13 @@ def create_administrative_zones(
             if source_col in mapsheets_with_sources.columns:
                 validation_str += validate_column(mapsheets_with_sources, source_col)
 
-        source_diff_str=''
-        if has_qa_source_column:
-            source_diff_str = sources_diff(mapsheets_with_sources)
 
         # Write the docstring to a file
         now = dt.now().strftime("%Y-%m-%d %H:%M:%S")
 
         layers = fiona.listlayers(output_path)
         layer_string = "\n * ".join(layers)
-        docstring = f"""{__doc__ or ""}\nXLSX file:{str(sources_file)}\nLayer list:\n * {layer_string}\n\n-- 'mapsheets_sources_only' --\n\n{validation_str}\n{source_diff_str}\n\nGenerated on {now}"""
+        docstring = f"""{__doc__ or ""}\n\nXLSX file:{str(sources_file)}\n\nLayer list:\n * {layer_string}\n\n-- 'mapsheets_sources_only' --\n\n{validation_str}\n\n\nGenerated on {now}"""
         output_without_ext = output_path.with_suffix("")
         with open(output_without_ext.with_suffix(".README"), "w", encoding="utf-8") as f:
             f.write(docstring)
@@ -834,8 +816,7 @@ def create_administrative_zones(
         click.echo(
             f"   📋 Available attributes: {', '.join([col for col in mapsheets_complete.columns if col != 'geometry'])}"
         )
-        if not has_qa_source_column:
-               click.echo(click.style( f"   Missing column `QA_SOURCE`: only for Produkt Ableitung", fg='red'))
+
 
     except Exception as e:
         logger.error(f"Failed to create administrative zones: {e}")
