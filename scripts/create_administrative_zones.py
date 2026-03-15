@@ -9,6 +9,7 @@ Simplified script that handles the real data sources with their actual attribute
 2025-10-13  Added sources `SOURCE_QA`  for QA (before publication)
 2025-10-14  Added borders_100m layer (100m buffer around mapsheet borders)
 2026-01-28  Only warning if missing  `QA_SOURCE`
+2026-03-13  Adding BER and ERL, as well as complete links
 """
 
 import os
@@ -29,6 +30,9 @@ from shapely.ops import unary_union
 warnings.filterwarnings("ignore", category=UserWarning)
 
 DEFAULT_CRS = "EPSG:2056"
+
+ERLAUETERUNG_LINK = "https://data.geo.admin.ch/ch.swisstopo.geologie-geologischer_atlas/erlaeuterungen/GA25-ERL-"
+BERICHT_LINK =      "https://data.geo.admin.ch/ch.swisstopo.geologie-geocover/berichte/BER_"
 
 console = Console()
 
@@ -179,11 +183,25 @@ def load_sources(sources_path: Path) -> pd.DataFrame:
             "SOURCE_QA",
             "Version",
             "Notice",
+            "Remark",
+            "BER",
+            "ERL"
         ]:
             if col in sources_df.columns:
                 keep_cols.append(col)
 
         sources_clean = sources_df[keep_cols].copy()
+
+        # Link
+
+        sources_clean["erl_link"] = sources_clean.apply(
+            lambda row: f"{ERLAUETERUNG_LINK}{row['MSH_MAP_NBR']}.pdf" if row["ERL"] == "y" else "",
+            axis=1
+        )
+        sources_clean["ber_link"] = sources_clean.apply(
+            lambda row: f"{BERICHT_LINK}{row['MSH_MAP_NBR']}.pdf" if row["BER"] == "y" else "",
+            axis=1
+        )
 
         logger.info(
             f"Loaded {len(sources_clean)} source records with columns: {list(sources_clean.columns)}"

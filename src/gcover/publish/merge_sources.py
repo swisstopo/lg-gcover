@@ -18,9 +18,12 @@ import warnings
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from collections import defaultdict
+
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 import geopandas as gpd
+import fiona
 import numpy as np
 import pandas as pd
 from loguru import logger
@@ -34,6 +37,8 @@ from shapely.geometry import (GeometryCollection, LineString, MultiLineString,
                               MultiPoint, MultiPolygon, Point, Polygon)
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import linemerge, unary_union
+from shapely import STRtree
+
 
 from gcover.core.geometry import (load_gpkg_with_validation,
                                   validate_and_repair_geometries)
@@ -562,7 +567,7 @@ class MergeConfig:
         "GC_ROCK_BODIES/GC_FOSSILS",
         "GC_ROCK_BODIES/GC_EXPLOIT_GEOMAT_PLG",
         "GC_ROCK_BODIES/GC_EXPLOIT_GEOMAT_PT",
-        "GC_ROCK_BODIES/GC_MAPSHEET",
+        # "GC_ROCK_BODIES/GC_MAPSHEET",
         # For Increment
         "D_GC_EXPLOIT_GEOMAT_PLG",
         "M_GC_EXPLOIT_GEOMAT_PLG",
@@ -625,6 +630,13 @@ class MergeConfig:
     
     # Fields to exclude from output (metadata fields, etc.)
     exclude_fields: Optional[List[str]] = None
+
+    # Post-processing options
+    split_by_mapsheet: bool = False  # Split polygon/line features at mapsheet boundaries
+    enrich_mapsheet_links: bool = False  # Add erl_link/ber_link per feature (requires split_by_mapsheet)
+    mapsheet_transfer_cols: List[str] = field(default_factory=lambda: [
+        "MSH_MAP_NBR", "MSH_MAP_TITLE", "SOURCE_RC"
+    ])
     
 
 @dataclass
@@ -730,7 +742,36 @@ class GDBMerger:
                 logger.debug(f"  Registered custom source: {gdb_path}")
                 
         logger.info(f"Configured {len(self.sources)} source(s)")
-                
+
+    def _build_enrichment_index(self) -> None:
+        """
+        Build a reusable STRtree on the 221 mapsheet polygons.
+        Called once; reused by every _enrich_with_mapsheet_links() call.
+        """
+        link_cols = [c for c in ("erl_link", "ber_link")
+                     if c in self.mapsheets_gdf.columns]
+        if not link_cols:
+            self._enrichment_tree = None
+            self._enrichment_links = {}
+            return
+
+        # Arrays parallel to the tree — index i → mapsheet i's link values
+        self._enrichment_tree = STRtree(self.mapsheets_gdf.geometry.values)
+        self._enrichment_links = {
+            col: self.mapsheets_gdf[col].to_numpy()
+            for col in link_cols
+        }
+        logger.info(f"Enrichment index built: {len(self.mapsheets_gdf)} mapsheets, "
+                    f"cols={link_cols}")
+
+    def _layer_exists(self, gdb_path: Path, layer_name: str) -> bool:
+        actual_name = self._get_layer_path(gdb_path, layer_name)
+        if not hasattr(self, '_layer_cache'):
+            self._layer_cache: Dict[Path, Set[str]] = {}
+        if gdb_path not in self._layer_cache:
+            self._layer_cache[gdb_path] = set(fiona.listlayers(gdb_path))
+        return actual_name in self._layer_cache[gdb_path]
+
     def _load_mapsheets(self) -> gpd.GeoDataFrame:
         """Load mapsheets with source assignments."""
         
@@ -1110,7 +1151,8 @@ class GDBMerger:
         # Load mapsheets and create optimized masks
         self._load_mapsheets()
         self._create_source_masks()
-        
+        self._build_enrichment_index()  # for links enrichment
+
         # Display source summary
         self._display_source_summary()
         
@@ -1119,8 +1161,8 @@ class GDBMerger:
         # Process spatial layers
         merged_layers = {}
         
-        console.print("\n[cyan]Processing spatial layers...[/cyan]")
-        
+        console.print("\n[bold chartreuse2]===== Processing spatial layers... =====[/bold chartreuse2]")
+
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -1129,13 +1171,28 @@ class GDBMerger:
             console=console,
             transient=not self.verbose
         ) as progress:
-            
-            layers_task = progress.add_task(
-                "[cyan]Processing spatial layers...",
-                total=len(self.config.spatial_layers)
+
+            actual_spatial_layers = [
+              layer_name
+              for layer_name in self.config.spatial_layers
+              if any(
+                self._layer_exists(src.path, layer_name)
+                for src in self.sources.values()
+              )
+            ]
+
+            _spatial_layers_nb = len(actual_spatial_layers)
+            logger.info(
+              f"{_spatial_layers_nb}/{len(self.config.spatial_layers)} configured layers "
+              f"found across {len(self.sources)} source(s)"
             )
 
-            for layer_name in self.config.spatial_layers:
+            layers_task = progress.add_task(
+               f"[cyan]Processing {_spatial_layers_nb} spatial layers...",   # ← proper f-string
+               total=_spatial_layers_nb
+            )
+
+            for layer_name in actual_spatial_layers:
                 layer_start = time.time()
                 actual_layer = layer_name.split("/")[-1]
                 
@@ -1156,9 +1213,43 @@ class GDBMerger:
                     console.print(f"  [yellow]○[/yellow] {actual_layer}: no features")
                     
                 progress.advance(layers_task)
-        
+
+        # Optional post-processing: split at mapsheet boundaries / enrich links
+        console.print("\n[bold chartreuse2]===== Post processing =====[/bold chartreuse2]")
+
+        if self.config.split_by_mapsheet:
+            merged_layers = self._post_process_layers(merged_layers)
+
+        if self.config.enrich_mapsheet_links:
+          with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                console=console,
+                transient=not self.verbose
+        ) as progress:
+            layers_task = progress.add_task(
+                "Enriching features with mapsheet PDF links...",
+                total=len(merged_layers)
+            )
+
+            for layer_name in list(merged_layers.keys()):
+                layer_start = time.time()
+                progress.update(
+                    layers_task,
+                    description=f"[cyan]Enriching {layer_name} with links..."
+                )
+                merged_layers[layer_name] = self._enrich_with_mapsheet_links(
+                    merged_layers[layer_name], layer_name
+                )
+                layer_elapsed = time.time() - layer_start
+                console.print(f"  [green]✓[/green] {layer_name} ({layer_elapsed:.1f}s)")
+                progress.advance(layers_task)
+
+
         # Save merged spatial layers
-        console.print("\n[cyan]Saving merged spatial layers...[/cyan]")
+        console.print("\n[bold chartreuse2]===== Saving merged spatial layers... =====[/bold chartreuse2]")
         self._save_merged_layers(merged_layers)
         
         # Copy non-spatial tables
@@ -1171,6 +1262,196 @@ class GDBMerger:
         self._display_results(total_elapsed)
         
         return self.stats
+
+    def _enrich_with_mapsheet_links(
+            self,
+            gdf: gpd.GeoDataFrame,
+            layer_name: str,
+    ) -> gpd.GeoDataFrame:
+        """
+        Enrich features with erl_link / ber_link from mapsheets.
+
+        - After split: each feature belongs to exactly one mapsheet → direct sjoin.
+        - Without split: a feature may span many mapsheets → links are pipe-joined,
+          e.g. "https://example.com/a.pdf|https://example.com/b.pdf".
+        """
+
+        if self._enrichment_tree is None:
+            logger.warning("No enrichment index — skipping link enrichment")
+            return gdf
+
+        link_cols = list(self._enrichment_links.keys())
+        if not link_cols:
+            logger.warning("erl_link / ber_link not found in mapsheets layer — skipping enrichment")
+            return gdf
+        actual_layer = layer_name.split("/")[-1]
+        expected_type = get_expected_geometry_type(layer_name)
+        is_point = expected_type in ("MultiPoint", "Point")
+
+        # ── 1. Representative points (one per feature, vectorized) ──────────
+        rep_pts = (
+            gdf.geometry.values  # already points
+            if is_point
+            else gdf.geometry.representative_point().values  # centroid-like, always inside
+        )
+
+        # ── 2. STRtree bulk query — returns (mapsheet_idx[], feature_idx[]) ─
+        #    predicate='within': point is within mapsheet polygon
+        # The STRtree is built from mapsheets (221).
+        # Queried with rep_pts (295188 features).
+        # Shapely 2.0 returns (input_indices, tree_indices) = (feat_idx, mapsheet_idx)
+        feat_idx, mapsheet_idx = self._enrichment_tree.query(rep_pts, predicate="within")
+        #          ^^^^^^^^^^ 0..295187                  ^^^^^^^^^^ 0..220
+        logger.debug(f"feat_idx  range: {feat_idx.min()}–{feat_idx.max()}, mapsheets size: {len(self.mapsheets_gdf)}")
+        logger.debug(f"mapsheet_idx range: {mapsheet_idx.min()}–{mapsheet_idx.max()}, features size: {len(gdf)}")
+
+        # tree_idx  → indices into self.mapsheets_gdf  (0..220)
+        # query_idx → indices into rep_pts / gdf       (0..n_features-1)
+        # Both arrays have the same length; entry k means:
+        #   rep_pts[feat_idx[k]] is within mapsheets[mapsheet_idx[k]]
+
+        # ── 3. Assign links ─────────────────────────────────────────────────
+        if self.config.split_by_mapsheet:
+            # 1:1 — take first match only (features were already split)
+            for col in link_cols:
+                vals = np.full(len(gdf), None, dtype=object)
+                _, first = np.unique(feat_idx, return_index=True)
+                vals[feat_idx[first]] = self._enrichment_links[col][mapsheet_idx[first]]
+                gdf[col] = vals
+        else:
+            # 1:N — use full geometry + intersects so features crossing
+            # mapsheet boundaries collect links from all touched mapsheets.
+            feat_idx, mapsheet_idx = self._enrichment_tree.query(
+                gdf.geometry.values, predicate="intersects"
+            )
+            for col in link_cols:
+                link_arr = self._enrichment_links[col]
+                bucket: dict[int, list] = defaultdict(list)
+                for fi, mi in zip(feat_idx, mapsheet_idx):
+                    v = link_arr[mi]
+                    if v and str(v).strip():
+                        bucket[fi].append(str(v))
+
+                vals = np.full(len(gdf), None, dtype=object)
+                for fi, links in bucket.items():
+                    seen = dict.fromkeys(links)  # deduplicate, preserve order
+                    vals[fi] = "|".join(seen) if seen else None
+                gdf[col] = vals
+
+        # ── 4. Report ────────────────────────────────────────────────────────
+        table = Table(title=f"Link statistics for layer: {actual_layer}")
+
+        table.add_column("Column", style="cyan", no_wrap=True)
+        table.add_column("Matched", style="green")
+        table.add_column("Total", style="white")
+        table.add_column("Multi‑mapsheet", style="magenta")
+
+        for col in link_cols:
+            n_matched = gdf[col].notna().sum()
+
+            if not self.config.split_by_mapsheet:
+                n_multi = gdf[col].str.contains("|", regex=False).sum()
+            else:
+                n_multi = 0
+
+            table.add_row(
+                col,
+                f"{n_matched:,}",
+                f"{len(gdf):,}",
+                f"{n_multi:,}" if n_multi else "-"
+            )
+
+        console.print(table)
+
+        return gdf
+
+    def _split_layer_by_mapsheets(
+            self,
+            gdf: gpd.GeoDataFrame,
+            layer_name: str,
+    ) -> gpd.GeoDataFrame:
+        """
+        Split polygon/line features along mapsheet boundaries via overlay,
+        or assign mapsheet attributes to point features via sjoin.
+
+        After this step every feature belongs to exactly one mapsheet,
+        making erl_link/ber_link enrichment unambiguous.
+        """
+        expected_type = get_expected_geometry_type(layer_name)
+        is_point = expected_type in ("MultiPoint", "Point")
+
+        # Build the slim mapsheets GDF to join/overlay against
+        transfer_cols = list(self.config.mapsheet_transfer_cols)
+        if self.config.enrich_mapsheet_links:
+            for col in ("erl_link", "ber_link"):
+                if col in self.mapsheets_gdf.columns and col not in transfer_cols:
+                    transfer_cols.append(col)
+                elif col not in self.mapsheets_gdf.columns:
+                    logger.warning(f"Column '{col}' not found in mapsheets layer — skipping")
+
+        mapsheets_slim = self.mapsheets_gdf[["geometry", *transfer_cols]].copy()
+
+        before = len(gdf)
+
+        if is_point:
+            # Points: simple within-join, no geometry splitting needed
+            result = gpd.sjoin(gdf, mapsheets_slim, how="left", predicate="within")
+            result = result.drop(columns=["index_right"], errors="ignore")
+            # Guard: point exactly on a shared boundary → keep first match only
+            result = result[~result.index.duplicated(keep="first")]
+        else:
+            # Polygon / line: overlay splits features at mapsheet edges
+            # keep_geom_type=True drops degenerate points/lines that appear
+            # when two polygons share only an edge after intersection
+            result = gpd.overlay(
+                gdf,
+                mapsheets_slim,
+                how="intersection",
+                keep_geom_type=True,
+            )
+
+        after = len(result)
+        n_unmatched = result[transfer_cols[0]].isna().sum() if transfer_cols else 0
+
+
+        #for stale_id_col in ("UUID", "OBJECTID", "OID", "FID"):
+        #    if stale_id_col in result.columns:
+        #        result = result.drop(columns=[stale_id_col])
+        #        logger.info(f"  Dropped stale ID column '{stale_id_col}' after split")
+
+        logger.info(
+            f"  {layer_name.split('/')[-1]}: "
+            f"{'split' if not is_point else 'joined'} "
+            f"{before:,} → {after:,} features"
+            + (f" ({n_unmatched} unmatched)" if n_unmatched else "")
+        )
+
+        return result
+
+    def _post_process_layers(
+            self,
+            merged_layers: Dict[str, gpd.GeoDataFrame],
+    ) -> Dict[str, gpd.GeoDataFrame]:
+        """
+        Optional post-merge step: split features at mapsheet boundaries
+        and/or enrich with mapsheet PDF links (erl_link, ber_link).
+        """
+        action = "Splitting + enriching" if self.config.enrich_mapsheet_links else "Splitting"
+        console.print(f"\n[cyan]{action} features along mapsheet boundaries...[/cyan]")
+
+        result = {}
+        for layer_name, gdf in merged_layers.items():
+            actual = layer_name.split("/")[-1]
+            try:
+                processed = self._split_layer_by_mapsheets(gdf, layer_name)
+                result[layer_name] = processed
+                console.print(f"  [green]✓[/green] {actual}: {len(processed):,} features")
+            except Exception as e:
+                logger.error(f"Post-processing failed for {actual}: {e}")
+                self.stats.errors.append(f"Post-process {actual}: {e}")
+                result[layer_name] = gdf  # fall back to unsplit layer
+
+        return result
     
     def _validate_config(self) -> None:
         """Validate merge configuration."""
@@ -1183,6 +1464,8 @@ class GDBMerger:
             
         if not self.sources:
             raise ValueError("No valid sources configured")
+
+
             
         has_standard = any(
             s.source_type in [SourceType.RC1, SourceType.RC2] 
@@ -1436,6 +1719,8 @@ def create_merge_config(
     reference_source: str = "RC2",
     use_convex_hull_masks: bool = True,
     clip_to_swiss_border: bool = True,
+    split_by_mapsheet: bool = False,
+    enrich_mapsheet_link: bool = False,
 ) -> MergeConfig:
     """Create a merge configuration with sensible defaults."""
     
@@ -1450,4 +1735,6 @@ def create_merge_config(
         reference_source=reference_source,
         use_convex_hull_masks=use_convex_hull_masks,
         clip_to_swiss_border=clip_to_swiss_border,
+        split_by_mapsheet=split_by_mapsheet,
+        enrich_mapsheet_link=enrich_mapsheet_link,
     )

@@ -1,4 +1,5 @@
 from pathlib import Path
+import pandas as pd
 from typing import Dict, List, Optional, Set, Tuple, Union
 from gcover.publish.diff_tools import detect_changes, print_changes, launch_diff_tool
 from gcover.publish.generator import MapServerGenerator
@@ -164,3 +165,42 @@ def handle_staging_result(
                 logger.info(f"   3. git add {original_file}")
                 logger.info(f"   4. git commit -m 'Merge changes from .lyrx update'")
                 logger.info("")
+
+
+def export_unique_items_to_excel(
+        data_dict: dict,
+        output_path: Path,
+        columns: list = None
+) -> Path:
+    """
+    Extracts unique, stripped strings from a dict of comma-separated values
+    and saves them to an Excel file.
+    """
+    if columns is None:
+        columns = ["id", "de", "fr"]
+
+    # 1. Extraction Logic
+    # We use a set comprehension for uniqueness and built-in filtering
+    unique_items = {
+        item.strip()
+        for value in data_dict.values()
+        if value  # Handles None, empty strings, or empty lists
+        for item in str(value).split(',')
+        if item.strip()
+    }
+
+    # 2. DataFrame Creation
+    # We sort here to ensure the Excel file is predictable/ordered
+    df = pd.DataFrame(sorted(unique_items), columns=[columns[0]])
+
+    # Add any extra empty columns requested
+    for col in columns[1:]:
+        df[col] = ""
+
+    # 3. Save with error handling
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_excel(output_path, index=False)
+        return output_path
+    except Exception as e:
+        raise IOError(f"Failed to save Excel file to {output_path}: {e}")

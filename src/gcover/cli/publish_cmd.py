@@ -53,7 +53,7 @@ from gcover.publish.writeback import (build_uuid_lookup,
 from gcover.cli.symbols_cli import symbols_commands
 
 from gcover.cli.publish_helper import (handle_staging_result,get_all_frozen_classifications,
-get_all_classifications, list_all_classification_names)
+get_all_classifications, list_all_classification_names, export_unique_items_to_excel)
 
 
 
@@ -1300,6 +1300,20 @@ def mapserver(
         # Process each classification
         logger.debug(f"Active classes: {active_classes}")
 
+        def get_unique_fields(raw_str, extra_item=None):
+            """Parses a comma-separated string, adds an extra item,
+            and returns a unique comma-separated string preserving order."""
+            # Split and clean
+            items = [s.strip() for s in raw_str.split(',') if s.strip()]
+
+            # Use a dictionary to maintain insertion order (Python 3.7+)
+            ordered_map = {item: None for item in items}
+
+            if extra_item:
+                ordered_map[extra_item] = None
+
+            return ",".join(ordered_map.keys())
+
 
 
         for layer_classification in layer_classifications:
@@ -1319,7 +1333,6 @@ def mapserver(
 
 
             # 2. Robust include_items logic
-            # TODO: re-do the items logic
             raw_include = include_items_dict.get(layer_name) or ""
 
             if gml_items == 'all':
@@ -1327,29 +1340,27 @@ def mapserver(
                 method_msg = "[magenta]Full Export (All Fields)[/magenta]"
 
             elif gml_items == 'label':
-                # Safely extract label field
                 label_field = getattr(config, 'label_field', None)
 
-                # Cleanly parse existing items into a set to avoid duplicates
-                fields = {s.strip() for s in raw_include.split(',') if s.strip()}
-
                 if label_field:
-                    fields.add(label_field)
+                    # Use the helper to merge label_field while keeping order
+                    include_items = get_unique_fields(raw_include, label_field)
                     method_msg = f"[blue]Label-Optimized[/blue] (Included: {label_field})"
                 else:
+                    # Fallback if label_field is missing
+                    include_items = get_unique_fields(raw_include)
                     method_msg = "[yellow]Warning: No label_field found in batch_config[/yellow]"
 
-                include_items = ",".join(sorted(fields))
-
             else:
-                include_items = raw_include if raw_include else "all"
+                # Standard mode: just ensure the string is clean/unique but keep order
+                include_items = get_unique_fields(raw_include) if raw_include else "all"
                 method_msg = "[green]Standard (Config-based)[/green]"
 
             # 3. Visual Feedback per Layer
             if is_active:
-                    console.print(f"• [bold]{layer_name:<20}[/bold] | Mode: {method_msg}")
-                    if include_items:
-                        console.print(f"  [dim]Fields: {include_items}[/dim]")
+                console.print(f"• [bold]{layer_name:<20}[/bold] | Mode: {method_msg}")
+                if include_items:
+                    console.print(f"  [dim]Fields: {include_items}[/dim]")
             else:
                 console.print(
                     f"  [bold orange1]Skipping {layer_name} (inactive)[/bold orange1]"
@@ -1406,7 +1417,6 @@ def mapserver(
             all_classifications.append(layer_classification)
 
 
-
     # Generate combined symbol file if requested
     if generate_combined and all_classifications:
         # Generate fontset
@@ -1435,15 +1445,24 @@ def mapserver(
         )
         console.print(f"[dim]Used {len(generator.fonts_used)} fonts[/dim]")
 
-        console.print(f"[cyan]Includes for the main mapfile[/cyan]")
-        for mapfile in reversed(mapfiles):  # TOP: drawn first...
-            console.print(f'INCLUDE "layers/{mapfile}"')
+
 
     # Summary
     console.print(
         f"\n[bold green]✅ Generated {len(generated_files)} mapfile(s)[/bold green]"
     )
     console.print(f"[dim]Output directory: {output_dir}[/dim]")
+
+    console.print(f"[cyan]Includes for the main mapfile[/cyan]")
+    for mapfile in reversed(mapfiles):  # TOP: drawn first...
+        console.print(f'INCLUDE "layers/{mapfile}"')
+
+    item_file = export_unique_items_to_excel(
+        include_items_dict,
+        output_dir / "items_name.xlsx"
+    )
+    console.print(f"[cyan]Items list:[/cyan]")
+    console.print(f"  [green]✓[/green] Item names: {item_file}")
 
 
 @publish_commands.command()
@@ -1991,7 +2010,19 @@ def show_sample_data(layer_name: str, sample_gdf: gpd.GeoDataFrame):
     "--layers",
     "-l",
     multiple=True,
-    help="Specific spatial layers to process (default: all standard layers)",
+    help="Specific spatial layers to process e.g. `GC_ROCK_BODIES/GC_BEDROCK`  (default: all standard layers)",
+)
+@click.option(
+    "--split-by-mapsheet",
+    is_flag=True,
+    default=False,
+    help="Split polygon/line features at mapsheet boundaries and assign MSH_MAP_NBR to all features.",
+)
+@click.option(
+    "--enrich-mapsheet-links",
+    is_flag=True,
+    default=False,
+    help="Add erl_link / ber_link from mapsheets to every feature. Requires --split-by-mapsheet.",
 )
 @click.option(
     "--skip-tables",
@@ -2029,6 +2060,8 @@ def merge(
         mapsheets: Optional[str],
         reference_source: str,
         layers: tuple,
+        split_by_mapsheet: bool,
+        enrich_mapsheet_links: bool,
         skip_tables: bool,
         force_2d: bool,
         clip_to_swiss_border: bool,
@@ -2155,7 +2188,8 @@ def merge(
         use_convex_hull_masks=True,
         clip_to_swiss_border=clip_to_swiss_border,
         validate_geometries=validate_geometries,
-
+        split_by_mapsheet=split_by_mapsheet,
+        enrich_mapsheet_links=enrich_mapsheet_links,
     )
 
 
@@ -2230,6 +2264,9 @@ def _display_merge_config(config: MergeConfig, dry_run: bool) -> None:
     table.add_column("Setting", style="cyan")
     table.add_column("Value", style="green")
 
+    def _bool_cell(value: bool) -> str:
+        return "[green]✓[/green]" if value else "[dim]✗[/dim]"
+
     # Sources
     if config.rc1_path:
         status = "✓" if config.rc1_path.exists() else "✗"
@@ -2265,6 +2302,8 @@ def _display_merge_config(config: MergeConfig, dry_run: bool) -> None:
     table.add_row("Spatial Layers", str(len(config.spatial_layers)))
     table.add_row("Reference Tables", str(len(config.non_spatial_tables)))
     table.add_row("Reference Source", config.reference_source)
+    table.add_row("Splitting by mapsheet", _bool_cell(config.split_by_mapsheet))
+    table.add_row("Add links to PDFs", _bool_cell(config.enrich_mapsheet_links))
 
     # Geometry handling
     z_mode = "Preserve Z (3D)" if config.preserve_z else "Force 2D"

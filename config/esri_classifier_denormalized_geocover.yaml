@@ -372,7 +372,7 @@ layers:
           mapfile_config:
             classes_mode: frozen
             symbol_scale: 12500
-            tolerance: 20
+            tolerance: 10
             metadata:
               wms_group_title: Linear Objects
           map_label: False
@@ -396,7 +396,7 @@ layers:
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
           mapfile_config:
             classes_mode: frozen
-            tolerance: 50
+            tolerance: 10
             metadata:
               wms_group_title: Linear Objects
           map_label: False  # Don't use mapfile LABEL, even if defined in .lyrx
@@ -423,7 +423,7 @@ layers:
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
           include_items: "kind_spec"
           mapfile_config:
-            tolerance: 50
+            tolerance: 10
             metadata:
               wms_group_title: Linear Objects
           map_label: False
@@ -443,7 +443,7 @@ layers:
           mapfile_config:
             classes_mode: frozen
             symbol_scale: 12500
-            tolerance: 50
+            tolerance: 10
             metadata:
               wms_group_title: Linear Objects
           map_label: False
@@ -465,7 +465,7 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}hilfs_karto
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
           mapfile_config:
-            tolerance: 50
+            tolerance: 10
           map_label: False
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects  USING UNIQUE gid USING SRID=2056"
           fields:
@@ -483,7 +483,7 @@ layers:
           include_items: "kind_desc,ttec_name,ttec_lim_typ_desc,ttec_status_desc,ttec_lim_tect_b_desc"
           mapfile_config:
             classes_mode: frozen
-            tolerance: 50
+            tolerance: 10
             metadata:
               wms_group_title: Linear Objects
           map_label: False
@@ -509,7 +509,7 @@ layers:
           mapfile_config:
             classes_mode: frozen
             symbol_scale: 12500
-            tolerance: 50
+            tolerance: 10
             metadata:
               wms_group_title: Linear Objects
           map_label: False
@@ -569,7 +569,7 @@ layers:
           mapfile_config:
             classes_mode: frozen
             symbol_scale: 12000
-          include_items: "label,kind_desc,aarc_epoch_desc"
+          include_items: "kind_desc,aarc_epoch_desc,erl_link,ber_link"
           map_label: False
           #data: "geom from (SELECT * from surfaces where map_symbol IS NOT NULL) as blabla using unique gid using srid=2056"
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}surfaces USING UNIQUE gid USING SRID=2056"
@@ -606,7 +606,7 @@ layers:
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}unconsolidated
           maxscaledenom: 50000
           map_label: False
-          include_items: "runc_litho,runc_litstrat,runc_chrono"
+          include_items: "runc_litho,runc_litstrat,runc_chrono,erl_link,ber_link"
           mapfile_config:
             classes_mode: frozen
             symbol_scale: 12000
@@ -639,7 +639,7 @@ layers:
             runc_litho: "runc_litho_%lang%"
             runc_chrono: "runc_chrono_combined_%lang%"
           map_label: False
-          include_items: "runc_litho,runc_litstrat,runc_chrono"
+          include_items: "runc_litho,runc_litstrat,runc_chrono,erl_link,ber_link"
           mapfile_config:
             metadata:
               wms_group_title: Unconsolidated
@@ -656,7 +656,7 @@ layers:
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}unconsolidated
           maxscaledenom: 50000
           map_label: False
-          include_items: "runc_litstrat,runc_litho,runc_glac_typ,runc_chrono,runc_structur,runc_morpholo"
+          include_items: "runc_litstrat,runc_litho,runc_glac_typ,runc_chrono,runc_structur,runc_morpholo,erl_link,ber_link"
           lang_fields:
             runc_litstrat: "runc_litstrat_%lang%"
             runc_litho:    "runc_litho_%lang%"
@@ -692,7 +692,7 @@ layers:
             runc_litho: "runc_litho_%lang%"
             runc_structur: "runc_structur_%lang%"
             runc_morpholo: "runc_morpholo_%lang%"
-          include_items: "label,runc_litho,runc_litstrat,runc_chrono,runc_structur,runc_morpholo"
+          include_items: "runc_litho,runc_litstrat,runc_chrono,runc_structur,runc_morpholo,erl_link,ber_link"
           filter: RUNC_LITHO IN (15101019,15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101040, 15101046, 15101047, 15101048, 15101049, 15101055, 15101058)
           fields:
             KIND: KIND
@@ -705,7 +705,7 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}unco_chrono_b
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}unconsolidated
-          include_items: "label,runc_chrono,runc_litho,runc_litstrat,runc_structur,runc_morpholo,"
+          include_items: "runc_chrono,runc_litho,runc_litstrat,runc_structur,runc_morpholo,erl_link,ber_link"
           maxscaledenom: 50000
           map_label: False
           mapfile_config:
@@ -769,7 +769,7 @@ layers:
               correlation_desc: "correlation_%lang%"
               litstrat_formation_bank: "litstrat_formation_bank_%lang%"
           # These names stay stable for all clients regardless of LANGUAGE= param
-          include_items: "label,gmu_desc,tecto_desc,litho_desc,chrono_desc,correlation_desc,stratilink"
+          include_items: "gmu_desc,tecto_desc,litho_desc,chrono_desc,correlation_desc,strati_link,erl_link,ber_link"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             GMU_CODE: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT

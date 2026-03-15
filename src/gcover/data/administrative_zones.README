@@ -8,7 +8,7 @@ Simplified script that handles the real data sources with their actual attribute
 2025-10-14  Added borders_100m layer (100m buffer around mapsheet borders)
 2026-01-28  Only warning if missing  `QA_SOURCE`
 
-XLSX file:\\v0t0020a.adr.admin.ch\lg\01_PRODUKTION\GIS\TOPGIS\Produktableitung\R16_2026\Excels\GC_Sources_PA.xlsx
+XLSX file:/home/marco/DATA/Derivations/delivery/R16/Excels/GC_Sources_PA.xlsx
 Layer list:
  * mapsheets_sources_only
  * mapsheets_with_sources
@@ -32,4 +32,4 @@ Layer list:
 
 
 
-Generated on 2026-02-11 18:12:07 (for R16)
+Generated on 2026-03-13 00:00:59
