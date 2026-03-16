@@ -32,6 +32,12 @@ jobs:
           python -m pip install --upgrade pip
           # Pre-installing heavy binaries to avoid compilation issues
           pip install numpy pandas matplotlib scipy pyvista
+    
+      - name: Install Geone from Cloned Source
+        # We change directory into the 'geone-source' folder to install
+        run: |
+          cd geone-source
+          pip install .
 
       - name: Force Repair SWIG Modules
         shell: cmd
