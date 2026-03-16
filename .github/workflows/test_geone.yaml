@@ -40,13 +40,16 @@ jobs:
           pip install .
 
       - name: Verify Windows DLLs and Package
+        shell: cmd
         run: |
-          # 1. Check if the DLLs actually exist in the install directory
-          echo "Checking for DLL files in site-packages..."
-          dir (python -c "import geone; import os; print(os.path.dirname(geone.__file__))") /s | findstr ".dll"
+          @echo off
+          echo --- Finding Geone Install Location ---
+          python -c "import geone; import os; print(os.path.dirname(geone.__file__))" > path.txt
+          set /p GEONE_PATH=<path.txt
+          echo Geone is installed at: %GEONE_PATH%
 
-          # 2. Try the correct import path
-          python -c "import geone; print('Geone version:', geone.__version__)"
-          
-          # This is the path used in their example notebooks
-          python -c "from geone.deesse import deesse; print('Windows DEESSE loaded successfully!')"
+          echo --- Checking for DLLs in the deesse folder ---
+          dir /s "%GEONE_PATH%\*.dll"
+
+          echo --- Attempting Import ---
+          python -c "import geone; from geone.deesse import deesse; print('SUCCESS: DEESSE engine loaded!')"
