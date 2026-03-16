@@ -33,23 +33,24 @@ jobs:
           # Pre-installing heavy binaries to avoid compilation issues
           pip install numpy pandas matplotlib scipy pyvista
 
-      - name: Install Geone from Cloned Source
-        # We change directory into the 'geone-source' folder to install
-        run: |
-          cd geone-source
-          pip install .
-
-      - name: Verify Windows DLLs and Package
+      - name: Force Repair Geone Windows Install
         shell: cmd
         run: |
           @echo off
-          echo --- Finding Geone Install Location ---
+          :: 1. Find where pip put geone
           python -c "import geone; import os; print(os.path.dirname(geone.__file__))" > path.txt
-          set /p GEONE_PATH=<path.txt
-          echo Geone is installed at: %GEONE_PATH%
+          set /p GEONE_INSTALL_PATH=<path.txt
+          echo Installing into: %GEONE_INSTALL_PATH%
 
-          echo --- Checking for DLLs in the deesse folder ---
-          dir /s "%GEONE_PATH%\*.dll"
+          :: 2. Manually copy the Windows DLLs/Binaries from the source to the install site
+          :: Note: geone-source is the path where we checked out the repo earlier
+          xcopy /S /Y "geone-source\geone\lib\win\*" "%GEONE_INSTALL_PATH%\"
 
-          echo --- Attempting Import ---
-          python -c "import geone; from geone.deesse import deesse; print('SUCCESS: DEESSE engine loaded!')"
+          :: 3. Check what we have now
+          dir /s "%GEONE_INSTALL_PATH%\*.dll"
+
+      - name: Verify Import
+        shell: cmd
+        run: |
+          :: Based on the repo structure, the import is likely:
+          python -c "import geone; from geone import deesse_core; print('SUCCESS: deesse_core loaded')"
