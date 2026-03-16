@@ -60,15 +60,13 @@ jobs:
           echo --- Testing High Level Interface ---
           python -c "import geone.deesseinterface as dsi; print('SUCCESS: Interface Ready')" || exit /b 1
           
-      - name: Run Unit Tests
+      - name: Run Unit Tests (Direct Script)
         shell: cmd
         run: |
           @echo off
-          :: 1. Force the tests folder to be a module
-          if not exist tests\__init__.py type nul > tests\__init__.py
+          :: 1. Set the PYTHONPATH to include the current directory
+          set PYTHONPATH=%PYTHONPATH%;%CD%
           
-          echo --- Starting Test Discovery ---
-          :: -v gives you the name of every test being run
-          :: -s tests tells it to look in the tests folder
-          :: -t . tells it the project root is here
-          python -m unittest discover -v -s tests -t . -p "test_estimator.py"
+          echo --- Running Test Estimator ---
+          :: Run the file directly but as a module to handle imports
+          python -m tests.test_estimator
