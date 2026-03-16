@@ -64,6 +64,11 @@ jobs:
         shell: cmd
         run: |
           @echo off
-          echo --- Running Geone Estimator Tests ---
-          :: Use the dotted module name, not the file path
-          python -m unittest tests.test_estimator
+          :: 1. Force the tests folder to be a module
+          if not exist tests\__init__.py type nul > tests\__init__.py
+          
+          echo --- Starting Test Discovery ---
+          :: -v gives you the name of every test being run
+          :: -s tests tells it to look in the tests folder
+          :: -t . tells it the project root is here
+          python -m unittest discover -v -s tests -t . -p "test_estimator.py"
