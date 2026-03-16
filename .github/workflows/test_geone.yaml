@@ -41,5 +41,12 @@ jobs:
 
       - name: Verify Windows DLLs and Package
         run: |
-          python -c "import geone; print('Successfully imported geone version:', geone.__version__)"
-          python -c "from geone import deesse; print('Windows DEESSE DLL loaded successfully!')"
+          # 1. Check if the DLLs actually exist in the install directory
+          echo "Checking for DLL files in site-packages..."
+          dir (python -c "import geone; import os; print(os.path.dirname(geone.__file__))") /s | findstr ".dll"
+
+          # 2. Try the correct import path
+          python -c "import geone; print('Geone version:', geone.__version__)"
+          
+          # This is the path used in their example notebooks
+          python -c "from geone.deesse import deesse; print('Windows DEESSE loaded successfully!')"
