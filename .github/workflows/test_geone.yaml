@@ -60,10 +60,7 @@ jobs:
           echo --- Testing High Level Interface ---
           python -c "import geone.deesseinterface as dsi; print('SUCCESS: Interface Ready')" || exit /b 1
           
-      - name: Run Unit Tests
+      - name: Discover and Run All Tests
         shell: cmd
         run: |
-          @echo off
-          echo --- Running Geone Estimator Tests ---
-          :: We run from the root of your project where the 'tests' folder lives
-          python -m unittest tests/test_estimator.py
+          python -m unittest discover -s tests -p "test_*.py"
