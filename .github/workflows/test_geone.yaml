@@ -12,7 +12,7 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.12","3.13"]
 
     steps:
       - name: Checkout Geone Repository
@@ -63,10 +63,5 @@ jobs:
       - name: Run Unit Tests (Direct Script)
         shell: cmd
         run: |
-          @echo off
-          :: 1. Set the PYTHONPATH to include the current directory
-          set PYTHONPATH=%PYTHONPATH%;%CD%
-          
-          echo --- Running Test Estimator ---
-          :: Run the file directly but as a module to handle imports
+          cd geone-source
           pytest tests/test_estimator.py -v
