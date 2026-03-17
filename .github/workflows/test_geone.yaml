@@ -40,7 +40,7 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install numpy pandas matplotlib scipy pyvista
+          pip install numpy pandas matplotlib scipy pyvista pytest
 
       - name: Install Geone
         shell: cmd
@@ -69,4 +69,4 @@ jobs:
           
           echo --- Running Test Estimator ---
           :: Run the file directly but as a module to handle imports
-          python -m tests.test_estimator
+          pytest tests/test_estimator.py -v
