@@ -8,6 +8,7 @@ OUTPUT_DIR   := ${HOME}/DATA/Derivations/output/R16/
 STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/R16/styles/2026-02-19/
 TRANSLATION_CSV := ${HOME}/code/github.com/lg-geology-data-model/exports/2026-02-12/geolcodes_translated.csv
 STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/R16/Excels/2026a_Update_stratiLINK.xlsx
+GCOVER_DATA_DIR :=  src/gcover/data
 
 # File Paths
 MASTER_GDB        := $(OUTPUT_DIR)merged_master.gdb
@@ -20,6 +21,7 @@ TRANSLATED_PATH   := $(OUTPUT_DIR)$(TRANSLATED_GPKG)
 FULL_GDB_PATH     := $(DELIVERY_DIR)RC2.gdb
 SURFACES_AUX_PATH := $(OUTPUT_DIR)surfaces_aux.gpkg
 MAPSERVER_OUTPUT  := mapserver_$(BRANCH)
+PA_EXCEL          ?= $(DELIVERY_DIR)Excels/GC_Sources_PA.xlsx
 
 # Layers for denormalization
 LAYERS := fossils exploit_polygons exploit_points linear_objects point_objects bedrock surfaces unco_deposits
@@ -49,7 +51,7 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@awk '/^### / { printf "\n$(YELLOW)%s$(RESET)\n", substr($$0, 5) } \
-		 /^## /  { printf "  %-20s %s\n", $$2, substr($$0, index($$0, $$3)) }' \
+		 /^## /  { printf "  %-25s %s\n", $$2, substr($$0, index($$0, $$3)) }' \
 		 $(MAKEFILE_LIST) | sed 's/://'
 	@echo ""
 	@echo ""
@@ -58,6 +60,7 @@ help:
 	@echo "  Styles:               $(STYLES_DIR)"
 	@echo "  Translation CSV:      $(TRANSLATION_CSV)"
 	@echo "  Strati link xlsx:     $(STRATI_LINK_PATH)"
+	@echo "  PA Excel:             $(PA_EXCEL)"
 	@echo ""
 	@echo "$(YELLOW)Output$(RESET)"
 	@echo "  Output dir:           $(OUTPUT_DIR)"
@@ -75,8 +78,22 @@ help:
 
 
 
+
+
+
 .PHONY: merge-diagnostic translate classify denormalize test lint format smoke install-dev doc
 ### Data
+
+## administratives: Create adminsitratives zones
+administratives:
+	python scripts/create_administrative_zones.py \
+        --lots-file $(GCOVER_DATA_DIR)/lots.geojson \
+        --wu-file $(GCOVER_DATA_DIR)/WU.json \
+        --mapsheets-file $(GCOVER_DATA_DIR)/mapsheets.geojson \
+        --sources-file $(PA_EXCEL) \
+        --output $(GCOVER_DATA_DIR)/administrative_zones.gpkg \
+        --overwrite
+
 ## all: Run the entire workflow (Merge -> Import -> Denormalize -> Symbolize)
 all: merge $(CLASSIFIED_PATH) $(TRANSLATED_PATH)
 
