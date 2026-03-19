@@ -7,6 +7,7 @@ Simplified script that handles the real data sources with their actual attribute
 2025-10-13  Added sources `SOURCE_QA`  for QA (before publication)
 2025-10-14  Added borders_100m layer (100m buffer around mapsheet borders)
 2026-01-28  Only warning if missing  `QA_SOURCE`
+2026-03-13  Adding BER and ERL, as well as complete links
 
 XLSX file:/home/marco/DATA/Derivations/delivery/R16/Excels/GC_Sources_PA.xlsx
 Layer list:
@@ -23,13 +24,13 @@ Layer list:
 ┏━━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
 ┃ Source            ┃ Count ┃
 ┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
-│ RC1               │   162 │
-│ RC2               │    57 │
+│ RC1               │   161 │
+│ RC2               │    56 │
 │ BCK_2016          │     1 │
 │ 20300501_Saas.gdb │     1 │
-│ Total             │   221 │
+│ Total             │   219 │
 └───────────────────┴───────┘
 
 
 
-Generated on 2026-03-13 00:00:59
+Generated on 2026-03-19 18:04:22
