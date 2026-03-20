@@ -9,8 +9,7 @@ OUTPUT_DIR   := ${HOME}/DATA/Derivations/output/$(RELEASE)/
 STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/styles/2026-02-19/
 TRANSLATION_CSV := ${HOME}/code/github.com/lg-geology-data-model/exports/2026-02-12/geolcodes_translated.csv
 STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/R16/Excels/2026a_Update_stratiLINK.xlsx
-GCOVER_DATA_DIR :=  src/gcover/data
-PA_EXCEL_PATH := $(DELIVERY_DIR)Excels/GC_Sources_PA.xlsx
+GCOVER_DATA_DIR :=  src/gcover/data/
 
 ASPECT_LAYERS := surfaces_filtered unco_deposits_filtered
 
@@ -28,9 +27,9 @@ FULL_GDB_PATH     := $(DELIVERY_DIR)RC2.gdb
 SURFACES_AUX_PATH := $(OUTPUT_DIR)surfaces_aux.gpkg
 ADMIN_ZONES_GPKG  := administrative_zones.gpkg
 MAPSERVER_OUTPUT  := mapserver_$(BRANCH)
-PA_EXCEL          ?= $(DELIVERY_DIR)Excels/GC_Sources_PA.xlsx
 DEM_ASPECT_PATH   ?= $(DELIVERY_DIR)swissALTI3DRegio_aspect_50m.tif
 MAPSERVER_OUTPUT  ?= mapserver_$(BRANCH)
+PA_EXCEL_PATH := $(DELIVERY_DIR)Excels/GC_Sources_PA.xlsx
 
 # Layers for denormalization
 LAYERS := fossils exploit_polygons exploit_points linear_objects point_objects bedrock surfaces unco_deposits
@@ -48,6 +47,18 @@ BLUE   := \033[34m
 BOLD   := \033[1m
 RESET  := \033[0m
 
+
+# The Generic Function
+# $(1) = Variable Name (for display)
+# $(2) = Path to check
+define check_file
+	@printf "   %-20s %-40s " "$(1):" "$(2)"
+	@if [ -e "$(2)" ]; then \
+		printf "$(GREEN)[FOUND]$(RESET)\n"; \
+	else \
+		printf "$(RED)[NOT FOUND]$(RESET)\n"; \
+	fi
+endef
 
 # --- Targets ---
 
@@ -67,43 +78,27 @@ help:
 	@echo "$(YELLOW)Input$(RESET)"
 	@echo "  $(BOLD)RELEASE  $(RED)$(RELEASE)$(RESET)"
 	@echo "  Delivery GDBs:        $(DELIVERY_DIR)"
-	@echo "  Styles:               $(STYLES_DIR)"
-	@echo "  Translation CSV:      $(TRANSLATION_CSV)"
-	@echo "  Strati link xlsx:     $(STRATI_LINK_PATH)"
-	@echo "  PA Excel:             $(PA_EXCEL)"
-	@echo "  PA Excel:             $(PA_EXCEL_PATH)"
-	@echo "  DEM                   $(DEM_ASPECT_PATH)"
+	$(call check_file,STYLES_DIR,$(STYLES_DIR))
+	$(call check_file,TRANSLATION_CSV,$(TRANSLATION_CSV))
+	$(call check_file,STRATI_LINK_PATH,$(STRATI_LINK_PATH))
+	$(call check_file,PA_EXCEL_PATH,$(PA_EXCEL_PATH))
+	$(call check_file,DEM_ASPECT,$(DEM_ASPECT_PATH))
 	@echo ""
 	@echo "$(YELLOW)Output$(RESET)"
 	@echo "  Output dir:           $(OUTPUT_DIR)"
-	@echo "  Master GDB:           $(MASTER_GDB)"
-	@echo "  Denormalized GPKG:    $(DENORMALIZED_PATH)"
-	@echo "  Classified:           $(CLASSIFIED_PATH)"
-	@echo "  Translation:          $(TRANSLATION_CSV)"
-	@echo "  Translated:           $(TRANSLATED_PATH)"
-	@echo "  SURFACES_AUX_PATH:    $(SURFACES_AUX_PATH)"
-	@echo "  DEM_ASPECT_PATH:      $(DEM_ASPECT_PATH)"
+	$(call check_file,MASTER_GDB,$(MASTER_GDB))
+	$(call check_file,DENORMALIZED_PATH,$(DENORMALIZED_PATH))
+	$(call check_file,CLASSIFIED_PATH,$(CLASSIFIED_PATH))
+	$(call check_file,CLASSIFIED_PATH,$(CLASSIFIED_PATH))
+	$(call check_file,TRANSLATION_CSV,$(TRANSLATION_CSV))
+	$(call check_file,TRANSLATED_PATH,$(TRANSLATED_PATH))
+	$(call check_file,SURFACES_AUX_PATH,$(SURFACES_AUX_PATH))
 	@echo ""
 	@echo "$(YELLOW)Mapserver$(RESET)"
 	@echo "  Mapserver dir:        $(MAPSERVER_OUTPUT)"
 
 
 
-
-
-
-.PHONY: merge-diagnostic translate classify denormalize test lint format smoke install-dev doc
-### Data
-
-## administratives: Create adminsitratives zones
-administratives:
-	python scripts/create_administrative_zones.py \
-        --lots-file $(GCOVER_DATA_DIR)/lots.geojson \
-        --wu-file $(GCOVER_DATA_DIR)/WU.json \
-        --mapsheets-file $(GCOVER_DATA_DIR)/mapsheets.geojson \
-        --sources-file $(PA_EXCEL) \
-        --output $(GCOVER_DATA_DIR)/administrative_zones.gpkg \
-        --overwrite
 .PHONY: merge-diagnostic translate classify denormalize test lint format smoke install-dev doc
 ### Data
 
@@ -111,14 +106,14 @@ administratives:
 administrative-zones:
 	@echo "--- Creating administrative zones to $(ADMIN_ZONES_GPKG) ---"
 	@python ./scripts/create_administrative_zones.py  \
-	   --lots-file $(GCOVER_DATA_DIR)/lots.geojson \
-       --wu-file $(GCOVER_DATA_DIR)/WU.json \
-       --mapsheets-file $(GCOVER_DATA_DIR)/mapsheets.geojson \
+	   --lots-file $(GCOVER_DATA_DIR)lots.geojson \
+       --wu-file $(GCOVER_DATA_DIR)WU.json \
+       --mapsheets-file $(GCOVER_DATA_DIR)mapsheets.geojson \
        --sources-file  $(PA_EXCEL_PATH)  \
        --output $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) \
        --overwrite
 	@cp -i $(PA_EXCEL_PATH)   $(GCOVER_DATA_DIR)GC_Sources_PA.xlsx
-	@cp -i $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) $(GCOVER_DATA_DIR)/administrative_zones.gpkg
+	@cp -i $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) $(GCOVER_DATA_DIR)$(ADMIN_ZONES_GPKG)
 	@echo "Don't forget to copy to src/gcover/data directory!"
 
 
