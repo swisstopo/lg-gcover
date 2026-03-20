@@ -3,12 +3,18 @@
 BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
 
 # --- Variables ---
-DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/R16/
-OUTPUT_DIR   := ${HOME}/DATA/Derivations/output/R16/
-STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/R16/styles/2026-02-19/
+RELEASE      := R16
+DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/
+OUTPUT_DIR   := ${HOME}/DATA/Derivations/output/$(RELEASE)/
+STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/styles/2026-02-19/
 TRANSLATION_CSV := ${HOME}/code/github.com/lg-geology-data-model/exports/2026-02-12/geolcodes_translated.csv
 STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/R16/Excels/2026a_Update_stratiLINK.xlsx
 GCOVER_DATA_DIR :=  src/gcover/data
+PA_EXCEL_PATH := $(DELIVERY_DIR)Excels/GC_Sources_PA.xlsx
+
+ASPECT_LAYERS := surfaces_filtered unco_deposits_filtered
+
+
 
 # File Paths
 MASTER_GDB        := $(OUTPUT_DIR)merged_master.gdb
@@ -20,8 +26,11 @@ TRANSLATED_GPKG   := denormalized_classified_translated.gpkg
 TRANSLATED_PATH   := $(OUTPUT_DIR)$(TRANSLATED_GPKG)
 FULL_GDB_PATH     := $(DELIVERY_DIR)RC2.gdb
 SURFACES_AUX_PATH := $(OUTPUT_DIR)surfaces_aux.gpkg
+ADMIN_ZONES_GPKG  := administrative_zones.gpkg
 MAPSERVER_OUTPUT  := mapserver_$(BRANCH)
 PA_EXCEL          ?= $(DELIVERY_DIR)Excels/GC_Sources_PA.xlsx
+DEM_ASPECT_PATH   ?= $(DELIVERY_DIR)swissALTI3DRegio_aspect_50m.tif
+MAPSERVER_OUTPUT  ?= mapserver_$(BRANCH)
 
 # Layers for denormalization
 LAYERS := fossils exploit_polygons exploit_points linear_objects point_objects bedrock surfaces unco_deposits
@@ -47,20 +56,23 @@ RESET  := \033[0m
 ## help: Show this help message
 
 help:
-	@echo "Usage: make [target]"
+	@echo "$(BOLD)Usage: make [target]"
 	@echo ""
-	@echo "Targets:"
+	@echo "Targets:$(RESET)"
 	@awk '/^### / { printf "\n$(YELLOW)%s$(RESET)\n", substr($$0, 5) } \
 		 /^## /  { printf "  %-25s %s\n", $$2, substr($$0, index($$0, $$3)) }' \
 		 $(MAKEFILE_LIST) | sed 's/://'
 	@echo ""
 	@echo ""
 	@echo "$(YELLOW)Input$(RESET)"
+	@echo "  $(BOLD)RELEASE  $(RED)$(RELEASE)$(RESET)"
 	@echo "  Delivery GDBs:        $(DELIVERY_DIR)"
 	@echo "  Styles:               $(STYLES_DIR)"
 	@echo "  Translation CSV:      $(TRANSLATION_CSV)"
 	@echo "  Strati link xlsx:     $(STRATI_LINK_PATH)"
 	@echo "  PA Excel:             $(PA_EXCEL)"
+	@echo "  PA Excel:             $(PA_EXCEL_PATH)"
+	@echo "  DEM                   $(DEM_ASPECT_PATH)"
 	@echo ""
 	@echo "$(YELLOW)Output$(RESET)"
 	@echo "  Output dir:           $(OUTPUT_DIR)"
@@ -69,12 +81,11 @@ help:
 	@echo "  Classified:           $(CLASSIFIED_PATH)"
 	@echo "  Translation:          $(TRANSLATION_CSV)"
 	@echo "  Translated:           $(TRANSLATED_PATH)"
-	@echo "  Surfaces auxilliary:  $(SURFACES_AUX_PATH)"
+	@echo "  SURFACES_AUX_PATH:    $(SURFACES_AUX_PATH)"
+	@echo "  DEM_ASPECT_PATH:      $(DEM_ASPECT_PATH)"
 	@echo ""
 	@echo "$(YELLOW)Mapserver$(RESET)"
 	@echo "  Mapserver dir:        $(MAPSERVER_OUTPUT)"
-
-
 
 
 
@@ -93,10 +104,26 @@ administratives:
         --sources-file $(PA_EXCEL) \
         --output $(GCOVER_DATA_DIR)/administrative_zones.gpkg \
         --overwrite
+.PHONY: merge-diagnostic translate classify denormalize test lint format smoke install-dev doc
+### Data
+
+## administrative-zones: Create the adminstratives zones (lots, WU, mapsheets)
+administrative-zones:
+	@echo "--- Creating administrative zones to $(ADMIN_ZONES_GPKG) ---"
+	@python ./scripts/create_administrative_zones.py  \
+	   --lots-file $(GCOVER_DATA_DIR)/lots.geojson \
+       --wu-file $(GCOVER_DATA_DIR)/WU.json \
+       --mapsheets-file $(GCOVER_DATA_DIR)/mapsheets.geojson \
+       --sources-file  $(PA_EXCEL_PATH)  \
+       --output $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) \
+       --overwrite
+	@cp -i $(PA_EXCEL_PATH)   $(GCOVER_DATA_DIR)GC_Sources_PA.xlsx
+	@cp -i $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) $(GCOVER_DATA_DIR)/administrative_zones.gpkg
+	@echo "Don't forget to copy to src/gcover/data directory!"
+
 
 ## all: Run the entire workflow (Merge -> Import -> Denormalize -> Symbolize)
 all: merge $(CLASSIFIED_PATH) $(TRANSLATED_PATH)
-
 
 ## merge: Only perform the gcover merge and diagnosis
 merge: $(MASTER_GDB)/timestamps
@@ -151,11 +178,57 @@ classify: $(CLASSIFIED_PATH)
 ## translate: Add human-readable values for geolcodes
 translate: $(TRANSLATED_PATH)
 
-
-## surfaces-aux: Create auxilliary grid sur surfaces/unco deposits
+## surfaces-aux: Create auxiliary grid sur surfaces/unco deposits
+.PHONY: surfaces-aux
 surfaces-aux:
 	python scripts/surfaces_auxilliary_points.py --copy-polygons -i $(CLASSIFIED_PATH) -l surfaces -s 80 -b 25 --output $(SURFACES_AUX_PATH)
 	python scripts/surfaces_auxilliary_points.py --copy-polygons -i $(CLASSIFIED_PATH) -l unco_deposits -s 80 -b 25 --output $(SURFACES_AUX_PATH)
+
+.PHONY: aspect aspect-simple aspect-gmm
+
+# Master target to run everything
+## aspect: Add angular aspect to hexagonal grid data
+aspect: aspect-simple aspect-gmm
+
+# Group targets for easier execution
+## aspect-simple: Add angular aspect using the simple model
+aspect-simple: $(ASPECT_LAYERS:%=aspect-simple-%)
+## aspect-gmm: Add angular aspect using the GMM model
+aspect-gmm: $(ASPECT_LAYERS:%=aspect-gmm-%)
+
+#### --- SIMPLE MODEL --- ###
+
+aspect-simple-%: surfaces-aux
+	@echo "Deleting auxiliary points (simple) for $*..."
+	-ogrinfo $(SURFACES_AUX_PATH) -sql "DROP TABLE $*_aux_points" -dialect OGRSQL > /dev/null 2>&1 || true
+	@echo "Assigning aspect (simple) for $*"
+	@python scripts/surfaces_assign_aspect.py \
+		--polygons-layer $* \
+		--output-layer $*_aux_points \
+		--join-key UUID \
+		$(SURFACES_AUX_PATH) $(DEM_ASPECT_PATH) \
+		simple
+	@ogrinfo $(SURFACES_AUX_PATH) -sql "UPDATE gpkg_contents SET description = 'model:simple' WHERE table_name = '$*_aux_points'" > /dev/null
+
+#### --- GMM MODEL --- ###
+
+## surfaces-aux: Create auxiliary grid sur surfaces/unco deposits
+aspect-gmm-%: surfaces-aux
+	@echo "Deleting auxiliary points (GMM) for $*..."
+	-ogrinfo $(SURFACES_AUX_PATH) -sql "DROP TABLE $*_aux_points" -dialect OGRSQL > /dev/null 2>&1 || true
+	@echo "Assigning aspect (GMM) for $*"
+	@python scripts/surfaces_assign_aspect.py \
+		--polygons-layer $* \
+		--output-layer $*_aux_points \
+		--join-key UUID \
+		$(SURFACES_AUX_PATH) $(DEM_ASPECT_PATH) \
+		gmm --no-flip --max-components 3
+	@ogrinfo $(SURFACES_AUX_PATH) -sql "UPDATE gpkg_contents SET description = 'model:gmm' WHERE table_name = '$*_aux_points'" > /dev/null
+
+
+
+
+
 
 .PHONY: mapfiles
 
