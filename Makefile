@@ -6,7 +6,7 @@ BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
 RELEASE      := R16
 DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/
 OUTPUT_DIR   := ${HOME}/DATA/Derivations/output/$(RELEASE)/
-STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/styles/2026-02-19/
+STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/styles/2026-03-23/
 TRANSLATION_CSV := ${HOME}/code/github.com/lg-geology-data-model/exports/2026-02-12/geolcodes_translated.csv
 STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/R16/Excels/2026a_Update_stratiLINK.xlsx
 GCOVER_DATA_DIR :=  src/gcover/data/
@@ -23,7 +23,7 @@ CLASSIFIED_GPKG	  := denormalized_classified.gpkg
 CLASSIFIED_PATH   := $(OUTPUT_DIR)$(CLASSIFIED_GPKG)
 TRANSLATED_GPKG   := denormalized_classified_translated.gpkg
 TRANSLATED_PATH   := $(OUTPUT_DIR)$(TRANSLATED_GPKG)
-FULL_GDB_PATH     := $(DELIVERY_DIR)RC2.gdb
+FULL_GDB_PATH     := $(DELIVERY_DIR)RC2.gdb     # TODO Val Bregaglia missing GMU_ATT in RC2. RC1 OK
 SURFACES_AUX_PATH := $(OUTPUT_DIR)surfaces_aux.gpkg
 ADMIN_ZONES_GPKG  := administrative_zones.gpkg
 MAPSERVER_OUTPUT  := mapserver_$(BRANCH)
@@ -33,7 +33,7 @@ PA_EXCEL_PATH := $(DELIVERY_DIR)Excels/GC_Sources_PA.xlsx
 
 # Layers for denormalization
 LAYERS := fossils exploit_polygons exploit_points linear_objects point_objects bedrock surfaces unco_deposits
-TABLES_TO_IMPORT := GC_GEOL_MAPPING_UNIT GC_LITSTRAT_FORMATION_BANK GC_CHRONO \
+TABLES_TO_IMPORT := GC_GEOL_MAPPING_UNIT GC_GEOL_MAPPING_UNIT_ATT GC_LITSTRAT_FORMATION_BANK GC_CHRONO \
                     GC_EX_GEO_PLG_EXP_UNIT_GC_GMU GC_EX_GEO_PNT_EXP_UNIT_GC_GMU \
                     GC_FOSS_SYSTEM_GC_SYSTEM \
                     GC_UN_DEP_CHARACT_GC_CHARCAT GC_UN_DEP_COMPOSIT_GC_COMPOS GC_UN_DEP_MAT_TYPE_GC_LITHO
@@ -114,7 +114,7 @@ administrative-zones:
        --overwrite
 	@cp -i $(PA_EXCEL_PATH)   $(GCOVER_DATA_DIR)GC_Sources_PA.xlsx
 	@cp -i $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) $(GCOVER_DATA_DIR)$(ADMIN_ZONES_GPKG)
-	@echo "Don't forget to copy to src/gcover/data directory!"
+	@echo "Don't forget to copy to mapserver-geocover/data directory!"
 
 
 ## all: Run the entire workflow (Merge -> Import -> Denormalize -> Symbolize)
