@@ -3,7 +3,7 @@
 BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
 
 # --- Variables ---
-RELEASE      := R16
+RELEASE      := R17
 DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/
 OUTPUT_DIR   := ${HOME}/DATA/Derivations/output/$(RELEASE)/
 STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/styles/2026-03-23/
@@ -114,6 +114,7 @@ administrative-zones:
        --overwrite
 	@cp -i $(PA_EXCEL_PATH)   $(GCOVER_DATA_DIR)GC_Sources_PA.xlsx
 	@cp -i $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) $(GCOVER_DATA_DIR)$(ADMIN_ZONES_GPKG)
+	@cp -i $(OUTPUT_DIR)administrative_zones.README $(GCOVER_DATA_DIR)adminstrative_zones.README
 	@echo "Don't forget to copy to mapserver-geocover/data directory!"
 
 

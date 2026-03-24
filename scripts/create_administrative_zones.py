@@ -11,6 +11,7 @@ Simplified script that handles the real data sources with their actual attribute
 2026-01-28  Only warning if missing  `QA_SOURCE`
 2026-03-13  Adding BER and ERL, as well as complete links
 2026-03-15  Removed the `QA_SOURCE` completly
+2026-03-24  New WU.json export. Remomved sheet `Campodolcino`  (merged with `Val Bregaglia`). Using provisonal PA from R17
 """
 
 import os
