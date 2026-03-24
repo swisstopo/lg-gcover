@@ -731,6 +731,62 @@ class GeoCoverDenormalizer:
 
         return denormalized_gdf
 
+    def _check_join_integrity(
+        self,
+        left_df: pd.DataFrame,
+        right_df: pd.DataFrame,
+        left_key: str,
+        right_key: str,
+        left_label: str,
+        right_label: str,
+    ) -> None:
+        """Check referential integrity between two tables before a join.
+
+        Logs orphan foreign keys and NULL counts.  Emits a rich console
+        warning for errors visible to the operator, and detailed debug
+        output via loguru for the log file.
+        """
+        left_vals = left_df[left_key].dropna().unique()
+        right_vals = set(right_df[right_key].dropna().unique())
+
+        orphans = set(left_vals) - right_vals
+        null_count = left_df[left_key].isna().sum()
+
+        # --- console output (operator-visible) ---
+        if orphans:
+            console.print(
+                f"[red]⚠  {len(orphans)}/{len(left_vals)} "
+                f"{left_label}.{left_key} value(s) have NO match "
+                f"in {right_label}.{right_key}[/red]"
+            )
+        else:
+            console.print(
+                f"[green]✓  All {len(left_vals)} "
+                f"{left_label}.{left_key} → {right_label}.{right_key} "
+                f"joins OK[/green]"
+            )
+
+        if null_count:
+            console.print(
+                f"[yellow]   ⚠  {null_count} row(s) in {left_label} "
+                f"have NULL {left_key} (no join possible)[/yellow]"
+            )
+
+        # --- loguru output (log file detail) ---
+        logger.debug(
+            f"Join integrity {left_label}.{left_key} → "
+            f"{right_label}.{right_key}: "
+            f"{len(left_vals)} non-null FK values, "
+            f"{len(right_vals)} PK values, "
+            f"{len(orphans)} orphan(s), "
+            f"{null_count} NULL FK(s)"
+        )
+        if orphans:
+            sample = sorted(str(u) for u in orphans)[:20]
+            logger.debug(
+                f"Orphan {left_key} values (first 20): {sample}"
+            )
+
     def denormalize_bedrock(self, task_id=None, progress=None) -> gpd.GeoDataFrame:
         """Denormalize GC_BEDROCK with geological mapping unit attributes."""
 
@@ -749,11 +805,26 @@ class GeoCoverDenormalizer:
         logger.info(f"Loaded {len(mapping_unit_df)} mapping units")
 
         if progress and task_id:
-            progress.update(task_id, description="Joining bedrock with attributes...")
+            progress.update(task_id, description="Checking join integrity...")
 
-        # Try direct foreign key first
+        # ── Try direct foreign key first ──────────────────────────────
         if "GEOL_MAPPING_UNIT_ATT_UUID" in bedrock_gdf.columns:
             logger.debug("Using direct foreign key GEOL_MAPPING_UNIT_ATT_UUID")
+
+            # ── Check 1: bedrock → GC_GEOL_MAPPING_UNIT_ATT ──────────
+            self._check_join_integrity(
+                left_df=bedrock_gdf,
+                right_df=mapping_unit_att_df,
+                left_key="GEOL_MAPPING_UNIT_ATT_UUID",
+                right_key="UUID",
+                left_label="GC_BEDROCK",
+                right_label="GC_GEOL_MAPPING_UNIT_ATT",
+            )
+
+            if progress and task_id:
+                progress.update(
+                    task_id, description="Joining bedrock with attributes..."
+                )
 
             bedrock_with_att = bedrock_gdf.merge(
                 mapping_unit_att_df,
@@ -764,6 +835,16 @@ class GeoCoverDenormalizer:
             )
 
             if "GEOL_MAPPING_UNIT" in bedrock_with_att.columns:
+                # ── Check 2: att → GC_GEOL_MAPPING_UNIT ──────────────
+                self._check_join_integrity(
+                    left_df=bedrock_with_att,
+                    right_df=mapping_unit_df,
+                    left_key="GEOL_MAPPING_UNIT",
+                    right_key="GEOLCODE",
+                    left_label="GC_GEOL_MAPPING_UNIT_ATT",
+                    right_label="GC_GEOL_MAPPING_UNIT",
+                )
+
                 denormalized_gdf = bedrock_with_att.merge(
                     mapping_unit_df[["GEOLCODE", "UUID", "DESCRIPTION", "TREE_LEVEL"]],
                     left_on="GEOL_MAPPING_UNIT",
@@ -773,8 +854,9 @@ class GeoCoverDenormalizer:
                 )
             else:
                 denormalized_gdf = bedrock_with_att
+
         else:
-            # Use relationship table
+            # ── Fallback: use relationship table ──────────────────────
             logger.debug("Using relationship table GC_BEDR_GEOL_MAPPING_UNIT_ATT")
             try:
                 relationship_df = gpd.read_file(
@@ -784,8 +866,36 @@ class GeoCoverDenormalizer:
                     col for col in relationship_df.columns if col != "geometry"
                 ]
 
+                # ── Check 1: bedrock UUID → relationship table ────────
+                self._check_join_integrity(
+                    left_df=bedrock_gdf,
+                    right_df=relationship_df,
+                    left_key="UUID",
+                    right_key=rel_columns[1],
+                    left_label="GC_BEDROCK",
+                    right_label="GC_BEDR_GEOL_MAPPING_UNIT_ATT",
+                )
+
+                # ── Check 2: relationship → GC_GEOL_MAPPING_UNIT_ATT ─
+                self._check_join_integrity(
+                    left_df=relationship_df,
+                    right_df=mapping_unit_att_df,
+                    left_key=rel_columns[0],
+                    right_key="UUID",
+                    left_label="GC_BEDR_GEOL_MAPPING_UNIT_ATT",
+                    right_label="GC_GEOL_MAPPING_UNIT_ATT",
+                )
+
+                if progress and task_id:
+                    progress.update(
+                        task_id, description="Joining bedrock via relationship table..."
+                    )
+
                 bedrock_with_relation = bedrock_gdf.merge(
-                    relationship_df, left_on="UUID", right_on=rel_columns[1], how="left"
+                    relationship_df,
+                    left_on="UUID",
+                    right_on=rel_columns[1],
+                    how="left",
                 )
 
                 denormalized_gdf = bedrock_with_relation.merge(
@@ -795,8 +905,23 @@ class GeoCoverDenormalizer:
                     how="left",
                     suffixes=("", "_ATT"),
                 )
+
+                # ── Check 3 (if possible): att → GC_GEOL_MAPPING_UNIT
+                if "GEOL_MAPPING_UNIT" in denormalized_gdf.columns:
+                    self._check_join_integrity(
+                        left_df=denormalized_gdf,
+                        right_df=mapping_unit_df,
+                        left_key="GEOL_MAPPING_UNIT",
+                        right_key="GEOLCODE",
+                        left_label="GC_GEOL_MAPPING_UNIT_ATT",
+                        right_label="GC_GEOL_MAPPING_UNIT",
+                    )
+
             except Exception as e:
                 logger.warning(f"Relationship table method failed: {e}")
+                console.print(
+                    f"[red]❌ Relationship table join failed: {e}[/red]"
+                )
                 denormalized_gdf = bedrock_gdf
 
         # Clean up
