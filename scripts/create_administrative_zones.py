@@ -11,6 +11,7 @@ Simplified script that handles the real data sources with their actual attribute
 2026-01-28  Only warning if missing  `QA_SOURCE`
 2026-03-13  Adding BER and ERL, as well as complete links
 2026-03-15  Removed the `QA_SOURCE` completly
+2026-03-24  New WU.json export. Remomved sheet `Campodolcino`  (merged with `Val Bregaglia`). Using provisonal PA from R17
 """
 
 import os
@@ -31,6 +32,9 @@ from shapely.ops import unary_union
 warnings.filterwarnings("ignore", category=UserWarning)
 
 DEFAULT_CRS = "EPSG:2056"
+
+ERLAUETERUNG_LINK = "https://data.geo.admin.ch/ch.swisstopo.geologie-geologischer_atlas/erlaeuterungen/GA25-ERL-"
+BERICHT_LINK =      "https://data.geo.admin.ch/ch.swisstopo.geologie-geocover/berichte/BER_"
 
 console = Console()
 
@@ -130,6 +134,8 @@ def load_mapsheets(mapsheets_path: Path) -> gpd.GeoDataFrame:
 
         mapsheets_clean = mapsheets_gdf[keep_cols].copy()
 
+
+
         logger.info(
             f"Loaded {len(mapsheets_clean)} mapsheets with columns: {list(mapsheets_clean.columns)}"
         )
@@ -181,11 +187,25 @@ def load_sources(sources_path: Path) -> pd.DataFrame:
             "SOURCE_QA",
             "Version",
             "Notice",
+            "Remark",
+            "BER",
+            "ERL"
         ]:
             if col in sources_df.columns:
                 keep_cols.append(col)
 
         sources_clean = sources_df[keep_cols].copy()
+
+        # Add links
+        sources_clean["erl_link"] = sources_clean.apply(
+          lambda row: f"{ERLAUETERUNG_LINK}{row['MSH_MAP_NBR']}.pdf" if row["ERL"] == "y" else "",
+          axis = 1
+        )
+        sources_clean["ber_link"] = sources_clean.apply(
+          lambda row: f"{BERICHT_LINK}{row['MSH_MAP_NBR']}.pdf" if row["BER"] == "y" else "",
+          axis = 1
+        )
+
 
         logger.info(
             f"Loaded {len(sources_clean)} source records with columns: {list(sources_clean.columns)}"
