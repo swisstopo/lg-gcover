@@ -12,6 +12,8 @@ STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/R16/Excels/2026a_Update_st
 GCOVER_DATA_DIR :=  src/gcover/data/
 
 ASPECT_LAYERS := surfaces_filtered unco_deposits_filtered
+# Ensure no trailing whitespace
+ASPECT_LAYERS := $(strip $(ASPECT_LAYERS))
 
 
 
@@ -24,7 +26,7 @@ CLASSIFIED_PATH   := $(OUTPUT_DIR)$(CLASSIFIED_GPKG)
 TRANSLATED_GPKG   := denormalized_classified_translated.gpkg
 TRANSLATED_PATH   := $(OUTPUT_DIR)$(TRANSLATED_GPKG)
 FULL_GDB_PATH     := $(DELIVERY_DIR)RC2.gdb     # TODO Val Bregaglia missing GMU_ATT in RC2. RC1 OK
-SURFACES_AUX_PATH := $(OUTPUT_DIR)surfaces_aux.gpkg
+GEOCOVER_AUX_PATH := $(OUTPUT_DIR)geocover_aux.gpkg
 ADMIN_ZONES_GPKG  := administrative_zones.gpkg
 MAPSERVER_OUTPUT  := mapserver_$(BRANCH)
 DEM_ASPECT_PATH   ?= $(DELIVERY_DIR)swissALTI3DRegio_aspect_50m.tif
@@ -92,7 +94,7 @@ help:
 	$(call check_file,CLASSIFIED_PATH,$(CLASSIFIED_PATH))
 	$(call check_file,TRANSLATION_CSV,$(TRANSLATION_CSV))
 	$(call check_file,TRANSLATED_PATH,$(TRANSLATED_PATH))
-	$(call check_file,SURFACES_AUX_PATH,$(SURFACES_AUX_PATH))
+	$(call check_file,GEOCOVER_AUX_PATH,$(GEOCOVER_AUX_PATH))
 	@echo ""
 	@echo "$(YELLOW)Mapserver$(RESET)"
 	@echo "  Mapserver dir:        $(MAPSERVER_OUTPUT)"
@@ -174,17 +176,33 @@ classify: $(CLASSIFIED_PATH)
 ## translate: Add human-readable values for geolcodes
 translate: $(TRANSLATED_PATH)
 
-## surfaces-aux: Create auxiliary grid sur surfaces/unco deposits
-.PHONY: surfaces-aux
-surfaces-aux:
-	python scripts/surfaces_auxilliary_points.py --copy-polygons -i $(CLASSIFIED_PATH) -l surfaces -s 80 -b 25 --output $(SURFACES_AUX_PATH)
-	python scripts/surfaces_auxilliary_points.py --copy-polygons -i $(CLASSIFIED_PATH) -l unco_deposits -s 80 -b 25 --output $(SURFACES_AUX_PATH)
+## geocover-aux: Create auxiliary grid sur surfaces/unco deposits
 
+$(GEOCOVER_AUX_PATH):
+	python scripts/surfaces_auxilliary_points.py --copy-polygons -i $(CLASSIFIED_PATH) -l surfaces -s 80 -b 25 --output $(GEOCOVER_AUX_PATH)
+	python scripts/surfaces_auxilliary_points.py --copy-polygons -i $(CLASSIFIED_PATH) -l unco_deposits -s 80 -b 25 --output $(GEOCOVER_AUX_PATH)
+
+.PHONY: geocover-aux combine-aspect
+geocover-aux: $(GEOCOVER_AUX_PATH)
 .PHONY: aspect aspect-simple aspect-gmm
 
 # Master target to run everything
 ## aspect: Add angular aspect to hexagonal grid data
-aspect: aspect-simple aspect-gmm
+aspect: aspect-gmm
+
+## combine-aspect:  Combine aspect layer for surfaces and unco_deposits
+combine-aspect: aspect-gmm
+	# Create with first layer, stripping old FIDs
+	@ogr2ogr -f GPKG $(GEOCOVER_AUX_PATH) $(GEOCOVER_AUX_PATH) \
+		-nln aux_points_aspect \
+		-sql "SELECT * FROM surfaces_filtered_aux_points_aspect" \
+		-unsetFid -overwrite
+
+	# Append second layer, stripping old FIDs
+	@ogr2ogr -f GPKG $(GEOCOVER_AUX_PATH) $(GEOCOVER_AUX_PATH) \
+		-nln aux_points_aspect \
+		-sql "SELECT * FROM unco_deposits_filtered_aux_points_aspect" \
+		-unsetFid -append
 
 # Group targets for easier execution
 ## aspect-simple: Add angular aspect using the simple model
@@ -194,32 +212,34 @@ aspect-gmm: $(ASPECT_LAYERS:%=aspect-gmm-%)
 
 #### --- SIMPLE MODEL --- ###
 
-aspect-simple-%: surfaces-aux
+aspect-simple-%: geocover-aux
 	@echo "Deleting auxiliary points (simple) for $*..."
-	-ogrinfo $(SURFACES_AUX_PATH) -sql "DROP TABLE $*_aux_points" -dialect OGRSQL > /dev/null 2>&1 || true
+	-ogrinfo $(GEOCOVER_AUX_PATH) -sql "DROP TABLE $*_aux_points" -dialect OGRSQL > /dev/null 2>&1 || true
 	@echo "Assigning aspect (simple) for $*"
 	@python scripts/surfaces_assign_aspect.py \
 		--polygons-layer $* \
 		--output-layer $*_aux_points \
 		--join-key UUID \
-		$(SURFACES_AUX_PATH) $(DEM_ASPECT_PATH) \
+		$(GEOCOVER_AUX_PATH) $(DEM_ASPECT_PATH) \
 		simple
-	@ogrinfo $(SURFACES_AUX_PATH) -sql "UPDATE gpkg_contents SET description = 'model:simple' WHERE table_name = '$*_aux_points'" > /dev/null
+	@ogrinfo $(GEOCOVER_AUX_PATH) -sql "UPDATE gpkg_contents SET description = 'model:simple' WHERE table_name = '$*_aux_points'" > /dev/null
 
 #### --- GMM MODEL --- ###
 
-## surfaces-aux: Create auxiliary grid sur surfaces/unco deposits
-aspect-gmm-%: surfaces-aux
+## geocover-aux: Create auxiliary grid sur surfaces/unco deposits
+aspect-gmm-%: geocover-aux
 	@echo "Deleting auxiliary points (GMM) for $*..."
-	-ogrinfo $(SURFACES_AUX_PATH) -sql "DROP TABLE $*_aux_points" -dialect OGRSQL > /dev/null 2>&1 || true
+	-ogrinfo $(GEOCOVER_AUX_PATH) -sql "DROP TABLE $*_aux_points_aspect" -dialect OGRSQL > /dev/null 2>&1 || true
 	@echo "Assigning aspect (GMM) for $*"
+	@$(eval LAYERNAME_NAME := $(patsubst %_filtered,%,$*))
 	@python scripts/surfaces_assign_aspect.py \
 		--polygons-layer $* \
-		--output-layer $*_aux_points \
+		--points-layer  $(LAYERNAME_NAME)_aux_points \
+		--output-layer $*_aux_points_aspect \
 		--join-key UUID \
-		$(SURFACES_AUX_PATH) $(DEM_ASPECT_PATH) \
+		$(GEOCOVER_AUX_PATH) $(DEM_ASPECT_PATH) \
 		gmm --no-flip --max-components 3
-	@ogrinfo $(SURFACES_AUX_PATH) -sql "UPDATE gpkg_contents SET description = 'model:gmm' WHERE table_name = '$*_aux_points'" > /dev/null
+	@ogrinfo $(GEOCOVER_AUX_PATH) -sql "UPDATE gpkg_contents SET description = 'model:gmm' WHERE table_name = '$*_aux_points_aspect'" > /dev/null
 
 
 
