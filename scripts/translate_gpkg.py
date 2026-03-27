@@ -624,7 +624,7 @@ def main(
                             # Apply formulas to the subset
                             gdf_subset = apply_computed_fields(gdf_subset, cls_cfg.label_formulas)
                             processed_chunks.append(gdf_subset)
-                            console.print(gdf_subset.columns)
+                            
 
                     if processed_chunks:
                         # Re-combine into a GeoDataFrame
@@ -634,7 +634,6 @@ def main(
                         # Restore the original CRS if it was lost during concat
                         final_gdf.set_crs(gdf.crs, allow_override=True, inplace=True)
                         gdf = final_gdf
-                        console.print(gdf.columns)
 
             enriched[lyr] = gdf
             console.print(f" [green] ✓ Layer {lyr} translated[/green]")
@@ -656,7 +655,7 @@ def main(
         table.add_column("Codes", justify="right")
         table.add_column("Translated", justify="right")
         table.add_column("Coverage", justify="right")
-
+        
         for s in all_stats:
             src, out = s["column"], s["out_prefix"]
             out_display = out if out == src else f"[cyan]{out}[/cyan]"
@@ -668,6 +667,7 @@ def main(
                 str(s["codes_found"]),
                 str(s["translated"]),
                 s["coverage"],
+                
             )
 
         console.print(table)
