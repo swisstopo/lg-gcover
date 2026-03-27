@@ -124,8 +124,8 @@ layers:
             mpla_polarity_desc: "mpla_polarity_%lang%"
             mpla_phase_desc: "mpla_phase_%lang%"
           label_formulas: # same syntax as computed_fields — concat() skips null/empty parts
-            label_de: "concat(kind_de, mpla_polarity_de, sep=', ', skip_empty=True)"
-            label_fr: "concat(kind_fr, mpla_polarity_fr, sep=', ', skip_empty=True)"
+            label_de: "concat(kind_de, mpla_polarity_de, dip, vertical='vertikal', sep=', ', skip_empty=True)"
+            label_fr: "concat(kind_fr, mpla_polarity_fr, dip, sep=', ', skip_empty=True)"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -144,8 +144,8 @@ layers:
           lang_fields:
             kind_desc:
           label_formulas:
-            label_de: "concat(kind_de, tdef_fold_typ_de,sep=', ', skip_empty=True) "
-            label_fr: "concat(kind_fr, tdef_fold_typ_fr,sep=', ', skip_empty=True) "
+            label_de: "concat(kind_de, tdef_fold_typ_de, sep=', ', skip_empty=True) "
+            label_fr: "concat(kind_fr, tdef_fold_typ_fr, sep=', ', skip_empty=True) "
           map_label: False
           mapfile_config:
             rotation_field: map_angle

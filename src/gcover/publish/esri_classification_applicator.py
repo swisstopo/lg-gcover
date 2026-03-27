@@ -80,6 +80,38 @@ SUPPORTED_CASTS = {
 }
 
 
+def _split_top_level_args(s: str) -> list:
+    """Split *s* on commas that are not inside parentheses or quotes.
+
+    This allows nested function calls as concat() arguments, e.g.
+    ``concat(kind_de, dip_label(dip), sep=', ')``.
+    """
+    parts, current, depth = [], [], 0
+    in_quote, quote_char = False, None
+    for ch in s:
+        if in_quote:
+            current.append(ch)
+            if ch == quote_char:
+                in_quote = False
+        elif ch in ('"', "'"):
+            in_quote, quote_char = True, ch
+            current.append(ch)
+        elif ch == '(':
+            depth += 1
+            current.append(ch)
+        elif ch == ')':
+            depth -= 1
+            current.append(ch)
+        elif ch == ',' and depth == 0:
+            parts.append(''.join(current).strip())
+            current = []
+        else:
+            current.append(ch)
+    if current:
+        parts.append(''.join(current).strip())
+    return parts
+
+
 def _handle_special_functions(
         gdf: gpd.GeoDataFrame,
         expression: str
@@ -91,7 +123,11 @@ def _handle_special_functions(
     - concat(field1, field2, ...) → concatenate with default separator " | "
     - concat(field1, field2, sep='-') → concatenate with custom separator
     - concat(field1, field2, sep=', ', skip_empty=True) → skip null/empty parts
+    - concat arguments may be nested function calls, e.g. dip_label(dip)
     - coalesce(field1, field2, ...) → first non-null value
+    - dip_label(field) → "horizontal" (0°), "vertical" (90°), or None
+    - dip_label(field, vertical='vertikal') → override label text per language
+    - dip_label(field, horizontal='orizzontale', vertical='verticale')
 
     Returns:
         Series if expression matches a special function, None otherwise
@@ -134,33 +170,38 @@ def _handle_special_functions(
             skip_empty = skip_match.group(1).lower() == "true"
             inner = re.sub(r",?\s*skip_empty\s*=\s*(True|False)", "", inner, flags=re.IGNORECASE)
 
-        # Parse field names
-        fields = [f.strip() for f in inner.split(",") if f.strip()]
+        # Parse arguments, respecting nested parentheses
+        raw_args = [a for a in _split_top_level_args(inner) if a]
 
-        if not fields:
-            raise ValueError("concat() requires at least one field")
+        if not raw_args:
+            raise ValueError("concat() requires at least one argument")
 
-        # Check fields exist
-        missing = [f for f in fields if f not in gdf.columns]
-        if missing:
-            raise ValueError(f"concat(): missing fields {missing}")
+        # Resolve each argument: plain column name or nested special function
+        series_list: list = []
+        for arg in raw_args:
+            if arg in gdf.columns:
+                series_list.append(to_string_safe(gdf[arg]))
+            else:
+                nested = _handle_special_functions(gdf, arg)
+                if nested is None:
+                    raise ValueError(
+                        f"concat(): {arg!r} is not a column name or known function"
+                    )
+                series_list.append(to_string_safe(nested))
 
         if skip_empty:
-            # Join only non-null, non-empty parts per row
-            str_cols = [to_string_safe(gdf[f]) for f in fields]
-            stacked = pd.concat(str_cols, axis=1)
-            stacked.columns = fields
+            stacked = pd.concat(series_list, axis=1)
+            stacked.columns = range(len(series_list))
 
             def _join_skip(row):
-                parts = [row[f] for f in fields if row[f].strip()]
+                parts = [row[i] for i in range(len(series_list)) if row[i].strip()]
                 return sep.join(parts) if parts else None
 
             return stacked.apply(_join_skip, axis=1)
 
-        # Build concatenated string using safe conversion
-        result = to_string_safe(gdf[fields[0]])
-        for field in fields[1:]:
-            result = result + sep + to_string_safe(gdf[field])
+        result = series_list[0]
+        for s in series_list[1:]:
+            result = result + sep + s
 
         return result
 
@@ -183,6 +224,55 @@ def _handle_special_functions(
             result = result.fillna(gdf[field])
 
         return result
+
+    # Handle dip_label(field, horizontal='...', vertical='...')
+    # Returns "horizontal" (0°), "vertical" (90°), or None for other angles.
+    # Label text defaults to English; override with named kwargs per language:
+    #   dip_label(dip, vertical='vertikal')
+    #   dip_label(dip, horizontal='orizzontale', vertical='verticale')
+    dip_match = re.match(r"dip_label\((.+)\)$", expression, re.IGNORECASE)
+    if dip_match:
+        inner = dip_match.group(1)
+
+        label_horizontal = "horizontal"
+        label_vertical = "vertical"
+
+        for kw, default_storage in (
+            ("horizontal", None),
+            ("vertical", None),
+        ):
+            kw_match = re.search(
+                rf"{kw}\s*=\s*['\"](.+?)['\"]", inner, re.IGNORECASE
+            )
+            if kw_match:
+                if kw == "horizontal":
+                    label_horizontal = kw_match.group(1)
+                else:
+                    label_vertical = kw_match.group(1)
+                inner = re.sub(
+                    rf",?\s*{kw}\s*=\s*['\"].+?['\"]", "", inner, flags=re.IGNORECASE
+                )
+
+        field = inner.strip().strip(",").strip()
+        if field not in gdf.columns:
+            raise ValueError(f"dip_label(): missing field {field!r}")
+
+        h, v = label_horizontal, label_vertical  # capture in closure
+
+        def _dip_to_label(val, _h=h, _v=v):
+            if pd.isna(val):
+                return None
+            try:
+                fval = float(val)
+            except (ValueError, TypeError):
+                return None
+            if fval == 0:
+                return _h
+            if fval == 90:
+                return _v
+            return None
+
+        return gdf[field].map(_dip_to_label)
 
     # Not a special function
     return None

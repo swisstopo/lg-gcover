@@ -136,6 +136,19 @@ computed_fields:
   line_km: "geometry.length / 1000"
 ```
 
+###
+
+### dip_label(dip)
+
+```yaml
+label_formulas:
+    label_de: "concat(kind_de, mpla_polarity_de, dip_label(dip, vertical='vertikal'), sep=', ', skip_empty=True)"                                                                                                                                                                   
+    label_fr: "concat(kind_fr, mpla_polarity_fr, dip_label(dip), sep=', ', skip_empty=True)"                                                                                                                                                                                        
+    label_it: "concat(kind_it, mpla_polarity_it, dip_label(dip, horizontal='orizzontale', vertical='verticale'), sep=', ', skip_empty=True)"            
+  # Result: "Orientierung der Schieferung, vertikal"  (if `dip=90`)
+  
+```
+
 ### Normalize Values
 ```yaml
 computed_fields:
