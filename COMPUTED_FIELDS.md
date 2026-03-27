@@ -1,4 +1,4 @@
-# Computed Fields
+# Computed Fields and labels
 
 Add or update fields dynamically during classification using expressions.
 
@@ -7,6 +7,8 @@ Add or update fields dynamically during classification using expressions.
 Computed fields can be defined at **layer level** (applied once before all 
 classifications) or at **classification level** (applied before that specific 
 classification).
+Labels field are only at **classification level** and may use translated fields, like `gmu_fr` or `gmu_de` and it's
+the very last step of the translation process.
 
 ### Layer-level (recommended)
 ```yaml
@@ -29,6 +31,23 @@ layers:
         computed_fields:
           line_m: "geometry.length"
 ```
+
+and for label:
+```yaml
+layers:
+  - gpkg_layer: GC_LINES
+    classifications:
+      - style_file: styles/Faults.lyrx
+        lang_fields:
+              kind_desc: "kind_%lang%"
+              ttec_status_desc: "ttec_status_%lang%"
+        # You may use translated fields
+        label_formulas:
+            label_de: "concat(kind_de, ttec_status_de, sep=', ', skip_empty=True)"
+            label_de: "concat(kind_fr, ttec_status_fr, sep=', ', skip_empty=True)"
+```
+
+
 
 ## Expression Syntax
 
@@ -117,6 +136,19 @@ computed_fields:
   line_km: "geometry.length / 1000"
 ```
 
+###
+
+### dip_label(dip)
+
+```yaml
+label_formulas:
+    label_de: "concat(kind_de, mpla_polarity_de, dip_label(dip, vertical='vertikal'), sep=', ', skip_empty=True)"                                                                                                                                                                   
+    label_fr: "concat(kind_fr, mpla_polarity_fr, dip_label(dip), sep=', ', skip_empty=True)"                                                                                                                                                                                        
+    label_it: "concat(kind_it, mpla_polarity_it, dip_label(dip, horizontal='orizzontale', vertical='verticale'), sep=', ', skip_empty=True)"            
+  # Result: "Orientierung der Schieferung, vertikal"  (if `dip=90`)
+  
+```
+
 ### Normalize Values
 ```yaml
 computed_fields:
@@ -158,6 +190,10 @@ computed_fields:
   # Dash separator
   code_combined: "concat(KIND, GMU_CODE, sep='-')"
   # Result: "14334001-15203001"
+  
+  # Skip null
+  non_null: "concat(kind, lfos_division, lfos_status, skip_empty=True)"
+  # Result: "Fossilfundstelle, Tierreste"    (with `lfos_division=Tierreste` and `lfos_status=null`)
   
   # Coalesce - first non-null value
   litho_primary: "coalesce(litho_main, litho_sec, litho_ter)"
