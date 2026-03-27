@@ -34,7 +34,10 @@ layers:
           lang_fields:
             kind_desc: "kind_%lang%"
             aexp_status: "aexp_status_%lang%"
-            aexp_targ_mat_desc: "aexp_targ_mat_%lang%"
+            aexp_targ_mat_desc:
+          label_formulas:
+              label_de: "concat(kind_de, aexp_status_de,sep=', ', skip_empty=True) "
+              label_fr: "concat(kind_fr, aexp_status_fr,sep=', ', skip_empty=True) "
           map_label: False
           mapfile_config:
             symbol_scale: 20000
@@ -65,6 +68,9 @@ layers:
             kind_desc: "kind_%lang%"
             lfos_division_desc: "lfos_division_%lang%"
             lfos_status_desc: "lfos_status_%lang%"
+          label_formulas:
+            label_de: "concat(kind_de, lfos division_de, lfos status_de,sep=', ', skip_empty=True) "
+            label_de: "concat(kind_fr, lfos division_fr, lfos status_fr,sep=', ', skip_empty=True) "
           include_items: "kind_desc,lfos_division_desc,lfos_status_desc"
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -79,14 +85,13 @@ layers:
       layer_type: point
       computed_fields:  # must match case of source
         map_angle: "(90 - AZIMUTH) % 360"
+
       field_types:
         KIND: Int64
         HSUR_STATUS: Int64
         HSUR_TYPE: Int64
         RUNC_PROTECTED: Int64
         RUNC_ROCK_TYP: Int64
-        RUNC_PROTECTED: Int64
-        MPLA_POLARITY: Int64
         DIP: Int64
         ABOR_FM_A: Int64
         MPLA_POLARITY: Int64
@@ -118,6 +123,9 @@ layers:
             kind_desc: "kind_%lang%"
             mpla_polarity_desc: "mpla_polarity_%lang%"
             mpla_phase_desc: "mpla_phase_%lang%"
+          label_formulas: # same syntax as computed_fields — concat() skips null/empty parts
+            label_de: "concat(kind_de, mpla_polarity_de, sep=', ', skip_empty=True)"
+            label_fr: "concat(kind_fr, mpla_polarity_fr, sep=', ', skip_empty=True)"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -134,7 +142,10 @@ layers:
           # Only a few 100s features
           data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, map_symbol, dip, map_angle FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360 AND map_symbol ILIKE '%achsen%') AS subquery  USING UNIQUE gid USING SRID=2056"
           lang_fields:
-            kind_desc: "kind_%lang%"
+            kind_desc:
+          label_formulas:
+            label_de: "concat(kind_de, tdef_fold_typ_de,sep=', ', skip_empty=True) "
+            label_fr: "concat(kind_fr, tdef_fold_typ_fr,sep=', ', skip_empty=True) "
           map_label: False
           mapfile_config:
             rotation_field: map_angle
@@ -168,6 +179,9 @@ layers:
           include_items: "kind_desc"
           lang_fields:
             kind_desc: "kind_%lang%"
+          label_formulas:
+            label_de: "kind_de"
+            label_fr: "kind_fr"
           filter: KIND IN (11901001,12501002,12501003,12501004,12501006,12101006,13601001,13601002 ,13601003,13701001,13701002,13701004,14601004)
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -192,6 +206,9 @@ layers:
           include_items: "kind_desc"
           lang_fields:
             kind_desc: "kind_%lang%"
+          label_formulas:
+            label_de: "kind_de"
+            label_fr: "kind_fr"
           filter: KIND NOT IN (10501001,10501002,10501003,10501004,10501005,11901001,12501001,12101006,12501002,12501003,12501004,12501006,13601001,13601002,13601003,13701001,13701002,13701004,13801001,13801002,13801003,13801004,13801005,13801006,14401001,14401002,14601004,14601006)
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -222,6 +239,9 @@ layers:
             abor_fm_b_desc: "abor_fm_b_%lang%"
             abor_main_tar_desc: "abor_main_tar_%lang%"
             abor_targ_mat_desc: "abor_targ_mat_%lang%"
+          label_formulas:
+            label_de: "abor_fm_a_de"
+            label_fr: "abor_fm_a_fr"
           filter: KIND=10501001 AND ABOR_DEPTH_BEDR<>999
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -242,6 +262,9 @@ layers:
             abor_fm_b_desc: "abor_fm_b_%lang%"
             abor_main_tar_desc: "abor_main_tar_%lang%"
             abor_targ_mat_desc: "abor_targ_mat_%lang%"
+          label_formulas:
+            label_de: "kind_de"
+            label_fr: "kind_fr"
           active: True
           map_label: False
           mapfile_config:
@@ -302,6 +325,9 @@ layers:
             hsur_type_desc: "hsur_type_%lang%"
             hsur_flow_con_desc: "hsur_flow_con_%lang%"
             hsur_combi_desc: "hsur_combi_%lang%"
+          label_formulas:
+            label_de: "concat(kind_de, hsur_type_de, hsur_status_de, sep=', ', skip_empty=True) "
+            label_fr: "concat(kind_fr, hsur_type_fr, hsur_status_fr, sep=', ', skip_empty=True) "
           filter: KIND=12501001
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -329,6 +355,9 @@ layers:
             runc_rock_spe_desc: "runc_rock_spe_%lang%"
             runc_protected_desc: "runc_protected_%lang%"
             runc_status_desc: "runc_status_%lang%"
+          label_formulas:
+            label_de: "concat(kind_de, runc_rock_typ_de, runc_protected_de, sep=', ', skip_empty=True)"
+            label_fr: "concat(kind_fr, runc_rock_typ_fr, runc_protected_fr, sep=', ', skip_empty=True)"
 
           # TODO: missing AND (PRINTED = 1 OR PRINTED IS NULL)
           include_items: "kind_desc,runc_rock_typ_desc,runc_rock_spe_desc,runc_protected_desc,runc_status_desc"
@@ -381,6 +410,9 @@ layers:
             kind_desc: "kind_%lang%"
             ggla_glac_typ_desc: "ggla_glac_typ_%lang%"
             ggla_morai_mo_desc: "ggla_morai_mo_%lang%"
+          label_formulas:
+            label_de: "concat(kind_de, ggla_glac_typ_de,sep=', ', skip_empty=True)"
+            label_de: "concat(kind_fr, ggla_glac_typ_fr, sep=', ', skip_empty=True)"
           fields:
             KIND: KIND
             GGLA_GLAC_TYP: GGLA_GLAC_TYP
@@ -408,6 +440,9 @@ layers:
             aarc_period_desc: "aarc_period_%lang%"
             lpro_litho_desc: "lpro_litho_%lang%"
             aexp_status_desc: "aexp_status_%lang%"
+          label_formulas:
+            label_de: "kind_de"
+            label_de: "kind_fr"
           include_items: "kind_desc,aexp_status_desc,aarc_epoch_desc,aarc_period_desc,lpro_litho_desc"
           # El cheapo filter
           filter: KIND IN (10201002,10201007,10201006,10201001,10201005,10201004,10201003,10701001,10701002,10901002,10901001,11101001,11101003,11101002,11301007,11301003,11301002,11301006,11301005,11301008,11301009,11301004,11701003,11701002,11701001,11701004,12201001,12201002,12301001,12301004,12301006,12301002,12301007,12301005,12301003,12401001,12601002,12601001,13001001,13301001,13901001,14001001,14701001)
@@ -453,6 +488,9 @@ layers:
               kind_desc: "kind_%lang%"
               lpro_cong_spe_desc: "lpro_cong_spe_%lang%"
               lpro_litho_desc: "lpro_litho_%lang%"
+          label_formulas:
+            label_de: "concat(kind_de, lpro_litho_de, sep=', ', skip_empty=True)"
+            label_de: "concat(kind_fr, lpro_litho_fr, sep=', ', skip_empty=True)"
           fields:
               KIND: KIND
               LPRO_LITHO: LPRO_LITHO
@@ -493,6 +531,9 @@ layers:
               ttec_status_desc: "ttec_status_%lang%"
               ttec_lim_typ_desc: "ttec_lim_typ_%lang%"
               ttec_lim_tect_b_desc: "ttec_lim_tect_b_%lang%"
+          label_formulas:
+            label_de: "concat(kind_de, ttec_status_de, sep=', ', skip_empty=True)"
+            label_de: "concat(kind_fr, ttec_status_fr, sep=', ', skip_empty=True)"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -517,8 +558,13 @@ layers:
           lang_fields:
               kind_desc: "kind_%lang%"
               ttec_status_desc: "ttec_status_%lang%"
+              ttec_status_desc: "ttec_status_%lang%"
               ttec_lim_typ_desc: "ttec_lim_typ_%lang%"
               ttec_lim_tect_b_desc: "ttec_lim_tect_b_%lang%"
+              ttec_meta_sta: "ttec_meta_sta_%lang%"
+          label_formulas:
+            label_de: "concat(ttec_status_de, ttec_meta_sta_de, ttec_lim_typ_de, sep=', ', skip_empty=True)"
+            label_de: "concat(ttec_status_fr, ttec_meta_sta_fr, ttec_lim_typ_fr, sep=', ', skip_empty=True)"
           filter: KIND = 14901001
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -576,6 +622,9 @@ layers:
           lang_fields:
             kind_desc: "kind_%lang%"
             aarc_epoch_desc: "aarc_epoch_%lang%"
+          label_formulas:
+            label_de: "kind_de"
+            label_fr: "kind_fr"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -617,7 +666,11 @@ layers:
           lang_fields:
             runc_litstrat: "runc_litstrat_%lang%"
             runc_litho: "runc_litho_%lang%"
-            runc_chrono: "runc_chrono_combined_%lang%"
+            runc_chrono_b: "runc_chrono_b_%lang%"
+            runc_morpholo: "runc_morpholo_%lang%"
+          label_formulas:
+            label_de: "concat(runc_litho_de, runc_morpholo_de, runc_chrono_b_de, sep=', ', skip_empty=True)"
+            label_de: "concat(runc_litho_fr, runc_morpholo_fr, runc_chrono_b_fr, sep=', ', skip_empty=True)"
           symbol_prefix: unco_bachschutt
           filter: RUNC_LITHO=15101041
           fields:
@@ -665,6 +718,10 @@ layers:
             runc_chrono:   "runc_chrono_combined_%lang%"
             runc_structur: "runc_structur_%lang%"
             runc_morpholo: "runc_morpholo_%lang%"
+            runc_chrono_t: "runc_chrono_t_%lang%"
+          label_formulas:
+            label_de: "concat(runc_litho_de,runc_chrono_t_de, sep=', ', skip_empty=True)"
+            label_fr: "concat(runc_litho_fr,runc_chrono_t_fr, sep=', ', skip_empty=True)"
           mapfile_config:
             metadata:
               wms_group_title: Unconsolidated
@@ -693,6 +750,8 @@ layers:
             runc_litho: "runc_litho_%lang%"
             runc_structur: "runc_structur_%lang%"
             runc_morpholo: "runc_morpholo_%lang%"
+            runc_chrono_b: "runc_chrono_b_%lang%"
+
           include_items: "runc_litho,runc_litstrat,runc_chrono,runc_structur,runc_morpholo,erl_link,ber_link"
           filter: RUNC_LITHO IN (15101019,15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101040, 15101046, 15101047, 15101048, 15101049, 15101055, 15101058)
           fields:
@@ -722,7 +781,9 @@ layers:
             runc_structur: "runc_structur_%lang%"
             runc_morpholo: "runc_morpholo_%lang%"
             runc_glac_typ: "runc_glac_typ_%lang%"
-
+          label_formulas:
+            label_de: "concat(runc_litho_de,runc_chrono_b_de, sep=', ', skip_empty=True)"
+            label_fr: "concat(runc_litho_fr,runc_chrono_b_fr, sep=', ', skip_empty=True)"
           symbol_prefix: unco_chrono_b
           filter: RUNC_LITHO IN (15101009, 15101015)
           fields:
@@ -774,6 +835,9 @@ layers:
           fields:
             # Map GPKG field to classification field (can be complex paths)
             GMU_CODE: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT
+          label_formulas:
+              label_de: gmu_de
+              label_fr: gmu_fr
           symbol_prefix: bedrock
           filter: KIND == 14334001
           identifier_field: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT

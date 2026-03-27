@@ -90,6 +90,7 @@ def _handle_special_functions(
     Supported functions:
     - concat(field1, field2, ...) → concatenate with default separator " | "
     - concat(field1, field2, sep='-') → concatenate with custom separator
+    - concat(field1, field2, sep=', ', skip_empty=True) → skip null/empty parts
     - coalesce(field1, field2, ...) → first non-null value
 
     Returns:
@@ -124,8 +125,14 @@ def _handle_special_functions(
         sep_match = re.search(r"sep\s*=\s*['\"](.+?)['\"]", inner)
         if sep_match:
             sep = sep_match.group(1)
-            # Remove sep=... from inner
             inner = re.sub(r",?\s*sep\s*=\s*['\"].+?['\"]", "", inner)
+
+        # Extract skip_empty flag: skip_empty=True/False
+        skip_empty = False
+        skip_match = re.search(r"skip_empty\s*=\s*(True|False)", inner, re.IGNORECASE)
+        if skip_match:
+            skip_empty = skip_match.group(1).lower() == "true"
+            inner = re.sub(r",?\s*skip_empty\s*=\s*(True|False)", "", inner, flags=re.IGNORECASE)
 
         # Parse field names
         fields = [f.strip() for f in inner.split(",") if f.strip()]
@@ -137,6 +144,18 @@ def _handle_special_functions(
         missing = [f for f in fields if f not in gdf.columns]
         if missing:
             raise ValueError(f"concat(): missing fields {missing}")
+
+        if skip_empty:
+            # Join only non-null, non-empty parts per row
+            str_cols = [to_string_safe(gdf[f]) for f in fields]
+            stacked = pd.concat(str_cols, axis=1)
+            stacked.columns = fields
+
+            def _join_skip(row):
+                parts = [row[f] for f in fields if row[f].strip()]
+                return sep.join(parts) if parts else None
+
+            return stacked.apply(_join_skip, axis=1)
 
         # Build concatenated string using safe conversion
         result = to_string_safe(gdf[fields[0]])
@@ -211,6 +230,7 @@ def apply_computed_fields(
     - Inline type casting: "geometry.bearing:int", "geometry.area:round"
     - String concatenation: "concat(field1, field2, field3)"
     - String concatenation with custom separator: "concat(field1, field2, sep='|')"
+    - String concatenation skipping nulls: "concat(field1, field2, sep=', ', skip_empty=True)"
     - Coalesce (first non-null): "coalesce(field1, field2, field3)"
 
     Supported cast types:

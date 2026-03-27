@@ -86,7 +86,7 @@ ATTRIBUTES_TO_IGNORE = [
 
 TRANSLATED_SUFFIXES = ("_desc", "_fr", "_de", "_it", "_en")
 
-FIXED_FIRST_COLUMNS = ["gid", "kind", "kind_de", "kind_fr", "kind_it", "kind_en", "uuid","label", "map_symbol"]
+FIXED_FIRST_COLUMNS = ["gid", "kind", "kind_de", "kind_fr", "kind_it", "kind_en", "uuid","label", "map_symbol", "label_de", "label_fr"]
 
 PIPE_SEP = " | "
 
@@ -372,6 +372,7 @@ def enrich_layer(
     return gdf, stats
 
 
+
 def _strati_links(bedrock: gpd.GeoDataFrame,xlsx_path
     ) -> tuple[gpd.GeoDataFrame, list[dict]]:
     """Add translated columns to GDF; return (enriched_gdf, stats_list)."""
@@ -471,6 +472,17 @@ def check_min_langs(translations: pd.DataFrame) -> None:
     ),
 )
 @click.option(
+    "-c",
+    "--config",
+    "config_path",
+    default=None,
+    type=click.Path(exists=True, path_type=Path),
+    help=(
+        "Path to BatchClassificationConfig YAML. When provided, "
+        "label_formulas defined per layer are computed after translation."
+    ),
+)
+@click.option(
     "--dry-run",
     is_flag=True,
     default=False,
@@ -485,6 +497,7 @@ def main(
     langs: str,
     lowercase_columns: bool,
     strati_links_path: Optional[Path],
+    config_path: Optional[Path],
     dry_run: bool,
 ) -> None:
     """Add GeolCode translation columns (_de, _fr, …) to every layer of a GPKG."""
@@ -509,6 +522,34 @@ def main(
         f"  [green]✓[/] {len(translations):,} codes loaded  │  "
         f"Languages: {', '.join(f'[bold]{l}[/]' for l in available_langs)}"
     )
+
+    # ── Load label formulas from BatchClassificationConfig (optional) ────────
+    batch_config = None
+    if config_path:
+        try:
+            import sys as _sys
+            _sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
+            from gcover.publish.style_config import BatchClassificationConfig
+            from gcover.publish.esri_classification_applicator import apply_computed_fields
+            batch_config = BatchClassificationConfig(config_path)
+            # Get the list
+            names_with_labels = []
+            for lc in batch_config.layers:
+                for cls_cfg in lc.classifications:
+                    if cls_cfg.label_formulas:
+                        names_with_labels.append(cls_cfg.classification_name)
+            n_with_labels = len(names_with_labels)
+
+            # Format for display
+            names_str = ", ".join(names_with_labels)
+
+            console.print(
+                f"  [green]✓[/] Config loaded — "
+                f"{n_with_labels} layer(s) ({names_str}) have label_formulas"
+            )
+        except Exception as exc:
+            console.print(f"[bold red]✗ Failed to load config:[/] {exc}")
+            sys.exit(1)
 
     # ── Discover layers ──────────────────────────────────────────────────────
     try:
@@ -560,6 +601,41 @@ def main(
             gdf, stats = enrich_layer(
                 gdf, translations, available_langs, min_coverage, lyr
             )
+
+            # ── Apply label formulas from config ─────────────────────────────
+            if batch_config:
+                layer_cfg = batch_config.get_layer_config(lyr)
+                if layer_cfg:
+                    processed_chunks = []
+
+                    # Track which indices we've processed if you need to keep "unmatched" rows later
+                    all_matched_indices = []
+
+                    for cls_cfg in layer_cfg.classifications:
+                        prefix = cls_cfg.symbol_prefix
+
+                        # Efficiently filter using the string accessor
+                        mask = gdf['map_symbol'].str.startswith(prefix, na=False)
+                        gdf_subset = gdf[mask].copy()
+
+                        if not gdf_subset.empty:
+                            console.print(f"  Computing labels for [bold]{prefix}[/] ({len(gdf_subset)} rows)…")
+
+                            # Apply formulas to the subset
+                            gdf_subset = apply_computed_fields(gdf_subset, cls_cfg.label_formulas)
+                            processed_chunks.append(gdf_subset)
+                            console.print(gdf_subset.columns)
+
+                    if processed_chunks:
+                        # Re-combine into a GeoDataFrame
+                        # Using gpd.GeoDataFrame constructor ensures spatial metadata is locked in
+                        final_gdf = gpd.GeoDataFrame(pd.concat(processed_chunks, ignore_index=True))
+
+                        # Restore the original CRS if it was lost during concat
+                        final_gdf.set_crs(gdf.crs, allow_override=True, inplace=True)
+                        gdf = final_gdf
+                        console.print(gdf.columns)
+
             enriched[lyr] = gdf
             console.print(f" [green] ✓ Layer {lyr} translated[/green]")
             all_stats.extend(stats)

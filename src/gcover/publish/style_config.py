@@ -171,6 +171,11 @@ class ClassificationApplicationConfig:
     # Per-metadata translations for WMS capabilities
     # e.g. {"wms_title": {"eng": "Bedrock", "ger": "Festgestein", "fra": "..."}}
     translations: Optional[Dict[str, Dict[str, str]]] = None
+    # Label formulas — same expression syntax as computed_fields (pandas eval +
+    # special functions).  Applied after translation so translated columns are
+    # available.  Use concat() with skip_empty=True to drop null parts:
+    # e.g. {"label_de": "concat(kind_de, mpla_polarity_de, sep=', ', skip_empty=True)"}
+    label_formulas: Optional[Dict[str, str]] = None
 
     def __post_init__(self):
         """Validate and initialize nested configurations"""
@@ -210,6 +215,7 @@ class LayerConfig:
     template: Optional[str] = None
     max_scale: Optional[bool | int] = None  # None, False, True, ou int
     computed_fields: Optional[Dict[str, str]] = None
+
 
 
 
@@ -471,7 +477,6 @@ class BatchClassificationConfig:
         computed_fields = layer_dict.get("computed_fields")
 
 
-
         for class_dict in layer_dict.get("classifications", []):
             # Resolve style file path
             style_file = Path(class_dict["style_file"])
@@ -523,6 +528,7 @@ class BatchClassificationConfig:
                     mapfile_config=mapfile_config,
                     lang_fields=class_dict.get("lang_fields"),
                     translations=class_dict.get("translations"),
+                    label_formulas=class_dict.get("label_formulas"),
                 )
             )
 
