@@ -69,8 +69,8 @@ layers:
             lfos_division_desc: "lfos_division_%lang%"
             lfos_status_desc: "lfos_status_%lang%"
           label_formulas:
-            label_de: "concat(kind_de, lfos division_de, lfos status_de,sep=', ', skip_empty=True) "
-            label_fr: "concat(kind_fr, lfos division_fr, lfos status_fr,sep=', ', skip_empty=True) "
+            label_de: "concat(kind_de, lfos_division_de, lfos_status_de,sep=', ', skip_empty=True) "
+            label_fr: "concat(kind_fr, lfos_division_fr, lfos_status_fr,sep=', ', skip_empty=True) "
           include_items: "kind_desc,lfos_division_desc,lfos_status_desc"
           fields:
             # Map GPKG field to classification field (can be complex paths)

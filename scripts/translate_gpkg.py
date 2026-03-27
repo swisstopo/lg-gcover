@@ -640,14 +640,7 @@ def main(
 
             enriched[lyr] = gdf
             console.print(f" [green] ✓ Layer {lyr} translated[/green]")
-            table = Table(title="Layer → Labels")
 
-            table.add_column("Layer", style="cyan", no_wrap=True)
-            table.add_column("Labels", style="green")
-
-            for layer, labels in new_labels.items():
-              table.add_row(layer, labels)
-            console.print(table)
             
             all_stats.extend(stats)
             progress.advance(task)
@@ -687,6 +680,15 @@ def main(
             f"\n  [bold green]{len(all_stats)}[/] column(s) enriched across "
             f"[bold green]{len({s['layer'] for s in all_stats})}[/] layer(s)"
         )
+        
+        if new_labels:
+     
+            table = Table(title="Layer → Labels")
+            table.add_column("Layer", style="cyan", no_wrap=True)
+            table.add_column("Labels", style="green")
+            for layer, labels in new_labels.items():
+              table.add_row(layer, labels)
+            console.print(table)
 
     # ── Write output ─────────────────────────────────────────────────────────
     if dry_run:
