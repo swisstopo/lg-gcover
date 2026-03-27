@@ -104,7 +104,7 @@ layers:
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
           maxscaledenom: 50000
           mapfile_config:
-            tolerance: 50
+            tolerance: 10
             symbol_adjustments:
               point_size_multiplier: 1.5
             metadata:
@@ -158,7 +158,7 @@ layers:
           map_label: True  # Use the .lyrx defined, if exists
           mapfile_config:
             rotation_field: map_angle
-            tolerance: 50
+            tolerance: 10
             symbol_adjustments:
               point_size_multiplier: 1.5
             metadata:
@@ -182,7 +182,7 @@ layers:
           map_label: True  # Use the .lyrx defined, if exists
           mapfile_config:
             rotation_field: map_angle
-            tolerance: 50
+            tolerance: 10
             symbol_adjustments:
               point_size_multiplier: 1.5
             metadata:
@@ -208,7 +208,7 @@ layers:
           map_label: abor_depth_tot
           mapfile_config:
             symbol_scale: 12500
-            tolerance: 20
+            tolerance: 10
             symbol_adjustments:
               point_size_multiplier: 1.5
             metadata:
@@ -479,7 +479,7 @@ layers:
           classification_name: Linear Objects_Bruch
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_bruch
-          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
+          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}tecto_lines
           include_items: "kind_desc,ttec_name,ttec_lim_typ_desc,ttec_status_desc,ttec_lim_tect_b_desc"
           mapfile_config:
             classes_mode: frozen
@@ -504,7 +504,7 @@ layers:
           classification_name: Linear Objects_Ueberschiebung
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_ueberschiebung
-          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
+          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}tecto_lines
           include_items: "kind_desc,ttec_status_desc,ttec_lim_typ_desc,ttec_lim_tect_b_desc"
           mapfile_config:
             classes_mode: frozen
@@ -641,6 +641,7 @@ layers:
           map_label: False
           include_items: "runc_litho,runc_litstrat,runc_chrono,erl_link,ber_link"
           mapfile_config:
+            classes_mode: frozen
             metadata:
               wms_group_title: Unconsolidated
           filter: RUNC_LITHO NOT IN (15101009, 15101015, 15101019, 15101021, 15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101041, 15101046, 15101047, 15101048, 15101049, 15101055, 15101058, 15101040)

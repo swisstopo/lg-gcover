@@ -23,14 +23,24 @@ def generate_grid(input, layer, output, spacing, buffer, copy_polygons):
 
     # 1. Define Target Symbols
     # TODO: change names if using cannonical IDs
-    target_symbols = [
-        "surfaces_gins_sackungsgebiet",
-        "surfaces_gins_gebiet_mit_hakenwurf",
-        "surfaces_gins_rutschgebiet",
-        "surfaces_gins_gebiet_mit_solifluktion",
-        "unco_litho_rutschmasse",
-        "unco_litho_zerruettete_sackungsmasse"
-    ]
+    # Replace the flat target_symbols list with:
+    SYMBOLS_BY_LAYER = {
+        "surfaces": [
+            "surfaces_gins_sackungsgebiet",
+            "surfaces_gins_gebiet_mit_hakenwurf",
+            "surfaces_gins_rutschgebiet",
+            "surfaces_gins_gebiet_mit_solifluktion",
+        ],
+        "unco_deposits": [
+            "unco_litho_rutschmasse",
+            "unco_litho_zerruettete_sackungsmasse",
+        ],
+    }
+    target_symbols = SYMBOLS_BY_LAYER.get(layer)
+    if target_symbols is None:
+        rprint(f"[bold red]Error:[/bold red] No target symbols defined for layer '{layer}'. "
+               f"Known layers: {', '.join(SYMBOLS_BY_LAYER)}")
+        return
 
     # 2. Filter Attributes
     # We always keep map_symbol, plus your requested list if they exist
