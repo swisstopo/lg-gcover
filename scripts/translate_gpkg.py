@@ -570,6 +570,7 @@ def main(
     # ── Process layers ───────────────────────────────────────────────────────
     all_stats: list[dict] = []
     enriched: dict[str, gpd.GeoDataFrame] = {}
+    new_labels= {}
 
     with Progress(
         SpinnerColumn(),
@@ -624,6 +625,8 @@ def main(
                             # Apply formulas to the subset
                             gdf_subset = apply_computed_fields(gdf_subset, cls_cfg.label_formulas)
                             processed_chunks.append(gdf_subset)
+                            if cls_cfg.label_formulas:
+                                new_labels[lyr] = ', '.join(cls_cfg.label_formulas.keys())
                             
 
                     if processed_chunks:
@@ -637,6 +640,15 @@ def main(
 
             enriched[lyr] = gdf
             console.print(f" [green] ✓ Layer {lyr} translated[/green]")
+            table = Table(title="Layer → Labels")
+
+            table.add_column("Layer", style="cyan", no_wrap=True)
+            table.add_column("Labels", style="green")
+
+            for layer, labels in new_labels.items():
+              table.add_row(layer, labels)
+            console.print(table)
+            
             all_stats.extend(stats)
             progress.advance(task)
 

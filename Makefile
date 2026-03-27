@@ -260,15 +260,15 @@ aspect-gmm-%: geocover-aux
 
 
 ## clean-denormalize: Clean denormalized artefacts
-clean-denormalize: clean-translate
+clean-denormalize: clean-classify clean-translate
 	rm -rf $(DENORMALIZED_PATH)
 
 ## clean-translate: Clean translated artefacts
-clean-translate: clean-classify
+clean-translate:
 	rm -rf $(TRANSLATED_PATH)
 
 ## clean-classify: Clean classified artefacts
-clean-classify:
+clean-classify: clean-translate
 	rm -rf $(CLASSIFIED_PATH)
 
 ## clean-all: Remove generated GDB and GeoPackage files

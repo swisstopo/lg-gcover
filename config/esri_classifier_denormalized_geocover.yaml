@@ -70,7 +70,7 @@ layers:
             lfos_status_desc: "lfos_status_%lang%"
           label_formulas:
             label_de: "concat(kind_de, lfos division_de, lfos status_de,sep=', ', skip_empty=True) "
-            label_de: "concat(kind_fr, lfos division_fr, lfos status_fr,sep=', ', skip_empty=True) "
+            label_fr: "concat(kind_fr, lfos division_fr, lfos status_fr,sep=', ', skip_empty=True) "
           include_items: "kind_desc,lfos_division_desc,lfos_status_desc"
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -412,7 +412,7 @@ layers:
             ggla_morai_mo_desc: "ggla_morai_mo_%lang%"
           label_formulas:
             label_de: "concat(kind_de, ggla_glac_typ_de,sep=', ', skip_empty=True)"
-            label_de: "concat(kind_fr, ggla_glac_typ_fr, sep=', ', skip_empty=True)"
+            label_fr: "concat(kind_fr, ggla_glac_typ_fr, sep=', ', skip_empty=True)"
           fields:
             KIND: KIND
             GGLA_GLAC_TYP: GGLA_GLAC_TYP
@@ -442,7 +442,7 @@ layers:
             aexp_status_desc: "aexp_status_%lang%"
           label_formulas:
             label_de: "kind_de"
-            label_de: "kind_fr"
+            label_fr: "kind_fr"
           include_items: "kind_desc,aexp_status_desc,aarc_epoch_desc,aarc_period_desc,lpro_litho_desc"
           # El cheapo filter
           filter: KIND IN (10201002,10201007,10201006,10201001,10201005,10201004,10201003,10701001,10701002,10901002,10901001,11101001,11101003,11101002,11301007,11301003,11301002,11301006,11301005,11301008,11301009,11301004,11701003,11701002,11701001,11701004,12201001,12201002,12301001,12301004,12301006,12301002,12301007,12301005,12301003,12401001,12601002,12601001,13001001,13301001,13901001,14001001,14701001)
@@ -490,7 +490,7 @@ layers:
               lpro_litho_desc: "lpro_litho_%lang%"
           label_formulas:
             label_de: "concat(kind_de, lpro_litho_de, sep=', ', skip_empty=True)"
-            label_de: "concat(kind_fr, lpro_litho_fr, sep=', ', skip_empty=True)"
+            label_fr: "concat(kind_fr, lpro_litho_fr, sep=', ', skip_empty=True)"
           fields:
               KIND: KIND
               LPRO_LITHO: LPRO_LITHO
@@ -533,7 +533,7 @@ layers:
               ttec_lim_tect_b_desc: "ttec_lim_tect_b_%lang%"
           label_formulas:
             label_de: "concat(kind_de, ttec_status_de, sep=', ', skip_empty=True)"
-            label_de: "concat(kind_fr, ttec_status_fr, sep=', ', skip_empty=True)"
+            label_fr: "concat(kind_fr, ttec_status_fr, sep=', ', skip_empty=True)"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -564,7 +564,7 @@ layers:
               ttec_meta_sta: "ttec_meta_sta_%lang%"
           label_formulas:
             label_de: "concat(ttec_status_de, ttec_meta_sta_de, ttec_lim_typ_de, sep=', ', skip_empty=True)"
-            label_de: "concat(ttec_status_fr, ttec_meta_sta_fr, ttec_lim_typ_fr, sep=', ', skip_empty=True)"
+            label_fr: "concat(ttec_status_fr, ttec_meta_sta_fr, ttec_lim_typ_fr, sep=', ', skip_empty=True)"
           filter: KIND = 14901001
           fields:
             # Map GPKG field to classification field (can be complex paths)
