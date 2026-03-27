@@ -670,7 +670,7 @@ layers:
             runc_morpholo: "runc_morpholo_%lang%"
           label_formulas:
             label_de: "concat(runc_litho_de, runc_morpholo_de, runc_chrono_b_de, sep=', ', skip_empty=True)"
-            label_de: "concat(runc_litho_fr, runc_morpholo_fr, runc_chrono_b_fr, sep=', ', skip_empty=True)"
+            label_fr: "concat(runc_litho_fr, runc_morpholo_fr, runc_chrono_b_fr, sep=', ', skip_empty=True)"
           symbol_prefix: unco_bachschutt
           filter: RUNC_LITHO=15101041
           fields:
@@ -691,6 +691,9 @@ layers:
             runc_litstrat: "runc_litstrat_%lang%"
             runc_litho: "runc_litho_%lang%"
             runc_chrono: "runc_chrono_combined_%lang%"
+          label_formulas:
+            label_de: runc_litho_de
+            label_fr: runc_litho_fr
           map_label: False
           include_items: "runc_litho,runc_litstrat,runc_chrono,erl_link,ber_link"
           mapfile_config:
@@ -720,8 +723,8 @@ layers:
             runc_morpholo: "runc_morpholo_%lang%"
             runc_chrono_t: "runc_chrono_t_%lang%"
           label_formulas:
-            label_de: "concat(runc_litho_de,runc_chrono_t_de, sep=', ', skip_empty=True)"
-            label_fr: "concat(runc_litho_fr,runc_chrono_t_fr, sep=', ', skip_empty=True)"
+            label_de: "concat(runc_litho_de,runc_glac_typ_de, runc_chrono_t_de, sep=', ', skip_empty=True)"
+            label_fr: "concat(runc_litho_fr,runc_glac_typ_fr, runc_chrono_t_fr, sep=', ', skip_empty=True)"
           mapfile_config:
             metadata:
               wms_group_title: Unconsolidated
@@ -751,6 +754,9 @@ layers:
             runc_structur: "runc_structur_%lang%"
             runc_morpholo: "runc_morpholo_%lang%"
             runc_chrono_b: "runc_chrono_b_%lang%"
+          label_formulas:
+            label_de: "concat(runc_litho_de,runc_chrono_t_de, sep=', ', skip_empty=True)"
+            label_fr: "concat(runc_litho_fr,runc_chrono_t_fr, sep=', ', skip_empty=True)"
 
           include_items: "runc_litho,runc_litstrat,runc_chrono,runc_structur,runc_morpholo,erl_link,ber_link"
           filter: RUNC_LITHO IN (15101019,15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101040, 15101046, 15101047, 15101048, 15101049, 15101055, 15101058)
@@ -781,6 +787,7 @@ layers:
             runc_structur: "runc_structur_%lang%"
             runc_morpholo: "runc_morpholo_%lang%"
             runc_glac_typ: "runc_glac_typ_%lang%"
+            runc_chrono_b: "runc_chrono_b_%lang%"
           label_formulas:
             label_de: "concat(runc_litho_de,runc_chrono_b_de, sep=', ', skip_empty=True)"
             label_fr: "concat(runc_litho_fr,runc_chrono_b_fr, sep=', ', skip_empty=True)"
