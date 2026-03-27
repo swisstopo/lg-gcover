@@ -72,6 +72,43 @@ DEFAULT_INSTANCE = "GCOVERP"
 
 DEFAULT_CRS = "EPSG:2056"
 
+
+
+ABREVIATIONS = [
+    "Aarc",
+    "Aart",
+    "Abor",
+    "Aexp",
+    "Gall",
+    "Gero",
+    "Ggla",
+    "Gins",
+    "Gkar",
+    "Hcon",
+    "Hpal",
+    "Hsub",
+    "Hsur",
+    "Lano",
+    "Lfos",
+    "Lgeo",
+    "Lmin",
+    "Lmis",
+    "Lpro",
+    "LresLsed",
+    "Ltyp",
+    "Mfol",
+    "Mlin",
+    "Mpla",
+    "Pcon",
+    "Pmod",
+    "Pslo",
+    "Rbed",
+    "Runc",
+    "Tdef",
+    "Ttec",
+]
+
+
 EXCLUDED_TABLES = {
     "GC_CONFLICT_POLYGON",
     "GC_ERRORS_LINE",
