@@ -785,7 +785,7 @@ def search(ctx, search_term, download, output_dir, db_path):
                 output_path = Path(output_dir)
                 output_path.mkdir(parents=True, exist_ok=True)
 
-                s3_uploader = S3Uploader(s3_bucket, s3_profile)  # TODO
+                s3_uploader = S3Uploader(s3_bucket, s3_profile, upload_method="direct")  # TODO: no downlaod via URL for now
                 filename = Path(data["s3_key"]).name
                 local_path = output_path / filename
 
@@ -2052,37 +2052,53 @@ def download(
                     if unzip and filename.endswith(".zip"):
                         rprint(f"[cyan]  Extracting...[/cyan]")
 
-                        # 1. Extract to the original zip name folder
-                        real_extract_dir = output_path / local_path.stem
+                        # Extract to temp dir first
+                        temp_extract_dir = output_path / f".temp_{local_path.stem}"
                         with zipfile.ZipFile(local_path, "r") as zf:
-                            zf.extractall(real_extract_dir)
+                            zf.extractall(temp_extract_dir)
 
-                        rprint(f"[green]  ✓ Extracted to: {real_extract_dir}[/green]")
+                        # Find the actual .gdb folder (handle redundant nesting)
+                        gdb_candidates = list(temp_extract_dir.glob("**/*.gdb"))
 
-                        # 2. Define the desired GDB name
+                        if not gdb_candidates:
+                            raise ValueError(f"No .gdb folder found in {local_path}")
+
+                        # Use the deepest .gdb folder
+                        actual_gdb = max(gdb_candidates, key=lambda p: len(p.parts))
+
+                        # Move to FINAL location with ORIGINAL NAME (from zip)
+                        original_name = actual_gdb.name  # e.g., "20260319_0300_2030-12-31.gdb"
+                        final_gdb_dir = output_path / original_name
+
+                        if final_gdb_dir.exists():
+                            shutil.rmtree(final_gdb_dir)
+
+                        actual_gdb.rename(final_gdb_dir)
+
+                        # Cleanup temp folder
+                        import shutil
+                        shutil.rmtree(temp_extract_dir, ignore_errors=True)
+
+                        rprint(f"[green]  ✓ Extracted to: {final_gdb_dir}[/green]")
+
+                        # Create symlink with RC name pointing to original
                         target_gdb = output_path / f"{rc_name}.gdb"
 
-                        # Handle Symlink (Linux/macOS) or Rename (Windows fallback)
                         if sys.platform != "win32":
-                            # Unix-like: Create Symlink
-                            if target_gdb.exists() or target_gdb.is_symlink():
+                            # Remove symlink only if it's a symlink (not a directory!)
+                            if target_gdb.is_symlink():
                                 target_gdb.unlink()
-
-                            target_gdb.symlink_to(real_extract_dir)
-                            rprint(f"[blue]  🔗 Created symlink: {target_gdb.name} -> {real_extract_dir.name}[/blue]")
-                        else:
-                            # Windows: Rename directory instead of symlinking
-                            rprint(
-                                f"[yellow]  ! Windows detected: Renaming directory to {rc_name}.gdb instead of symlinking[/yellow]")
-
-                            if target_gdb.exists():
-                                # If a folder with that name exists, we must remove it to rename
+                            elif target_gdb.exists():
+                                # If it's a directory, remove it
                                 shutil.rmtree(target_gdb)
 
-                            real_extract_dir.rename(target_gdb)
-                            rprint(f"[blue]  📂 Folder renamed to: {target_gdb.name}[/blue]")
+                            # Create relative symlink to the original name
+                            target_gdb.symlink_to(original_name)
+                            rprint(f"[blue]  🔗 Created symlink: {target_gdb.name} -> {original_name}[/blue]")
+                        else:
+                            # Windows: just note the mapping
+                            rprint(f"[blue]  📂 Original folder: {original_name}[/blue]")
 
-                        # Optionally remove zip after extraction
                         if not keep_zip:
                             local_path.unlink()
                             rprint(f"[dim]  Removed zip file[/dim]")

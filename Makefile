@@ -31,7 +31,8 @@ ADMIN_ZONES_GPKG  := administrative_zones.gpkg
 MAPSERVER_OUTPUT  := mapserver_$(BRANCH)
 DEM_ASPECT_PATH   ?= $(DELIVERY_DIR)swissALTI3DRegio_aspect_50m.tif
 MAPSERVER_OUTPUT  ?= mapserver_$(BRANCH)
-PA_EXCEL_PATH := $(DELIVERY_DIR)Excels/GC_Sources_PA.xlsx
+PA_EXCEL_PATH     ?= $(DELIVERY_DIR)Excels/GC_Sources_PA.xlsx
+CONFIG_PATH       ?=config/esri_classifier_denormalized_geocover.yaml
 
 # Layers for denormalization
 LAYERS := fossils exploit_polygons exploit_points linear_objects point_objects bedrock surfaces unco_deposits
@@ -95,6 +96,8 @@ help:
 	$(call check_file,TRANSLATION_CSV,$(TRANSLATION_CSV))
 	$(call check_file,TRANSLATED_PATH,$(TRANSLATED_PATH))
 	$(call check_file,GEOCOVER_AUX_PATH,$(GEOCOVER_AUX_PATH))
+	$(call check_file,CONFIG_PATH,$(CONFIG_PATH))
+
 	@echo ""
 	@echo "$(YELLOW)Mapserver$(RESET)"
 	@echo "  Mapserver dir:        $(MAPSERVER_OUTPUT)"
@@ -103,6 +106,12 @@ help:
 
 .PHONY: merge-diagnostic translate classify denormalize test lint format smoke install-dev doc
 ### Data
+
+## download:  Download RC1/RC2  backup
+download:
+	@gcover --env production --verbose  gdb download-couple --type backup --output-dir $(DELIVERY_DIR)  \
+	 --unzip --no-keep-zip
+
 
 ## administrative-zones: Create the adminstratives zones (lots, WU, mapsheets)
 administrative-zones:
@@ -160,12 +169,13 @@ $(TRANSLATED_PATH): $(CLASSIFIED_PATH)
 	@echo "Saving to $(TRANSLATED_PATH)"
 	python ./scripts/translate_gpkg.py -t $(TRANSLATION_CSV) \
 		--strati-links $(STRATI_LINK_PATH) \
+		--config $(CONFIG_PATH)  \
 		--lowercase-columns --output $(TRANSLATED_PATH)  --langs de,fr  $(CLASSIFIED_PATH)
 
 $(CLASSIFIED_PATH): $(DENORMALIZED_PATH)
 	@echo "--- Applying Style Configuration ---"
 	@gcover --env sandisk publish apply-config --styles-dir $(STYLES_DIR) \
-		$(DENORMALIZED_PATH) config/esri_classifier_denormalized_geocover.yaml
+		$(DENORMALIZED_PATH) $(CONFIG_PATH)
 
 ## denormalize: Only run the table import and denormalization (requires master GDB)
 denormalize: $(DENORMALIZED_PATH)
@@ -277,7 +287,7 @@ mapfiles:
 		--styles-dir $(STYLES_DIR)/styles \
 		--pattern-file config/patterns_catalog.yaml  \
 		--gml-items label  \
-		config/esri_classifier_denormalized_geocover.yaml
+		$(CONFIG_PATH)
 
 
 ### Code
