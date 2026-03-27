@@ -25,7 +25,7 @@ CLASSIFIED_GPKG	  := denormalized_classified.gpkg
 CLASSIFIED_PATH   := $(OUTPUT_DIR)$(CLASSIFIED_GPKG)
 TRANSLATED_GPKG   := denormalized_classified_translated.gpkg
 TRANSLATED_PATH   := $(OUTPUT_DIR)$(TRANSLATED_GPKG)
-FULL_GDB_PATH     := $(DELIVERY_DIR)RC2.gdb     # TODO Val Bregaglia missing GMU_ATT in RC2. RC1 OK
+FULL_GDB_PATH     := $(DELIVERY_DIR)RC1.gdb     # TODO Val Bregaglia missing GMU_ATT in RC2. RC1 OK
 GEOCOVER_AUX_PATH := $(OUTPUT_DIR)geocover_aux.gpkg
 ADMIN_ZONES_GPKG  := administrative_zones.gpkg
 MAPSERVER_OUTPUT  := mapserver_$(BRANCH)
@@ -270,6 +270,10 @@ clean-translate:
 ## clean-classify: Clean classified artefacts
 clean-classify: clean-translate
 	rm -rf $(CLASSIFIED_PATH)
+
+## clean-master:  Clean master GDB
+clean-master:  clean-denormalize
+	rm -rf $(MASTER_GDB)
 
 ## clean-all: Remove generated GDB and GeoPackage files
 clean-all: clean-denormalize
