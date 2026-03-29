@@ -1656,6 +1656,7 @@ def export_classifications_to_csv(
             # ENHANCED: Add full_symbol_layers info
             if class_obj.full_symbol_layers:
                 layers = class_obj.full_symbol_layers
+                
                 fill_layer_types = None
                 fill_types = []
                 if hasattr(layers, 'fills'):
@@ -1663,8 +1664,8 @@ def export_classifications_to_csv(
                     fill_layer_types = ", ".join(fill_types)
                 row["fill_layer_types"] = fill_layer_types
                 row["fill_layer_count"] = len(fill_types)
-                row["has_outline"] = layers.get('outline')
-                row["char_marker_count"] = len(layers.get('character_markers', []))
+                row["has_outline"] = layers.outline
+                row["char_marker_count"] = len(layers.character_markers)
 
             rows.append(row)
 
