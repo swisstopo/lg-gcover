@@ -710,7 +710,10 @@ def diagram(json_file, output, title, no_fields, no_relationships, filter):
 @schema.command()
 @click.argument("old_schema", type=click.Path(exists=True))
 @click.argument("new_schema", type=click.Path(exists=True))
+@click.option("--old-schema-version", type=str, help="Old schema version (name, date)", default=None)
+@click.option("--new-schema-version", type=str, help="New schema version (name, date)", default=None)
 @click.option("--output", "-o", help="Output file for diff report")
+
 @click.option(
     "--format",
     type=click.Choice(["json", "html", "markdown"]),
@@ -731,6 +734,8 @@ def diagram(json_file, output, title, no_fields, no_relationships, filter):
 def diff(
     old_schema,
     new_schema,
+    old_schema_version,
+    new_schema_version,
     output,
     format,
     template,
@@ -760,6 +765,11 @@ def diff(
 
     # Comparer
     diff = SchemaDiff(old, new)
+
+    if old_schema_version and new_schema_version:
+        click.echo(f"SCHEMA: {old_schema_version}")
+        diff.old_schema.metadata['name'] = old_schema_version
+        diff.new_schema.metadata['name'] = new_schema_version
 
     # Afficher le résumé en console
     summary = diff.get_summary()
