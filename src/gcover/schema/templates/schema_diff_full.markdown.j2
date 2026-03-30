@@ -1,10 +1,12 @@
 # Schema Comparison Report
 
-**Comparison Date:** {{ metadata.comparison_date | format_datetime }}  
-**Old Schema:** `{{ metadata.old_schema_name }}`  
+
+**Comparison Date:** {{ metadata.comparison_date | format_datetime }}
+
+**Old Schema:** `{{ metadata.old_schema_name }}`
+
 **New Schema:** `{{ metadata.new_schema_name }}`
 
----
 
 ## Summary
 
@@ -192,7 +194,7 @@ No coded value changes detected.
 
 
 {% endfor -%}
-{% endif -%}
+{% endif %}
 
 
 
