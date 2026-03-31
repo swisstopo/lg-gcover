@@ -4,55 +4,58 @@ Enhanced CLI commands for preparing GeoCover data for publication.
 Supports multiple tooltip layers, flexible source mappings, and comprehensive configuration.
 """
 
+import json
 import os
 import sys
 import time
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from importlib.resources import files
 
 import click
 import geopandas as gpd
 import pandas as pd
-import json
 import yaml
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
-
-from gcover.config import DEFAULT_EXCLUDED_FIELDS
+from rich.text import Text
 
 from gcover.cli.main import _split_bbox
-from gcover.config import SDE_INSTANCES, AppConfig, load_config
-from gcover.publish.esri_classification_applicator import ClassificationApplicator
+from gcover.config import (DEFAULT_EXCLUDED_FIELDS, SDE_INSTANCES, AppConfig,
+                           load_config)
+from gcover.publish.esri_classification_applicator import \
+    ClassificationApplicator
 from gcover.publish.esri_classification_extractor import (
-    extract_lyrx_complete,
-    explore_layer_structure,
-    export_classifications_to_csv,
-    ClassificationJSONEncoder,
-    to_serializable_dict,
-)
+    ClassificationJSONEncoder, explore_layer_structure,
+    export_classifications_to_csv, extract_lyrx_complete, to_serializable_dict)
 from gcover.publish.generator import MapServerGenerator
+from gcover.publish.merge_sources import (GDBMerger, MergeConfig,
+                                          create_merge_config)
 from gcover.publish.qgis_generator import QGISGenerator
-from gcover.publish.style_config import (
-    BatchClassificationConfig,
-    apply_batch_from_config,
-)
-from gcover.publish.merge_sources import (
-    GDBMerger,
-    MergeConfig,
-    create_merge_config,
-)
-from gcover.publish.tooltips_enricher import (
-    EnhancedTooltipsEnricher,
-    EnrichmentConfig,
-    LayerMapping,
-    LayerType,
-    create_enrichment_config,
-)
+from gcover.publish.style_config import (BatchClassificationConfig,
+                                         apply_batch_from_config)
+from gcover.publish.tooltips_enricher import (EnhancedTooltipsEnricher,
+                                              EnrichmentConfig, LayerMapping,
+                                              LayerType,
+                                              create_enrichment_config)
+from gcover.publish.writeback import (build_uuid_lookup,
+                                          extract_layer_name,
+                                          get_matching_layers_auto,
+                                          get_matching_layers_from_config,
+                                          list_filegdb_layers,
+                                          list_gpkg_layers,
+                                          load_layer_mapping_from_config,
+                                          update_filegdb_layer)
+
+from gcover.cli.symbols_cli import symbols_commands
+
+from gcover.cli.publish_helper import (handle_staging_result,get_all_frozen_classifications,
+get_all_classifications, list_all_classification_names, export_unique_items_to_excel)
+
+
 
 DEFAULT_ZONES_PATH = files("gcover.data").joinpath("administrative_zones.gpkg")
 
@@ -84,6 +87,8 @@ def publish_commands(ctx):
     ctx.obj.setdefault("environment", "development")
     ctx.obj.setdefault("verbose", False)
     ctx.obj.setdefault("config_path", None)
+
+publish_commands.add_command(symbols_commands)
 
 
 @publish_commands.command()
@@ -122,6 +127,7 @@ def extract_classification(
     """Extract ESRI layer classification information from .lyrx files."""
     logger.info(f"COMMAND START: apply-config")
     verbose = ctx.obj.get("verbose", False)
+    environnement = ctx.obj.get('environment')
     use_arcpy = False
 
     if verbose and quiet:
@@ -264,8 +270,10 @@ def apply_config(
       gcover publish apply-config geocover.gpkg config.yaml --dry-run
     """
     verbose = ctx.obj.get("verbose", False)
+    env = ctx.obj.get('environment')
 
     logger.info(f"COMMAND START: apply-config")
+    logger.info(f"environment: {env}")
 
     if verbose:
         console.print("[dim]Verbose logging enabled[/dim]")
@@ -274,7 +282,11 @@ def apply_config(
 
         # Load configuration
         with console.status("[cyan]Loading configuration...", spinner="dots"):
-            config = BatchClassificationConfig(config_file, styles_dir)
+            config = BatchClassificationConfig(config_path=config_file,
+                                               styles_base_path=styles_dir,
+                                               env=env)
+
+        logger.info(yaml.safe_dump(config.raw_config, sort_keys=False))
 
         console.print(f"[green]✓[/green] Loaded configuration:")
         console.print(f"  • Layers: {len(config.layers)}")
@@ -297,6 +309,8 @@ def apply_config(
             )
 
         console.print(table)
+
+
 
         if dry_run:
             console.print("\n[yellow]🔍 Dry run - no changes will be made[/yellow]")
@@ -932,13 +946,17 @@ def list_mapsheets(ctx, admin_zones: Optional[Path]):
     "--output-dir",
     "-o",
     type=click.Path(path_type=Path),
-    required=True,
     help="Output directory for mapfiles",
 )
 # YAML configuration file (extracts prefixes and layer names automatically",
 @click.argument(
     "config-file",
     type=click.Path(exists=True, path_type=Path),
+)
+@click.option(
+    "--pattern-file",
+    type=click.Path(exists=True, path_type=Path),
+    help="Pattern file"
 )
 @click.option(
     "--connection",
@@ -951,6 +969,17 @@ def list_mapsheets(ctx, admin_zones: Optional[Path]):
     "--use-symbol-field",
     is_flag=True,
     help="Use SYMBOL field instead of complex expressions",
+)
+@click.option(
+    "--no-scale",
+    is_flag=True,
+    help="Don't use maxscaledenom (mostly for debugging)",
+)
+@click.option(
+    "--gml-items",
+    type=click.Choice(["default", "all", "label"]),
+    default="default",
+    help="What attribute to expose in `gml-items` (mostly for debugging)",
 )
 @click.option(
     "--symbol-field", default="SYMBOL", help="Name of symbol field (default: SYMBOL)"
@@ -970,16 +999,35 @@ def list_mapsheets(ctx, admin_zones: Optional[Path]):
     is_flag=True,
     help="Generate combined symbol file and fontset for all layers",
 )
+@click.option("--staging", help="Generate to staging for layer (e.g., --staging lines)")
+@click.option(
+    "--staging-all", is_flag=True, help="Generate staging for all frozen layers"
+)
+@click.option("--diff", help="Generate and launch diff tool for layer")
+@click.option("--diff-all", is_flag=True, help="Launch diff for all frozen layers")
+@click.option("--diff-tool", default="meld", help="Diff tool (meld, vscode, kdiff3)")
+@click.option("--force-regenerate", help="Force regenerate frozen layer")
+@click.option('--list-classifications', is_flag=True, help='List all classifications')
 def mapserver(
     ctx,
-    output_dir: Path,
+    output_dir: Optional[Path],
     config_file: Optional[Path],
+    pattern_file: Optional[Path],
     styles_dir: Optional[Path],
     use_symbol_field: bool,
     symbol_field: str,
-    prefixes: Optional[str],
+    prefixes: Optional[str],  # TODO: remove
     generate_combined: bool,
+    staging_all: Optional[bool],
+    staging: Optional[str],
+    diff: Optional[str],
+    diff_all: Optional[bool],
+    diff_tool: Optional[str],
+    force_regenerate: Optional[bool],
     connection_name: Optional[str] = None,
+    no_scale: Optional[bool] = False,
+    gml_items: Optional[str] = 'default',
+    list_classifications: Optional[bool] = False,
 ):
     """Generate MapServer mapfiles from ESRI style files.
 
@@ -992,17 +1040,62 @@ def mapserver(
       gcover publish mapserver -o output/ --generate-combined \\
           config/esri_classifier.yaml
 
-      # Manual with JSON prefixes
-      gcover publish mapserver --style-dir styles/ -o output/ -t Polygon \\
-        --use-symbol-field --generate-combined \\
-        --prefixes '{"Bedrock":"bedr","Surfaces":"surf","Fossils":"foss"}' \\
-        config/esri_classifier.yaml
-
-
     """
     layer_type = None
+    prefix_map = {}
+    mapfile_names = {}
+    mapfile_groups = {}
+    mapfile_labels = {}
+    active_classes = {}
+    include_items_dict = {}
+    max_scaledenoms = {}
+    mapfiles = []
+    config = None
+    symbol_field = None
+    mapfile_configs = {}
+    identifier_fields = {}
+    lang_fields_dict = {}
+    translations_dict = {}
+
+
+    env = ctx.obj.get('environment')
 
     publish_config, global_config = get_publish_config(ctx)
+    staging_mode = False # bool(staging or diff or staging_all or diff_all)  # TODO
+    staging_mode = bool(staging or diff or staging_all or diff_all)
+    console.print(f"Staging mode: {staging_mode}", style="yellow")
+
+    if config_file:
+        console.print(f"[cyan]Loading configuration from {config_file}[/cyan]")
+        try:
+            batch_config = BatchClassificationConfig(config_path=config_file, env=env)
+        except:
+            raise click.BadParameter(
+                f"Cannot load batch config from: {config_file}"
+            )
+
+    if list_classifications:
+        classifications = list_all_classification_names(batch_config)
+
+        console.print("[cyan]=== Available classifications ===[/cyan]")
+        console.print("")
+
+        # Group by layer
+        by_layer = {}
+        for cls in classifications:
+            layer = cls['layer']
+            if layer not in by_layer:
+                by_layer[layer] = []
+            by_layer[layer].append(cls)
+
+        for layer_name, cls_list in by_layer.items():
+            console.print(f"[cyan]  Layer: {layer_name}[/cyan]")
+            for cls in cls_list:
+                console.print(f"    - {cls['name']:20} ({cls['mode']:10})")
+                console.print(f"      └─ {cls['style_file']}", style="rgb(120,120,120)")
+            console.print("")
+
+        return
 
     try:
         connections = global_config.mapserver.connections
@@ -1015,37 +1108,70 @@ def mapserver(
         connections = global_config.mapserver.connections
         connection = connections[connection_name]
 
+
+
+    if pattern_file:
+        console.print(f"[cyan]Loading patterns from {pattern_file}[/cyan]")
+
+
+
+
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load configuration if provided
-    prefix_map = {}
-    mapfile_names = {}
-    mapfile_groups = {}
-    mapfile_labels = {}
-    active_classes = {}
-    mapfiles = []
-    config = None
-    symbol_field = None
+    symbol_field = batch_config.symbol_field.lower()
+    label_field = batch_config.label_field.lower()
 
-    if config_file:
-        console.print(f"[cyan]Loading configuration from {config_file}[/cyan]")
-        config = BatchClassificationConfig(config_file)
+    staging_mode = bool(staging or diff or staging_all or diff_all)
 
-        identifier_fields = {}
+    console.print(f"Staging mode: {staging_mode}", style="yellow")
 
-        symbol_field = config.symbol_field.lower()
-        label_field = config.label_field.lower()
+    if staging or diff:
+        # Find by classification_name
+        target_name = staging or diff
+        found = find_classifications_by_name(batch_config, target_name)
 
-        # Extract prefixes and mapfile names from config
-        for layer_config in config.layers:
-            for class_config in sorted(
-                layer_config.classifications, key=lambda x: x.index
-            ):
-                if class_config.classification_name:
+        if not found:
+            available = [c['name'] for c in list_all_classification_names(batch_config)]
+            raise click.ClickException(
+                f"Classification not found: {target_name}\n"
+                f"Available: {', '.join(available)}\n"
+                f"Use --list-classifications for details"
+            )
+
+        classifications_to_process = found
+
+    elif staging_all or diff_all:
+        classifications_to_process = get_all_frozen_classifications(batch_config)
+
+    else:
+        # Normal mode - all classifications
+        classifications_to_process = get_all_classifications(batch_config)
+
+    # Extract prefixes and mapfile names from config
+    for layer_config, class_config in classifications_to_process: # TODO is alphabetical?
+
+        # Get classification name for logging
+        cls_name = getattr(class_config, 'classification_name', 'unknown')
+        logger.info(f"Processing classification: {cls_name}")
+
+        # Skip non-frozen in staging mode
+        if staging_mode:
+            mapfile_config = getattr(class_config, 'mapfile_config', None)
+            if not (mapfile_config and mapfile_config.classes_mode == 'frozen'):
+                logger.debug(f"Skipping {cls_name} (not frozen)")
+                continue
+
+        if class_config.classification_name:
                     # Use classification name as key
-                    key = class_config.classification_name
+                    # TODO why discrepency in `class_config.classification_name`
+                    key = class_config.classification_name.replace(' ', '_')
                     mapfile_labels[key] = class_config.map_label
                     active_classes[key] = class_config.active
+                    include_items_dict[key] = class_config.include_items
+                    max_scaledenoms[key] = class_config.maxscaledenom
+                    mapfile_configs[key]  = class_config.mapfile_config
+                    translations_dict[key] = class_config.translations
+                    lang_fields_dict[key] = class_config.lang_fields
                     if class_config.symbol_prefix:
                         prefix_map[key] = class_config.symbol_prefix
                     if class_config.mapfile_group:
@@ -1059,14 +1185,15 @@ def mapserver(
                         logger.debug(
                             f"Layer '{key}' will use identifier_field: {field_name}"
                         )
-
-        console.print(
+    if pattern_file:
+            console.print(f"[cyan]Loading patterns from {pattern_file}[/cyan]")
+    console.print(
             f"  [green]✓[/green] Extracted prefixes for {len(prefix_map)} classifications"
         )
 
-        # If no style files specified, use all from config
-        style_files = []
-        for layer_config in config.layers:
+    # If no style files specified, use all from config
+    style_files = []
+    for layer_config in batch_config.layers:
             layer_type = layer_config.layer_type
             gpkg_layer = layer_config.gpkg_layer
             connection_ref = layer_config.connection_ref
@@ -1079,17 +1206,18 @@ def mapserver(
                         connection_ref,
                         class_config.data,
                         layer_config.template,
-                        layer_config.max_scale,
+                        class_config.maxscaledenom,  # TODO layer_config.max_scale,
+                        class_config.minscaledenom,
                     )
                     logger.debug(params)
                     style_files.append(params)
 
-        console.print(
-            f"  [green]✓[/green] Found {len(style_files)} style files in config"
-        )
+            console.print(
+                f"  [green]✓[/green] Found {len(style_files)} style files in batch_config"
+            )
 
     # Override with manual prefixes if provided
-    if prefixes:
+    if prefixes:  # TODO: remove
         import json
 
         try:
@@ -1117,7 +1245,14 @@ def mapserver(
         layer_type=layer_type.name,  # TODO remove
         use_symbol_field=use_symbol_field,
         symbol_field=symbol_field,
+        no_scale=no_scale,
+        pattern_catalog=pattern_file,
+        gml_items=gml_items,
+        output_dir=output_dir,
+        languages=batch_config.languages,
+        default_language=batch_config.default_language,
     )
+
 
     for (
         style_file,
@@ -1127,8 +1262,18 @@ def mapserver(
         mapserver_data,
         template,
         layer_max_scale,
+        layer_min_scale,
     ) in style_files:
-        console.print(f"Processing {style_file.name} [{layer_type}]...")
+
+        # 1. Pre-loop Feedback: Inform user of the global mode
+        mode_colors = {"all": "bold magenta", "label": "bold blue"}
+        mode_color = mode_colors.get(gml_items, "bold green")
+
+        console.print(Panel(
+            Text(f"Using ESRI .lyrx: {style_file.name} [{layer_type}]", justify="center", style=mode_color),
+            subtitle="Processing Classification Layers"
+        ))
+
 
         if connection_ref and connections.get(connection_ref):
             connection = connections.get(connection_ref)
@@ -1140,43 +1285,95 @@ def mapserver(
 
         generator.layer_type = layer_type.name
         # Load classifications
-        classifications = extract_lyrx_complete(
+        layer_classifications = extract_lyrx_complete(
             lyrx_path,
             display=False,
             identifier_fields=identifier_fields,  # ← NEW
         )  # TODO switched from extract_lyrx
 
-        if not classifications:
+        if not layer_classifications:
             console.print(
-                f"[yellow]⚠ No classifications found in {style_file.name}[/yellow]"
+                f"[yellow]⚠ No layer classifications found in {style_file.name}[/yellow]"
             )
             continue
 
         # Process each classification
+        logger.debug(f"Active classes: {active_classes}")
 
-        for classification in classifications:
-            layer_name = classification.layer_name or style_file.stem
+        def get_unique_fields(raw_str, extra_item=None):
+            """Parses a comma-separated string, adds an extra item,
+            and returns a unique comma-separated string preserving order."""
+            # Split and clean
+            items = [s.strip() for s in raw_str.split(',') if s.strip()]
 
-            # Get prefix and mapfile name from config if available
+            # Use a dictionary to maintain insertion order (Python 3.7+)
+            ordered_map = {item: None for item in items}
+
+            if extra_item:
+                ordered_map[extra_item] = None
+
+            return ",".join(ordered_map.keys())
+
+
+
+        for layer_classification in layer_classifications:
+            layer_name = (layer_classification.layer_name or style_file.stem).replace(' ', '_')
+            is_active = active_classes.get(layer_name, False)
+
+            # 1. Get prefix and mapfile name from config if available
             symbol_prefix = prefix_map.get(layer_name, layer_name.lower())
             mapfile_layer_name = mapfile_names.get(layer_name, layer_name)
             mapfile_layer_group = mapfile_groups.get(layer_name, None)
             mapfile_label = mapfile_labels.get(layer_name, None)
-            is_active = active_classes.get(layer_name)
+            include_items = include_items_dict.get(layer_name)
+            mapfile_config = mapfile_configs.get(layer_name)
 
-            if not is_active:
+            translations = translations_dict.get(layer_name)
+            lang_fields = lang_fields_dict.get(layer_name)
+
+
+            # 2. Robust include_items logic
+            raw_include = include_items_dict.get(layer_name) or ""
+
+            if gml_items == 'all':
+                include_items = 'all'
+                method_msg = "[magenta]Full Export (All Fields)[/magenta]"
+
+            elif gml_items == 'label':
+                label_field = getattr(config, 'label_field', None)
+
+                if label_field:
+                    # Use the helper to merge label_field while keeping order
+                    include_items = get_unique_fields(raw_include, label_field)
+                    method_msg = f"[blue]Label-Optimized[/blue] (Included: {label_field})"
+                else:
+                    # Fallback if label_field is missing
+                    include_items = get_unique_fields(raw_include)
+                    method_msg = "[yellow]Warning: No label_field found in batch_config[/yellow]"
+
+            else:
+                # Standard mode: just ensure the string is clean/unique but keep order
+                include_items = get_unique_fields(raw_include) if raw_include else "all"
+                method_msg = "[green]Standard (Config-based)[/green]"
+
+            # 3. Visual Feedback per Layer
+            if is_active:
+                console.print(f"• [bold]{layer_name:<20}[/bold] | Mode: {method_msg}")
+                if include_items:
+                    console.print(f"  [dim]Fields: {include_items}[/dim]")
+            else:
                 console.print(
                     f"  [bold orange1]Skipping {layer_name} (inactive)[/bold orange1]"
                 )
                 continue
 
             if not mapserver_data:
-                mapserver_data = f"geom from (SELECT * from {gpkg_layer} ) as blabla using unique gid using srid=2056"
+                # mapserver_data = f"geom from (SELECT * from {gpkg_layer} ) as blabla using unique gid using srid=2056"
                 mapserver_data = f"geom FROM  geol.geocover_{gpkg_layer}  USING UNIQUE gid USING SRID=2056"
 
             # Generate mapfile
-            mapfile_content = generator.generate_layer(
-                classification=classification,
+            result = generator.generate_layer(
+                classification=layer_classification,
                 layer_name=mapfile_layer_name,
                 layer_group=mapfile_layer_group,
                 symbol_prefix=symbol_prefix,
@@ -1186,24 +1383,39 @@ def mapserver(
                 symbol_field=symbol_field,
                 template=template,
                 map_label=mapfile_label,
-                layer_max_scale=layer_max_scale,
+                layer_max_scale=layer_max_scale,  # mapfile layer (from the classification)
+                layer_min_scale=layer_min_scale,
+                include_items=include_items,
+                mapfile_config=mapfile_config,
+                staging_mode=staging_mode,
+                lang_fields=lang_fields,
+                translations=translations,
             )
 
-            # Save mapfile
-            mapfile = f"{mapfile_layer_name}.map"
-            output_file = output_dir / mapfile
-            output_file.write_text(mapfile_content)
-            generated_files.append(output_file)
-            mapfiles.append(mapfile)
 
-            console.print(
-                f"  [green]✓[/green] Generated: {output_file.name} "
-                f"(prefix: {symbol_prefix}, "
-                f"{len([c for c in classification.classes if c.visible])} classes)"
-            )
+            if staging_mode:
+                handle_staging_result(
+                    result, symbol_prefix, mapfile_config, output_dir, "meld"
+                )
+
+            else:
+                # TODO: Save mapfile
+                mapfile = f"{mapfile_layer_name}.map"
+                output_file = output_dir / mapfile
+                output_file.write_text(result)
+                generated_files.append(output_file)
+                mapfiles.append(mapfile)
+
+                console.print(
+                    f"  [green]✓[/green] Generated: {output_file.name} "
+                    f"(prefix: {symbol_prefix}, "
+                    f"{len([c for c in layer_classification.classes if c.visible])} classes)"
+                )
+
 
             # Store classification for combined symbol file
-            all_classifications.append(classification)
+            all_classifications.append(layer_classification)
+
 
     # Generate combined symbol file if requested
     if generate_combined and all_classifications:
@@ -1233,15 +1445,24 @@ def mapserver(
         )
         console.print(f"[dim]Used {len(generator.fonts_used)} fonts[/dim]")
 
-        console.print(f"[cyan]Includes for the main mapfile[/cyan]")
-        for mapfile in reversed(mapfiles):  # TOP: drawn first...
-            console.print(f'INCLUDE "layers/{mapfile}"')
+
 
     # Summary
     console.print(
         f"\n[bold green]✅ Generated {len(generated_files)} mapfile(s)[/bold green]"
     )
     console.print(f"[dim]Output directory: {output_dir}[/dim]")
+
+    console.print(f"[cyan]Includes for the main mapfile[/cyan]")
+    for mapfile in reversed(mapfiles):  # TOP: drawn first...
+        console.print(f'INCLUDE "layers/{mapfile}"')
+
+    item_file = export_unique_items_to_excel(
+        include_items_dict,
+        output_dir / "items_name.xlsx"
+    )
+    console.print(f"[cyan]Items list:[/cyan]")
+    console.print(f"  [green]✓[/green] Item names: {item_file}")
 
 
 @publish_commands.command()
@@ -1314,7 +1535,9 @@ def qgis(
 
         # Extract prefixes from config
         for layer_config in config.layers:
-            for class_config in layer_config.classifications:
+            for class_config in sorted(
+                    layer_config.classifications, key=lambda x: x.index
+            ):
                 if class_config.classification_name and class_config.symbol_prefix:
                     prefix_map[class_config.classification_name] = (
                         class_config.symbol_prefix
@@ -1328,7 +1551,9 @@ def qgis(
         if not style_files:
             style_files = []
             for layer_config in config.layers:
-                for class_config in layer_config.classifications:
+                for class_config in sorted(
+                        layer_config.classifications, key=lambda x: x.index
+                ):
                     if class_config.style_file not in style_files:
                         style_files.append(class_config.style_file)
             console.print(
@@ -1406,26 +1631,36 @@ def qgis(
 from gcover.publish.console_generator import inspect_styles_main
 
 
+
 @publish_commands.command(name="inspect")
 @click.pass_context
 @click.argument("style_files", nargs=-1, type=click.Path(exists=True, path_type=Path))
-@click.option(
-    "--detailed",
-    "-d",
-    is_flag=True,
-    help="Show detailed symbol information including layers",
-)
-@click.option(
-    "--config-file",
-    "-c",
-    type=click.Path(exists=True, path_type=Path),
-    help="Load style files from YAML configuration",
-)
-def inspect_styles_cmd(
-    ctx, style_files: tuple, detailed: bool, config_file: Optional[Path]
-):
-    """Inspect and display ESRI style file contents."""
-    inspect_styles_main(style_files, detailed, config_file)
+@click.option("--detailed", "-d", is_flag=True,
+               help="Show detailed symbol information including layers")
+@click.option("--config-file", "-c", type=click.Path(exists=True, path_type=Path),
+               help="Load style files from YAML configuration")
+@click.option("--symbol-prefix", "-p", type=str, default=None,
+               help="Prefix for generated symbol IDs")
+@click.option("--identifier-mode", "-m", type=click.Choice(["label", "index", "field"]),
+               default="label", help="How to generate identifiers")
+@click.option("--identifier-field", "-f", type=str, default=None,
+               help="Field to use for identifier ID")
+@click.option("--head", "-n", type=int, default=None,
+               help="Limit number of classes to display")
+def inspect_styles_cmd(ctx, style_files: tuple, detailed: bool, config_file: Optional[Path],
+                        symbol_prefix: Optional[str], identifier_mode: str, head: Optional[int], identifier_field: Optional[str]=None):
+     """Inspect and display ESRI style file contents."""
+     verbose = ctx.obj.get("verbose", False)
+
+
+
+     if identifier_mode == 'field' and identifier_field is None:
+         raise click.BadParameter("You must provide --identifier-field when using --identifier-mode=field")
+
+     inspect_styles_main(style_files, detailed, config_file,
+                         symbol_prefix=symbol_prefix, identifier_mode=identifier_mode,identifier_field=identifier_field, head=head, verbose=verbose)
+
+
 
 
 @publish_commands.command()
@@ -1775,7 +2010,19 @@ def show_sample_data(layer_name: str, sample_gdf: gpd.GeoDataFrame):
     "--layers",
     "-l",
     multiple=True,
-    help="Specific spatial layers to process (default: all standard layers)",
+    help="Specific spatial layers to process e.g. `GC_ROCK_BODIES/GC_BEDROCK`  (default: all standard layers)",
+)
+@click.option(
+    "--split-by-mapsheet",
+    is_flag=True,
+    default=False,
+    help="Split polygon/line features at mapsheet boundaries and assign MSH_MAP_NBR to all features.",
+)
+@click.option(
+    "--enrich-mapsheet-links",
+    is_flag=True,
+    default=False,
+    help="Add erl_link / ber_link from mapsheets to every feature. Requires --split-by-mapsheet.",
 )
 @click.option(
     "--skip-tables",
@@ -1813,6 +2060,8 @@ def merge(
         mapsheets: Optional[str],
         reference_source: str,
         layers: tuple,
+        split_by_mapsheet: bool,
+        enrich_mapsheet_links: bool,
         skip_tables: bool,
         force_2d: bool,
         clip_to_swiss_border: bool,
@@ -1939,7 +2188,8 @@ def merge(
         use_convex_hull_masks=True,
         clip_to_swiss_border=clip_to_swiss_border,
         validate_geometries=validate_geometries,
-
+        split_by_mapsheet=split_by_mapsheet,
+        enrich_mapsheet_links=enrich_mapsheet_links,
     )
 
 
@@ -1986,7 +2236,9 @@ def merge(
         else:
             if output.suffix.lower() == ".gdb":
                 console.print("[yellow]arcpy not available, using geopandas-based merger[/yellow]")
+
             merger = GDBMerger(config, verbose=verbose)
+
 
         stats = merger.merge()
 
@@ -2011,6 +2263,9 @@ def _display_merge_config(config: MergeConfig, dry_run: bool) -> None:
     table = Table(title=title, show_header=True, header_style="bold magenta")
     table.add_column("Setting", style="cyan")
     table.add_column("Value", style="green")
+
+    def _bool_cell(value: bool) -> str:
+        return "[green]✓[/green]" if value else "[dim]✗[/dim]"
 
     # Sources
     if config.rc1_path:
@@ -2047,6 +2302,8 @@ def _display_merge_config(config: MergeConfig, dry_run: bool) -> None:
     table.add_row("Spatial Layers", str(len(config.spatial_layers)))
     table.add_row("Reference Tables", str(len(config.non_spatial_tables)))
     table.add_row("Reference Source", config.reference_source)
+    table.add_row("Splitting by mapsheet", _bool_cell(config.split_by_mapsheet))
+    table.add_row("Add links to PDFs", _bool_cell(config.enrich_mapsheet_links))
 
     # Geometry handling
     z_mode = "Preserve Z (3D)" if config.preserve_z else "Force 2D"
@@ -2299,7 +2556,7 @@ def writeback(
     click.echo(f"Classification DB: {classification_db}")
     click.echo(f"Attributes: {', '.join(attributes)}")
 
-    from gcover.publish.writeback import update_filegdb_layer, extract_layer_name, load_layer_mapping_from_config, build_uuid_lookup, list_gpkg_layers, list_filegdb_layers, get_matching_layers_from_config, get_matching_layers_auto
+
 
     if dryrun:
         click.secho("=== DRYRUN MODE ===", fg="yellow", bold=True)

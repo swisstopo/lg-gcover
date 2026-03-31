@@ -41,6 +41,11 @@ global:
         connection: "some_file.gpkg"
         data: "fossils_layer"
         ogr_driver: "GPKG"
+      postgis_wms:
+        connection_type: POSTGIS
+        # CONNECTION string now leverages the secrets defined in 'global'
+        connection: "host=${GCOVER_POSTGIS_HOST} port=${GCOVER_POSTGIS_PORT} dbname=${GCOVER_POSTGIS_DBNAME} user=${GCOVER_POSTGIS_USER} password=${GCOVER_POSTGIS_PASSWORD}"
+
 
 
   logging:

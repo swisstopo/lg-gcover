@@ -204,6 +204,24 @@ gcover gdb process-all --max-workers 2              # Parallel processing (exper
 gcover gdb process-all --filter-type verification_topology --filter-rc RC2 --since 2025-02-01
 ```
 
+
+##### Assets download
+
+Main download command with full control:
+
+```bash
+gcover gdb download --type backup  # Download latest backup couple (RC1+RC2)
+
+gcover gdb download --type verification_topology --rc RC1   # Download only RC1 topology verification  
+
+gcover gdb download --type increment --dry-run     # Dry run
+
+gcover gdb download --type backup -o /data/gdb --no-unzip    # Download without unzipping
+
+gcover gdb download --type backup --no-keep-zip     # Extract and remove zip files
+```
+
+
 ##### Maintenance & Utilities
 
 **System Maintenance**

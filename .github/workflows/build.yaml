@@ -16,16 +16,16 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
-    needs: build
+
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Install miniconda
-        uses: conda-incubator/setup-miniconda@v3
+        uses: conda-incubator/setup-miniconda@v3.3.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           auto-update-conda: true
@@ -35,7 +35,7 @@ jobs:
 
 
       - name: Cache conda environment
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         with:
           path: |
             /usr/share/miniconda3/envs/${{ env.CONDA_ENV }}
@@ -85,31 +85,42 @@ jobs:
       #  run: |
       #    ruff check src/ --output-format=github
 
+      - name: Debug CLI commands
+        shell: bash -l {0}
+        run: |
+          GCOVER_ENVIRONMENT=test python -m gcover.cli.main --env test gdb --help || true
+          GCOVER_ENVIRONMENT=test python -m gcover.cli.main --env test publish --help || true
+
       - name: Run tests
         shell: bash -l {0}
+        if: false  # Disabled
         run: |
           GCOVER_ENVIRONMENT=test  pytest tests/test_parse_since.py -v  
 
       - name: Run smoke tests
         shell: bash -l {0}
+        if: false  # Disabled
         run: |
-          GCOVER_ENVIRONMENT=test  pytest tests/test_imports.py tests/test_cli_smoke.py -v --no-cov  
+          # Load .env.test into environment
+          export $(grep -v '^#' .env.test | xargs)
+          GCOVER_ENVIRONMENT=test pytest tests/test_imports.py tests/test_cli_smoke.py -v --no-cov
 
-      - name: Run all tests (allow failures for now)
+      - name: Run all tests
         shell: bash -l {0}
         run: |
-          GCOVER_ENVIRONMENT=test  pytest tests/ -v --tb=short || echo "Some tests failed - expected during cleanup"
+          GCOVER_ENVIRONMENT=test  pytest tests/ -v --tb=short
   build:
     runs-on: ubuntu-latest
+    needs: test
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         fetch-depth: 0
 
     - name: Install miniconda
-      uses: conda-incubator/setup-miniconda@v3
+      uses: conda-incubator/setup-miniconda@v3.3.0
       with:
           python-version: ${{ env.PYTHON_VERSION }}
           auto-update-conda: true
@@ -118,7 +129,7 @@ jobs:
           activate-environment: ${{ env.CONDA_ENV }}
 
     - name: Cache conda environment
-      uses: actions/cache@v3
+      uses: actions/cache@v5
       with:
           path: |
             /usr/share/miniconda3/envs/${{ env.CONDA_ENV }}
@@ -173,7 +184,7 @@ jobs:
         conda build conda-recipe
 
     - name: Upload Conda build artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7.0.0
       with:
           name: conda-artifacts
           path: ${{ steps.find_artifacts.outputs.conda_build_path }}
@@ -185,7 +196,7 @@ jobs:
               python -m build
 
     - name: Upload built artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7.0.0
       with:
               name: dist-artifacts
               path: dist/

@@ -1,0 +1,127 @@
+
+  SYMBOL
+    NAME "circle"
+    TYPE ELLIPSE
+    POINTS 1 1 END
+    FILLED TRUE
+  END
+
+  SYMBOL
+    NAME "square"
+    TYPE VECTOR
+    POINTS
+      0 0
+      0 1
+      1 1
+      1 0
+      0 0
+    END
+    FILLED TRUE
+  END
+
+ SYMBOL
+    NAME "triangle"
+    TYPE VECTOR
+    POINTS
+      0 1
+      0.5 0
+      1 1
+      0 1
+    END
+    FILLED TRUE
+    ANCHORPOINT 0.5 1.0
+  END
+
+  SYMBOL
+    NAME "inverted_triangle"
+    TYPE VECTOR
+    POINTS
+      0.2 0
+      0.5 1
+      1 0
+      0.2 0
+    END
+    FILLED TRUE
+    ANCHORPOINT 0.5 0.0
+  END
+
+  SYMBOL
+    NAME "halfmoon"
+    TYPE PIXMAP
+    IMAGE "img/halfmoon.png"
+  END # SYMBOL
+
+  SYMBOL
+    NAME "star"
+    TYPE VECTOR
+    POINTS
+      0 0.375
+      0.35 0.375
+      0.5 0
+      0.65 0.375
+      1 0.375
+      0.75 0.625
+      0.875 1
+      0.5 0.75
+      0.125 1
+      0.25 0.625
+      0 0.375
+    END
+    FILLED TRUE
+  END
+
+  SYMBOL
+    NAME "triangle-end"
+    TYPE vector
+    FILLED true
+    POINTS
+      0 0     # Bottom-left corner
+      10 5    # THE TIP (Center-right)
+      0 10    # Top-left corner
+      0 0     # Close polygon
+    END
+    ANCHORPOINT 0.1 0.5  # Pins the tip (X=10) to the near end of the line
+  END
+
+  SYMBOL
+    NAME "dagger-end"
+    TYPE vector
+    FILLED true
+    POINTS
+      0 2
+      0.5 0
+      1 2
+      0 2
+    END
+    # CENTER 6 2        # Center of the bounding box
+    ANCHORPOINT 0 1.0  # Pins the tip  to the end of the line
+  END
+
+  SYMBOL
+    NAME "inverted-dagger-end"
+    TYPE vector
+    FILLED true
+    POINTS
+      0 0
+      0.5 2
+      1.0 0
+      0 0
+    END
+    # CENTER 6 2        # Center of the bounding box
+    ANCHORPOINT 0.5 0  # Pins the tip  to the end of the line
+  END
+
+  # For Erosionsrand
+  SYMBOL
+    NAME "vertline"
+    TYPE vector
+    FILLED true
+    POINTS
+      0 0
+      0 8
+      2 8
+      2 0
+      0 0
+    END # POINTS
+    ANCHORPOINT 0.5 0
+  END # SYMBOL

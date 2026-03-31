@@ -205,9 +205,9 @@ class S3Uploader:
             else:
                 self.s3_client = boto3.client("s3", config=config)
 
-            logger.debug("S3 client initialized successfully")
+            logger.info(f"S3 client initialized : {self.s3_client}")
         except Exception as e:
-            logger.warning(f"Could not initialize S3 client: {e}")
+            logger.error(f"Could not initialize S3 client: {e}")
             self.s3_client = None
 
     def _determine_upload_strategy(self):
@@ -375,7 +375,7 @@ class S3Uploader:
                     request_args = {
                         "data": file_obj,
                         "headers": presigned_data.get("headers", {}),
-                        "timeout": 300,
+                        "timeout": 60,
                         "verify": False,
                     }
 
@@ -639,7 +639,7 @@ class S3Uploader:
             logger.info(f"Downloaded s3://{self.bucket_name}/{s3_key} to {local_path}")
             return True
         except ClientError as e:
-            logger.error(f"Download failed: {e}")
+            logger.error(f"Download from s3://{self.bucket_name}/{s3_key} to {local_path} failed: {e}")
             return False
 
 

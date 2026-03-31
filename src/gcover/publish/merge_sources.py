@@ -12,37 +12,36 @@ Optimized for performance:
 - Single Swiss border clip at the end
 """
 
+import os
+import time
+import warnings
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from collections import defaultdict
+
 from typing import Dict, List, Optional, Set, Tuple, Union
-import warnings
-import os
-import time
 
 import geopandas as gpd
+import fiona
 import numpy as np
 import pandas as pd
 from loguru import logger
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+from rich.progress import (BarColumn, Progress, SpinnerColumn,
+                           TaskProgressColumn, TextColumn)
 from rich.table import Table
-from shapely import get_coordinates, set_coordinates, within, intersects, intersection
-from shapely.geometry import (
-    GeometryCollection, 
-    LineString, 
-    MultiLineString,
-    MultiPoint,
-    MultiPolygon, 
-    Point, 
-    Polygon,
-)
+from shapely import (difference, get_coordinates, intersection, intersects,
+                     make_valid, set_coordinates, simplify, within)
+from shapely.geometry import (GeometryCollection, LineString, MultiLineString,
+                              MultiPoint, MultiPolygon, Point, Polygon)
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import linemerge, unary_union
-from shapely import make_valid, simplify
+from shapely import STRtree
 
 
-from gcover.core.geometry import load_gpkg_with_validation, validate_and_repair_geometries
+from gcover.core.geometry import (load_gpkg_with_validation,
+                                  validate_and_repair_geometries)
 
 console = Console()
 
@@ -55,7 +54,7 @@ except ImportError:
     console.print("[red]PyArrow not installed[/red]")
 
 
-console.print("[yellow]Suppressing some OGR warning (unclosed rings, only CCW, etc.[/yellow]")
+console.print("[yellow]Suppressing some OGR warning (unclosed rings, only CCW, etc.)[/yellow]")
 # Suppress pandas fragmentation warnings
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 os.environ['OGR_GEOMETRY_ACCEPT_UNCLOSED_RING'] = 'NO'
@@ -87,34 +86,72 @@ def create_fast_mask(mapsheets: gpd.GeoDataFrame, source_rc: str) -> BaseGeometr
     return merged.convex_hull
 
 
-def create_exact_mask(mapsheets: gpd.GeoDataFrame, source_rc: str, tolerance: float = 0.1) -> BaseGeometry:
+def _create_source_masks(self) -> Dict[str, BaseGeometry]:
     """
-    Create an exact (but simplified) clip mask.
-    
-    Use this when you need precise clipping at borders.
-    
-    Args:
-        mapsheets: GeoDataFrame with mapsheet polygons
-        source_rc: Source identifier
-        tolerance: Simplification tolerance in CRS units (default 0.1m for LV95)
-        
-    Returns:
-        Simplified dissolved geometry
+    Create EXCLUSIVE (non-overlapping) clip masks for each source.
     """
-    sheets = mapsheets[mapsheets['SOURCE_RC'] == source_rc]
-    if sheets.empty:
-        return None
-        
-    # Dissolve to single geometry
-    merged = unary_union(sheets.geometry.values)
-    
-    # Remove internal slivers/boundaries with buffer trick
-    cleaned = merged.buffer(0.01).buffer(-0.01)
-    
-    # Simplify vertices
-    simplified = simplify(cleaned, tolerance=tolerance, preserve_topology=True)
-    
-    return make_valid(simplified)
+    if self.mapsheets_gdf is None:
+        self._load_mapsheets()
+
+    # Rename column for consistency
+    source_col = self.config.source_column
+    if source_col != 'SOURCE_RC':
+        self.mapsheets_gdf = self.mapsheets_gdf.rename(columns={source_col: 'SOURCE_RC'})
+
+    # Determine source priority (RC2 wins over RC1 by default)
+    all_sources = self.mapsheets_gdf['SOURCE_RC'].unique().tolist()
+    source_priority = []
+    if 'RC2' in all_sources:
+        source_priority.append('RC2')
+    if 'RC1' in all_sources:
+        source_priority.append('RC1')
+    for src in sorted(all_sources):
+        if src not in source_priority:
+            source_priority.append(src)
+
+    logger.info(f"Source priority for exclusive masks: {source_priority}")
+
+    masks = {}
+    claimed_area = None
+
+    for source_name in source_priority:
+        sheets = self.mapsheets_gdf[self.mapsheets_gdf['SOURCE_RC'] == source_name]
+        if sheets.empty:
+            continue
+
+        # Get EXACT dissolved boundary (NOT convex hull!)
+        source_area = unary_union(sheets.geometry.values)
+
+        # Clean up potential topology issues
+        if not source_area.is_valid:
+            source_area = source_area.buffer(0)
+
+        # Make EXCLUSIVE by subtracting already-claimed areas
+        if claimed_area is not None:
+            exclusive_area = difference(source_area, claimed_area)
+            if exclusive_area is None or exclusive_area.is_empty:
+                logger.warning(f"Source {source_name} fully covered by higher priority sources")
+                continue
+            mask = exclusive_area
+        else:
+            mask = source_area
+
+        if not mask.is_valid:
+            mask = mask.buffer(0)
+
+        masks[source_name] = mask
+
+        complexity = get_mask_complexity(mask)
+        logger.debug(f"  {source_name}: {complexity['type']}, {complexity['vertices']:,} vertices")
+
+        # Update claimed area for next iteration
+        if claimed_area is None:
+            claimed_area = source_area
+        else:
+            claimed_area = unary_union([claimed_area, source_area])
+
+    self.source_masks = masks
+    return masks
 
 
 def fast_clip(gdf: gpd.GeoDataFrame, mask: BaseGeometry) -> gpd.GeoDataFrame:
@@ -530,7 +567,34 @@ class MergeConfig:
         "GC_ROCK_BODIES/GC_FOSSILS",
         "GC_ROCK_BODIES/GC_EXPLOIT_GEOMAT_PLG",
         "GC_ROCK_BODIES/GC_EXPLOIT_GEOMAT_PT",
-        "GC_ROCK_BODIES/GC_MAPSHEET",
+        # "GC_ROCK_BODIES/GC_MAPSHEET",
+        # For Increment
+        "D_GC_EXPLOIT_GEOMAT_PLG",
+        "M_GC_EXPLOIT_GEOMAT_PLG",
+        "MG_GC_EXPLOIT_GEOMAT_PLG",
+        "D_GC_LINEAR_OBJECTS",
+        "A_GC_LINEAR_OBJECTS",
+        "M_GC_LINEAR_OBJECTS",
+        "MG_GC_LINEAR_OBJECTS",
+        "D_GC_POINT_OBJECTS",
+        "A_GC_POINT_OBJECTS",
+        "M_GC_POINT_OBJECTS",
+        "MG_GC_POINT_OBJECTS",
+        "M_GC_FOSSILS",
+        "MG_GC_FOSSILS",
+        "D_GC_UNCO_DESPOSIT",
+        "A_GC_UNCO_DESPOSIT",
+        "M_GC_UNCO_DESPOSIT",
+        "MG_GC_UNCO_DESPOSIT",
+        "D_GC_BEDROCK",
+        "A_GC_BEDROCK",
+        "M_GC_BEDROCK",
+        "MG_GC_BEDROCK",
+        "D_GC_SURFACES",
+        "A_GC_SURFACES",
+        "M_GC_SURFACES",
+        "MG_GC_SURFACES",
+
     ])
     
     non_spatial_tables: List[str] = field(default_factory=lambda: [
@@ -566,6 +630,13 @@ class MergeConfig:
     
     # Fields to exclude from output (metadata fields, etc.)
     exclude_fields: Optional[List[str]] = None
+
+    # Post-processing options
+    split_by_mapsheet: bool = False  # Split polygon/line features at mapsheet boundaries
+    enrich_mapsheet_links: bool = False  # Add erl_link/ber_link per feature (requires split_by_mapsheet)
+    mapsheet_transfer_cols: List[str] = field(default_factory=lambda: [
+        "MSH_MAP_NBR", "MSH_MAP_TITLE", "SOURCE_RC"
+    ])
     
 
 @dataclass
@@ -581,6 +652,34 @@ class MergeStats:
     warnings: List[str] = field(default_factory=list)
 
 
+# =============================================================================
+# FileGDB discovery
+# =============================================================================
+
+def _discover_filegdbs(directory: Path) -> List[Tuple[Path, str, str]]:
+    """
+    Yield (path, stem, full_name) for every FileGDB found in *directory*.
+
+    Detection uses the presence of a 'timestamps' file, which every ESRI
+    FileGDB contains regardless of whether the directory ends with '.gdb'.
+
+    Examples
+    --------
+    directory/BCK_2016/         → ("BCK_2016", "BCK_2016")
+    directory/Saas.gdb/         → ("Saas",     "Saas.gdb")
+    directory/20300501_Saas.gdb → ("20300501_Saas", "20300501_Saas.gdb")
+    """
+    results = []
+    for candidate in sorted(directory.iterdir()):
+        if not candidate.is_dir():
+            continue
+        # 'timestamps' is the canonical FileGDB marker (always present)
+        if not (candidate / "timestamps").exists():
+            continue
+        full_name = candidate.name                          # e.g. "Saas.gdb" or "BCK_2016"
+        stem      = candidate.stem                          # strips trailing .gdb if present
+        results.append((candidate, stem, full_name))
+    return results
 # =============================================================================
 # MAIN MERGER CLASS
 # =============================================================================
@@ -631,6 +730,7 @@ class GDBMerger:
             logger.debug(f"  Registered RC2 source: {self.config.rc2_path}")
             
         # Custom sources from directory
+        # Note, if FileGDB dir doesn't end with `.gdb` `geopandas` won't be able to open it
         if self.config.custom_sources_dir and self.config.custom_sources_dir.exists():
             for gdb_path in self.config.custom_sources_dir.glob("*.gdb"):
                 source_name = gdb_path.name  # e.g., "Saas.gdb"
@@ -642,7 +742,36 @@ class GDBMerger:
                 logger.debug(f"  Registered custom source: {gdb_path}")
                 
         logger.info(f"Configured {len(self.sources)} source(s)")
-                
+
+    def _build_enrichment_index(self) -> None:
+        """
+        Build a reusable STRtree on the 221 mapsheet polygons.
+        Called once; reused by every _enrich_with_mapsheet_links() call.
+        """
+        link_cols = [c for c in ("erl_link", "ber_link")
+                     if c in self.mapsheets_gdf.columns]
+        if not link_cols:
+            self._enrichment_tree = None
+            self._enrichment_links = {}
+            return
+
+        # Arrays parallel to the tree — index i → mapsheet i's link values
+        self._enrichment_tree = STRtree(self.mapsheets_gdf.geometry.values)
+        self._enrichment_links = {
+            col: self.mapsheets_gdf[col].to_numpy()
+            for col in link_cols
+        }
+        logger.info(f"Enrichment index built: {len(self.mapsheets_gdf)} mapsheets, "
+                    f"cols={link_cols}")
+
+    def _layer_exists(self, gdb_path: Path, layer_name: str) -> bool:
+        actual_name = self._get_layer_path(gdb_path, layer_name)
+        if not hasattr(self, '_layer_cache'):
+            self._layer_cache: Dict[Path, Set[str]] = {}
+        if gdb_path not in self._layer_cache:
+            self._layer_cache[gdb_path] = set(fiona.listlayers(gdb_path))
+        return actual_name in self._layer_cache[gdb_path]
+
     def _load_mapsheets(self) -> gpd.GeoDataFrame:
         """Load mapsheets with source assignments."""
         
@@ -676,34 +805,102 @@ class GDBMerger:
         self.mapsheets_gdf = gdf
         return gdf
     
+    # Fixed v2
     def _create_source_masks(self) -> Dict[str, BaseGeometry]:
-        """
-        Create optimized clip masks for each source.
-        
-        Uses convex hull for speed, or exact dissolved boundaries if configured.
-        """
-        if self.mapsheets_gdf is None:
-            self._load_mapsheets()
-        
-        # Rename column for consistency
-        source_col = self.config.source_column
-        self.mapsheets_gdf = self.mapsheets_gdf.rename(columns={source_col: 'SOURCE_RC'})
-        
-        masks = {}
-        
-        for source_name in self.mapsheets_gdf['SOURCE_RC'].unique():
-            if self.config.use_convex_hull_masks:
-                mask = create_fast_mask(self.mapsheets_gdf, source_name)
-            else:
-                mask = create_exact_mask(self.mapsheets_gdf, source_name)
-            
-            if mask is not None:
+            """
+            Create EXCLUSIVE (non-overlapping) clip masks for each source.
+
+            V2 improvements:
+            - Better logging to diagnose issues
+            - Verify masks don't overlap
+            - Handle edge cases
+            """
+            if self.mapsheets_gdf is None:
+                self._load_mapsheets()
+
+            # Rename column for consistency
+            source_col = self.config.source_column
+            if source_col in self.mapsheets_gdf.columns and source_col != 'SOURCE_RC':
+                self.mapsheets_gdf = self.mapsheets_gdf.rename(columns={source_col: 'SOURCE_RC'})
+
+            # Get unique sources and their mapsheet counts
+            source_counts = self.mapsheets_gdf['SOURCE_RC'].value_counts()
+            logger.info(f"Sources in mapsheets: {dict(source_counts)}")
+
+            # Determine priority (RC2 > RC1 > others)
+            all_sources = list(source_counts.index)
+            source_priority = []
+            if 'RC2' in all_sources:
+                source_priority.append('RC2')
+            if 'RC1' in all_sources:
+                source_priority.append('RC1')
+            for src in sorted(all_sources):
+                if src not in source_priority:
+                    source_priority.append(src)
+
+            logger.info(f"Source priority (higher priority = gets area first): {source_priority}")
+
+            masks = {}
+            claimed_area = None
+
+            for source_name in source_priority:
+                sheets = self.mapsheets_gdf[self.mapsheets_gdf['SOURCE_RC'] == source_name]
+                if sheets.empty:
+                    logger.warning(f"No mapsheets for source {source_name}")
+                    continue
+
+                # Dissolve mapsheets for this source
+                source_area = unary_union(sheets.geometry.values)
+
+                # Clean topology
+                if not source_area.is_valid:
+                    source_area = source_area.buffer(0)
+
+                source_area_km2 = source_area.area / 1e6
+                logger.debug(f"  {source_name}: raw area = {source_area_km2:.1f} km²")
+
+                # Make EXCLUSIVE
+                if claimed_area is not None:
+                    exclusive_area = difference(source_area, claimed_area)
+
+                    if exclusive_area is None or exclusive_area.is_empty:
+                        logger.warning(f"  {source_name}: NO exclusive area (fully covered by higher priority)")
+                        continue
+
+                    exclusive_area_km2 = exclusive_area.area / 1e6
+                    reduction = (1 - exclusive_area.area / source_area.area) * 100
+                    logger.debug(f"  {source_name}: exclusive area = {exclusive_area_km2:.1f} km² "
+                                 f"({reduction:.1f}% removed by higher priority sources)")
+
+                    mask = exclusive_area
+                else:
+                    mask = source_area
+
+                # Clean final mask
+                if not mask.is_valid:
+                    mask = mask.buffer(0)
+
                 masks[source_name] = mask
-                complexity = get_mask_complexity(mask)
-                logger.debug(f"  {source_name}: {complexity['type']}, {complexity['vertices']:,} vertices")
-        
-        self.source_masks = masks
-        return masks
+
+                # Update claimed area
+                if claimed_area is None:
+                    claimed_area = source_area
+                else:
+                    claimed_area = unary_union([claimed_area, source_area])
+
+            # VERIFY: Check that masks don't overlap
+            logger.info("Verifying mask exclusivity...")
+            mask_names = list(masks.keys())
+            for i, name1 in enumerate(mask_names):
+                for name2 in mask_names[i + 1:]:
+                    overlap = masks[name1].intersection(masks[name2])
+                    if overlap and not overlap.is_empty and overlap.area > 1:  # > 1 m²
+                        logger.error(f"  OVERLAP between {name1} and {name2}: {overlap.area:.1f} m²!")
+                    else:
+                        logger.debug(f"  {name1} ∩ {name2} = OK (no significant overlap)")
+
+            self.source_masks = masks
+            return masks
     
     def _resolve_source_path(self, source_name: str) -> Optional[Path]:
         """Resolve source name to actual GDB path."""
@@ -732,113 +929,155 @@ class GDBMerger:
             return layer_name.split("/")[-1]
         return layer_name
     
+
+    # FIXED
     def _read_layer_for_source(
-        self, 
-        gdb_path: Path, 
-        layer_name: str,
-        mask: BaseGeometry
+            self,
+            gdb_path: Path,
+            layer_name: str,
+            mask: BaseGeometry
     ) -> Optional[gpd.GeoDataFrame]:
         """
-        Read a layer from a FileGDB with spatial filtering.
-        
-        Uses mask bounds for efficient reading.
+        Read a layer from a FileGDB with STRICT spatial filtering.
+
+        The original uses mask= for bbox filtering during read, but this can
+        return features outside the mask (anything touching the bbox).
+
+        This version does an additional intersection check after reading.
         """
         actual_layer = self._get_layer_path(gdb_path, layer_name)
-        
+
         try:
-            # Use mask geometry for spatial filtering during read
+            # Read with bbox filter (fast)
             gdf = gpd.read_file(
-                gdb_path, 
-                layer=actual_layer, 
+                gdb_path,
+                layer=actual_layer,
                 engine='pyogrio',
-                mask=mask  # Spatial filter on read
+                mask=mask  # This does bbox filter, not exact intersection!
             )
-            
+
+            if gdf.empty:
+                return gdf
+
+            # STRICT filter: only keep features that actually intersect the mask
+            # (not just its bounding box)
+            gdf = gdf[intersects(gdf.geometry.values, mask)].copy()
+
             if self.config.validate_geometries and not gdf.empty:
+                from gcover.core.geometry import validate_and_repair_geometries
                 gdf = validate_and_repair_geometries(gdf)
-            
+
             return gdf
-            
+
         except Exception as e:
             logger.warning(f"Could not read {actual_layer} from {gdb_path}: {e}")
             return None
-    
+    # Fixed
     def _merge_spatial_layer(
-        self,
-        layer_name: str,
-        progress: Optional[Progress] = None,
-        task_id: Optional[int] = None
+            self,
+            layer_name: str,
+            progress: Optional[Progress] = None,
+            task_id: Optional[int] = None
     ) -> Optional[gpd.GeoDataFrame]:
         """
         Merge a single spatial layer from all sources using optimized clip.
-        
-        Key optimizations:
-        - One dissolved mask per source (not per mapsheet)
-        - Fast clip that skips features fully inside mask
+
+        Key changes:
+        1. Create exclusive masks (no geographic overlap)
+        2. For each exclusive mask, read ONLY from its authoritative source
+        3. Track UUIDs to catch any remaining duplicates
         """
+        from gcover.publish.merge_sources import (
+            fast_clip, get_expected_geometry_type,
+            normalize_geodataframe_geometries)
+
         merged_parts = []
-        layer_feature_count = 0
         layer_crs = None
-        
-        # Get expected geometry type for this layer
+        seen_uuids: Set[str] = set()  # Track UUIDs to prevent ANY duplicates
+
         expected_type = get_expected_geometry_type(layer_name)
         logger.debug(f"Processing layer {layer_name}, expected type: {expected_type}")
-        
-        for source_name, mask in self.source_masks.items():
-            # Resolve source path
+
+        # Process each source with its EXCLUSIVE mask
+        for source_name, clip_mask in self.source_masks.items():
             source_path = self._resolve_source_path(source_name)
             if source_path is None:
                 msg = f"Source not found: {source_name}"
                 logger.warning(msg)
                 self.stats.warnings.append(msg)
                 continue
-            
+
+            logger.debug(f"  Reading {source_name} from {source_path}")
+            console.print(f"[dim]  Reading {source_name} from {source_path}[/dim]")
+
             layer_start = time.time()
-            
-            # Read layer with spatial filter
-            gdf = self._read_layer_for_source(source_path, layer_name, mask)
+
+            # Read from THIS source's GDB, filtered by the exclusive mask
+            gdf = self._read_layer_for_source(source_path, layer_name, clip_mask)
+
             if gdf is None or gdf.empty:
                 logger.debug(f"  {source_name}: no features in {layer_name}")
                 continue
-            
+
             read_time = time.time() - layer_start
-            logger.debug(f"  {source_name}: read {len(gdf)} features ({read_time:.1f}s)")
-            
-            # Store CRS from first successful read
+            read_count = len(gdf)
+            logger.debug(f"  {source_name}: read {read_count} features ({read_time:.1f}s)")
+
             if layer_crs is None and gdf.crs is not None:
                 layer_crs = gdf.crs
-            
-            # Fast clip
+
+            # Clip to the EXCLUSIVE mask (precise clipping)
             clip_start = time.time()
-            
+
             if expected_type in ["MultiPoint", "Point"]:
-                # For points, use spatial intersection (no geometry modification needed)
-                clipped = gdf[intersects(gdf.geometry.values, mask)].copy()
+                clipped = gdf[intersects(gdf.geometry.values, clip_mask)].copy()
             else:
-                # For polygons and lines, use fast clip
-                clipped = fast_clip(gdf, mask)
-            
+                clipped = fast_clip(gdf, clip_mask)
+
             clip_time = time.time() - clip_start
-            
-            if not clipped.empty:
-                # Add source tracking column
-                clipped["_MERGE_SOURCE"] = source_name
-                merged_parts.append(clipped)
-                
-                feature_count = len(clipped)
-                layer_feature_count += feature_count
-                self.stats.features_per_source[source_name] = \
-                    self.stats.features_per_source.get(source_name, 0) + feature_count
-                    
-                logger.debug(f"  {source_name}: {feature_count} features after clip ({clip_time:.1f}s)")
-                
+
+            if clipped.empty:
+                logger.debug(f"  {source_name}: no features after clip")
+                continue
+
+            # === UUID DEDUPLICATION — regenerate instead of dropping ===
+            # Exclusive masks prevent real duplicates. The only remaining case is a
+            # polygon that straddles an RC1/RC2 boundary: both GDBs contain it, each
+            # clipped to its own half. Dropping one half silently loses area; instead
+            # we give the "already seen" copy a fresh UUID so both halves survive.
+            if 'UUID' in clipped.columns:
+                import uuid as _uuid
+                collision_mask = (
+                        clipped['UUID'].notna() & clipped['UUID'].isin(seen_uuids)
+                )
+                n_collisions = collision_mask.sum()
+                if n_collisions > 0:
+                    new_ids = [str(_uuid.uuid4()) for _ in range(n_collisions)]
+                    clipped.loc[collision_mask, 'UUID'] = new_ids
+                    logger.warning(
+                        f"  {source_name}: regenerated {n_collisions} duplicate UUIDs "
+                        f"(boundary features present in both sources)"
+                    )
+                # Register all UUIDs from this source
+                seen_uuids.update(clipped['UUID'].dropna().unique())
+
+            # Add source tracking
+            clipped["_MERGE_SOURCE"] = source_name
+            merged_parts.append(clipped)
+
+            feature_count = len(clipped)
+            self.stats.features_per_source[source_name] = \
+                self.stats.features_per_source.get(source_name, 0) + feature_count
+
+            logger.debug(f"  {source_name}: {feature_count} features after clip ({clip_time:.1f}s)")
+
             if progress and task_id:
                 progress.advance(task_id)
-        
+
         # Merge all parts
         if not merged_parts:
             return None
-            
+
         if len(merged_parts) == 1:
             result = merged_parts[0]
         else:
@@ -847,30 +1086,27 @@ class GDBMerger:
                 result = gpd.GeoDataFrame(result, geometry="geometry", crs=layer_crs)
             else:
                 result = gpd.GeoDataFrame(result, geometry="geometry")
-        
-        # Apply Swiss border clip if configured
+
+        # Final Swiss border clip
         if self.config.clip_to_swiss_border and self.swiss_border is not None:
             border_start = time.time()
-            
             if expected_type in ["MultiPoint", "Point"]:
                 result = result[intersects(result.geometry.values, self.swiss_border)].copy()
             else:
                 result = fast_clip(result, self.swiss_border)
-            
-            border_time = time.time() - border_start
-            logger.debug(f"  Swiss border clip: {len(result)} features ({border_time:.1f}s)")
-        
-        # Final normalization
+            logger.debug(f"  Swiss border clip: {len(result)} features ({time.time() - border_start:.1f}s)")
+
+        # Normalize geometries
         result = normalize_geodataframe_geometries(
             result,
             target_type=expected_type,
             preserve_z=self.config.preserve_z
         )
-        
+
         if result.empty:
             logger.warning(f"No valid features after normalization for {layer_name}")
             return None
-            
+
         self.stats.features_per_layer[layer_name] = len(result)
         return result
     
@@ -915,7 +1151,8 @@ class GDBMerger:
         # Load mapsheets and create optimized masks
         self._load_mapsheets()
         self._create_source_masks()
-        
+        self._build_enrichment_index()  # for links enrichment
+
         # Display source summary
         self._display_source_summary()
         
@@ -924,8 +1161,8 @@ class GDBMerger:
         # Process spatial layers
         merged_layers = {}
         
-        console.print("\n[cyan]Processing spatial layers...[/cyan]")
-        
+        console.print("\n[bold chartreuse2]===== Processing spatial layers... =====[/bold chartreuse2]")
+
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -934,13 +1171,28 @@ class GDBMerger:
             console=console,
             transient=not self.verbose
         ) as progress:
-            
-            layers_task = progress.add_task(
-                "[cyan]Processing spatial layers...",
-                total=len(self.config.spatial_layers)
+
+            actual_spatial_layers = [
+              layer_name
+              for layer_name in self.config.spatial_layers
+              if any(
+                self._layer_exists(src.path, layer_name)
+                for src in self.sources.values()
+              )
+            ]
+
+            _spatial_layers_nb = len(actual_spatial_layers)
+            logger.info(
+              f"{_spatial_layers_nb}/{len(self.config.spatial_layers)} configured layers "
+              f"found across {len(self.sources)} source(s)"
             )
 
-            for layer_name in self.config.spatial_layers:
+            layers_task = progress.add_task(
+               f"[cyan]Processing {_spatial_layers_nb} spatial layers...",   # ← proper f-string
+               total=_spatial_layers_nb
+            )
+
+            for layer_name in actual_spatial_layers:
                 layer_start = time.time()
                 actual_layer = layer_name.split("/")[-1]
                 
@@ -961,9 +1213,43 @@ class GDBMerger:
                     console.print(f"  [yellow]○[/yellow] {actual_layer}: no features")
                     
                 progress.advance(layers_task)
-        
+
+        # Optional post-processing: split at mapsheet boundaries / enrich links
+        console.print("\n[bold chartreuse2]===== Post processing =====[/bold chartreuse2]")
+
+        if self.config.split_by_mapsheet:
+            merged_layers = self._post_process_layers(merged_layers)
+
+        if self.config.enrich_mapsheet_links:
+          with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                console=console,
+                transient=not self.verbose
+        ) as progress:
+            layers_task = progress.add_task(
+                "Enriching features with mapsheet PDF links...",
+                total=len(merged_layers)
+            )
+
+            for layer_name in list(merged_layers.keys()):
+                layer_start = time.time()
+                progress.update(
+                    layers_task,
+                    description=f"[cyan]Enriching {layer_name} with links..."
+                )
+                merged_layers[layer_name] = self._enrich_with_mapsheet_links(
+                    merged_layers[layer_name], layer_name
+                )
+                layer_elapsed = time.time() - layer_start
+                console.print(f"  [green]✓[/green] {layer_name} ({layer_elapsed:.1f}s)")
+                progress.advance(layers_task)
+
+
         # Save merged spatial layers
-        console.print("\n[cyan]Saving merged spatial layers...[/cyan]")
+        console.print("\n[bold chartreuse2]===== Saving merged spatial layers... =====[/bold chartreuse2]")
         self._save_merged_layers(merged_layers)
         
         # Copy non-spatial tables
@@ -976,6 +1262,196 @@ class GDBMerger:
         self._display_results(total_elapsed)
         
         return self.stats
+
+    def _enrich_with_mapsheet_links(
+            self,
+            gdf: gpd.GeoDataFrame,
+            layer_name: str,
+    ) -> gpd.GeoDataFrame:
+        """
+        Enrich features with erl_link / ber_link from mapsheets.
+
+        - After split: each feature belongs to exactly one mapsheet → direct sjoin.
+        - Without split: a feature may span many mapsheets → links are pipe-joined,
+          e.g. "https://example.com/a.pdf|https://example.com/b.pdf".
+        """
+
+        if self._enrichment_tree is None:
+            logger.warning("No enrichment index — skipping link enrichment")
+            return gdf
+
+        link_cols = list(self._enrichment_links.keys())
+        if not link_cols:
+            logger.warning("erl_link / ber_link not found in mapsheets layer — skipping enrichment")
+            return gdf
+        actual_layer = layer_name.split("/")[-1]
+        expected_type = get_expected_geometry_type(layer_name)
+        is_point = expected_type in ("MultiPoint", "Point")
+
+        # ── 1. Representative points (one per feature, vectorized) ──────────
+        rep_pts = (
+            gdf.geometry.values  # already points
+            if is_point
+            else gdf.geometry.representative_point().values  # centroid-like, always inside
+        )
+
+        # ── 2. STRtree bulk query — returns (mapsheet_idx[], feature_idx[]) ─
+        #    predicate='within': point is within mapsheet polygon
+        # The STRtree is built from mapsheets (221).
+        # Queried with rep_pts (295188 features).
+        # Shapely 2.0 returns (input_indices, tree_indices) = (feat_idx, mapsheet_idx)
+        feat_idx, mapsheet_idx = self._enrichment_tree.query(rep_pts, predicate="within")
+        #          ^^^^^^^^^^ 0..295187                  ^^^^^^^^^^ 0..220
+        logger.debug(f"feat_idx  range: {feat_idx.min()}–{feat_idx.max()}, mapsheets size: {len(self.mapsheets_gdf)}")
+        logger.debug(f"mapsheet_idx range: {mapsheet_idx.min()}–{mapsheet_idx.max()}, features size: {len(gdf)}")
+
+        # tree_idx  → indices into self.mapsheets_gdf  (0..220)
+        # query_idx → indices into rep_pts / gdf       (0..n_features-1)
+        # Both arrays have the same length; entry k means:
+        #   rep_pts[feat_idx[k]] is within mapsheets[mapsheet_idx[k]]
+
+        # ── 3. Assign links ─────────────────────────────────────────────────
+        if self.config.split_by_mapsheet:
+            # 1:1 — take first match only (features were already split)
+            for col in link_cols:
+                vals = np.full(len(gdf), None, dtype=object)
+                _, first = np.unique(feat_idx, return_index=True)
+                vals[feat_idx[first]] = self._enrichment_links[col][mapsheet_idx[first]]
+                gdf[col] = vals
+        else:
+            # 1:N — use full geometry + intersects so features crossing
+            # mapsheet boundaries collect links from all touched mapsheets.
+            feat_idx, mapsheet_idx = self._enrichment_tree.query(
+                gdf.geometry.values, predicate="intersects"
+            )
+            for col in link_cols:
+                link_arr = self._enrichment_links[col]
+                bucket: dict[int, list] = defaultdict(list)
+                for fi, mi in zip(feat_idx, mapsheet_idx):
+                    v = link_arr[mi]
+                    if v and str(v).strip():
+                        bucket[fi].append(str(v))
+
+                vals = np.full(len(gdf), None, dtype=object)
+                for fi, links in bucket.items():
+                    seen = dict.fromkeys(links)  # deduplicate, preserve order
+                    vals[fi] = "|".join(seen) if seen else None
+                gdf[col] = vals
+
+        # ── 4. Report ────────────────────────────────────────────────────────
+        table = Table(title=f"Link statistics for layer: {actual_layer}")
+
+        table.add_column("Column", style="cyan", no_wrap=True)
+        table.add_column("Matched", style="green")
+        table.add_column("Total", style="white")
+        table.add_column("Multi‑mapsheet", style="magenta")
+
+        for col in link_cols:
+            n_matched = gdf[col].notna().sum()
+
+            if not self.config.split_by_mapsheet:
+                n_multi = gdf[col].str.contains("|", regex=False).sum()
+            else:
+                n_multi = 0
+
+            table.add_row(
+                col,
+                f"{n_matched:,}",
+                f"{len(gdf):,}",
+                f"{n_multi:,}" if n_multi else "-"
+            )
+
+        console.print(table)
+
+        return gdf
+
+    def _split_layer_by_mapsheets(
+            self,
+            gdf: gpd.GeoDataFrame,
+            layer_name: str,
+    ) -> gpd.GeoDataFrame:
+        """
+        Split polygon/line features along mapsheet boundaries via overlay,
+        or assign mapsheet attributes to point features via sjoin.
+
+        After this step every feature belongs to exactly one mapsheet,
+        making erl_link/ber_link enrichment unambiguous.
+        """
+        expected_type = get_expected_geometry_type(layer_name)
+        is_point = expected_type in ("MultiPoint", "Point")
+
+        # Build the slim mapsheets GDF to join/overlay against
+        transfer_cols = list(self.config.mapsheet_transfer_cols)
+        if self.config.enrich_mapsheet_links:
+            for col in ("erl_link", "ber_link"):
+                if col in self.mapsheets_gdf.columns and col not in transfer_cols:
+                    transfer_cols.append(col)
+                elif col not in self.mapsheets_gdf.columns:
+                    logger.warning(f"Column '{col}' not found in mapsheets layer — skipping")
+
+        mapsheets_slim = self.mapsheets_gdf[["geometry", *transfer_cols]].copy()
+
+        before = len(gdf)
+
+        if is_point:
+            # Points: simple within-join, no geometry splitting needed
+            result = gpd.sjoin(gdf, mapsheets_slim, how="left", predicate="within")
+            result = result.drop(columns=["index_right"], errors="ignore")
+            # Guard: point exactly on a shared boundary → keep first match only
+            result = result[~result.index.duplicated(keep="first")]
+        else:
+            # Polygon / line: overlay splits features at mapsheet edges
+            # keep_geom_type=True drops degenerate points/lines that appear
+            # when two polygons share only an edge after intersection
+            result = gpd.overlay(
+                gdf,
+                mapsheets_slim,
+                how="intersection",
+                keep_geom_type=True,
+            )
+
+        after = len(result)
+        n_unmatched = result[transfer_cols[0]].isna().sum() if transfer_cols else 0
+
+
+        #for stale_id_col in ("UUID", "OBJECTID", "OID", "FID"):
+        #    if stale_id_col in result.columns:
+        #        result = result.drop(columns=[stale_id_col])
+        #        logger.info(f"  Dropped stale ID column '{stale_id_col}' after split")
+
+        logger.info(
+            f"  {layer_name.split('/')[-1]}: "
+            f"{'split' if not is_point else 'joined'} "
+            f"{before:,} → {after:,} features"
+            + (f" ({n_unmatched} unmatched)" if n_unmatched else "")
+        )
+
+        return result
+
+    def _post_process_layers(
+            self,
+            merged_layers: Dict[str, gpd.GeoDataFrame],
+    ) -> Dict[str, gpd.GeoDataFrame]:
+        """
+        Optional post-merge step: split features at mapsheet boundaries
+        and/or enrich with mapsheet PDF links (erl_link, ber_link).
+        """
+        action = "Splitting + enriching" if self.config.enrich_mapsheet_links else "Splitting"
+        console.print(f"\n[cyan]{action} features along mapsheet boundaries...[/cyan]")
+
+        result = {}
+        for layer_name, gdf in merged_layers.items():
+            actual = layer_name.split("/")[-1]
+            try:
+                processed = self._split_layer_by_mapsheets(gdf, layer_name)
+                result[layer_name] = processed
+                console.print(f"  [green]✓[/green] {actual}: {len(processed):,} features")
+            except Exception as e:
+                logger.error(f"Post-processing failed for {actual}: {e}")
+                self.stats.errors.append(f"Post-process {actual}: {e}")
+                result[layer_name] = gdf  # fall back to unsplit layer
+
+        return result
     
     def _validate_config(self) -> None:
         """Validate merge configuration."""
@@ -988,6 +1464,8 @@ class GDBMerger:
             
         if not self.sources:
             raise ValueError("No valid sources configured")
+
+
             
         has_standard = any(
             s.source_type in [SourceType.RC1, SourceType.RC2] 
@@ -1241,6 +1719,8 @@ def create_merge_config(
     reference_source: str = "RC2",
     use_convex_hull_masks: bool = True,
     clip_to_swiss_border: bool = True,
+    split_by_mapsheet: bool = False,
+    enrich_mapsheet_link: bool = False,
 ) -> MergeConfig:
     """Create a merge configuration with sensible defaults."""
     
@@ -1255,4 +1735,6 @@ def create_merge_config(
         reference_source=reference_source,
         use_convex_hull_masks=use_convex_hull_masks,
         clip_to_swiss_border=clip_to_swiss_border,
+        split_by_mapsheet=split_by_mapsheet,
+        enrich_mapsheet_link=enrich_mapsheet_link,
     )

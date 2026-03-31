@@ -1239,6 +1239,11 @@ def _auto_detect_qa_couple(
     help="Auto-discover RC GDBs from base verification directory",
 )
 @click.option(
+    "--use-arcmap",
+    is_flag=True,
+    help="Use ESRI ArcMap FileGDB format",
+)
+@click.option(
     "--yes", is_flag=True, help="Automatically confirm prompts (for scripting)"
 )
 @click.pass_context
@@ -1256,6 +1261,7 @@ def aggregate_qa_stats(
     extract_first: bool,
     auto_discover: bool,
     yes: bool,
+    use_arcmap: bool
 ):
     """
     Aggregate QA statistics by administrative zones.
@@ -1364,7 +1370,7 @@ def aggregate_qa_stats(
         from gcover.qa.analyzer import QAAnalyzer
 
         # Initialize analyzer
-        analyzer = QAAnalyzer(zones_file)
+        analyzer = QAAnalyzer(zones_file, use_arcgis_pro=not use_arcmap)
         console.print(f"[dim]Loaded zones from: {zones_file}[/dim]")
 
         # Handle different input modes
@@ -1684,6 +1690,11 @@ def _auto_discover_rc_gdbs(base_dir: Path) -> tuple[Optional[Path], Optional[Pat
     help="Filter issues by mapsheet source (RC1/RC2). Disable to extract all issues.",
 )
 @click.option(
+    "--use-arcmap",
+    is_flag=True,
+    help="Use ESRI ArcMap FileGDB format",
+)
+@click.option(
     "--yes", is_flag=True, help="Automatically confirm prompts (for scripting)"
 )
 @click.pass_context
@@ -1697,6 +1708,7 @@ def extract(
     filter_by_source: bool,
     yes: bool,
     asset_type: str,
+    use_arcmap: bool,
 ):
     """
     Extract relevant QA issues based on mapsheet source mapping.
@@ -1777,7 +1789,7 @@ def extract(
 
         # Initialize analyzer
         logger.info(f"Initializing QA analyzer with zones from {zones_file}")
-        analyzer = QAAnalyzer(zones_file)
+        analyzer = QAAnalyzer(zones_file, use_arcgis_pro=not use_arcmap)
 
         # Determine output file extension
         issue_output = converted_dir / "RC_combined" / "issue"

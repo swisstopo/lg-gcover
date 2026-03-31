@@ -23,7 +23,7 @@ jobs:
         with:
           name: dist-artifacts
       - name: Release assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.5.0
         env:
           GITHUB_TOKEN: ${{ secrets.TOKEN }}
         with:

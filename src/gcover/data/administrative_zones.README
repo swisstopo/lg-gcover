@@ -1,12 +1,15 @@
 
-Create administrative_zones.gpkg from 4 standardized source files.
+Create administrative_zones.gpkg from 4 standardized source files (WU, lots, mapsheet and sources.xlsx).
 
 Simplified script that handles the real data sources with their actual attributes.
 
 2025-09-05  Added `SOURCE_RC` sources for BKP (data for publication)
 2025-10-13  Added sources `SOURCE_QA`  for QA (before publication)
 2025-10-14  Added borders_100m layer (100m buffer around mapsheet borders)
+2026-01-28  Only warning if missing  `QA_SOURCE`
+2026-03-13  Adding BER and ERL, as well as complete links
 
+XLSX file:/home/marco/DATA/Derivations/delivery/R16/Excels/GC_Sources_PA.xlsx
 Layer list:
  * mapsheets_sources_only
  * mapsheets_with_sources
@@ -21,32 +24,13 @@ Layer list:
 ┏━━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
 ┃ Source            ┃ Count ┃
 ┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
-│ RC1               │   173 │
-│ RC2               │    46 │
+│ RC1               │   161 │
+│ RC2               │    56 │
 │ BCK_2016          │     1 │
 │ 20300501_Saas.gdb │     1 │
-│ Total             │   221 │
-└───────────────────┴───────┘
-   Unique SOURCE_QA values   
-┏━━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
-┃ Source            ┃ Count ┃
-┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
-│ RC1               │   170 │
-│ RC2               │    49 │
-│ BCK_2016          │     1 │
-│ 20300501_Saas.gdb │     1 │
-│ Total             │   221 │
+│ Total             │   219 │
 └───────────────────┴───────┘
 
-  Mapsheets with differing SOURCE_RC and  
-                SOURCE_QA                 
-┏━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┓
-┃ MSH_MAP_TITLE  ┃ SOURCE_RC ┃ SOURCE_QA ┃
-┡━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━┩
-│ Chasseral      │ RC1       │ RC2       │
-│ Bellelay       │ RC1       │ RC2       │
-│ Les Diablerets │ RC1       │ RC2       │
-└────────────────┴───────────┴───────────┘
 
 
-Generated on 2025-10-14 22:05:20
+Generated on 2026-03-19 18:04:22

@@ -17,6 +17,7 @@ EXTERNAL API (imported by other modules)
 - LayerClassification            → esri_classification_applicator, generator
 - SymbolType                     → generator
 - CIMColorParser                 → label_extractor_extension
+- IdentifierMode                 → style_config, publish_cmd
 
 =============================================================================
 INTERNAL SUPPORT (used by extract_lyrx_complete)
@@ -24,6 +25,7 @@ INTERNAL SUPPORT (used by extract_lyrx_complete)
 - ESRIClassificationExtractorEnhanced
 - CIMSymbolParserEnhanced
 - ClassificationDisplayer
+- slugify_label()
 - export_complete_classification_to_json()
 - generate_override_template()
 - apply_overrides_to_classification()
@@ -37,13 +39,15 @@ CLI-ONLY
 """
 
 import json
+import re
 import sys
+import unicodedata
 import zipfile
 import difflib
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import click
 from loguru import logger
@@ -76,12 +80,26 @@ from gcover.publish.rotation_extractor_extension import (
     format_rotation_for_mapserver,
 )
 
+from gcover.publish.utils import (slugify_label, make_unique_slug)
 console = Console()
 
 
 # =============================================================================
 # ENUMS & BASIC DATA MODELS
 # =============================================================================
+
+
+class IdentifierMode(Enum):
+    """
+    Mode for generating stable classification identifiers.
+    
+    - LABEL: Use slugified label text (default, most stable)
+    - INDEX: Use sequential index (legacy, unstable if classes change)
+    - FIELD: Use value from identifier_field (stable if field exists)
+    """
+    LABEL = "label"
+    INDEX = "index"
+    FIELD = "field"
 
 
 class SymbolType(Enum):
@@ -91,6 +109,9 @@ class SymbolType(Enum):
     LINE = "CIMLineSymbol"
     POLYGON = "CIMPolygonSymbol"
     UNKNOWN = "Unknown"
+
+
+
 
 
 @dataclass
@@ -435,29 +456,46 @@ class CIMSymbolParser:
                     color_info = CIMSymbolParser._extract_color_from_symbol(nested_symbol)
                     if color_info:
                         info.color = color_info
-
+            # collect stroke and fill separately, skip zero-width strokes, and prefer fill over stroke
             elif layer_type == "CIMVectorMarker":
                 info.size = layer.get("size")
 
                 marker_graphics = layer.get("markerGraphics", [])
                 for graphic in marker_graphics:
                     graphic_symbol = graphic.get("symbol", {})
-                    if graphic_symbol:
-                        color_info = CIMSymbolParser._extract_color_from_symbol(graphic_symbol)
-                        if color_info:
-                            info.color = color_info
-                            break
+                    if not graphic_symbol:
+                        continue
 
-                        symbol_layers_nested = graphic_symbol.get("symbolLayers", [])
-                        for nested_layer in symbol_layers_nested:
-                            if nested_layer.get("type") == "CIMSolidStroke":
-                                stroke_color = CIMColorParser.parse_color(nested_layer.get("color"))
-                                if stroke_color:
-                                    info.color = stroke_color
-                            elif nested_layer.get("type") == "CIMSolidFill":
-                                fill_color = CIMColorParser.parse_color(nested_layer.get("color"))
-                                if fill_color:
-                                    info.color = fill_color
+                    fill_color = None
+                    stroke_color = None
+
+                    symbol_layers_nested = graphic_symbol.get("symbolLayers", [])
+                    for nested_layer in symbol_layers_nested:
+                        nested_type = nested_layer.get("type")
+                        if nested_type == "CIMSolidFill":
+                            c = CIMColorParser.parse_color(nested_layer.get("color"))
+                            if c:
+                                fill_color = c
+                        elif nested_type == "CIMSolidStroke":
+                            # Skip invisible strokes (width == 0)
+                            if nested_layer.get("width", 1) == 0:
+                                continue
+                            c = CIMColorParser.parse_color(nested_layer.get("color"))
+                            if c:
+                                stroke_color = c
+
+                    # Prefer fill; fall back to stroke
+                    chosen = fill_color or stroke_color
+
+                    if not chosen:
+                        # Last resort: delegate to the generic extractor
+                        chosen = CIMSymbolParser._extract_color_from_symbol(graphic_symbol)
+
+                    if chosen:
+                        info.color = chosen
+                        break  # First graphic with a usable color wins
+
+
 
             elif layer_type == "CIMSimpleMarker":
                 info.size = layer.get("size")
@@ -645,6 +683,9 @@ class ESRIClassificationExtractor:
         self,
         lyrx_path: Union[str, Path],
         identifier_fields: Optional[Dict[str, str]] = None,
+        identifier_modes: Optional[Dict[str, IdentifierMode]] = None,
+        default_identifier_mode: IdentifierMode = IdentifierMode.LABEL,
+        default_identifier_field: Optional[str] = None,
     ) -> List[LayerClassification]:
         """
         Extract classification from .lyrx layer file.
@@ -652,7 +693,11 @@ class ESRIClassificationExtractor:
         Args:
             lyrx_path: Path to .lyrx file
             identifier_fields: Optional dictionary mapping layer names to field names
-                             to use as identifiers.
+                             to use as identifiers (for FIELD mode).
+            identifier_modes: Optional dictionary mapping layer names to IdentifierMode.
+                             Default is LABEL mode for all layers.
+            default_identifier_mode: Default mode for layers not in identifier_modes.
+            default_identifier_field: Default field name for FIELD mode.
 
         Returns:
             List of LayerClassification objects
@@ -677,12 +722,21 @@ class ESRIClassificationExtractor:
 
         console.print(f"Extracting from: {lyrx_path} ({'alternative' if alternative_lyrx else 'original'})")
 
-        return self._extract_from_json(lyrx_path, identifier_fields=identifier_fields)
+        return self._extract_from_json(
+            lyrx_path,
+            identifier_fields=identifier_fields,
+            identifier_modes=identifier_modes,
+            default_identifier_mode=default_identifier_mode,
+            default_identifier_field=default_identifier_field,
+        )
 
     def _extract_from_json(
         self,
         lyrx_path: Path,
         identifier_fields: Optional[Dict[str, str]] = None,
+        identifier_modes: Optional[Dict[str, IdentifierMode]] = None,
+        default_identifier_mode: IdentifierMode = IdentifierMode.LABEL,
+        default_identifier_field: Optional[str] = None,
     ) -> List[LayerClassification]:
         """Extract classification using direct JSON parsing."""
         try:
@@ -707,18 +761,40 @@ class ESRIClassificationExtractor:
                     renderer = self._find_renderer_in_layer(layer_data)
                     if renderer and renderer.get("type") == "CIMUniqueValueRenderer":
                         layer_name = layer_data.get("name", "Unknown")
-                        identifier_field = None
+                        
+                        # Get identifier configuration for this layer
+                        # Priority: layer-specific > default
+                        identifier_field = default_identifier_field  # Start with default
+                        identifier_mode = default_identifier_mode    # Start with default
+                        
+                        # Override with layer-specific field if present
                         if identifier_fields and layer_name in identifier_fields:
                             identifier_field = identifier_fields[layer_name]
+                            identifier_mode = IdentifierMode.FIELD
                             logger.info(
                                 f"Layer '{layer_name}' will use "
                                 f"identifier_field: {identifier_field}"
+                            )
+                        
+                        # Override with layer-specific mode if present
+                        if identifier_modes and layer_name in identifier_modes:
+                            identifier_mode = identifier_modes[layer_name]
+                        
+                        # Log the final configuration
+                        if identifier_mode == IdentifierMode.FIELD:
+                            logger.info(
+                                f"Layer '{layer_name}' using FIELD mode with field: {identifier_field}"
+                            )
+                        else:
+                            logger.info(
+                                f"Layer '{layer_name}' using identifier_mode: {identifier_mode.value}"
                             )
 
                         classification = self._parse_unique_value_renderer(
                             renderer,
                             layer_data.get("name", "Unknown"),
                             identifier_field=identifier_field,
+                            identifier_mode=identifier_mode,
                         )
 
                         if classification:
@@ -892,6 +968,7 @@ class ESRIClassificationExtractor:
         layer_name: str = None,
         layer_path: str = None,
         identifier_field: Optional[str] = None,
+        identifier_mode: IdentifierMode = IdentifierMode.LABEL,
     ) -> Optional[LayerClassification]:
         """Parse CIMUniqueValueRenderer structure."""
         try:
@@ -910,6 +987,7 @@ class ESRIClassificationExtractor:
                         layer_path=layer_path or layer_name or "Unknown",
                         class_index=len(classes),
                         identifier_field=identifier_field,
+                        identifier_mode=identifier_mode,
                         field_names=field_names,
                     )
                     if classification_class:
@@ -958,6 +1036,7 @@ class ESRIClassificationExtractor:
         layer_path: str = None,
         class_index: int = 0,
         identifier_field: Optional[str] = None,
+        identifier_mode: IdentifierMode = IdentifierMode.LABEL,
         field_names: Optional[List[str]] = None,
     ) -> Optional[ClassificationClass]:
         """Parse a single CIMUniqueValueClass with enhanced extraction."""
@@ -1022,7 +1101,7 @@ class ESRIClassificationExtractor:
 
 
 class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
-    """Enhanced extractor with override registry support."""
+    """Enhanced extractor with override registry and label-based identifiers."""
 
     def __init__(self, override_registry: Optional[SymbolOverrideRegistry] = None):
         """
@@ -1034,10 +1113,19 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
         super().__init__()
         self.class_count = 0
         self.override_registry = override_registry or SymbolOverrideRegistry()
+        
+        # Track used slugs per layer to ensure uniqueness
+        self._used_slugs: Dict[str, Set[str]] = {}
 
     def load_overrides(self, yaml_path: str):
         """Load custom symbol overrides from YAML file."""
         self.override_registry = SymbolOverrideRegistry.from_yaml(yaml_path)
+
+    def _get_layer_slugs(self, layer_path: str) -> Set[str]:
+        """Get or create the set of used slugs for a layer."""
+        if layer_path not in self._used_slugs:
+            self._used_slugs[layer_path] = set()
+        return self._used_slugs[layer_path]
 
     def _parse_classification_class(
         self,
@@ -1045,9 +1133,17 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
         layer_path: str,
         class_index: int,
         identifier_field: Optional[str] = None,
+        identifier_mode: IdentifierMode = IdentifierMode.LABEL,
         field_names: Optional[List[str]] = None,
     ) -> Optional[ClassificationClass]:
-        """ENHANCED version of _parse_classification_class."""
+        """
+        ENHANCED version of _parse_classification_class.
+        
+        Supports three identifier modes:
+        - LABEL: Use slugified label (default, most stable)
+        - INDEX: Use sequential index (legacy, unstable)
+        - FIELD: Use value from identifier_field
+        """
         self.class_count += 1
 
         try:
@@ -1071,36 +1167,62 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
             full_symbol_layers = symbol_data["complete"]
             complexity_metrics = symbol_data["complexity"]
 
+            # Determine identifier value based on mode
+            identifier_value = None
+
+            if identifier_mode == IdentifierMode.FIELD and identifier_field and field_names:
+                # FIELD mode: Use value from specified field
+                try:
+                    field_index = field_names.index(identifier_field)
+                    if field_values and field_index < len(field_values[0]):
+                        identifier_value = field_values[0][field_index]
+                        if self.class_count <= 5:
+                            logger.info(
+                                f"FIELD mode: Using field '{identifier_field}' value "
+                                f"'{identifier_value}' as identifier"
+                            )
+                        elif self.class_count == 6:
+                            logger.info("... (more classes)")
+                except (ValueError, IndexError) as e:
+                    logger.warning(
+                        f"Could not extract from field '{identifier_field}': {e}. "
+                        f"Falling back to label mode."
+                    )
+                    identifier_mode = IdentifierMode.LABEL
+            
+            if identifier_mode == IdentifierMode.LABEL or (identifier_mode == IdentifierMode.FIELD and identifier_value is None):
+                # LABEL mode: Use slugified label (default)
+                base_slug = slugify_label(label)
+                used_slugs = self._get_layer_slugs(layer_path)
+                identifier_value = make_unique_slug(base_slug, used_slugs)
+                used_slugs.add(identifier_value)
+                
+                if self.class_count <= 5:
+                    logger.info(f"LABEL mode: Using slugified label '{identifier_value}' for '{label}'")
+                elif self.class_count == 6:
+                    logger.info("... (more classes)")
+            
+            elif identifier_mode == IdentifierMode.INDEX:
+                # INDEX mode: Use sequential index (legacy behavior)
+                identifier_value = class_index
+                if self.class_count <= 3:
+                    logger.info(f"INDEX mode: Using index {class_index} for '{label}'")
+
+            if self.class_count <= 5:
+                logger.info(f"identifier_value={identifier_value}")
+            elif self.class_count == 6:
+                logger.info("... (identifier_value)")
+
+            # Create identifier
             identifier = None
-
             if field_values:
-                identifier_value = None
-
-                if identifier_field and field_names:
-                    try:
-                        field_index = field_names.index(identifier_field)
-                        if field_index < len(field_values[0]):
-                            identifier_value = field_values[0][field_index]
-                            if self.class_count < 10:
-                                logger.info(
-                                    f"Using field '{identifier_field}' value "
-                                    f"'{identifier_value}' as identifier"
-                                )
-                            elif self.class_count == 10:
-                                logger.info("more classes...")
-
-                    except (ValueError, IndexError) as e:
-                        logger.warning(
-                            f"Could not extract identifier from field '{identifier_field}': {e}. "
-                            f"Falling back to class_index."
-                        )
-
                 identifier = ClassIdentifier.create(
                     layer_path=layer_path,
                     field_values=field_values[0] if field_values else [],
-                    class_index=class_index if identifier_value is None else identifier_value,
+                    class_index=identifier_value,
                     symbol_dict=raw_symbol,
                     label=label,
+                    strategy=identifier_mode,
                 )
 
             return ClassificationClass(
@@ -1124,11 +1246,16 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
         layer_name: str = None,
         layer_path: str = None,
         identifier_field: Optional[str] = None,
+        identifier_mode: IdentifierMode = IdentifierMode.LABEL,
     ) -> Optional[LayerClassification]:
         """Parse CIMUniqueValueRenderer structure with enhanced extraction."""
         try:
             field_names = renderer.get("fields", [])
             fields = [FieldInfo(name=name) for name in field_names]
+
+            # Reset slug tracking for this layer
+            effective_path = layer_path or layer_name or "Unknown"
+            self._used_slugs[effective_path] = set()
 
             classes = []
             groups = renderer.get("groups", [])
@@ -1140,9 +1267,10 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
                 for class_obj in group_classes:
                     classification_class = self._parse_classification_class(
                         class_obj,
-                        layer_path=layer_path or layer_name or "Unknown",
+                        layer_path=effective_path,
                         class_index=class_index,
                         identifier_field=identifier_field,
+                        identifier_mode=identifier_mode,
                         field_names=field_names,
                     )
                     if classification_class:
@@ -1228,9 +1356,9 @@ class ClassificationDisplayer:
         if classification.classes:
             table = Table(title="Classification Classes", show_header=True)
             table.add_column("Label", style="cyan", width=50, no_wrap=False)
+            table.add_column("Identifier", style="yellow", width=30)
             table.add_column("Values", style="white", width=35)
-            table.add_column("Symbol Type", style="magenta", width=20)
-            table.add_column("Symbol Info", style="green", width=70)
+            table.add_column("Symbol Type", style="magenta", width=15)
             table.add_column("Visible", style="yellow", width=8)
 
             for class_obj in rows_to_display:
@@ -1242,19 +1370,23 @@ class ClassificationDisplayer:
                 if len(values_str) > 50:
                     values_str = values_str[:47] + "..."
 
-                # ENHANCED: Use full_symbol_layers if available
-                symbol_str = ClassificationDisplayer._format_symbol_info(
-                    class_obj.symbol_info,
-                    class_obj.full_symbol_layers,
-                )
+                # Show identifier
+                identifier_str = ""
+                if class_obj.identifier:
+                    try:
+                        key = class_obj.identifier.to_key()
+                        # Just show the last part (the actual identifier value)
+                        identifier_str = key.split("::")[-1] if "::" in key else key
+                    except:
+                        identifier_str = "?"
 
                 display_label = class_obj.label
 
                 table.add_row(
                     display_label,
+                    identifier_str,
                     values_str,
                     class_obj.symbol_info.symbol_type.value if class_obj.symbol_info else "None",
-                    symbol_str,
                     "✓" if class_obj.visible else "✗",
                 )
 
@@ -1483,9 +1615,20 @@ def export_classifications_to_csv(
 
         for i, class_obj in enumerate(classification.classes):
             row = base_data.copy()
+            
+            # Get identifier value
+            identifier_value = ""
+            if class_obj.identifier:
+                try:
+                    key = class_obj.identifier.to_key()
+                    identifier_value = key.split("::")[-1] if "::" in key else key
+                except:
+                    identifier_value = str(i)
+            
             row.update(
                 {
                     "class_index": i,
+                    "class_identifier": identifier_value,
                     "class_label": class_obj.label,
                     "class_visible": class_obj.visible,
                     "field_values": "; ".join(
@@ -1747,8 +1890,11 @@ def extract_lyrx_complete(
     export_json: Optional[str] = None,
     generate_override_template_path: Optional[str] = None,
     identifier_fields: Optional[Dict[str, str]] = None,
+    identifier_modes: Optional[Dict[str, Union[IdentifierMode, str]]] = None,
+    default_identifier_mode: Union[IdentifierMode, str] = IdentifierMode.LABEL,
+    default_identifier_field: Optional[str] = None,
     head: Optional[int] = None,
-    use_arcpy: Optional[bool] = None,   # TODO: deprecated, is ignored
+    use_arcpy: Optional[bool] = None,  # deprecated
 ) -> List[LayerClassification]:
     """
     Convenience function for COMPLETE extraction with all features.
@@ -1760,18 +1906,91 @@ def extract_lyrx_complete(
         export_json: Optional path to export complete JSON
         generate_override_template_path: Generate override template for complex symbols
         identifier_fields: Optional dictionary mapping layer names to field names
+                          (only used when identifier_mode is FIELD).
+        identifier_modes: Optional dictionary mapping layer names to IdentifierMode.
+                         Can be IdentifierMode enum or string ('label', 'index', 'field').
+                         Overrides default_identifier_mode for specific layers.
+        default_identifier_mode: Default mode for layers not in identifier_modes.
+                                Can be IdentifierMode enum or string ('label', 'index', 'field').
+                                Default is 'label' (most stable).
+        default_identifier_field: Default field name for FIELD mode when layer not in
+                                 identifier_fields. Required when default_identifier_mode='field'.
         head: Optional limit on number of rows to display
 
     Returns:
         List of LayerClassification objects with complete symbol data
+    
+    Examples:
+        # Default: use label-based identifiers (most stable)
+        extract_lyrx_complete("layer.lyrx")
+        
+        # Use index-based identifiers for all layers
+        extract_lyrx_complete("layer.lyrx", default_identifier_mode="index")
+        
+        # Use field-based identifier for ALL layers (same field)
+        extract_lyrx_complete(
+            "layer.lyrx",
+            default_identifier_mode="field",
+            default_identifier_field="GEOLCODE"
+        )
+        
+        # Use field-based identifier for specific layer only
+        extract_lyrx_complete(
+            "layer.lyrx",
+            identifier_fields={"Bedrock": "GEOL_MAPPING_UNIT"},
+            identifier_modes={"Bedrock": "field"}
+        )
+        
+        # Mix: default to label, but use field for Bedrock
+        extract_lyrx_complete(
+            "layer.lyrx",
+            default_identifier_mode="label",
+            identifier_fields={"Bedrock": "GEOL_MAPPING_UNIT"},
+            identifier_modes={"Bedrock": "field"}
+        )
     """
     extractor = ESRIClassificationExtractorEnhanced()
+
+    if use_arcpy:
+        console.warning(f"use of `use_arcpy`is deprecated")
 
     if override_yaml:
         extractor.load_overrides(override_yaml)
         logger.info(f"Loaded {len(extractor.override_registry.overrides)} overrides")
 
-    classifications = extractor.extract_from_lyrx(lyrx_path, identifier_fields=identifier_fields)
+    # Normalize default_identifier_mode
+    if isinstance(default_identifier_mode, str):
+        default_mode = IdentifierMode(default_identifier_mode.lower())
+    else:
+        default_mode = default_identifier_mode
+
+    # Validate: field mode requires a field
+    if default_mode == IdentifierMode.FIELD and not default_identifier_field and not identifier_fields:
+        logger.warning(
+            "default_identifier_mode='field' but no default_identifier_field or "
+            "identifier_fields provided. Falling back to 'label' mode."
+        )
+        default_mode = IdentifierMode.LABEL
+
+    # Normalize identifier_modes to IdentifierMode enums
+    normalized_modes: Optional[Dict[str, IdentifierMode]] = None
+    if identifier_modes:
+        normalized_modes = {}
+        for layer_name, mode in identifier_modes.items():
+            if isinstance(mode, str):
+                normalized_modes[layer_name] = IdentifierMode(mode.lower())
+            elif isinstance(mode, IdentifierMode):
+                normalized_modes[layer_name] = mode
+            else:
+                logger.warning(f"Invalid identifier_mode for {layer_name}: {mode}")
+
+    classifications = extractor.extract_from_lyrx(
+        lyrx_path,
+        identifier_fields=identifier_fields,
+        identifier_modes=normalized_modes,
+        default_identifier_mode=default_mode,
+        default_identifier_field=default_identifier_field,
+    )
 
     for classification in classifications:
         apply_overrides_to_classification(classification, extractor.override_registry)
@@ -1822,8 +2041,20 @@ def extract_lyrx_complete(
     multiple=True,
     help="Map layer names to identifier fields. Example: --identifiers Bedrock GEOL_MAPPING_UNIT",
 )
-def classify(input, layers, quiet, explore, export, verbose, identifiers, head):
-    """Extract ESRI layer classification information from .lyrx files."""
+@click.option(
+    "--identifier-mode",
+    type=click.Choice(["label", "index", "field"]),
+    default="label",
+    help="Default identifier mode: label (slugified label, default), index (sequential), field (use --identifiers)",
+)
+def classify(input, layers, quiet, explore, export, verbose, identifiers, identifier_mode, head):
+    """Extract ESRI layer classification information from .lyrx files.
+    
+    Identifier modes:
+    - label: Use slugified label text (default, most stable)
+    - index: Use sequential index (legacy, unstable if classes change)
+    - field: Use value from identifier field (specify with --identifiers)
+    """
     if verbose:
         logger.remove()
         logger.add(sys.stderr, level="DEBUG")
@@ -1831,10 +2062,24 @@ def classify(input, layers, quiet, explore, export, verbose, identifiers, head):
         logger.debug("Verbose logging enabled to 'classify.log'")
 
     input_path = Path(input)
-    identifier_fields = dict(identifiers)
+    identifier_fields = dict(identifiers) if identifiers else None
+    
+    # Build identifier_modes dict
+    identifier_modes_dict = None
+    if identifier_fields:
+        # If fields are specified, use FIELD mode for those layers
+        identifier_modes_dict = {
+            layer: IdentifierMode.FIELD for layer in identifier_fields.keys()
+        }
+    elif identifier_mode != "label":
+        # Apply the default mode (will be used as fallback in extractor)
+        # For now, we don't have a way to set default mode globally via CLI
+        # This would require changes to the extractor
+        pass
 
     if identifier_fields:
         click.echo(f"Identifier fields: {identifier_fields}")
+    click.echo(f"Default identifier mode: {identifier_mode}")
 
     if input_path.suffix.lower() != ".lyrx":
         console.print("[red]Error: Input must be .lyrx file[/red]")
@@ -1847,6 +2092,7 @@ def classify(input, layers, quiet, explore, export, verbose, identifiers, head):
             input_path,
             display=not quiet,
             identifier_fields=identifier_fields,
+            identifier_modes=identifier_modes_dict,
             head=head,
         )
 

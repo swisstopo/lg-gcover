@@ -12,7 +12,7 @@ Author: Generated for lg-gcover project
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import click
 import geopandas as gpd
@@ -22,24 +22,18 @@ import yaml
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import (
-    BarColumn,
-    Progress,
-    SpinnerColumn,
-    TaskProgressColumn,
-    TextColumn,
-    TimeRemainingColumn,
-)
+from rich.progress import (BarColumn, Progress, SpinnerColumn,
+                           TaskProgressColumn, TextColumn, TimeRemainingColumn)
 from rich.prompt import Confirm
 from rich.table import Table
 
+from gcover.core.geometry import (_compute_bearing_series,
+                                  _compute_bearing_weighted_series,
+                                  _compute_strike_series)
 # Import classification extractor
 from gcover.publish.esri_classification_extractor import (
-    ClassificationClass,
-    ESRIClassificationExtractor,
-    LayerClassification,
-    extract_lyrx_complete,
-)
+    ClassificationClass, ESRIClassificationExtractor, LayerClassification,
+    extract_lyrx_complete)
 from gcover.publish.utils import translate_esri_to_pandas
 
 console = Console()
@@ -51,6 +45,515 @@ logger.add(
     format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
     level="INFO",
 )"""
+
+
+# =============================================================================
+# COMPUTED FIELDS
+# =============================================================================
+
+# Geometry property extractors
+GEOMETRY_PROPERTIES: Dict[str, Callable[[gpd.GeoDataFrame], pd.Series]] = {
+    "geometry.length": lambda gdf: gdf.geometry.length,
+    "geometry.area": lambda gdf: gdf.geometry.area,
+    "geometry.centroid.x": lambda gdf: gdf.geometry.centroid.x,
+    "geometry.centroid.y": lambda gdf: gdf.geometry.centroid.y,
+    "geometry.bounds.minx": lambda gdf: gdf.bounds["minx"],
+    "geometry.bounds.miny": lambda gdf: gdf.bounds["miny"],
+    "geometry.bounds.maxx": lambda gdf: gdf.bounds["maxx"],
+    "geometry.bounds.maxy": lambda gdf: gdf.bounds["maxy"],
+    # Line bearing properties
+    "geometry.bearing": _compute_bearing_series,
+    "geometry.bearing_weighted": _compute_bearing_weighted_series,
+    "geometry.strike": _compute_strike_series,
+}
+# Supported inline type casts
+SUPPORTED_CASTS = {
+    "int",
+    "Int64",
+    "Int32",
+    "float",
+    "float64",
+    "str",
+    "string",
+    "round",
+    "bool",
+}
+
+
+def _split_top_level_args(s: str) -> list:
+    """Split *s* on commas that are not inside parentheses or quotes.
+
+    This allows nested function calls as concat() arguments, e.g.
+    ``concat(kind_de, dip_label(dip), sep=', ')``.
+    """
+    parts, current, depth = [], [], 0
+    in_quote, quote_char = False, None
+    for ch in s:
+        if in_quote:
+            current.append(ch)
+            if ch == quote_char:
+                in_quote = False
+        elif ch in ('"', "'"):
+            in_quote, quote_char = True, ch
+            current.append(ch)
+        elif ch == '(':
+            depth += 1
+            current.append(ch)
+        elif ch == ')':
+            depth -= 1
+            current.append(ch)
+        elif ch == ',' and depth == 0:
+            parts.append(''.join(current).strip())
+            current = []
+        else:
+            current.append(ch)
+    if current:
+        parts.append(''.join(current).strip())
+    return parts
+
+
+def _handle_special_functions(
+        gdf: gpd.GeoDataFrame,
+        expression: str
+) -> Optional[pd.Series]:
+    """
+    Handle special function expressions that pandas.eval() can't process.
+
+    Supported functions:
+    - concat(field1, field2, ...) → concatenate with default separator " | "
+    - concat(field1, field2, sep='-') → concatenate with custom separator
+    - concat(field1, field2, sep=', ', skip_empty=True) → skip null/empty parts
+    - concat arguments may be nested function calls, e.g. dip_label(dip)
+    - coalesce(field1, field2, ...) → first non-null value
+    - dip_label(field) → "horizontal" (0°), "vertical" (90°), or None
+    - dip_label(field, vertical='vertikal') → override label text per language
+    - dip_label(field, horizontal='orizzontale', vertical='verticale')
+
+    Returns:
+        Series if expression matches a special function, None otherwise
+    """
+    expression = expression.strip()
+
+    # Helper to convert any series to string, handling nullable types
+    def to_string_safe(series: pd.Series) -> pd.Series:
+        """Convert series to string, replacing NA representations with empty string."""
+        # Detect nulls BEFORE converting to string (works for all null types)
+        null_mask = pd.isna(series)
+
+        # Convert to string
+        str_series = series.astype(str)
+
+        # Replace nulls with empty string using the pre-computed mask
+        str_series = str_series.where(~null_mask, "")
+
+        # Also clean up any string representations that might slip through
+        str_series = str_series.replace({"<NA>": "", "nan": "", "None": "", "NaN": "", "<NaT>": ""})
+
+        return str_series
+
+    # Handle concat(...)
+    concat_match = re.match(r"concat\((.+)\)$", expression, re.IGNORECASE)
+    if concat_match:
+        inner = concat_match.group(1)
+
+        # Extract separator if specified: sep='|' or sep="|"
+        sep = " | "  # Default
+        sep_match = re.search(r"sep\s*=\s*['\"](.+?)['\"]", inner)
+        if sep_match:
+            sep = sep_match.group(1)
+            inner = re.sub(r",?\s*sep\s*=\s*['\"].+?['\"]", "", inner)
+
+        # Extract skip_empty flag: skip_empty=True/False
+        skip_empty = False
+        skip_match = re.search(r"skip_empty\s*=\s*(True|False)", inner, re.IGNORECASE)
+        if skip_match:
+            skip_empty = skip_match.group(1).lower() == "true"
+            inner = re.sub(r",?\s*skip_empty\s*=\s*(True|False)", "", inner, flags=re.IGNORECASE)
+
+        # Parse arguments, respecting nested parentheses
+        raw_args = [a for a in _split_top_level_args(inner) if a]
+
+        if not raw_args:
+            raise ValueError("concat() requires at least one argument")
+
+        # Resolve each argument: plain column name or nested special function
+        series_list: list = []
+        for arg in raw_args:
+            if arg in gdf.columns:
+                series_list.append(to_string_safe(gdf[arg]))
+            else:
+                nested = _handle_special_functions(gdf, arg)
+                if nested is None:
+                    raise ValueError(
+                        f"concat(): {arg!r} is not a column name or known function"
+                    )
+                series_list.append(to_string_safe(nested))
+
+        if skip_empty:
+            stacked = pd.concat(series_list, axis=1)
+            stacked.columns = range(len(series_list))
+
+            def _join_skip(row):
+                parts = [row[i] for i in range(len(series_list)) if row[i].strip()]
+                return sep.join(parts) if parts else None
+
+            return stacked.apply(_join_skip, axis=1)
+
+        result = series_list[0]
+        for s in series_list[1:]:
+            result = result + sep + s
+
+        return result
+
+    # Handle coalesce(...) - first non-null value
+    coalesce_match = re.match(r"coalesce\((.+)\)$", expression, re.IGNORECASE)
+    if coalesce_match:
+        inner = coalesce_match.group(1)
+        fields = [f.strip() for f in inner.split(",") if f.strip()]
+
+        if not fields:
+            raise ValueError("coalesce() requires at least one field")
+
+        missing = [f for f in fields if f not in gdf.columns]
+        if missing:
+            raise ValueError(f"coalesce(): missing fields {missing}")
+
+        # Use first non-null value
+        result = gdf[fields[0]].copy()
+        for field in fields[1:]:
+            result = result.fillna(gdf[field])
+
+        return result
+
+    # Handle dip_label(field, horizontal='...', vertical='...')
+    # Returns "horizontal" (0°), "vertical" (90°), or None for other angles.
+    # Label text defaults to English; override with named kwargs per language:
+    #   dip_label(dip, vertical='vertikal')
+    #   dip_label(dip, horizontal='orizzontale', vertical='verticale')
+    dip_match = re.match(r"dip_label\((.+)\)$", expression, re.IGNORECASE)
+    if dip_match:
+        inner = dip_match.group(1)
+
+        label_horizontal = "horizontal"
+        label_vertical = "vertical"
+
+        for kw, default_storage in (
+            ("horizontal", None),
+            ("vertical", None),
+        ):
+            kw_match = re.search(
+                rf"{kw}\s*=\s*['\"](.+?)['\"]", inner, re.IGNORECASE
+            )
+            if kw_match:
+                if kw == "horizontal":
+                    label_horizontal = kw_match.group(1)
+                else:
+                    label_vertical = kw_match.group(1)
+                inner = re.sub(
+                    rf",?\s*{kw}\s*=\s*['\"].+?['\"]", "", inner, flags=re.IGNORECASE
+                )
+
+        field = inner.strip().strip(",").strip()
+        if field not in gdf.columns:
+            raise ValueError(f"dip_label(): missing field {field!r}")
+
+        h, v = label_horizontal, label_vertical  # capture in closure
+
+        def _dip_to_label(val, _h=h, _v=v):
+            if pd.isna(val):
+                return None
+            try:
+                fval = float(val)
+            except (ValueError, TypeError):
+                return None
+            if fval == 0:
+                return _h
+            if fval == 90:
+                return _v
+            return None
+
+        return gdf[field].map(_dip_to_label)
+
+    # Not a special function
+    return None
+
+
+def _parse_expression_with_cast(expression: str) -> Tuple[str, Optional[str], bool]:
+    """
+    Parse expression for optional type cast suffix.
+
+    Syntax: "expression:cast_type"
+
+    Returns:
+        Tuple of (clean_expression, cast_type or None, is_valid_cast)
+    """
+    if ":" not in expression:
+        return expression, None, True
+
+    parts = expression.rsplit(":", 1)
+    potential_cast = parts[-1].strip()
+
+    # Check if it looks like a cast (single word, no spaces)
+    if re.match(r"^[a-zA-Z][a-zA-Z0-9]*$", potential_cast):
+        if potential_cast in SUPPORTED_CASTS:
+            return parts[0].strip(), potential_cast, True
+        else:
+            # Looks like a cast but not recognized
+            return parts[0].strip(), potential_cast, False
+
+    # Not a cast pattern, return original
+    return expression, None, True
+
+
+def apply_computed_fields(
+        gdf: gpd.GeoDataFrame,
+        computed_fields: Optional[Dict[str, str]],
+        strict: bool = False,
+) -> gpd.GeoDataFrame:
+    """
+    Add or update computed fields using pandas eval expressions.
+
+    Supports:
+    - Column arithmetic: "(90 - azimuth) % 360"
+    - Geometry properties: "geometry.length", "geometry.area", "geometry.bearing"
+    - Mixed expressions: "geometry.area / 1_000_000"
+    - Inline type casting: "geometry.bearing:int", "geometry.area:round"
+    - String concatenation: "concat(field1, field2, field3)"
+    - String concatenation with custom separator: "concat(field1, field2, sep='|')"
+    - String concatenation skipping nulls: "concat(field1, field2, sep=', ', skip_empty=True)"
+    - Coalesce (first non-null): "coalesce(field1, field2, field3)"
+
+    Supported cast types:
+    - :int, :Int64, :Int32 → Nullable integer (rounds first)
+    - :float, :float64 → Float
+    - :str, :string → String
+    - :round → Rounded float (no type change)
+    - :bool → Boolean
+
+    Args:
+        gdf: Input GeoDataFrame
+        computed_fields: Dict of {field_name: expression} or {field_name: "expression:cast"}
+        strict: If True, raise on errors; if False, log warning and continue
+
+    Returns:
+        GeoDataFrame with computed fields added/updated
+    """
+    if not computed_fields:
+        return gdf
+
+    gdf = gdf.copy()
+    geom_cache: Dict[str, str] = {}
+
+    # =========================================================================
+    # FIRST PASS: Collect expressions to detect geometry properties
+    # =========================================================================
+    all_expressions_clean = []
+    for expr in computed_fields.values():
+        clean_expr, _, _ = _parse_expression_with_cast(expr)  # ← UPDATED: 3 values
+        all_expressions_clean.append(clean_expr)
+    all_expressions = " ".join(all_expressions_clean)
+
+    # Pre-compute geometry properties and store in temporary columns
+    for geom_key, geom_func in GEOMETRY_PROPERTIES.items():
+        if geom_key in all_expressions:
+            temp_col = f"__geom_{geom_key.replace('.', '_')}"
+            try:
+                gdf[temp_col] = geom_func(gdf)
+                geom_cache[geom_key] = temp_col
+                logger.debug(f"Pre-computed geometry property: {geom_key}")
+            except Exception as e:
+                msg = f"Failed to compute geometry property '{geom_key}': {e}"
+                if strict:
+                    raise ValueError(msg)
+                logger.warning(msg)
+
+    # =========================================================================
+    # SECOND PASS: Process each computed field
+    # =========================================================================
+    success_count = 0
+    for field_name, expression in computed_fields.items():
+        try:
+            # Parse expression for optional cast
+            clean_expression, cast_type, is_valid_cast = _parse_expression_with_cast(expression)  # ← UPDATED
+
+            # Check for invalid cast type
+            if cast_type and not is_valid_cast:
+                msg = f"Invalid cast type '{cast_type}'. Supported: {SUPPORTED_CASTS}"
+                if strict:
+                    raise ValueError(msg)
+                console.print(f"  [red]✗ {field_name}[/red]: {msg}")
+                logger.warning(f"Field '{field_name}': {msg}")
+                continue
+
+            # TRY SPECIAL FUNCTIONS FIRST (concat, coalesce, etc.)
+            result = _handle_special_functions(gdf, clean_expression)
+
+            if result is None:
+                # Not a special function, use pandas eval
+                eval_expr = clean_expression
+                for geom_key, temp_col in geom_cache.items():
+                    eval_expr = eval_expr.replace(geom_key, temp_col)
+
+                result = gdf.eval(eval_expr)
+
+            # Handle scalar results
+            if not isinstance(result, pd.Series):
+                result = pd.Series([result] * len(gdf), index=gdf.index)
+
+            # Apply type cast if specified
+            if cast_type:
+                result = _apply_cast(result, cast_type)
+                cast_info = f" → {cast_type}"
+            else:
+                cast_info = ""
+
+            # Assign result
+            is_overwrite = field_name in gdf.columns
+            gdf[field_name] = result
+
+            action = "Updated" if is_overwrite else "Created"
+            console.print(
+                f"  [green]✓ {action} '{field_name}'[/green] = [dim]{clean_expression}{cast_info}[/dim]"
+            )
+            logger.info(f"Computed field '{field_name}' = {expression}")
+            success_count += 1
+
+        except Exception as e:
+            msg = f"Failed to compute '{field_name}' = {expression}: {e}"
+            if strict:
+                raise ValueError(msg)
+            console.print(f"  [red]✗ {field_name}[/red]: {e}")
+            logger.warning(msg)
+
+    # Cleanup temporary geometry columns
+    temp_cols = list(geom_cache.values())
+    if temp_cols:
+        gdf.drop(columns=temp_cols, inplace=True, errors="ignore")
+
+    if computed_fields:
+        logger.info(f"Computed fields: {success_count}/{len(computed_fields)} successful")
+
+    return gdf
+
+def _apply_cast(series: pd.Series, cast_type: str) -> pd.Series:
+    """
+    Apply type cast to a pandas Series.
+
+    Args:
+        series: Input Series
+        cast_type: One of SUPPORTED_CASTS
+
+    Returns:
+        Casted Series
+    """
+    if cast_type in ("int", "Int64"):
+        # Use nullable integer to preserve NaN
+        return series.round().astype("Int64")
+
+    elif cast_type == "Int32":
+        return series.round().astype("Int32")
+
+    elif cast_type in ("float", "float64"):
+        return series.astype("float64")
+
+    elif cast_type in ("str", "string"):
+        return series.astype("string")
+
+    elif cast_type == "round":
+        return series.round()
+
+    elif cast_type == "bool":
+        return series.astype("boolean")
+
+    else:
+        logger.warning(f"Unknown cast type '{cast_type}', returning unchanged")
+        return series
+
+def _parse_expression_with_cast(expression: str) -> Tuple[str, Optional[str], bool]:
+    """
+    Parse expression for optional type cast suffix.
+
+    Syntax: "expression:cast_type"
+
+    Returns:
+        Tuple of (clean_expression, cast_type or None, is_valid_cast)
+    """
+    if ":" not in expression:
+        return expression, None, True
+
+    parts = expression.rsplit(":", 1)
+    potential_cast = parts[-1].strip()
+
+    # Check if it looks like a cast (single word, no spaces)
+    if re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", potential_cast):
+
+        if potential_cast in SUPPORTED_CASTS:
+            return parts[0].strip(), potential_cast, True
+        else:
+            # Looks like a cast but not recognized
+            return parts[0].strip(), potential_cast, False
+
+    # Not a cast pattern, return original
+    return expression, None, True
+
+
+def validate_computed_fields(
+        gdf: gpd.GeoDataFrame,
+        computed_fields: Dict[str, str],
+) -> List[Dict[str, Any]]:
+    """Validate computed field expressions without applying them."""
+    issues = []
+
+    for field_name, expression in computed_fields.items():
+        # Parse out cast type for validation
+        clean_expression, cast_type, is_valid_cast = _parse_expression_with_cast(expression)  # ← UPDATED
+
+        # Check for invalid cast type
+        if cast_type and not is_valid_cast:
+            issues.append({
+                "field": field_name,
+                "expression": expression,
+                "issue": "invalid_cast",
+                "details": f"Unknown cast type '{cast_type}'. Supported: {SUPPORTED_CASTS}",
+            })
+            continue
+
+        # Check for geometry properties
+        eval_expr = clean_expression
+        for geom_key in GEOMETRY_PROPERTIES.keys():
+            eval_expr = eval_expr.replace(geom_key, "0")  # Replace with dummy
+
+        # Try to parse expression
+        try:
+            import keyword
+
+            tokens = re.findall(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b", eval_expr)
+
+            column_refs = [
+                t for t in tokens
+                if not keyword.iskeyword(t)
+                   and t not in ("and", "or", "not", "in", "True", "False", "None")
+                   and not t.startswith("__geom_")
+            ]
+
+            missing = [col for col in column_refs if col not in gdf.columns]
+            if missing:
+                issues.append({
+                    "field": field_name,
+                    "expression": expression,
+                    "issue": "missing_columns",
+                    "details": missing,
+                })
+
+        except Exception as e:
+            issues.append({
+                "field": field_name,
+                "expression": expression,
+                "issue": "parse_error",
+                "details": str(e),
+            })
+
+    return issues
 
 
 def float_to_int_string(val):
@@ -803,13 +1306,17 @@ class ClassificationApplicator:
         additional_filter: Optional[str] = None,
         overwrite: Optional[bool] = False,
         preserve_existing: Optional[bool] = True,
-    ) -> gpd.GeoDataFrame:  # NEW PARAMETER
+        computed_fields: Optional[Dict[str, str]] = None,  # ← NEW PARAMETER
+    ) -> gpd.GeoDataFrame:
         """
         Apply classification to GeoDataFrame.
 
         Args:
-            preserve_existing: If True and SYMBOL field exists, only update NULL/empty values
-                              If False, update all matching features (overwrite mode)
+            gdf: Input GeoDataFrame
+            additional_filter: Optional pandas query filter
+            overwrite: Overwrite existing symbol field if present
+            preserve_existing: If True, only update NULL/empty values
+            computed_fields: Dict of {field_name: expression} to compute before classification
         """
 
         # Check if fields exist
@@ -854,7 +1361,6 @@ class ClassificationApplicator:
                     f"Cast existing field '{self.label_field}' to string dtype"
                 )
 
-        # TODO
         # Check required fields
         all_present, missing = self.matcher.check_required_fields(gdf)
         if not all_present:
@@ -880,6 +1386,12 @@ class ClassificationApplicator:
                         console.print(f"[red]✗ {field}: {e}[/red]")
                 else:
                     console.print(f"[dim]✗ {field} not found[/dim]")
+
+        # Step 2b: Apply computed fields
+
+        if computed_fields:
+            console.print(f"\n[cyan]🔢 Computing fields...[/cyan]")
+            gdf = apply_computed_fields(gdf, computed_fields, strict=False)
 
         # Step 3: Extract numeric columns
         numeric_columns = get_numeric_field_names(self.field_types)

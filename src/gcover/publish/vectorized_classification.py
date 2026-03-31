@@ -27,7 +27,14 @@ from rich.table import Table
 from gcover.publish.esri_classification_extractor import (
     ClassificationClass,
     LayerClassification,
+  )
+
+from gcover.publish.esri_classification_applicator import (
+    apply_computed_fields,
+    validate_computed_fields,
+    GEOMETRY_PROPERTIES,
 )
+
 from gcover.publish.utils import translate_esri_to_pandas
 
 console = Console()
@@ -713,6 +720,8 @@ def analyze_unclassified_features(
     return pattern_dict, sample_indices, existing_fields
 
 
+
+
 def apply_batch_classifications_vectorized(
     gdf: gpd.GeoDataFrame,
     classifications: List[Tuple[LayerClassification, Optional[str], Optional[str], Optional[Dict[str, str]], Optional[str]]],
@@ -823,7 +832,7 @@ def apply_batch_classifications_vectorized(
     if report.is_complete:
         logger.debug(f"[SUCCESS] Layer '{layer_name}': 100% classified ({total_features:,} features)")
     else:
-        logger.error(f"Layer '{layer_name}': {final_unclassified:,} features UNCLASSIFIED "
+        logger.warning(f"Layer '{layer_name}': {final_unclassified:,} features UNCLASSIFIED "
                     f"({report.coverage_pct:.1f}% coverage)")
     
     return gdf, report
@@ -886,24 +895,25 @@ def apply_batch_from_config_vectorized(
     }
     
     # Process each layer
+    # Process each layer
     for layer in layers_to_process:
         layer_config = config.get_layer_config(layer)
         if not layer_config:
             logger.warning(f"No configuration for layer '{layer}', skipping")
             continue
-        
-        console.print(f"\n[bold cyan]{'='*60}[/bold cyan]")
+
+        console.print(f"\n[bold cyan]{'=' * 60}[/bold cyan]")
         console.print(f"[bold cyan]Processing layer: {layer}[/bold cyan]")
-        console.print(f"[bold cyan]{'='*60}[/bold cyan]")
-        
+        console.print(f"[bold cyan]{'=' * 60}[/bold cyan]")
+
         # Load layer
         kwargs = {"layer": layer}
         if bbox:
             kwargs["bbox"] = bbox
-        
+
         gdf = gpd.read_file(gpkg_path, **kwargs)
         global_stats["features_total"] += len(gdf)
-        
+
         # Cast field types if specified
         if layer_config.field_types:
             console.print(f"\n[cyan]Casting field types...[/cyan]")
@@ -919,7 +929,14 @@ def apply_batch_from_config_vectorized(
                     except Exception as e:
                         console.print(f"  [red]✗ {field}: {e}[/red]")
         
-        # Build list of (classification, filter, prefix) tuples
+
+        # Apply layer-level computed fields
+
+        if layer_config.computed_fields:
+            console.print(f"\n[cyan]🔢 Computing layer-level fields...[/cyan]")
+            gdf = apply_computed_fields(gdf, layer_config.computed_fields, strict=False)
+
+        # Build list of (classification, filter, prefix, field_mapping, identifier_field) tuples
         classifications_to_apply = []
         
         for class_config in layer_config.classifications:
@@ -945,7 +962,7 @@ def apply_batch_from_config_vectorized(
                         logger.error(f"Classification '{class_config.classification_name}' "
                                    f"not found in {class_config.style_file.name}")
                         if not continue_on_error:
-                            raise ValueError(f"Classification not found")
+                            raise ValueError(f"Classification not found in {class_config.style_file.name}")
                         continue
                 elif len(classifications) == 1:
                     classification = classifications[0]
@@ -955,7 +972,14 @@ def apply_batch_from_config_vectorized(
                     if not continue_on_error:
                         raise ValueError("Ambiguous classification")
                     continue
-                
+
+
+                # Apply classification-level computed fields (before this classification)
+                if class_config.computed_fields:
+                        console.print(f"\n[cyan]🔢 Computing fields for {class_config.classification_name}...[/cyan]")
+                        gdf = apply_computed_fields(gdf, class_config.computed_fields, strict=False)
+
+
                 # Use definition_expression from .lyrx as default, allow YAML override
                 filter_expr = class_config.filter or classification.definition_expression
                 

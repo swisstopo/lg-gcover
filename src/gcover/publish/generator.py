@@ -5,12 +5,16 @@ MapServer Mapfile and QGIS QML Generator
 Generate map server configuration from ESRI classification rules.
 Supports complex multi-layer symbols including pattern fills, font markers,
 and sophisticated polygon styling.
+
+ENHANCED: Support for pattern catalog with PIXMAP symbols for polygon fills.
 """
 
 import json
+import re
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple, Union
+from importlib.resources import files
 
 import click
 from loguru import logger
@@ -22,6 +26,7 @@ from gcover.publish.esri_classification_extractor import (
     LayerClassification,
     SymbolType,
 )
+from gcover.publish.style_config import MapfileGenerationConfig
 from gcover.publish.symbol_models import (
     CharacterMarkerInfo,
     FontSymbol,
@@ -43,7 +48,140 @@ from gcover.publish.rotation_extractor_extension import (
     format_rotation_for_mapserver,
 )
 
+
+DEFAULT_IMAGES_DIR = "patterns"  # or img or "etc/img"  for KOGIS
+
 console = Console()
+
+
+# =============================================================================
+# PATTERN CATALOG SUPPORT
+# =============================================================================
+
+
+class PatternCatalogReader:
+    """
+    Read and query pattern catalog for MapServer symbol generation.
+
+    The pattern catalog maps ESRI CIMCharacterMarker patterns to
+    pre-rendered PNG tiles for use as MapServer PIXMAP symbols.
+    """
+
+    def __init__(self, catalog_path: Optional[Path] = None):
+        """
+        Initialize catalog reader.
+
+        Args:
+            catalog_path: Path to patterns_catalog.yaml (None = no catalog)
+        """
+        self.catalog_path = catalog_path
+        self.patterns: Dict[str, dict] = {}
+        self.loaded = False
+
+        if catalog_path and catalog_path.exists():
+            self._load_catalog()
+
+    def _load_catalog(self) -> None:
+        """Load catalog from YAML file."""
+        try:
+            import yaml
+            with open(self.catalog_path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+
+            self.patterns = data.get('patterns', {})
+            self.loaded = True
+            logger.info(f"Loaded pattern catalog with {len(self.patterns)} patterns")
+
+        except Exception as e:
+            logger.warning(f"Could not load pattern catalog: {e}")
+            self.loaded = False
+
+    def find_pattern(
+            self,
+            font_family: str,
+            char_index: int,
+            size: float,
+            step_x: float,
+            step_y: float,
+            color: Tuple[int, int, int, int],
+    ) -> Optional[dict]:
+        """
+        Find matching pattern in catalog.
+
+        Uses fuzzy matching on size/step/color to find the best match.
+
+        Returns:
+            Pattern dict with mapserver info, or None if no match
+        """
+        if not self.loaded:
+            return None
+
+        best_match = None
+        best_score = float('inf')
+
+        for key, pattern in self.patterns.items():
+            char_info = pattern.get('character', {})
+
+            # Must match font and character exactly
+            pattern_font = char_info.get('font_family', '')
+            pattern_char = char_info.get('char_index')
+
+            if not self._fonts_match(font_family, pattern_font):
+                continue
+            if pattern_char != char_index:
+                continue
+
+            # Score based on size/step similarity
+            pattern_size = char_info.get('size', 0)
+            pattern_step = char_info.get('step', [0, 0])
+
+            size_diff = abs(size - pattern_size) / max(size, pattern_size, 0.1)
+            step_diff = (
+                                abs(step_x - pattern_step[0]) / max(step_x, pattern_step[0], 0.1) +
+                                abs(step_y - pattern_step[1]) / max(step_y, pattern_step[1], 0.1)
+                        ) / 2
+
+            # Color difference (simple RGB distance)
+            pattern_color = pattern.get('color', {}).get('rgba', [0, 0, 0, 255])
+            color_diff = (
+                                 abs(color[0] - pattern_color[0]) +
+                                 abs(color[1] - pattern_color[1]) +
+                                 abs(color[2] - pattern_color[2])
+                         ) / 765  # Normalize to 0-1
+
+            # Combined score (lower is better)
+            score = size_diff * 0.3 + step_diff * 0.3 + color_diff * 0.4
+
+            if score < best_score:
+                best_score = score
+                best_match = pattern
+
+        # Only return if reasonably good match (threshold: 0.5)
+        if best_match and best_score < 0.5:
+            return best_match
+
+        return None
+
+    def _fonts_match(self, font1: str, font2: str) -> bool:
+        """Check if two font names refer to the same font."""
+
+        # Normalize: lowercase, remove spaces
+        def normalize(f):
+            return f.lower().replace(' ', '').replace('-', '').replace('_', '')
+
+        return normalize(font1) == normalize(font2)
+
+    def get_pixmap_symbol_name(self, pattern: dict) -> Optional[str]:
+        """Get MapServer PIXMAP symbol name from pattern."""
+        mapserver_info = pattern.get('mapserver', {})
+        if mapserver_info.get('native', False):
+            return None  # Native hatch, no pixmap
+        return mapserver_info.get('symbol')
+
+    def get_png_path(self, pattern: dict) -> Optional[str]:
+        """Get relative PNG file path from pattern."""
+        mapserver_info = pattern.get('mapserver', {})
+        return mapserver_info.get('png_file')
 
 
 class MapServerGenerator:
@@ -56,14 +194,22 @@ class MapServerGenerator:
     - Complex polygon symbols with multiple layers
     - Point and line font markers
     - PDF generation of all used symbols
+    - ENHANCED: Pattern catalog support for PIXMAP polygon fills
     """
 
     def __init__(
-        self,
-        layer_type: str = "Polygon",
-        use_symbol_field: bool = False,
-        symbol_field: str = "SYMBOL",
-        font_name_prefix: str = "esri",
+            self,
+            layer_type: str = "Polygon",
+            use_symbol_field: bool = False,
+            symbol_field: str = None,
+            font_name_prefix: str = "esri",
+            no_scale: bool = False,
+            default_language: str = "de",
+            pattern_catalog: Optional[Path] = None,
+            gml_items: Optional[str] = 'default',
+            output_dir: Optional[Path] = None,
+            languages: Optional[List[str]] = None,
+
     ):
         """
         Initialize generator.
@@ -73,16 +219,28 @@ class MapServerGenerator:
             use_symbol_field: If True, use CLASSITEM with simple expressions
             symbol_field: Name of symbol field in data (default: SYMBOL)
             font_name_prefix: Prefix for font names in FONTSET (default: "esri")
+            pattern_catalog: Path to patterns_catalog.yaml for PIXMAP symbols
         """
         self.layer_type = layer_type.upper()
         self.use_symbol_field = use_symbol_field
         self.symbol_field = symbol_field
         self.font_name_prefix = font_name_prefix
+        self.no_scale = no_scale
+        self.gml_items = gml_items
+        self.output_dir = output_dir
 
         # Track fonts and symbols used (for symbol file generation)
         self.fonts_used: Set[str] = set()
         self.pattern_symbols: List[Dict] = []
         self.symbol_registry: Dict[FontSymbol, str] = {}
+
+        # NEW: Pattern catalog for PIXMAP symbols
+        self.pattern_catalog = PatternCatalogReader(pattern_catalog)
+        self.pixmap_symbols_used: Set[str] = set()
+        # Languages
+        self.default_language = default_language
+        self.languages = languages
+
 
     def render_maxscale(self, layer_scale: Optional[bool | int],
                         style_scale: Optional[int]) -> Optional[str]:
@@ -105,7 +263,7 @@ class MapServerGenerator:
 
         # YAML définit une valeur spécifique
         if isinstance(layer_scale, int):
-            return f"  MAXSCALEDENOM {yaml_scale}"
+            return f"  MAXSCALEDENOM {layer_scale}"
 
         # YAML = None ou True → utilise le style si disponible
         if style_scale is not None:
@@ -113,38 +271,239 @@ class MapServerGenerator:
 
         return None
 
+    def _get_classes_file_path(
+            self,
+            layer_name: str,
+            symbol_prefix: str,
+            mapfile_config,
+    ) -> Path:
+        """Determine path for classes include file."""
+
+        # Check if explicit path in config
+        if hasattr(mapfile_config, "classes_file") and mapfile_config.classes_file:
+            return Path(mapfile_config.classes_file)
+
+        # Default: output_dir/classes/<symbol_prefix>_classes.inc
+        classes_dir = self.output_dir / "classes"
+        return classes_dir / f"{symbol_prefix}_classes.inc"
+
+    def _add_classes_header(
+            self, classes_content: str, classification, symbol_prefix: str
+    ) -> str:
+        """Add header comment to classes file."""
+
+        from datetime import datetime
+
+        header_lines = [
+            f"# Auto-generated from {getattr(classification, 'style_file', 'unknown')}",
+            f"# Symbol prefix: {symbol_prefix}",
+            f"# Generated: {datetime.now().isoformat()}",
+            f"# Mode: {getattr(getattr(classification, 'mapfile_config', None), 'classes_mode', 'auto')}",
+            "",
+            classes_content,
+        ]
+
+        return "\n".join(header_lines)
+
+    def generate_to_staging(self, classes_file: Path, new_content: str) -> Path:
+        """
+        Generate classes to staging area for comparison.
+
+        Args:
+            classes_file: Original classes file path
+            new_content: Newly generated classes content
+
+        Returns:
+            Path to staging file (.new)
+        """
+        # Create staging directory
+        staging_dir = classes_file.parent / ".staging"
+        staging_dir.mkdir(exist_ok=True, parents=True)
+
+        # Write to .new file
+        staging_file = staging_dir / f"{classes_file.name}.new"
+        staging_file.write_text(new_content)
+
+        logger.info(f"✓ Generated staging file: {staging_file}")
+
+        return staging_file
+
+    # ========================================================================
+    # MULTI-LANGUAGE DATA HELPER
+    # ========================================================================
+
+    def _build_lang_data(
+            self,
+            data: str,
+            lang_fields: Dict[str, str],
+            include_items: Optional[str] = None,
+            symbol_field: Optional[str] = None,
+            geom_col: Optional[str] = None,
+            label_col: Optional[str] = None,
+    ) -> str:
+        """
+        Inject language-aliased columns into a DATA string, keeping %language%
+        as a runtime placeholder (resolved by MapServer VALIDATION block).
+
+        Replaces SELECT * with an explicit column list built from:
+          - mandatory columns: geom, gid, label
+          - symbol_field (map_symbol) if provided
+          - all fields listed in include_items
+          - lang_fields alias expressions  (col_%language% AS alias)
+
+        Case A — plain table ref:
+            "geom FROM schema.table USING UNIQUE gid USING SRID=2056"
+            → wraps in subquery with explicit column list
+
+        Case B — existing subquery:
+            "geom FROM (SELECT col1, col2, ... FROM ...) AS sub USING ..."
+            → appends alias expressions to the existing SELECT list,
+              and ensures mandatory columns are present
+        """
+        if not lang_fields:
+            return data
+
+            # 1. Define Priority Groups
+        head_names = ["gid", geom_col or "geom"]
+        tail_names = [n for n in [symbol_field, label_col or "label"] if n]
+        include_list = [c.strip() for c in (include_items or "").split(",") if c.strip()]
+        lang_aliases = set(lang_fields.keys())
+
+        # 2. Parsing the MapServer DATA string
+        # Flag (?i) moved to the absolute start
+        pattern = r"(?i)^\s*(?P<geom_ref>\S+)\s+FROM\s+(?P<source>.*?)\s+(?P<clauses>USING.*)$"
+        match = re.match(pattern, data.strip(), re.DOTALL)
+
+        if not match:
+            return f"{geom_col or 'geom'} FROM ({data}) AS lang_sub USING UNIQUE gid"
+
+        geom_ref = match.group("geom_ref")
+        source_content = match.group("source").strip()
+        using_clauses = match.group("clauses").strip()
+
+        # FIXED REGEX: (?i) is now at the start, before the literal escaped parenthesis \(
+        subquery_pattern = r"(?i)\(\s*SELECT\s+(?P<cols>.*?)\s+FROM\s+(?P<table>.*?)\)\s+AS\s+(?P<alias>\w+)"
+        subquery_match = re.match(subquery_pattern, source_content, re.DOTALL)
+
+        existing_cols = []
+        if subquery_match:
+            existing_cols = [c.strip() for c in subquery_match.group("cols").split(",") if c.strip()]
+            from_table = subquery_match.group("table").strip()
+            alias_name = subquery_match.group("alias")
+        else:
+            from_table = source_content
+            alias_name = "lang_sub"
+
+        # 3. Assemble the ordered column dictionary
+        final_cols = {}
+
+        def add_col(name: str, expr: str, force_tail: bool = False):
+            if name in tail_names and not force_tail:
+                return
+            if name not in final_cols:
+                final_cols[name] = expr
+
+        # TIER 1: Technical Head
+        for col in head_names:
+            add_col(col, col)
+
+        # TIER 2: Main Body (Include items + Translations)
+        for col in include_list:
+            if col in lang_aliases:
+                add_col(col, f"{lang_fields[col]} AS {col}")
+            else:
+                add_col(col, col)
+
+        # TIER 3: Residual Translations
+        for alias, pattern_str in lang_fields.items():
+            add_col(alias, f"{pattern_str} AS {alias}")
+
+        # TIER 4: Residual Subquery columns
+        for col_expr in existing_cols:
+            clean_name = col_expr.split()[-1] if " AS " in col_expr.upper() else col_expr
+            add_col(clean_name, col_expr)
+
+        # TIER 5: Technical Tail
+        for col in tail_names:
+            add_col(col, col, force_tail=True)
+
+        full_select = ", ".join(final_cols.values())
+
+        # 4. Final Reconstruction
+        # We ensure there's a space before USING to avoid "subqueryUSING"
+        return f"{geom_ref} FROM (SELECT {full_select} FROM {from_table}) AS {alias_name} {using_clauses}"
+
+    def _build_validation_block(
+            self,
+    ) -> List[str]:
+        """
+        Generate MapServer VALIDATION block for %lang% runtime substitution.
+
+        The regex anchors exact matches to prevent SQL injection, e.g.:
+            "lang" "^(eng|ger|fra|ita)$"
+        """
+        languages = self.languages or [self.default_language]
+        default_language = self.default_language
+
+        lang_pattern = "|".join(re.escape(l) for l in languages)
+        return [
+            "  VALIDATION",
+            f'    "lang"         "^({lang_pattern})$"',
+            f'    "default_lang" "{default_language}"',
+            "  END",
+        ]
+
     # ========================================================================
     # LAYER AND CLASS GENERATION
     # ========================================================================
 
     def generate_layer(
-        self,
-        classification,
-        layer_name: str,
-        layer_type: str,
-        symbol_field: str,
-        symbol_prefix: str = "class",
-        connection: Optional[MapserverConnection] = None,
-        data: Optional[str] = None,
-        template: Optional[str] = "empty",
-        layer_group: Optional[str] = None,
-        map_label: Optional[Union[None, bool, str]] = None,
-        layer_max_scale: Optional[bool | int] = None
+            self,
+            classification: LayerClassification,
+            layer_name: str,
+            layer_type: str,
+            symbol_field: str,
+            symbol_prefix: str = "class",
+            connection: Optional[MapserverConnection] = None,
+            data: Optional[str] = None,
+            template: Optional[str] = "empty",
+            layer_group: Optional[str] = None,
+            map_label: Optional[Union[None, bool, str]] = None,
+            layer_max_scale: Optional[bool | int] = None,
+            layer_min_scale: Optional[bool | int] = None,
+            include_items: Optional[str] = 'all',
+            mapfile_config: Optional[MapfileGenerationConfig] = None,
+            staging_mode: bool = False,
+            lang_fields: Optional[Dict[str, str]] = None,
+            translations: Optional[Dict[str, Dict[str, str]]] = None,
+
     ) -> str:
         """
         Generate complete MapServer LAYER block.
 
         Args:
-            classification: Layer classification with styling
-            layer_name: Name for the layer
-            data_path: Path to data source (e.g., OGR connection string)
-            symbol_prefix: Prefix for symbol IDs (e.g., "bedrock", "unco")
+          classification: `gcover.publish.esri_classification_extractor.LayerClassification` with styling
+          layer_name: Name for the layer
+          layer_type: MapServer layer type (e.g., POLYGON)
+          symbol_field: Attribute used for symbol selection
+          symbol_prefix: Prefix for symbol IDs (default: "class")
+          connection: Optional MapServer connection object
+          data: Optional data source path
+          template: Template name (default: "empty")
+          layer_group: Optional layer group name
+          map_label: Optional label override
+          layer_max_scale: Optional max scale
+          layer_min_scale: Optional min scale
+          include_items: Items to include in the LAYER block
+          mapfile_config: Mapfile generation configuration
 
         Returns:
-            Complete LAYER block as string
+            Complete LAYER block as a string.
         """
+
         label_info = None
         rotation_field = None
+        label_item = None
 
         if layer_type:
             if isinstance(layer_type, LayerType):
@@ -161,115 +520,442 @@ class MapServerGenerator:
 
         logger.info(f"=== {layer_name} ===")
 
-        try:
+        def _get_label_field(classification, map_label):
+
+
+          try:
             if classification.label_classes:
                 label_info = classification.label_classes[0]
                 label_item = label_info.get_simple_field_name()
-        except Exception as e:
-            logger.error(f"Error while retrieving labels info")
+          except Exception:
+            logger.error("Error while retrieving labels info")
+
+          if label_item and map_label is None:
+            return label_item.lower()
+          elif isinstance(map_label, str):
+            return map_label.lower()
+          return None
+
+        # --- Rotation extraction ---
 
         try:
             rotation_info = classification.rotation_info
             if rotation_info:
-                rotation_field = rotation_info.field_name
+                console.print(f"=== Rotation field ===")
+                if mapfile_config and mapfile_config.rotation_field is not None:
+                    # TODO: ugly
+                    rotation_info.field_name = mapfile_config.rotation_field
+                    console.print(f"[yellow]Using  {mapfile_config.rotation_field} from config YAML[/yellow]")
 
-        except Exception as e:
-            logger.error(f"Error while retrieving rotation info")
+                else:
+                    rotation_field = rotation_info.field_name
+                    console.print(f"Using {rotation_field} from ESRI .lyrx")
+        except Exception:
+            logger.error("Error while retrieving rotation info")
 
-        lines = [
-            "LAYER",
-            f'  NAME "{layer_name}"',
-            f'   GROUP "ch.swisstopo.geology.geocover-{layer_group}"',
-            f"  TYPE {layer_type}",
-            "  STATUS ON",
-            "",
-        ]
+        # Resolve language-specific column aliases in DATA string
+        if data and (lang_fields or "%lang%" in (data or "")):
+            label_col = _get_label_field(classification, map_label)
+            data = self._build_lang_data(
+                data=data,
+                lang_fields=lang_fields or {},
+                include_items=include_items,
+                symbol_field=self.symbol_field,  # e.g. "map_symbol"
+                geom_col="geom",  # or pull from connection config
+                label_col=label_col,
+            )
 
-        # Metadata
-        lines.extend(
-            [
-                "",
-                "  METADATA",
-                f'    "wms_title"    "{layer_name.capitalize()}"',
-                f'    "wms_abstract" "{layer_name.capitalize()}"',
-                '    "wms_srs"      "EPSG:2056 EPSG:4326 EPSG:3857"',
-                '    "wms_extent" "2350000 1050000 2850000 1350000"',
-                '    "wms_enable_request" "*"',
-                '    "wms_include_items" "all"',
-                '    "gml_include_items" "all"',
-                '    "gml_types" "auto"',
-                "  END",
-            ]
-        )
 
-        # Data source
-        if connection:
+        def build_layer_block(
+                classification,
+                layer_name: str,
+                layer_group: str,
+                layer_type: str,
+                symbol_field: str,
+                include_items: str = "all",
+                template: str = "empty",
+                connection=None,
+                data=None,
+                map_label=None,
+                layer_max_scale=None,
+                layer_min_scale=None,
+                mapfile_config: Optional[MapfileGenerationConfig] = None,
+        ):
+            """Generate a MapServer LAYER block as a list of lines."""
+
+            lines = []
+
+            # --- Label extraction ---
+            label_item = None
+            try:
+                if classification.label_classes:
+                    label_info = classification.label_classes[0]
+                    label_item = label_info.get_simple_field_name()
+            except Exception:
+                logger.error("Error while retrieving labels info")
+
+
+            # --- Base LAYER header ---
             lines.extend(
                 [
                     "",
-                    f"  CONNECTIONTYPE {connection.connection_type.name}",
-                    f'  CONNECTION "{connection.connection}"',
-                    f'  DATA "{data}"',
+                    f'  NAME "{layer_name}"'
+                ]
+            )
+            if layer_group:
+                lines.append( f'  GROUP "{layer_group}"')
+            lines.extend(
+                [
+
+                    f"  TYPE {layer_type}",
+                    "  STATUS ON",
+                    "",
                 ]
             )
 
-        # Names are swapped between Mapserver and ESRI
-        # minScale → MAXSCALEDENOM
-        # maxScale → MINSCALEDENOM
 
-        max_scale = self.render_maxscale(layer_max_scale,classification.min_scale )
-        if max_scale:
-            console.print(f"Using `maxscaledenom`: {classification.min_scale}")
-            lines.extend(["", max_scale])
-
-        if classification.max_scale:
+            # --- Metadata ---
             lines.extend(
                 [
                     "",
-                    f"MINSCALEDENOM   {classification.min_scale}",
+                    "  METADATA",
+                    f'    "wms_title"    "{layer_name.capitalize()}"']
+            )
+            if layer_group:
+                lines.append(f'    "wms_enable_request" "*"')
+                # lines.append(f'    "wms_layer_group"      "/{layer_group}"')
+            else:
+                lines.append('    "wms_enable_request" "*"')
+            if mapfile_config:
+                metadata = getattr(mapfile_config, "metadata", None)
+                if metadata:
+                    for metadata_key in ["wms_group_title"]:
+                        metadata_value = metadata.get(metadata_key)
+                        if metadata_value:
+                            lines.append(f'    "{metadata_key}" "{metadata_value}"')
+
+
+
+
+            lines.extend(
+                    [
+                    f'    "wms_abstract" "{layer_name.capitalize()}"',
+                    '    "ows_srs"      "EPSG:2056 EPSG:21781 EPSG:4326 EPSG:3857 EPSG:3034 EPSG:3035 EPSG:4258 EPSG:25832 EPSG:25833 EPSG:31467 EPSG:32632 EPSG:32633 EPSG:900913"',
+                    '    "wms_extent" "2300000 900000 3100000 1450000"',
+                    f'    "wms_include_items" "{include_items}"',
+                    f'    "gml_include_items" "{include_items}"',
+                    '    "gml_types" "auto"',
+                    "  END",
                 ]
             )
-        if classification.max_scale:
+
+            # VALIDATION block for %lang% runtime substitution
+            # Required whenever lang_fields or %lang% appears in the DATA string
+            if lang_fields or (data and "%lang%" in data):
+                lines.extend(
+                    self._build_validation_block(
+                    )
+                )
+
+            # Special case
+            if "bedrock" in layer_name and layer_group and "geocover" in layer_group:
+                lines.insert(-1, '    "wms_group_title"  "GeoCover 2D"')
+
+            # --- Data source ---
+            if connection:
+                lines.extend(
+                    [
+                        "",
+                        f"  CONNECTIONTYPE {connection.connection_type.name}",
+                        f'  CONNECTION "{connection.connection}"',
+                        f'  DATA "{data}"',
+                    ]
+                )
+
+            # --- Scale handling ---
+            # Names are swapped between Mapserver and ESRI
+            # minScale → MAXSCALEDENOM
+            # maxScale → MINSCALEDENOM
+
+            if not self.no_scale:
+                console.print(f"=== Scales hell ===")
+                console.print(f"    layer_max_scale (MAXSCALEDOM): {layer_max_scale}")
+                console.print(f"    layer_min_scale (MINSCALEDENOM): {layer_max_scale}")
+                console.print(
+                    f"    ESRI lyrx classification.max_scale: {classification.max_scale}"
+                )
+                console.print(
+                    f"    ESRI lyrx  classification.min_scale: {classification.min_scale}"
+                )
+                console.print(f"    maxscale: {layer_max_scale}")
+
+                max_scale_line = self.render_maxscale(
+                    layer_max_scale, classification.min_scale
+                )
+                if max_scale_line:
+                    lines.extend(["", max_scale_line])
+
+                if classification.max_scale:
+                    lines.extend(
+                        [
+                            "",
+                            f"MINSCALEDENOM   {classification.max_scale}",
+                        ]
+                    )
+
+            # Tolerance
+            if mapfile_config:
+                tolerance = getattr(mapfile_config, "tolerance", None)
+                if tolerance:
+                    lines.append(f'  TOLERANCE      {tolerance}')
+                    lines.append(f'  TOLERANCEUNITS pixels')
+
+
+
+
+            # --- Projection ---
             lines.extend(
                 [
-                    f"MAXCALEDENOM   {classification.min_scale}",
+                    "",
+                    "  PROJECTION",
+                    '    "init=epsg:2056"',
+                    "  END",
+                    "",
+                    "  EXTENT 2300000 900000 3100000 1450000",
                 ]
             )
 
-        # Projection
-        lines.extend(
-            [
-                "",
-                "  PROJECTION",
-                '    "init=epsg:2056"',
-                "  END",
-                "",
-                "  EXTENT 2350000 1050000 2850000 1350000",
-            ]
+            # --- Template ---
+            lines.extend(["", f'  TEMPLATE "{template}"', ""])
+
+            # --- CLASSITEM ---
+            if self.use_symbol_field:
+                lines.append("  # Using CLASSITEM for simplified expressions")
+                lines.append(f'  CLASSITEM "{symbol_field}"')
+            else:
+                lines.append("  # Styled using classification field values")
+
+            # --- LABELITEM ---
+            if label_item and map_label is None:
+                lines.append(f'  LABELITEM "{label_item.lower()}"')
+            elif isinstance(map_label, str):
+                lines.append(f'  LABELITEM "{map_label.lower()}"')
+
+            lines.append("")
+
+            return lines
+
+        # Generate layer block
+
+        layer_block = build_layer_block(
+                classification,
+                layer_name,
+                layer_group,
+                layer_type,
+                symbol_field,
+                include_items,
+                template,
+                connection,
+                data,
+                map_label,
+                layer_max_scale,
+                layer_min_scale,
+                mapfile_config,
         )
-
-        # Template
-        lines.extend(["", f'  TEMPLATE "{template}"', ""])
-
-        # CLASSITEM if using symbol field
-        if self.use_symbol_field:
-            lines.append(f"  # Using CLASSITEM for simplified expressions")
-            lines.append(f'  CLASSITEM "{symbol_field}"')
-
-        else:
-            lines.append("  # Styled using classification field values")
-
-
-
-        if label_item and map_label is None:
-            lines.append(f'  LABELITEM "{label_item.lower()}"')
-        elif isinstance(classification.map_label, str):
-            lines.append(f'  LABELITEM "{map_label.lower()}"')
-
-        lines.append("")
 
         # Generate CLASS blocks
         field_names = [f.name for f in classification.fields]
+
+
+        # TODO moved to _generate_all_classes()
+        all_classes_blocks = self._generate_all_classes(
+            classification,
+            field_names,
+            symbol_prefix,
+            rotation_info,
+            label_info,
+            map_label,
+            mapfile_config,
+        )
+
+        # === DECISION: Inline vs Include mode ===
+
+        # Check if we should use .inc file
+        use_inc_file = False
+        classes_mode = None
+
+        lines = []
+
+        if mapfile_config:
+            classes_mode = getattr(mapfile_config, "classes_mode", None)
+            use_inc_file = classes_mode in ("regenerate", "frozen")
+
+
+        # use_inc_file = True  # TODO: remove
+
+        console.print(f"Using include: {use_inc_file} (classes mode: {classes_mode})", style="magenta")
+
+        # ========================================
+        # PART 4A: INLINE MODE (default)
+        # ========================================
+
+        if not use_inc_file:
+            # Mode inline - comme avant
+
+            lines.extend(
+                [
+                    "LAYER",
+                    *layer_block,
+                    all_classes_blocks,
+                    "",
+                    "END # LAYER",
+                ]
+            )
+
+            return "\n".join(lines)
+        # ========================================
+        # PART 4B: INCLUDE MODE
+        # ========================================
+
+        else:
+            # Determine output directory
+            # Tu dois avoir un output_dir quelque part - soit passé en paramètre
+            # soit accessible via self
+            # Pour l'instant, je suppose que tu as self.output_dir ou il faut l'ajouter
+
+            # Si tu n'as pas output_dir, il faut l'ajouter comme paramètre
+            # Pour l'instant, supposons qu'on peut le déduire
+
+            console.print(f"=== INCLUDE MODE ===")
+
+            # Determine classes file path
+            classes_file = self._get_classes_file_path(
+                layer_name,
+                symbol_prefix,
+                mapfile_config,
+            )
+
+            # Add header to classes
+            classes_with_header = self._add_classes_header(
+                all_classes_blocks, classification, symbol_prefix
+            )
+
+            # === STAGING MODE ===
+            if staging_mode:
+                logger.info(f"Generating staging file for {layer_name}")
+                staging_file = self.generate_to_staging(
+                    classes_file, classes_with_header
+                )
+                return str(staging_file)  # Return Path as string
+
+            # === DECIDE: Regenerate or preserve ===
+            '''should_regen = self.should_regenerate_classes(
+                classes_file, classes_mode, force=force_regenerate
+            )'''
+
+            should_regen = True  # TODO
+
+            if should_regen:
+                logger.info(f"Writing classes to {classes_file}")
+                classes_file.parent.mkdir(parents=True, exist_ok=True)
+                classes_file.write_text(classes_with_header)
+            else:
+                logger.info(f"Preserving {classes_file} (mode: frozen)")
+
+            # Build LAYER with INCLUDE
+            # Determine relative path (relatif à où le .map sera écrit)
+            # Pour simplifier, assume que classes/ est relatif à output_dir
+            relative_path = f"layers/classes/{classes_file.name}"  # relative to geocover.map
+
+            lines.extend(
+                [
+                    "LAYER",
+                    *layer_block,
+                    f'  INCLUDE "{relative_path}"',
+                    "",
+                    "END # LAYER",
+                ]
+            )
+
+            return "\n".join(lines)
+
+
+
+
+
+
+        #  TODO  ---
+
+        '''for idx, class_obj in enumerate(classification.classes):
+            if not class_obj.visible:
+                continue
+            # NOUVEAU: Extraire la valeur depuis l'identifier si disponible
+            identifier_value = idx  # Par défaut: utiliser l'index
+
+            if hasattr(class_obj, "identifier") and class_obj.identifier:
+                try:
+                    # Extraire la valeur depuis le ClassIdentifier
+                    identifier_key = class_obj.identifier.to_key()
+                    # La dernière partie contient la valeur (après le "::")
+                    identifier_value = identifier_key.split("::")[-1]
+
+                    logger.debug(
+                        f"Using identifier value '{identifier_value}' "
+                        f"for class '{class_obj.label}' (instead of index {idx})"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Could not extract identifier value for '{class_obj.label}': {e}, "
+                        f"using index {idx}"
+                    )
+                    identifier_value = idx
+
+            # Construire le symbol_id avec la valeur extraite
+            symbol_id = f"{symbol_prefix}_{identifier_value}"
+
+            logger.debug(f"class idx: {symbol_id}")
+
+            class_block = self.generate_class(
+                class_obj,
+                field_names,
+                identifier_value,
+                symbol_prefix,
+                rotation_info,
+                label_info,
+                map_label,
+                mapfile_config,
+            )
+            lines.append(class_block)
+
+        lines.append("END # LAYER")
+
+        return "\n".join(lines)'''
+
+    def _generate_all_classes(
+            self,
+            classification,
+            field_names: List[str],
+            symbol_prefix: str,
+            rotation_info: Optional[RotationInfo] = None,
+            label_info: Optional[LabelInfo] = None,
+            map_label: Optional[Union[None, bool, str]] = None,
+            mapfile_config=None,
+    ) -> str:
+        """
+        Generate ALL CLASS blocks for a classification.
+
+        This method contains the loop that calls generate_class() multiple times.
+        Returns all CLASS blocks as a single string.
+        """
+        all_classes = []
+
+        if mapfile_config and mapfile_config.symbol_scale:
+            all_classes.extend([
+                "# Fixing symbol size",
+                f" SYMBOLSCALEDENOM {mapfile_config.symbol_scale}",
+                ""
+
+            ])
 
         for idx, class_obj in enumerate(classification.classes):
             if not class_obj.visible:
@@ -308,26 +994,36 @@ class MapServerGenerator:
                 rotation_info,
                 label_info,
                 map_label,
+                mapfile_config,
             )
-            lines.append(class_block)
 
-        lines.append("END # LAYER")
+            all_classes.append(class_block)
 
-        return "\n".join(lines)
+        # Retourne TOUS les CLASS blocks comme une seule string
+        return "\n".join(all_classes)
 
     def generate_class(
-        self,
-        class_obj,
-        field_names: List[str],
-        class_index: int,
-        symbol_prefix: str = "class",
-        rotation_info: Optional[RotationInfo] = None,
-        label_info: Optional[LabelInfo] = None,
-        map_label: Optional[Union[None, bool, str]] = None,
+            self,
+            class_obj,
+            field_names: List[str],
+            class_index: int,
+            symbol_prefix: str = "class",
+            rotation_info: Optional[RotationInfo] = None,
+            label_info: Optional[LabelInfo] = None,
+            map_label: Optional[Union[None, bool, str]] = None,
+            mapfile_config=None,
     ) -> str:
         """Generate a single MapServer CLASS block."""
         if not class_obj.visible:
             return ""
+
+
+
+        # Get symbol adjustments if available
+        symbol_adjustments = None
+        if mapfile_config and hasattr(mapfile_config, 'symbol_adjustments'):
+            symbol_adjustments = mapfile_config.symbol_adjustments
+
 
         # Generate expression
         if self.use_symbol_field:
@@ -349,8 +1045,13 @@ class MapServerGenerator:
 
         # Add LABEL
         if label_info and map_label is not False:
-            field = label_info.get_simple_field_name()  # "DIP"
-            color = label_info.font_color.to_rgb_tuple()  # (0, 89, 255)
+            field = label_info.get_simple_field_name()
+            color = label_info.font_color.to_rgb_tuple()
+
+            # NEW: Apply size adjustment to labels if specified
+            label_size = 8
+            if symbol_adjustments and symbol_adjustments.point_size_multiplier != 1.0:
+                label_size = int(label_size * symbol_adjustments.point_size_multiplier)
 
             lines.extend(
                 [
@@ -358,26 +1059,44 @@ class MapServerGenerator:
                     f"        COLOR {' '.join(list(map(str, color)))}",
                     '         FONT "sans"',
                     "         TYPE truetype",
-                    f"        SIZE 8",
+                    f"        SIZE {label_size}",
                     "         POSITION AUTO",
                     "         PARTIALS FALSE",
                     "    END",
                 ]
             )
 
+
         # Add STYLE blocks based on layer type
         if self.layer_type == "POLYGON":
-            self._add_polygon_styles(lines, class_obj, class_index, symbol_prefix)
+                self._add_polygon_styles(
+                    lines,
+                    class_obj,
+                    class_index,
+                    symbol_prefix,
+                    symbol_adjustments=symbol_adjustments  # NEW: Pass adjustments
+                )
         elif self.layer_type == "LINE":
-            lines.append("    STYLE")
-            self._add_line_style(lines, class_obj, class_index, symbol_prefix)
-            lines.append("    END # STYLE")
+                lines.append("    STYLE")
+                self._add_line_style(
+                    lines,
+                    class_obj,
+                    class_index,
+                    symbol_prefix,
+                    symbol_adjustments=symbol_adjustments  # NEW: Pass adjustments
+                )
+                lines.append("    END # STYLE")
         elif self.layer_type == "POINT":
-            lines.append("    STYLE")
-            self._add_point_style(
-                lines, class_obj, class_index, symbol_prefix, rotation_info
-            )
-            lines.append("    END # STYLE")
+                lines.append("    STYLE")
+                self._add_point_style(
+                    lines,
+                    class_obj,
+                    class_index,
+                    symbol_prefix,
+                    rotation_info,
+                    symbol_adjustments=symbol_adjustments  # NEW: Pass adjustments
+                )
+                lines.append("    END # STYLE")
 
         lines.append("  END # CLASS")
         lines.append("")
@@ -389,7 +1108,7 @@ class MapServerGenerator:
     # ========================================================================
 
     def _generate_expression_from_fields(
-        self, class_obj, field_names: List[str]
+            self, class_obj, field_names: List[str]
     ) -> str:
         """Generate MapServer EXPRESSION from classification field values."""
         expressions = []
@@ -435,25 +1154,30 @@ class MapServerGenerator:
     # ========================================================================
 
     def _add_polygon_styles(
-        self,
-        lines: List[str],
-        class_obj,
-        class_index: int,
-        symbol_prefix: str,
+            self,
+            lines: List[str],
+            class_obj,
+            class_index: int,
+            symbol_prefix: str,
+            symbol_adjustments=None,  # NEW
     ) -> None:
         """
         Add MapServer STYLE blocks for polygon symbols.
 
-        ENHANCED with hatch fill support using full_symbol_layers.
+        NEW: Applies symbol_adjustments to all style properties.
         """
-        # NEW: Try to use full_symbol_layers first (complete extraction)
+        # Try full_symbol_layers first
         if hasattr(class_obj, "full_symbol_layers") and class_obj.full_symbol_layers:
             self._add_polygon_styles_from_full_layers(
-                lines, class_obj.full_symbol_layers, class_index, symbol_prefix
+                lines,
+                class_obj.full_symbol_layers,
+                class_index,
+                symbol_prefix,
+                symbol_adjustments=symbol_adjustments  # NEW
             )
             return
 
-        # FALLBACK: Use legacy symbol_info extraction
+        # Fallback to legacy extraction
         if not hasattr(class_obj, "symbol_info") or not class_obj.symbol_info:
             self._add_simple_polygon_style(lines)
             return
@@ -464,7 +1188,7 @@ class MapServerGenerator:
             self._add_simple_polygon_style(lines)
             return
 
-        # Extract all symbol layers (legacy method)
+        # Extract all symbol layers
         layers_info = extract_polygon_symbol_layers(symbol_info.raw_symbol)
 
         has_fill = False
@@ -472,19 +1196,32 @@ class MapServerGenerator:
         # Add character marker pattern fills first
         for i, marker_info in enumerate(layers_info.character_markers):
             self._add_pattern_fill_style(
-                lines, marker_info, class_index, i, symbol_prefix
+                lines,
+                marker_info,
+                class_index,
+                i,
+                symbol_prefix,
+                symbol_adjustments=symbol_adjustments  # NEW
             )
             has_fill = True
 
-        # Add solid fills
+        # Add solid fills (with transparency adjustment)
         for fill_info in layers_info.fills:
             if fill_info["type"] == "solid":
-                self._add_solid_fill_style(lines, fill_info["color"])
+                self._add_solid_fill_style(
+                    lines,
+                    fill_info["color"],
+                    symbol_adjustments=symbol_adjustments  # NEW
+                )
                 has_fill = True
 
         # Add outline
         if layers_info.outline:
-            self._add_outline_style(lines, layers_info.outline)
+            self._add_outline_style(
+                lines,
+                layers_info.outline,
+                symbol_adjustments=symbol_adjustments  # NEW
+            )
 
         if not has_fill:
             if layers_info.outline:
@@ -493,16 +1230,24 @@ class MapServerGenerator:
                 self._add_simple_polygon_style(lines)
 
     def _add_polygon_styles_from_full_layers(
-        self,
-        lines: List[str],
-        full_layers,  # SymbolLayersInfo object
-        class_index: int,
-        symbol_prefix: str,
+            self,
+            lines: List[str],
+            full_layers,  # SymbolLayersInfo object
+            class_index: int,
+            symbol_prefix: str,
+            symbol_adjustments=None,  # NEW: Added parameter
     ) -> None:
         """
         NEW: Add polygon styles using complete SymbolLayersInfo.
 
         Renders all fill types in proper order.
+
+        Args:
+            lines: List of output lines
+            full_layers: SymbolLayersInfo object with complete symbol data
+            class_index: Index of this class
+            symbol_prefix: Prefix for symbol names
+            symbol_adjustments: NEW - SymbolAdjustments to apply
         """
         has_fill = False
 
@@ -511,13 +1256,22 @@ class MapServerGenerator:
             fill_type = fill_info.get("type", "solid")
 
             if fill_type == "solid":
-                self._add_solid_fill_style(lines, fill_info["color"])
+                self._add_solid_fill_style(
+                    lines,
+                    fill_info["color"],
+                    symbol_adjustments=symbol_adjustments  # NEW: Pass adjustments
+                )
                 has_fill = True
 
             elif fill_type == "hatch":
-                logger.info("Found hatch")
+                logger.debug("Found hatch")
                 self._add_hatch_fill_style(
-                    lines, fill_info, class_index, i, symbol_prefix
+                    lines,
+                    fill_info,
+                    class_index,
+                    i,
+                    symbol_prefix,
+                    symbol_adjustments=symbol_adjustments  # NEW: Pass adjustments
                 )
                 has_fill = True
 
@@ -525,7 +1279,12 @@ class MapServerGenerator:
                 marker = fill_info.get("marker_info")
                 if marker:
                     self._add_pattern_fill_style(
-                        lines, marker, class_index, i, symbol_prefix
+                        lines,
+                        marker,
+                        class_index,
+                        i,
+                        symbol_prefix,
+                        symbol_adjustments=symbol_adjustments  # NEW: Pass adjustments
                     )
                     has_fill = True
 
@@ -537,7 +1296,11 @@ class MapServerGenerator:
 
         # Add outline (top layer)
         if full_layers.outline:
-            self._add_outline_style(lines, full_layers.outline)
+            self._add_outline_style(
+                lines,
+                full_layers.outline,
+                symbol_adjustments=symbol_adjustments  # NEW: Pass adjustments
+            )
 
         # Fallback if no fills
         if not has_fill:
@@ -547,17 +1310,20 @@ class MapServerGenerator:
                 self._add_simple_polygon_style(lines)
 
     def _add_hatch_fill_style(
-        self,
-        lines: List[str],
-        hatch_info: Dict,
-        class_index: int,
-        fill_index: int,
-        symbol_prefix: str,
+            self,
+            lines: List[str],
+            hatch_info: Dict,
+            class_index: int,
+            fill_index: int,
+            symbol_prefix: str,
+            symbol_adjustments=None,  # NEW: Added parameter
     ) -> None:
         """
         Add MapServer STYLE for hatch fill pattern.
 
         Uses the generic "hatchsymbol" with customization in STYLE.
+
+        NEW: Applies line_width_multiplier and dash_pattern_override to hatch lines.
         """
         rotation = hatch_info["rotation"]
         separation = hatch_info["separation"]
@@ -577,6 +1343,10 @@ class MapServerGenerator:
         separation_px = separation * 1.33
         width_px = line_width * 1.33
 
+        # NEW: Apply width adjustment to hatch lines
+        if symbol_adjustments and symbol_adjustments.line_width_multiplier != 1.0:
+            width_px *= symbol_adjustments.line_width_multiplier
+
         # Add STYLE block
         lines.append("    STYLE")
         lines.append('      SYMBOL "hatchsymbol"')
@@ -586,13 +1356,22 @@ class MapServerGenerator:
         lines.append(f"      WIDTH {width_px:.2f}")
 
         # Add PATTERN if the line itself is dashed/dotted
-        if line_style.get("type") in ["dash", "dot"] and line_style.get("pattern"):
+        # NEW: Apply dash pattern override if specified
+        if symbol_adjustments and symbol_adjustments.dash_pattern_override:
+            pattern = ' '.join(str(int(p)) for p in symbol_adjustments.dash_pattern_override)
+            lines.append(f"      PATTERN {pattern} END")
+        elif line_style.get("type") in ["dash", "dot"] and line_style.get("pattern"):
             pattern = line_style["pattern"]
             pattern_str = " ".join(str(int(p)) for p in pattern)
             lines.append(f"      PATTERN {pattern_str} END")
 
-        if a < 255:
-            opacity = int((a / 255) * 100)
+        # NEW: Apply transparency override
+        final_alpha = a
+        if symbol_adjustments and symbol_adjustments.transparency_override is not None:
+            final_alpha = int(symbol_adjustments.transparency_override * 2.55)
+
+        if final_alpha < 255:
+            opacity = int((final_alpha / 255) * 100)
             lines.append(f"      OPACITY {opacity}")
 
         lines.append("    END # STYLE")
@@ -619,17 +1398,53 @@ class MapServerGenerator:
         ]
 
     def _add_pattern_fill_style(
-        self,
-        lines: List[str],
-        marker_info: CharacterMarkerInfo,
-        class_index: int,
-        marker_index: int,
-        symbol_prefix: str,
+            self,
+            lines: List[str],
+            marker_info: CharacterMarkerInfo,
+            class_index: int,
+            marker_index: int,
+            symbol_prefix: str,
+            symbol_adjustments=None,  # NEW
     ) -> None:
-        """Add MapServer STYLE for character marker pattern fill."""
+        """
+        Add MapServer STYLE for character marker pattern fill.
+
+        ENHANCED: Uses PIXMAP symbol from catalog if available,
+        falls back to TRUETYPE (which doesn't work for polygons but
+        maintains backward compatibility).
+        """
         r, g, b, a = marker_info.color
 
-        # Create symbol name using font and character
+        # Try to find pattern in catalog first
+        if self.pattern_catalog.loaded:
+            pattern = self.pattern_catalog.find_pattern(
+                font_family=marker_info.font_family,
+                char_index=marker_info.character_index,
+                size=marker_info.size,
+                step_x=marker_info.step_x,
+                step_y=marker_info.step_y,
+                color=marker_info.color,
+            )
+
+            if pattern:
+                symbol_name = self.pattern_catalog.get_pixmap_symbol_name(pattern)
+                if symbol_name:
+                    # Use PIXMAP symbol from catalog
+                    self.pixmap_symbols_used.add(symbol_name)
+
+                    lines.append("    STYLE")
+                    lines.append(f'      SYMBOL "{symbol_name}"')
+                    # Note: Color is baked into PNG, no COLOR needed
+                    if a < 255:
+                        lines.append(f"      OPACITY {a}")
+                    lines.append("    END # STYLE")
+
+                    logger.debug(f"Using PIXMAP symbol '{symbol_name}' for pattern fill")
+                    return
+
+        # FALLBACK: Use TRUETYPE symbol (legacy behavior)
+        # Note: This doesn't actually work for polygon fills in MapServer,
+        # but we keep it for backward compatibility and to show intent
         font_name = sanitize_font_name(marker_info.font_family)
         char_index = marker_info.character_index
         symbol_name = f"{font_name}_{char_index}"
@@ -640,27 +1455,58 @@ class MapServerGenerator:
         # Convert points to pixels
         size_px = marker_info.size * 1.33
 
+
+        # NEW: Apply size adjustment
+        if symbol_adjustments and symbol_adjustments.point_size_multiplier != 1.0:
+            size_px *= symbol_adjustments.point_size_multiplier
+
         lines.append("    STYLE")
         lines.append(f'      SYMBOL "{symbol_name}"')
         lines.append(f"      COLOR {r} {g} {b}")
-        if a < 255:
-            lines.append(f"      OPACITY {a}")
+
+        # NEW: Apply transparency override if specified
+        final_alpha = a
+        if symbol_adjustments and symbol_adjustments.transparency_override is not None:
+            final_alpha = int(symbol_adjustments.transparency_override * 2.55)
+
+        if final_alpha < 255:
+            lines.append(f"      OPACITY {final_alpha}")
+
         lines.append(f"      SIZE {size_px:.1f}")
         lines.append("    END # STYLE")
 
+        # Warn if no catalog available
+        if not self.pattern_catalog.loaded:
+            logger.warning(
+                f"No pattern catalog - using TRUETYPE for polygon fill "
+                f"(font={font_name}, char={char_index}). "
+                f"This may not render correctly. "
+                f"Generate a pattern catalog with: gcover publish symbols inventory"
+            )
+
     def _add_solid_fill_style(
-        self, lines: List[str], color: Tuple[int, int, int, int]
+            self,
+            lines: List[str],
+            color: Tuple[int, int, int, int],
+            symbol_adjustments=None,  # NEW
     ) -> None:
         """Add MapServer STYLE for solid fill."""
         r, g, b, a = color
 
         lines.append("    STYLE")
         lines.append(f"      COLOR {r} {g} {b}")
-        if a < 255:
-            lines.append(f"      OPACITY {a}")
+
+        # NEW: Apply transparency override if specified
+        final_alpha = a
+        if symbol_adjustments and symbol_adjustments.transparency_override is not None:
+            final_alpha = int(symbol_adjustments.transparency_override * 2.55)
+
+        if final_alpha < 255:
+            lines.append(f"      OPACITY {final_alpha}")
+
         lines.append("    END # STYLE")
 
-    def _add_outline_style(self, lines: List[str], outline_info: Dict) -> None:
+    def _add_outline_style(self, lines: List[str], outline_info: Dict, symbol_adjustments = None,) -> None:
         """Add MapServer STYLE for polygon outline."""
         r, g, b, a = outline_info["color"]
         width_px = outline_info["width"] * 1.33
@@ -670,13 +1516,10 @@ class MapServerGenerator:
         lines.append(f"      WIDTH {width_px:.2f}")
 
         # Handle line style
-        # TODO: no SYMBOL dotted or dashed!
         line_style_info = outline_info["line_style"]
         if line_style_info["type"] == "dash":
-            # lines.append('      SYMBOL "dashed"')
             lines.append('       PATTERN 5 3 END')
         elif line_style_info["type"] == "dot":
-            #lines.append('      SYMBOL "dotted"')
             lines.append('       PATTERN 1 3 END')
 
         lines.append("    END # STYLE")
@@ -699,7 +1542,12 @@ class MapServerGenerator:
     # ========================================================================
 
     def _add_line_style(
-        self, lines: List[str], class_obj, class_index: int, symbol_prefix: str
+            self,
+            lines: List[str],
+            class_obj,
+            class_index: int,
+            symbol_prefix: str,
+            symbol_adjustments=None,  # NEW
     ):
         """Add line styling from ESRI symbol_info."""
         if hasattr(class_obj, "symbol_info") and class_obj.symbol_info:
@@ -707,10 +1555,10 @@ class MapServerGenerator:
 
             # Check if font marker on line
             if (
-                hasattr(symbol_info, "font_family")
-                and symbol_info.font_family
-                and hasattr(symbol_info, "character_index")
-                and symbol_info.character_index is not None
+                    hasattr(symbol_info, "font_family")
+                    and symbol_info.font_family
+                    and hasattr(symbol_info, "character_index")
+                    and symbol_info.character_index is not None
             ):
                 # Get or create font symbol
                 font_family = sanitize_font_name(symbol_info.font_family)
@@ -723,16 +1571,30 @@ class MapServerGenerator:
                 else:
                     font_symbol_name = self.symbol_registry[spec]
 
-                self._add_truetype_line_marker(lines, symbol_info, font_symbol_name)
+                self._add_truetype_line_marker(
+                    lines,
+                    symbol_info,
+                    font_symbol_name,
+                    symbol_adjustments=symbol_adjustments  # NEW
+                )
                 self.fonts_used.add(symbol_info.font_family)
             else:
                 # Regular line
-                self._add_regular_line_style(lines, symbol_info)
+                self._add_regular_line_style(
+                    lines,
+                    symbol_info,
+                    symbol_adjustments=symbol_adjustments  # NEW
+                )
         else:
             lines.append("      COLOR 128 128 128")
             lines.append("      WIDTH 1.0")
 
-    def _add_regular_line_style(self, lines: List[str], symbol_info) -> None:
+    def _add_regular_line_style(
+            self,
+            lines: List[str],
+            symbol_info,
+            symbol_adjustments=None,  # NEW
+    ) -> None:
         """Add regular line style (no font markers)."""
         if hasattr(symbol_info, "color") and symbol_info.color:
             color_info = symbol_info.color
@@ -747,26 +1609,41 @@ class MapServerGenerator:
 
         if hasattr(symbol_info, "width") and symbol_info.width:
             width = symbol_info.width * 1.33
+
+            # NEW: Apply width adjustment
+
+            if symbol_adjustments and symbol_adjustments.line_width_multiplier != 1.0:
+                width *= symbol_adjustments.line_width_multiplier
+                logger.debug(f"Line width adjustment: {width}")
+
             lines.append(f"      WIDTH {width:.2f}")
         else:
             lines.append("      WIDTH 1.0")
 
         # Dash pattern
         if (
-            hasattr(symbol_info, "line_style")
-            and symbol_info.line_style
-            and hasattr(symbol_info, "dash_pattern")
-            and symbol_info.dash_pattern
+                hasattr(symbol_info, "line_style")
+                and symbol_info.line_style
+                and hasattr(symbol_info, "dash_pattern")
+                and symbol_info.dash_pattern
         ):
             line_style = symbol_info.line_style
-            if line_style == "dash":
+
+            # NEW: Apply dash pattern override if specified
+            if symbol_adjustments and symbol_adjustments.dash_pattern_override:
+                pattern = ' '.join(str(int(p)) for p in symbol_adjustments.dash_pattern_override)
+                lines.append(f'       PATTERN {pattern} END')
+            elif line_style == "dash":
                 lines.append('       PATTERN 5 3 END')
             elif line_style == "dot":
                 lines.append('       PATTERN 1 3 END')
 
-
     def _add_truetype_line_marker(
-        self, lines: List[str], symbol_info, font_symbol_name: str
+            self,
+            lines: List[str],
+            symbol_info,
+            font_symbol_name: str,
+            symbol_adjustments=None,  # NEW
     ):
         """Add TrueType font marker on line."""
         lines.append(f'      SYMBOL "{font_symbol_name}"')
@@ -784,6 +1661,11 @@ class MapServerGenerator:
 
         if hasattr(symbol_info, "size") and symbol_info.size:
             size = symbol_info.size * 1.33
+
+            # NEW: Apply size adjustment
+            if symbol_adjustments and symbol_adjustments.point_size_multiplier != 1.0:
+                size *= symbol_adjustments.point_size_multiplier
+
             lines.append(f"      SIZE {size:.1f}")
         else:
             lines.append("      SIZE 10")
@@ -795,12 +1677,13 @@ class MapServerGenerator:
     # ========================================================================
 
     def _add_point_style(
-        self,
-        lines: List[str],
-        class_obj,
-        class_index: int,
-        symbol_prefix: str,
-        rotation_info: Optional[RotationInfo] = None,
+            self,
+            lines: List[str],
+            class_obj,
+            class_index: int,
+            symbol_prefix: str,
+            rotation_info: Optional[RotationInfo] = None,
+            symbol_adjustments=None,  # NEW
     ):
         """Add point styling from ESRI symbol_info."""
         if hasattr(class_obj, "symbol_info") and class_obj.symbol_info:
@@ -808,10 +1691,10 @@ class MapServerGenerator:
 
             # Check if font marker
             if (
-                hasattr(symbol_info, "font_family")
-                and symbol_info.font_family
-                and hasattr(symbol_info, "character_index")
-                and symbol_info.character_index is not None
+                    hasattr(symbol_info, "font_family")
+                    and symbol_info.font_family
+                    and hasattr(symbol_info, "character_index")
+                    and symbol_info.character_index is not None
             ):
                 # Get or create font symbol
                 font_family = sanitize_font_name(symbol_info.font_family)
@@ -842,11 +1725,16 @@ class MapServerGenerator:
 
             if rotation_info and rotation_info.field_name:
                 lines.append(
-                    f"      ANGLE [{rotation_info.field_name.lower()}]   # lowercase, for PostGIS"
+                    f"      ANGLE [{rotation_info.field_name.lower()}]"
                 )
 
             if hasattr(symbol_info, "size") and symbol_info.size:
                 size = symbol_info.size * 1.33
+
+                # NEW: Apply size adjustment
+                if symbol_adjustments and symbol_adjustments.point_size_multiplier != 1.0:
+                    size *= symbol_adjustments.point_size_multiplier
+
                 lines.append(f"      SIZE {size:.1f}")
             else:
                 lines.append("      SIZE 8")
@@ -877,8 +1765,8 @@ class MapServerGenerator:
 
                 # Check for full_symbol_layers
                 if (
-                    hasattr(class_obj, "full_symbol_layers")
-                    and class_obj.full_symbol_layers
+                        hasattr(class_obj, "full_symbol_layers")
+                        and class_obj.full_symbol_layers
                 ):
                     layers = class_obj.full_symbol_layers
 
@@ -896,11 +1784,11 @@ class MapServerGenerator:
 
                     for fill_info in fills:
                         if (
-                            isinstance(fill_info, dict)
-                            and fill_info.get("type") == "hatch"
+                                isinstance(fill_info, dict)
+                                and fill_info.get("type") == "hatch"
                         ):
                             if not any(
-                                s.get("type") == "hatch" for s in self.pattern_symbols
+                                    s.get("type") == "hatch" for s in self.pattern_symbols
                             ):
                                 self.pattern_symbols.append({"type": "hatch"})
                             break
@@ -910,7 +1798,7 @@ class MapServerGenerator:
     # ========================================================================
 
     def generate_symbol_file(
-        self, classification_list: List = None, prefixes: Dict = {}
+            self, classification_list: List = None, prefixes: Dict = {}
     ) -> str:
         """
         Generate MapServer symbol file with all symbol types.
@@ -929,7 +1817,7 @@ class MapServerGenerator:
         lines = [
             "SYMBOLSET",
             "",
-            "  # Basic geometric symbols for GeoCover",
+            "  # Basic geometric symbols for GeoCover (always available)",
             "",
         ]
 
@@ -952,6 +1840,14 @@ class MapServerGenerator:
             lines.append("")
             lines.extend(hatch_symbols)
 
+        # NEW: Add PIXMAP symbols from catalog
+        pixmap_symbols = self._generate_pixmap_symbols()
+        if pixmap_symbols:
+            lines.append("")
+            lines.append("  # PIXMAP pattern fill symbols (from pattern catalog)")
+            lines.append("")
+            lines.extend(pixmap_symbols)
+
         # Generate font symbols if classifications provided
         if classification_list:
             # Point and line font markers
@@ -964,96 +1860,77 @@ class MapServerGenerator:
                 lines.append("")
                 lines.extend(font_symbols)
 
-            # Polygon pattern fills
-            pattern_symbols = self._generate_polygon_pattern_symbols(
-                classification_list
-            )
-            if pattern_symbols:
-                lines.append("")
-                lines.append("  # TrueType pattern fill symbols (polygons)")
-                lines.append("")
-                lines.extend(pattern_symbols)
+            # Polygon pattern fills (legacy TRUETYPE - only if no catalog)
+            if not self.pattern_catalog.loaded:
+                pattern_symbols = self._generate_polygon_pattern_symbols(
+                    classification_list
+                )
+                if pattern_symbols:
+                    lines.append("")
+                    lines.append("  # TrueType pattern fill symbols (polygons) - LEGACY")
+                    lines.append("  # NOTE: TrueType symbols don't work for polygon fills!")
+                    lines.append("  # Generate pattern catalog: gcover publish symbols inventory")
+                    lines.append("")
+                    lines.extend(pattern_symbols)
 
         lines.append("")
         lines.append("END # SYMBOLSET")
 
         return "\n".join(lines)
 
+    def _generate_pixmap_symbols(self) -> List[str]:
+        """
+        Generate PIXMAP symbol definitions from pattern catalog.
+
+        Only includes symbols that were actually used during generation.
+        """
+        if not self.pattern_catalog.loaded:
+            return []
+
+        if not self.pixmap_symbols_used:
+            return []
+
+        symbols = []
+
+        for symbol_name in sorted(self.pixmap_symbols_used):
+            # Find pattern in catalog to get PNG path
+            png_path = None
+            for key, pattern in self.pattern_catalog.patterns.items():
+                mapserver_info = pattern.get('mapserver', {})
+                if mapserver_info.get('symbol') == symbol_name:
+                    png_path = mapserver_info.get('png_file')
+                    break
+
+            if not png_path:
+                png_path = f"{DEFAULT_IMAGES_DIR}/{symbol_name}.png"
+
+            symbols.extend([
+                "  SYMBOL",
+                f'    NAME "{symbol_name}"',
+                "    TYPE PIXMAP",
+                f'    IMAGE "{png_path}"',
+                "  END",
+                "",
+            ])
+
+        return symbols
+
     def _generate_basic_symbols(self) -> List[str]:
-        """Generate basic geometric symbols."""
-        return [
-            "  SYMBOL",
-            '    NAME "circle"',
-            "    TYPE ELLIPSE",
-            "    POINTS 1 1 END",
-            "    FILLED TRUE",
-            "  END",
-            "",
-            "  SYMBOL",
-            '    NAME "square"',
-            "    TYPE VECTOR",
-            "    POINTS",
-            "      0 0",
-            "      0 1",
-            "      1 1",
-            "      1 0",
-            "      0 0",
-            "    END",
-            "    FILLED TRUE",
-            "  END",
-            "",
-            "  SYMBOL",
-            '    NAME "triangle"',
-            "    TYPE VECTOR",
-            "    POINTS",
-            "      0 1",
-            "      0.5 0",
-            "      1 1",
-            "      0 1",
-            "    END",
-            "    FILLED TRUE",
-            "  END",
-            "",
-            "  SYMBOL",
-            '    NAME "star"',
-            "    TYPE VECTOR",
-            "    POINTS",
-            "      0 0.375",
-            "      0.35 0.375",
-            "      0.5 0",
-            "      0.65 0.375",
-            "      1 0.375",
-            "      0.75 0.625",
-            "      0.875 1",
-            "      0.5 0.75",
-            "      0.125 1",
-            "      0.25 0.625",
-            "      0 0.375",
-            "    END",
-            "    FILLED TRUE",
-            "  END",
-        ]
+            """Load basic geometric symbols from an external file."""
+
+            symbol_file = files("gcover.data").joinpath("basic_symbols.map")
+
+            with symbol_file.open("r", encoding="utf-8") as f:
+                lines = [line.rstrip("\n") for line in f]
+
+            return lines
 
     def _generate_line_pattern_symbols(self) -> List[str]:
         """Generate line pattern symbols (dashed, dotted)."""
-        # TODO
         return ["# No dash SYMBOL"]
-        '''return [
-            "  SYMBOL",
-            '    NAME "dashed"',
-            "    TYPE SIMPLE",
-            "    PATTERN 10 5 END",
-            "  END",
-            "",
-            "  SYMBOL",
-            '    NAME "dotted"',
-            "    TYPE SIMPLE",
-            "    PATTERN 2 4 END",
-            "  END",
-        ]'''
 
     def _generate_font_symbols_from_classifications(
-        self, classification_list: List, prefixes: Dict
+            self, classification_list: List, prefixes: Dict
     ) -> List[str]:
         """Generate TrueType symbols for point and line markers."""
         symbols = []
@@ -1064,7 +1941,7 @@ class MapServerGenerator:
         # Generate symbols from registry
         images = []
         for spec in sorted(
-            self.symbol_registry.keys(), key=lambda s: (s.font_family, s.char_index)
+                self.symbol_registry.keys(), key=lambda s: (s.font_family, s.char_index)
         ):
             font_symbol_name = self.symbol_registry[spec]
             font_name = spec.font_family
@@ -1102,7 +1979,7 @@ class MapServerGenerator:
         return symbols
 
     def _generate_polygon_pattern_symbols(self, classification_list: List) -> List[str]:
-        """Generate TrueType symbols for polygon pattern fills."""
+        """Generate TrueType symbols for polygon pattern fills (LEGACY)."""
         symbols = []
         symbols_generated = set()
 
@@ -1213,8 +2090,6 @@ class MapServerGenerator:
         lines.append("")
 
         return "\n".join(lines)
-
-
 # ============================================================================
 # QGIS GENERATOR (continued in next section due to length)
 # ============================================================================

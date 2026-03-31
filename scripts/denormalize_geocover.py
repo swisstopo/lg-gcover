@@ -5,12 +5,15 @@ A professional CLI tool to denormalize GeoCover geodatabase tables with their lo
 """
 
 import sys
+import os
 import warnings
+import re
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
+from shapely.ops import linemerge
 
 import click
 import fiona
@@ -43,12 +46,22 @@ except ImportError:
     load_gpkg_with_validation = None
 
 
+# Configure rich console
+console = Console()
+
 os.environ['OGR_GEOMETRY_ACCEPT_UNCLOSED_RING'] = 'NO'
 os.environ['METHOD'] = 'ONLY_CCW'
 
 
-# Configure rich console
-console = Console()
+console.print("[yellow]Removed some OGR warnings (CCW, unclosed rings)[/yellow]")
+# Suppress pandas fragmentation warnings
+warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
+os.environ['OGR_GEOMETRY_ACCEPT_UNCLOSED_RING'] = 'NO'
+os.environ['METHOD'] = 'ONLY_CCW'
+
+
+
+
 
 # Configure loguru
 logger.remove()  # Remove default handler
@@ -58,7 +71,7 @@ logger.add(
     level="INFO",
 )
 
-console.print("[yellow]Removed some OGR warnings (CCW, unclosed rings)[/yellow]")
+
 
 # Define the attributes you want to transfer from mapsheets_gdf
 MAPSHEET_ATTRIBUTES = ["MSH_MAP_TITLE", "MSH_MAP_NBR"]
@@ -91,6 +104,24 @@ LOOKUP_TABLE_MAPPING = {
 INTEGER_TYPE_COLUMNS = ['AARC_AGE', 'AARC_AGE', 'AARC_AGE', 'AARC_EPOCH', 'AARC_EPOCH', 'AARC_PERIOD', 'AARC_PERIOD', 'AARC_PERIOD', 'AARC_TYPE', 'ABOR_LINK', 'ABOR_MAIN_TAR', 'ABOR_REF_NUMBER', 'ABOR_TARG_MAT', 'ACTIVITY', 'ADMIXTURE', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'AZIMUTH', 'CHARACT', 'COMPOSIT', 'CONFINE', 'CONG_SPE', 'DIP', 'DIP', 'DIP', 'DIP', 'DIP', 'DIP', 'DIP', 'DRILL_MO', 'EPOCH', 'FOLD_FOR', 'GALL_AGE', 'GEN_RELA', 'GGLA_GLAC_TYP', 'GGLA_ICE_M_P', 'GGLA_MORAI_MO', 'GGLA_QUAT_STR', 'GGLA_REF_YEAR', 'GINS_MAIN_MOV', 'GLAC_TYPE', 'HCON_COMBI', 'HCON_EPOCH', 'HCON_STATUS', 'HIERA', 'HPAL_REF_YEAR', 'HPAL_REL_AGE', 'HSUB_COMBI', 'HSUR_COMBI', 'HSUR_DIS_LOCA', 'HSUR_FLOW_CON', 'HSUR_STATUS', 'HSUR_TEMP', 'HSUR_TYPE', 'IGNE_AFFINITY', 'IGNE_GRAIN_SI', 'IGNE_TEX', 'LANO_TYPE', 'LFOS_DAT_METH', 'LFOS_DIVISION', 'LFOS_STATUS', 'LGEO_STATUS', 'LRES_MATERIAL', 'LRES_STATUS', 'LTYP_STRATI', 'META_STA', 'META_STR', 'MFOL_FOLD_TYP', 'MFOL_PHASE', 'MORPHOLO', 'MPLA_PHASE', 'MPLA_POLARITY', 'PCOH_WA_TABLE', 'PSLO_TYPE', 'ROCK_SPE', 'ROCK_TYPE', 'SEDI_BEDDING', 'SEDI_BOND_MAT', 'SEDI_MAIN_COM', 'SEDI_SECO_COM', 'SEDI_STR', 'SEDI_TEX', 'STATUS', 'STATUS', 'STATUS', 'STATUS', 'STATUS', 'STRUCTUR', 'SYSTEM', 'TARG_MAT', 'TARG_MAT', 'TDEF_FOLD_FOR', 'TDEF_FOLD_TYP', 'THIN_COVER', 'TTECT_VERTI_MO', 'TTEC_FAULT_MO', 'TTEC_HORIZ_MO', 'TTEC_LIM_TYP', 'TYPE', 'TYPE']
 
 
+
+
+def _strip_xml_namespaces(xml_str: str) -> str:
+    """Remove namespace declarations and prefixes from an XML string.
+
+    ESRI encodes the root element with a typens: prefix and namespace URIs, e.g.:
+        <typens:GPCodedValueDomain2 xmlns:typens="http://www.esri.com/schemas/ArcGIS/10.1" ...>
+    ET.fromstring parses this into Clark notation ({uri}LocalName), so:
+      - xml.tag == "GPCodedValueDomain2"  →  always False
+      - xml.find("DomainName")            →  may return None on prefixed children
+    Stripping namespaces before parsing keeps the rest of the logic unchanged.
+    """
+    # Remove xmlns:xxx="..." and xmlns="..." declarations
+    xml_str = re.sub(r'\s+xmlns(?::\w+)?="[^"]*"', "", xml_str)
+    # Remove tag/attribute prefixes:  typens:Foo → Foo,  xsi:type="..." → type="..."
+    xml_str = re.sub(r'(?<!["\w])\w+:', "", xml_str)
+    return xml_str
+
 def convert_columns_to_int(ori_gdf, columns):
     """Convert specified columns to nullable integers (Int64)"""
     new_type = "Int64"
@@ -101,6 +132,26 @@ def convert_columns_to_int(ori_gdf, columns):
                 new_type
             )
     return gdf
+
+
+def _lowercase_gdf_columns(gdf):
+    """Rename all non-geometry columns to lowercase.
+
+    The geometry column is intentionally kept as-is so that geopandas
+    internals (which track the active geometry by name) remain correct.
+    """
+    geom_col = gdf.geometry.name
+    rename_map = {
+        col: col.lower()
+        for col in gdf.columns
+        if col != geom_col and col != col.lower()
+    }
+    if rename_map:
+        logger.debug(
+            f"Lowercasing {len(rename_map)} column(s): {list(rename_map.keys())}"
+        )
+    return gdf.rename(columns=rename_map)
+
 
 def extend_line_to_cross_polygon(line, polygon, extension_factor=1.5):
     """
@@ -392,7 +443,8 @@ def split_polygons_with_layer(
 
 
 def extract_coded_domains(gdb_path: Union[str, Path]) -> Dict[str, Dict]:
-    """Extract coded domain definitions from FileGDB metadata"""
+    """Extract coded domain definitions from FileGDB metadata."""
+
     if ogr is None:
         logger.warning("GDAL/OGR not available - skipping coded domain extraction")
         return {}
@@ -409,65 +461,68 @@ def extract_coded_domains(gdb_path: Union[str, Path]) -> Dict[str, Dict]:
         res = ds.ExecuteSQL("SELECT * FROM GDB_Items")
         if res is None:
             logger.warning("Could not execute SQL query on GDB_Items")
+            ds = None
             return {}
 
         logger.debug("Extracting coded domains from GDB_Items...")
 
         for i in range(res.GetFeatureCount()):
             feature = res.GetNextFeature()
-            if feature:
-                definition = feature.GetField("Definition")
-                if definition:
-                    try:
-                        xml = ET.fromstring(definition)
-                        if xml.tag == "GPCodedValueDomain2":
-                            domain_name = xml.find("DomainName").text
-                            description = (
-                                xml.find("Description").text
-                                if xml.find("Description") is not None
-                                else ""
-                            )
-                            field_type = (
-                                xml.find("FieldType").text
-                                if xml.find("FieldType") is not None
-                                else ""
-                            )
+            if not feature:
+                continue
 
-                            # Extract code-value pairs
-                            code_mapping = {}
-                            for table in xml.iter("CodedValues"):
-                                for child in table:
-                                    code_elem = child.find("Code")
-                                    name_elem = child.find("Name")
-                                    if code_elem is not None and name_elem is not None:
-                                        code = code_elem.text
-                                        name = name_elem.text
-                                        if code and name:
-                                            try:
-                                                code_mapping[int(code)] = name
-                                            except ValueError:
-                                                code_mapping[code] = name
+            definition = feature.GetField("Definition")
+            if not definition:
+                continue
 
-                            if code_mapping:
-                                coded_domains[domain_name] = {
-                                    "description": description,
-                                    "field_type": field_type,
-                                    "codes": code_mapping,
-                                }
-                                logger.debug(
-                                    f"Found domain {domain_name}: {len(code_mapping)} codes"
-                                )
-                    except ET.ParseError as e:
-                        logger.warning(f"Could not parse XML definition: {e}")
-                        continue
+            try:
 
+                xml = ET.fromstring(_strip_xml_namespaces(definition))
+
+                if xml.tag != "GPCodedValueDomain2":
+                    continue
+
+                domain_name = xml.find("DomainName").text
+                description = getattr(xml.find("Description"), "text", "") or ""
+                field_type  = getattr(xml.find("FieldType"),   "text", "") or ""
+
+                # Extract code-value pairs
+                code_mapping = {}
+                for table in xml.iter("CodedValues"):
+                    for child in table:
+                        code_elem = child.find("Code")
+                        name_elem = child.find("Name")
+                        if code_elem is None or name_elem is None:
+                            continue
+                        code = code_elem.text
+                        name = name_elem.text
+                        if code and name:
+                            try:
+                                code_mapping[int(code)] = name
+                            except ValueError:
+                                code_mapping[code] = name
+
+                if code_mapping:
+                    coded_domains[domain_name] = {
+                        "description": description,
+                        "field_type":  field_type,
+                        "codes":       code_mapping,
+                    }
+                    logger.debug(f"Found domain {domain_name}: {len(code_mapping)} codes")
+
+            except ET.ParseError as e:
+                logger.warning(f"Could not parse XML definition: {e}")
+
+        # Release OGR resources *after* the loop, not inside it
         res = None
-        ds = None
+        ds  = None
 
     except Exception as e:
         logger.warning(f"Could not extract coded domains: {e}")
 
+    console.print(f"[green]Extracted {len(coded_domains)} coded domains[/green]")
     logger.info(f"Extracted {len(coded_domains)} coded domains")
+
     return coded_domains
 
 
@@ -543,11 +598,12 @@ def add_lookup_descriptions(
 class GeoCoverDenormalizer:
     """Main class for GeoCover denormalization operations."""
 
-    def __init__(self, gdb_path: Union[str, Path], verbose: bool = True):
+    def __init__(self, gdb_path: Union[str, Path], cd_gdb_path: Union[str, Path], verbose: bool = True):
         self.gdb_path = Path(gdb_path)
         self.verbose = verbose
         self.console = console
         self.coded_domains = None
+        self.join_checks: list[dict] = []
 
         if not self.gdb_path.exists():
             raise FileNotFoundError(f"FileGDB not found: {self.gdb_path}")
@@ -556,7 +612,8 @@ class GeoCoverDenormalizer:
 
         # Extract coded domains
         logger.info("Extracting coded domains...")
-        self.coded_domains = extract_coded_domains(self.gdb_path)
+        self.coded_domains = extract_coded_domains(cd_gdb_path) # Need a genuine ESRI-GDB :-(
+
 
     def _read_layer_safe(
         self, layer_name: str, group: Optional[str] = "GC_ROCK_BODIES"
@@ -572,7 +629,7 @@ class GeoCoverDenormalizer:
                 logger.debug(f"Successfully read {layer_path}")
                 return gdf
         except Exception:
-            logger.debug(
+            logger.warning(
                 f"Failed to read with group prefix, trying {layer_name} directly"
             )
 
@@ -675,6 +732,109 @@ class GeoCoverDenormalizer:
 
         return denormalized_gdf
 
+    def _check_join_integrity(
+            self,
+            left_df: pd.DataFrame,
+            right_df: pd.DataFrame,
+            left_key: str,
+            right_key: str,
+            left_label: str,
+            right_label: str,
+    ) -> dict:
+        """Check referential integrity between two tables before a join.
+
+        Returns a result dict and appends it to self.join_checks for the
+        final summary.  Detailed output goes to loguru; the console gets
+        only a quiet one-liner so the progress bars stay readable.
+        """
+        left_vals = left_df[left_key].dropna().unique()
+        right_vals = set(right_df[right_key].dropna().unique())
+
+        orphans = set(left_vals) - right_vals
+        null_count = int(left_df[left_key].isna().sum())
+
+        result = {
+            "left_label": left_label,
+            "left_key": left_key,
+            "right_label": right_label,
+            "right_key": right_key,
+            "total_fk": len(left_vals),
+            "orphans": len(orphans),
+            "nulls": null_count,
+            "ok": len(orphans) == 0 and null_count == 0,
+        }
+        self.join_checks.append(result)
+
+        # ── loguru: full detail for the log file ──────────────────────
+        logger.info(
+            f"Join check {left_label}.{left_key} → {right_label}.{right_key}: "
+            f"{len(left_vals)} FK values, {len(orphans)} orphan(s), "
+            f"{null_count} NULL(s)"
+        )
+        if orphans:
+            sample = sorted(str(u) for u in orphans)[:20]
+            logger.debug(f"Orphan {left_key} values (first 20): {sample}")
+
+        return result
+
+    def render_join_integrity_panel(self) -> None:
+        """Render a rich Panel summarising all join integrity checks.
+
+        Call this once after denormalize_all() returns, before the final
+        success panel.
+        """
+        if not self.join_checks:
+            return
+
+        has_issues = any(not c["ok"] for c in self.join_checks)
+
+        table = Table(
+            show_header=True,
+            header_style="bold",
+            pad_edge=False,
+            box=None,
+        )
+        table.add_column("Left", style="cyan", no_wrap=True)
+        table.add_column("→", justify="center", width=3)
+        table.add_column("Right", style="cyan", no_wrap=True)
+        table.add_column("FKs", justify="right")
+        table.add_column("Orphans", justify="right")
+        table.add_column("NULLs", justify="right")
+        table.add_column("", width=3)
+
+        for c in self.join_checks:
+            orphan_str = str(c["orphans"])
+            null_str = str(c["nulls"])
+
+            if c["orphans"]:
+                orphan_str = f"[bold red]{c['orphans']}[/bold red]"
+            if c["nulls"]:
+                null_str = f"[yellow]{c['nulls']}[/yellow]"
+
+            status = "[green]✓[/green]" if c["ok"] else "[red]✗[/red]"
+
+            table.add_row(
+                f"{c['left_label']}.{c['left_key']}",
+                "→",
+                f"{c['right_label']}.{c['right_key']}",
+                str(c["total_fk"]),
+                orphan_str,
+                null_str,
+                status,
+            )
+
+        border = "red" if has_issues else "green"
+        title = (
+            "[bold red]⚠  Join Integrity Issues Detected[/bold red]"
+            if has_issues
+            else "[bold green]✓ Join Integrity OK[/bold green]"
+        )
+
+        console.print()
+        console.print(Panel(table, title=title, border_style=border))
+
+    # ─── Patched denormalize_bedrock ──────────────────────────────────
+
     def denormalize_bedrock(self, task_id=None, progress=None) -> gpd.GeoDataFrame:
         """Denormalize GC_BEDROCK with geological mapping unit attributes."""
 
@@ -695,9 +855,19 @@ class GeoCoverDenormalizer:
         if progress and task_id:
             progress.update(task_id, description="Joining bedrock with attributes...")
 
-        # Try direct foreign key first
+        # ── Try direct foreign key first ──────────────────────────────
         if "GEOL_MAPPING_UNIT_ATT_UUID" in bedrock_gdf.columns:
             logger.debug("Using direct foreign key GEOL_MAPPING_UNIT_ATT_UUID")
+
+            # Check 1: bedrock → GC_GEOL_MAPPING_UNIT_ATT
+            self._check_join_integrity(
+                left_df=bedrock_gdf,
+                right_df=mapping_unit_att_df,
+                left_key="GEOL_MAPPING_UNIT_ATT_UUID",
+                right_key="UUID",
+                left_label="GC_BEDROCK",
+                right_label="GC_GEOL_MAPPING_UNIT_ATT",
+            )
 
             bedrock_with_att = bedrock_gdf.merge(
                 mapping_unit_att_df,
@@ -708,6 +878,16 @@ class GeoCoverDenormalizer:
             )
 
             if "GEOL_MAPPING_UNIT" in bedrock_with_att.columns:
+                # Check 2: att → GC_GEOL_MAPPING_UNIT
+                self._check_join_integrity(
+                    left_df=bedrock_with_att,
+                    right_df=mapping_unit_df,
+                    left_key="GEOL_MAPPING_UNIT",
+                    right_key="GEOLCODE",
+                    left_label="GC_GEOL_MAPPING_UNIT_ATT",
+                    right_label="GC_GEOL_MAPPING_UNIT",
+                )
+
                 denormalized_gdf = bedrock_with_att.merge(
                     mapping_unit_df[["GEOLCODE", "UUID", "DESCRIPTION", "TREE_LEVEL"]],
                     left_on="GEOL_MAPPING_UNIT",
@@ -718,7 +898,7 @@ class GeoCoverDenormalizer:
             else:
                 denormalized_gdf = bedrock_with_att
         else:
-            # Use relationship table
+            # ── Fallback: use relationship table ──────────────────────
             logger.debug("Using relationship table GC_BEDR_GEOL_MAPPING_UNIT_ATT")
             try:
                 relationship_df = gpd.read_file(
@@ -728,8 +908,31 @@ class GeoCoverDenormalizer:
                     col for col in relationship_df.columns if col != "geometry"
                 ]
 
+                # Check 1: bedrock UUID → relationship table
+                self._check_join_integrity(
+                    left_df=bedrock_gdf,
+                    right_df=relationship_df,
+                    left_key="UUID",
+                    right_key=rel_columns[1],
+                    left_label="GC_BEDROCK",
+                    right_label="GC_BEDR_GEOL_MAPPING_UNIT_ATT",
+                )
+
+                # Check 2: relationship → GC_GEOL_MAPPING_UNIT_ATT
+                self._check_join_integrity(
+                    left_df=relationship_df,
+                    right_df=mapping_unit_att_df,
+                    left_key=rel_columns[0],
+                    right_key="UUID",
+                    left_label="GC_BEDR_GEOL_MAPPING_UNIT_ATT",
+                    right_label="GC_GEOL_MAPPING_UNIT_ATT",
+                )
+
                 bedrock_with_relation = bedrock_gdf.merge(
-                    relationship_df, left_on="UUID", right_on=rel_columns[1], how="left"
+                    relationship_df,
+                    left_on="UUID",
+                    right_on=rel_columns[1],
+                    how="left",
                 )
 
                 denormalized_gdf = bedrock_with_relation.merge(
@@ -739,6 +942,18 @@ class GeoCoverDenormalizer:
                     how="left",
                     suffixes=("", "_ATT"),
                 )
+
+                # Check 3: att → GC_GEOL_MAPPING_UNIT
+                if "GEOL_MAPPING_UNIT" in denormalized_gdf.columns:
+                    self._check_join_integrity(
+                        left_df=denormalized_gdf,
+                        right_df=mapping_unit_df,
+                        left_key="GEOL_MAPPING_UNIT",
+                        right_key="GEOLCODE",
+                        left_label="GC_GEOL_MAPPING_UNIT_ATT",
+                        right_label="GC_GEOL_MAPPING_UNIT",
+                    )
+
             except Exception as e:
                 logger.warning(f"Relationship table method failed: {e}")
                 denormalized_gdf = bedrock_gdf
@@ -754,8 +969,8 @@ class GeoCoverDenormalizer:
         )
 
         if (
-            "DESCRIPTION" in denormalized_gdf.columns
-            and "DESCRIPTION" not in bedrock_gdf.columns
+                "DESCRIPTION" in denormalized_gdf.columns
+                and "DESCRIPTION" not in bedrock_gdf.columns
         ):
             denormalized_gdf = denormalized_gdf.rename(
                 columns={"DESCRIPTION": "MAPPING_UNIT_DESC"}
@@ -848,7 +1063,7 @@ class GeoCoverDenormalizer:
 
                 field_mapping = {
                     "DESCRIPTION": f"{config['field_prefix']}_DESC",
-                    "GEOLCODE": f"{config['field_prefix']}_CODES",
+                    "GEOLCODE": f"{config['field_prefix']}_CODE",   # was _CODES
                 }
                 aggregated = aggregated.rename(columns=field_mapping)
 
@@ -896,6 +1111,7 @@ class GeoCoverDenormalizer:
 
         metadata_columns = [
             "INTEGRATION_OBJECT_UUID",
+            "OPERATOR",
             "DATEOFCHANGE",
             "DATEOFCREATION",
             "ORIGINAL_ORIGIN",
@@ -1109,7 +1325,11 @@ class GeoCoverDenormalizer:
                     )
 
                 except Exception as e:
-                    logger.error(f"Failed to process {table_name}: {e}")
+                    import traceback
+
+                    logger.error(f"Failed to write {table_name}: {e}")
+                    console.print(f"[red]❌ Failed to write {table_name}: {e}[/red]")
+                    logger.error(f"Full traceback: {traceback.format_exc()}")
                     progress.update(
                         task_id, completed=100, description=f"❌ {table_name} failed"
                     )
@@ -1198,6 +1418,7 @@ def create_summary_table(results: Dict[str, gpd.GeoDataFrame]) -> Table:
 
 @click.command()
 @click.argument("gdb_path", type=click.Path(exists=True, path_type=Path))
+@click.option("--cd-gdb-path", type=click.Path(exists=True), help="Genuine ESRI GDB with CodedDomain")
 @click.option(
     "--output",
     "-o",
@@ -1249,8 +1470,18 @@ def create_summary_table(results: Dict[str, gpd.GeoDataFrame]) -> Table:
     is_flag=True,
     help="Show what would be processed without writing output",
 )
+@click.option(
+    "--lowercase-columns",
+    is_flag=True,
+    default=False,
+    help=(
+        "Normalize all attribute column names to lowercase before writing. "
+        "The geometry column is preserved as-is."
+    ),
+)
 def denormalize_geocover(
     gdb_path: Path,
+    cd_gdb_path: Path,
     output: Optional[Path],
     verbose: bool,
     tables: Tuple[str],
@@ -1258,7 +1489,8 @@ def denormalize_geocover(
     split_layer: bool,
     overwrite: bool,
     dry_run: bool,
-    add_mapsheet_metadata: bool
+    add_mapsheet_metadata: bool,
+    lowercase_columns: bool = False,
 ):
     """
     Denormalize GeoCover geodatabase tables with their lookup relationships.
@@ -1298,7 +1530,7 @@ def denormalize_geocover(
 
     # Initialize denormalizer
     try:
-        denormalizer = GeoCoverDenormalizer(gdb_path, verbose=verbose)
+        denormalizer = GeoCoverDenormalizer(gdb_path, cd_gdb_path, verbose=verbose)
     except Exception as e:
         console.print(f"[red]Error initializing denormalizer: {e}[/red]")
         raise click.Abort()
@@ -1427,6 +1659,17 @@ def denormalize_geocover(
                 except Exception as e:
                     logger.error(e)
 
+        # -- Lowercase column names ---------------------------------------
+        if lowercase_columns:
+            console.print("[blue]Normalizing column names to lowercase...[/blue]")
+            results = {
+                name: _lowercase_gdf_columns(gdf)
+                for name, gdf in results.items()
+            }
+            console.print(
+                "[dim]  Attribute column names lowercased (geometry column preserved)[/dim]"
+            )
+
         # Debug: Show what we actually got
         if verbose:
             console.print("\n[dim]Debug: Results summary[/dim]")
@@ -1439,6 +1682,7 @@ def denormalize_geocover(
         summary_table = create_summary_table(results)
         console.print("\n")
         console.print(summary_table)
+        denormalizer.render_join_integrity_panel()
 
         if dry_run:
             console.print("\n[yellow]🔍 Dry run complete - no files written[/yellow]")

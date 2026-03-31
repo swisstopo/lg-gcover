@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import click
+import zipfile
 import duckdb
 from loguru import logger
 from rich import print as rprint
@@ -53,6 +54,25 @@ from gcover.cli.main import parse_since
 
 console = Console()
 
+ASSET_TYPE_ALIASES = {
+    "backup": ["backup_daily", "backup_weekly", "backup_monthly"],
+    "qa": ["verification_topology", "verification_tqa"],
+}
+
+
+def get_asset_type_choices():
+    """Get all valid asset type choices including aliases."""
+    base_types = [t.value for t in AssetType]
+    aliases = list(ASSET_TYPE_ALIASES.keys())
+    return base_types + aliases
+
+
+def expand_asset_type(asset_type: str) -> list[str]:
+    """Expand an asset type alias to its constituent types, or return as single-item list."""
+    if asset_type in ASSET_TYPE_ALIASES:
+        return ASSET_TYPE_ALIASES[asset_type]
+    return [asset_type]
+
 def validate_asset_types(ctx, param, value):
     if not value:
         return []
@@ -78,6 +98,30 @@ def get_configs(ctx) -> tuple[GDBConfig, GlobalConfig, str, bool]:
         ctx.obj["environment"],
         ctx.obj.get("verbose", False),
     )
+
+def db_path_option(f):
+    """Reusable --db-path option with config fallback."""
+    return click.option(
+        "--db-path",
+        type=click.Path(exists=True, file_okay=True, dir_okay=False),
+        help="Metadata DB path (default: from config)",
+        required=False,
+    )(f)
+
+def get_metadata_db(ctx, db_path: str | None) -> MetadataDB:
+    """Get MetadataDB from explicit path or config."""
+    if db_path:
+        return MetadataDB(db_path)
+    gdb_config, *_ = get_configs(ctx)
+    return MetadataDB(gdb_config.db_path)
+
+def get_db_path(gdb_config, db_path: str | None) -> str:
+    if db_path is None:
+        rprint(f"[blue]Using db_path from config: {gdb_config.db_path}[/blue]")
+        return gdb_config.db_path
+    else:
+        rprint(f"[orange]Using custom db_path: {db_path}[/orange]")
+        return db_path
 
 
 @click.group()
@@ -608,16 +652,17 @@ def sync(ctx, dry_run):
 @click.option(
     "--rc", type=click.Choice(["RC1", "RC2"]), help="Filter by release candidate"
 )
+@db_path_option
 @click.option("--since", type=str, help="Show assets since date (YYYY-MM-DD)")
 @click.option("--limit", type=int, default=20, help="Limit number of results")
 @click.pass_context
-def list_assets(ctx, asset_type, rc, since, limit):
+def list_assets(ctx, asset_type, rc, since, limit, db_path):
     """List GDB assets from database"""
 
     gdb_config, global_config, environment, verbose = get_configs(ctx)
 
     try:
-        db = MetadataDB(gdb_config.db_path)
+        db = get_metadata_db(ctx, db_path)
 
         query = "SELECT * FROM gdb_assets WHERE 1=1"
         params = []
@@ -690,8 +735,9 @@ def list_assets(ctx, asset_type, rc, since, limit):
 @click.option(
     "--output-dir", type=click.Path(), default="./downloads", help="Download directory"
 )
+@db_path_option
 @click.pass_context
-def search(ctx, search_term, download, output_dir):
+def search(ctx, search_term, download, output_dir, db_path):
     """Search for GDB assets in the database"""
 
     gdb_config, global_config, environment, verbose = get_config(ctx)
@@ -700,7 +746,7 @@ def search(ctx, search_term, download, output_dir):
         s3_bucket = gdb_config.get_s3_bucket(global_config)
         s3_profile = gdb_config.get_s3_profile(global_config)
 
-        db = MetadataDB(gdb_config.db_path)
+        db = get_metadata_db(ctx, db_path)
 
         query = """
         SELECT * FROM gdb_assets
@@ -739,7 +785,7 @@ def search(ctx, search_term, download, output_dir):
                 output_path = Path(output_dir)
                 output_path.mkdir(parents=True, exist_ok=True)
 
-                s3_uploader = S3Uploader(s3_bucket, s3_profile)  # TODO
+                s3_uploader = S3Uploader(s3_bucket, s3_profile, upload_method="direct")  # TODO: no downlaod via URL for now
                 filename = Path(data["s3_key"]).name
                 local_path = output_path / filename
 
@@ -760,13 +806,14 @@ def search(ctx, search_term, download, output_dir):
 
 
 @gdb.command()
+@db_path_option
 @click.pass_context
-def status(ctx):
+def status(ctx,db_path):
     """Show system status and statistics"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
 
     try:
-        db = MetadataDB(gdb_config.db_path)
+        db = get_metadata_db(ctx, db_path)
         s3_bucket = gdb_config.get_s3_bucket(global_config)
 
         with duckdb.connect(str(db.db_path)) as conn:
@@ -1292,14 +1339,15 @@ def validate(ctx, check_s3, check_integrity):
 @click.option("--by-date", is_flag=True, help="Show statistics by date")
 @click.option("--by-type", is_flag=True, help="Show statistics by type")
 @click.option("--storage", is_flag=True, help="Show storage statistics")
+@db_path_option
 @click.pass_context
-def stats(ctx, by_date, by_type, storage):
+def stats(ctx, by_date, by_type, storage, db_path):
     """Show detailed statistics"""
 
     gdb_config, global_config, environment, verbose = get_configs(ctx)
 
     try:
-        db = MetadataDB(gdb_config.db_path)
+        db = get_metadata_db(ctx, db_path)
 
         with duckdb.connect(str(db.db_path)) as conn:
             if by_date:
@@ -1450,12 +1498,16 @@ def stats(ctx, by_date, by_type, storage):
     is_flag=True,
     help="Also show if they form a release couple (created close together)",
 )
+@db_path_option
 @click.pass_context
-def latest_by_rc(ctx, asset_type, days_back, show_couple):
+def latest_by_rc(ctx, asset_type, days_back, show_couple, db_path):
     """Show the latest asset for each RC (RC1/RC2)"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
 
     s3_config = global_config.s3
+
+    db_path = get_db_path(gdb_config, db_path)
+
 
     try:
         # Create manager instance (reusing existing logic)
@@ -1466,7 +1518,7 @@ def latest_by_rc(ctx, asset_type, days_back, show_couple):
             base_paths=gdb_config.base_paths,
             s3_config=s3_config,  # TODO
             # s3_bucket=s3_bucket,
-            db_path=gdb_config.db_path,
+            db_path=db_path ,
             temp_dir=gdb_config.temp_dir,
             # aws_profile=s3_profile,
         )
@@ -1737,6 +1789,520 @@ def latest_verifications(ctx):
     except Exception as e:
         rprint(f"[red]Command failed: {e}[/red]")
         if verbose:
+            import traceback
+
+            rprint(f"[red]{traceback.format_exc()}[/red]")
+        sys.exit(1)
+
+
+@gdb.command("download")
+@click.option(
+    "--type",
+    "asset_type",
+    type=click.Choice(get_asset_type_choices(), case_sensitive=False),
+    required=True,
+    help="Asset type to download. Use 'backup' for any backup type (daily/weekly/monthly)",
+)
+@click.option(
+    "--output-dir",
+    "-o",
+    type=click.Path(),
+    default="./downloads",
+    help="Local directory for downloaded assets",
+)
+@click.option(
+    "--rc",
+    type=click.Choice(["RC1", "RC2", "both"]),
+    default="both",
+    help="Which release candidate(s) to download (default: both)",
+)
+@click.option(
+    "--max-days-apart",
+    type=int,
+    default=7,
+    help="Max days between RC1/RC2 to consider them a valid couple",
+)
+@click.option(
+    "--unzip/--no-unzip",
+    default=True,
+    help="Automatically unzip downloaded .gdb.zip files (default: yes)",
+)
+@click.option(
+    "--keep-zip/--no-keep-zip",
+    default=True,
+    help="Keep zip file after extraction (default: yes)",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be downloaded without actually downloading",
+)
+@click.option(
+    "--overwrite",
+    is_flag=True,
+    help="Overwrite existing files",
+)
+@db_path_option
+@click.pass_context
+def download(
+    ctx, asset_type, output_dir, rc, max_days_apart, unzip, keep_zip, dry_run, overwrite, db_path,
+):
+    """
+    Download the latest asset couple (RC1+RC2) from S3.
+
+    Downloads the most recent pair of assets for a given type. For backups and
+    increments, RC1 and RC2 are typically a few hours apart. For QA tests
+    (verification_topology, verification_tqa), they're usually about 1 day apart.
+
+    \b
+    Examples:
+        # Download latest backup couple
+        gcover gdb download --type backup
+
+        # Download only RC1 topology verification
+        gcover gdb download --type verification_topology --rc RC1
+
+        # Dry run to see what would be downloaded
+        gcover gdb download --type increment --dry-run
+
+        # Download to specific directory without unzipping
+        gcover gdb download --type backup -o /data/gdb --no-unzip
+
+        # Download and extract, removing zip files
+        gcover gdb download --type backup --no-keep-zip
+    """
+    gdb_config, global_config, environment, verbose = get_configs(ctx)
+    s3_config = global_config.s3
+
+    db_path = get_db_path(gdb_config, db_path)
+
+    try:
+        output_path = Path(output_dir)
+
+        # Create manager
+        manager = GDBAssetManager(
+            base_paths=gdb_config.base_paths,
+            s3_config=s3_config,
+            db_path=db_path,
+            temp_dir=gdb_config.temp_dir,
+        )
+
+        # Expand asset type alias (e.g., "backup" -> ["backup_daily", "backup_weekly", "backup_monthly"])
+        asset_types = expand_asset_type(asset_type)
+        is_alias = len(asset_types) > 1
+
+        if is_alias:
+            rprint(
+                f"[cyan]Searching for latest among: {', '.join(asset_types)}[/cyan]"
+            )
+
+        # Query for each asset type and find the most recent
+        all_latest = {}
+        actual_type_used = {}  # Track which specific type was found for each RC
+
+        for atype in asset_types:
+            latest = manager.get_latest_assets_by_rc(asset_type=atype)
+            for rc_name, data in latest.items():
+                # Keep the most recent for each RC
+                if rc_name not in all_latest or data["timestamp"] > all_latest[rc_name]["timestamp"]:
+                    all_latest[rc_name] = data
+                    actual_type_used[rc_name] = atype
+
+        latest_assets = all_latest
+
+        if not latest_assets:
+            type_desc = f"any of [{', '.join(asset_types)}]" if is_alias else asset_type
+            rprint(f"[yellow]No {type_desc} assets found in database[/yellow]")
+            return
+
+        # Show which specific types were found
+        if is_alias:
+            for rc_name in ["RC1", "RC2"]:
+                if rc_name in actual_type_used:
+                    rprint(
+                        f"[dim]  {rc_name}: Found {actual_type_used[rc_name]}[/dim]"
+                    )
+
+        # Filter by RC selection
+        assets_to_download = {}
+        if rc == "both":
+            assets_to_download = latest_assets
+        elif rc in latest_assets:
+            assets_to_download = {rc: latest_assets[rc]}
+        else:
+            rprint(f"[yellow]No {rc} asset found for {asset_type}[/yellow]")
+            return
+
+        # Check if both RCs are present when downloading "both"
+        if rc == "both" and len(assets_to_download) < 2:
+            missing = "RC2" if "RC1" in assets_to_download else "RC1"
+            rprint(
+                f"[yellow]Warning: Only found one RC ({missing} is missing)[/yellow]"
+            )
+
+        # Check if they form a valid couple (time-wise)
+        if rc == "both" and len(assets_to_download) == 2:
+            rc1_date = assets_to_download["RC1"]["timestamp"]
+            rc2_date = assets_to_download["RC2"]["timestamp"]
+            days_diff = abs((rc1_date - rc2_date).days)
+            hours_diff = abs((rc1_date - rc2_date).total_seconds() / 3600)
+
+            if days_diff > max_days_apart:
+                rprint(
+                    f"[yellow]Warning: RC1 and RC2 are {days_diff} days apart "
+                    f"(max allowed: {max_days_apart})[/yellow]"
+                )
+                if not dry_run and not click.confirm("Continue anyway?"):
+                    return
+            else:
+                time_desc = (
+                    f"{hours_diff:.1f} hours" if days_diff == 0 else f"{days_diff} days"
+                )
+                rprint(f"[green]✓ Valid release couple ({time_desc} apart)[/green]")
+
+        # Check which assets have S3 keys and are uploaded
+        downloadable = {}
+        for rc_name, data in assets_to_download.items():
+            if not data.get("s3_key"):
+                rprint(
+                    f"[yellow]Warning: {rc_name} has no S3 key (not uploaded?)[/yellow]"
+                )
+                continue
+            if not data.get("uploaded"):
+                rprint(f"[yellow]Warning: {rc_name} not marked as uploaded[/yellow]")
+                continue
+            downloadable[rc_name] = data
+
+        if not downloadable:
+            rprint(
+                "[red]No downloadable assets found (missing S3 keys or not uploaded)[/red]"
+            )
+            return
+
+        # Display download plan
+        title = f"Download Plan: {asset_type}"
+        if is_alias:
+            title += " (alias)"
+        table = Table(title=title)
+        table.add_column("RC", style="cyan", width=8)
+        table.add_column("Type", style="green", width=20)
+        table.add_column("Date", style="magenta", width=18)
+        table.add_column("S3 Key", style="yellow", max_width=45)
+        table.add_column("Size", justify="right", style="blue", width=12)
+
+        total_size = 0
+        for rc_name in ["RC1", "RC2"]:
+            if rc_name in downloadable:
+                data = downloadable[rc_name]
+                size = data.get("file_size", 0) or 0
+                total_size += size
+                table.add_row(
+                    rc_name,
+                    actual_type_used.get(rc_name, data.get("asset_type", "?")),
+                    data["timestamp"].strftime("%Y-%m-%d %H:%M"),
+                    Path(data["s3_key"]).name,
+                    format_size(size) if size else "Unknown",
+                )
+
+        console.print(table)
+        rprint(f"\n[cyan]Total download size: {format_size(total_size)}[/cyan]")
+        rprint(f"[cyan]Destination: {output_path.absolute()}[/cyan]")
+
+        if dry_run:
+            rprint("\n[yellow]DRY RUN - No files will be downloaded[/yellow]")
+            return
+
+        # Create output directory
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        # Download assets
+        rprint(f"\n[cyan]Downloading {len(downloadable)} asset(s)...[/cyan]")
+
+        successful = 0
+        failed = 0
+        downloaded_files = []
+
+        for rc_name, data in downloadable.items():
+            s3_key = data["s3_key"]
+            filename = Path(s3_key).name
+            local_path = output_path / filename
+
+            # Check if already exists
+            if local_path.exists() and not overwrite:
+                rprint(
+                    f"[yellow]Skipping {filename} (already exists, use --overwrite)[/yellow]"
+                )
+                continue
+
+            rprint(f"\n[cyan]Downloading {rc_name}: {filename}[/cyan]")
+
+            try:
+                # Use the manager's download method
+                success = manager.download_asset(s3_key, local_path)
+
+                if success:
+                    successful += 1
+                    downloaded_files.append((rc_name, local_path))
+                    file_size = local_path.stat().st_size if local_path.exists() else 0
+                    rprint(
+                        f"[green]✓ Downloaded: {local_path} ({format_size(file_size)})[/green]"
+                    )
+
+                    # Optionally unzip
+                    if unzip and filename.endswith(".zip"):
+                        rprint(f"[cyan]  Extracting...[/cyan]")
+
+                        # Extract to temp dir first
+                        temp_extract_dir = output_path / f".temp_{local_path.stem}"
+                        with zipfile.ZipFile(local_path, "r") as zf:
+                            zf.extractall(temp_extract_dir)
+
+                        # Find the actual .gdb folder (handle redundant nesting)
+                        gdb_candidates = list(temp_extract_dir.glob("**/*.gdb"))
+
+                        if not gdb_candidates:
+                            raise ValueError(f"No .gdb folder found in {local_path}")
+
+                        # Use the deepest .gdb folder
+                        actual_gdb = max(gdb_candidates, key=lambda p: len(p.parts))
+
+                        # Move to FINAL location with ORIGINAL NAME (from zip)
+                        original_name = actual_gdb.name  # e.g., "20260319_0300_2030-12-31.gdb"
+                        final_gdb_dir = output_path / original_name
+
+                        if final_gdb_dir.exists():
+                            shutil.rmtree(final_gdb_dir)
+
+                        actual_gdb.rename(final_gdb_dir)
+
+                        # Cleanup temp folder
+                        import shutil
+                        shutil.rmtree(temp_extract_dir, ignore_errors=True)
+
+                        rprint(f"[green]  ✓ Extracted to: {final_gdb_dir}[/green]")
+
+                        # Create symlink with RC name pointing to original
+                        target_gdb = output_path / f"{rc_name}.gdb"
+
+                        if sys.platform != "win32":
+                            # Remove symlink only if it's a symlink (not a directory!)
+                            if target_gdb.is_symlink():
+                                target_gdb.unlink()
+                            elif target_gdb.exists():
+                                # If it's a directory, remove it
+                                shutil.rmtree(target_gdb)
+
+                            # Create relative symlink to the original name
+                            target_gdb.symlink_to(original_name)
+                            rprint(f"[blue]  🔗 Created symlink: {target_gdb.name} -> {original_name}[/blue]")
+                        else:
+                            # Windows: just note the mapping
+                            rprint(f"[blue]  📂 Original folder: {original_name}[/blue]")
+
+                        if not keep_zip:
+                            local_path.unlink()
+                            rprint(f"[dim]  Removed zip file[/dim]")
+                else:
+                    failed += 1
+                    rprint(f"[red]✗ Failed to download {filename}[/red]")
+
+            except Exception as e:
+                failed += 1
+                rprint(f"[red]✗ Error downloading {filename}: {e}[/red]")
+                if verbose:
+                    import traceback
+
+                    rprint(f"[red]{traceback.format_exc()}[/red]")
+
+        # Summary
+        rprint(f"\n[cyan]{'=' * 50}[/cyan]")
+        rprint(f"[cyan]Download Complete![/cyan]")
+        rprint(f"[green]✓ Successful: {successful}[/green]")
+        if failed > 0:
+            rprint(f"[red]✗ Failed: {failed}[/red]")
+
+        # Show what was downloaded
+        if downloaded_files:
+            rprint(f"\n[cyan]Downloaded assets:[/cyan]")
+            for rc_name, path in downloaded_files:
+                rprint(f"  {rc_name}: {path}")
+
+    except Exception as e:
+        rprint(f"[red]Download failed: {e}[/red]")
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            rprint(f"[red]{traceback.format_exc()}[/red]")
+        sys.exit(1)
+
+
+@gdb.command("download-couple")
+@click.option(
+    "--type",
+    "asset_type",
+    type=click.Choice(get_asset_type_choices(), case_sensitive=False),
+    required=True,
+    help="Asset type to download. Use 'backup' for any backup type.",
+)
+@click.option(
+    "--output-dir",
+    "-o",
+    type=click.Path(),
+    default="./downloads",
+    help="Local directory for downloaded assets",
+)
+@click.option(
+    "--unzip/--no-unzip",
+    default=True,
+    help="Automatically unzip .gdb.zip files",
+)
+@click.option(
+    "--keep-zip/--no-keep-zip",
+    default=True,
+    help="Keep zip file after extraction",
+)
+@click.option("--dry-run", is_flag=True, help="Show what would be downloaded")
+@click.option("--overwrite", is_flag=True, help="Overwrite existing files")
+@db_path_option
+@click.pass_context
+def download_couple(ctx, asset_type, output_dir, unzip, keep_zip, dry_run, overwrite, db_path):
+    """
+    Download the latest valid RC1+RC2 couple for an asset type.
+
+    This is a convenience wrapper that ensures both RC1 and RC2 are downloaded
+    together as a valid release couple.
+
+    \b
+    Examples:
+        # Download latest backup couple
+        gcover gdb download-couple --type backup
+
+        # Download latest topology QA tests
+        gcover gdb download-couple --type verification_topology
+
+        # Download latest increment and extract
+        gcover gdb download-couple --type increment --no-keep-zip
+    """
+    # Delegate to the main download command with rc="both"
+    ctx.invoke(
+        download,
+        asset_type=asset_type,
+        output_dir=output_dir,
+        rc="both",
+        max_days_apart=7,
+        unzip=unzip,
+        keep_zip=keep_zip,
+        dry_run=dry_run,
+        overwrite=overwrite,
+        db_path=db_path,
+    )
+
+
+@gdb.command("list-s3")
+@click.option(
+    "--type",
+    "asset_type",
+    type=click.Choice(get_asset_type_choices(), case_sensitive=False),
+    help="Filter by asset type. Use 'backup' for all backup types.",
+)
+@click.option(
+    "--rc",
+    type=click.Choice(["RC1", "RC2"]),
+    help="Filter by release candidate",
+)
+@click.option(
+    "--limit",
+    type=int,
+    default=20,
+    help="Limit number of results",
+)
+@db_path_option
+@click.pass_context
+def list_s3(ctx, asset_type, rc, limit, db_path):
+    """
+    List assets available for download from S3.
+
+    Shows assets that have been uploaded to S3 and can be downloaded.
+    """
+    gdb_config, global_config, environment, verbose = get_configs(ctx)
+
+
+    try:
+        db = get_metadata_db(ctx, db_path)
+
+        query = """
+                    SELECT path, asset_type, release_candidate, timestamp, file_size, s3_key
+                    FROM gdb_assets
+                    WHERE uploaded = true AND s3_key IS NOT NULL
+                """
+        params = []
+
+        # Handle asset type filtering (including aliases)
+        if asset_type:
+            asset_types = expand_asset_type(asset_type)
+            if len(asset_types) == 1:
+                query += " AND asset_type = ?"
+                params.append(asset_types[0])
+            else:
+                placeholders = ", ".join(["?" for _ in asset_types])
+                query += f" AND asset_type IN ({placeholders})"
+                params.extend(asset_types)
+
+        if rc:
+            rc_value = (
+                ReleaseCandidate.RC1.value
+                if rc == "RC1"
+                else ReleaseCandidate.RC2.value
+            )
+            query += " AND release_candidate = ?"
+            params.append(rc_value)
+
+        query += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+
+        with duckdb.connect(str(db.db_path)) as conn:
+            results = conn.execute(query, params).fetchall()
+            columns = [desc[0] for desc in conn.description]
+
+        if not results:
+            rprint("[yellow]No downloadable assets found matching criteria[/yellow]")
+            return
+
+        table = Table(title="Assets Available for Download from S3")
+        table.add_column("Type", style="green", width=20)
+        table.add_column("RC", style="cyan", width=6)
+        table.add_column("Date", style="magenta", width=18)
+        table.add_column("Size", justify="right", style="blue", width=12)
+        table.add_column("S3 Key", style="yellow", max_width=45)
+
+        for row in results:
+            data = dict(zip(columns, row, strict=False))
+            rc_name = (
+                "RC1"
+                if data["release_candidate"] == ReleaseCandidate.RC1.value
+                else "RC2"
+            )
+            size_str = (
+                format_size(data["file_size"]) if data["file_size"] else "Unknown"
+            )
+
+            table.add_row(
+                data["asset_type"],
+                rc_name,
+                data["timestamp"].strftime("%Y-%m-%d %H:%M"),
+                size_str,
+                Path(data["s3_key"]).name if data["s3_key"] else "N/A",
+            )
+
+        console.print(table)
+        rprint(f"\n[dim]Showing {len(results)} of {limit} max results[/dim]")
+        rprint(
+            f"[dim]Use: gcover gdb download --type <type> --rc <RC1|RC2|both> to download[/dim]"
+        )
+
+    except Exception as e:
+        rprint(f"[red]List failed: {e}[/red]")
+        if ctx.obj.get("verbose"):
             import traceback
 
             rprint(f"[red]{traceback.format_exc()}[/red]")
