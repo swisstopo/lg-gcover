@@ -4,7 +4,6 @@ Unified Pydantic configuration models
 This replaces ALL other config classes
 """
 
-import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -13,8 +12,7 @@ from enum import Enum, auto
 from dataclasses import dataclass, field
 
 
-from loguru import logger
-from pydantic import BaseModel, Field, field_validator, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class MapserverConnectionType(Enum):
@@ -63,7 +61,6 @@ class OgrConnection(MapserverConnection):
     data: Optional[str] = None
 
 
-
 @dataclass
 class MapserverConfig:
     """Holds all MapServer specific configurations."""
@@ -81,13 +78,13 @@ class FileLoggingConfig(BaseModel):
     retention: str = "30 days"
     compression: str = "gz"
 
-    @validator("path")
+    @field_validator("path")
+    @classmethod
     def validate_path_template(cls, v):
         """Validate that path template has valid placeholders"""
         if not isinstance(v, str):
             raise ValueError("path must be a string template")
 
-        # Check for valid placeholder syntax
         valid_placeholders = {"{environment}", "{date}", "{datetime}", "{timestamp}"}
         found_placeholders = set(re.findall(r"\{[^}]+\}", v))
 
@@ -120,7 +117,8 @@ class FileLoggingConfig(BaseModel):
 
         return Path(resolved_path)
 
-    @validator("rotation")
+    @field_validator("rotation")
+    @classmethod
     def validate_rotation(cls, v):
         """Validate rotation format (e.g., '10 MB', '1 GB', '1 day')"""
         if not re.match(r"^\d+\s*(MB|GB|KB|day|days|hour|hours)$", v, re.IGNORECASE):
@@ -129,7 +127,8 @@ class FileLoggingConfig(BaseModel):
             )
         return v
 
-    @validator("retention")
+    @field_validator("retention")
+    @classmethod
     def validate_retention(cls, v):
         """Validate retention format (e.g., '30 days', '1 week')"""
         if not re.match(
@@ -149,7 +148,8 @@ class ConsoleLoggingConfig(BaseModel):
     show_level: bool = True
     show_path: bool = False
 
-    @validator("format")
+    @field_validator("format")
+    @classmethod
     def validate_format(cls, v):
         """Validate console format"""
         if v not in ["simple", "detailed"]:
@@ -162,7 +162,8 @@ class ModuleLoggingConfig(BaseModel):
 
     modules: Dict[str, str] = {}
 
-    @validator("modules")
+    @field_validator("modules")
+    @classmethod
     def validate_module_levels(cls, v):
         """Validate that log levels are valid"""
         valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
@@ -260,6 +261,23 @@ class ProxyConfig(BaseModel):
 class S3Config(BaseModel):
     """Enhanced S3 configuration settings"""
 
+    model_config = ConfigDict(
+        extra="forbid",
+        use_enum_values=True,
+        json_schema_extra={
+            "example": {
+                "bucket": "gcover-assets-prod",
+                "profile": "gcover-aws-profile",
+                "upload_method": "auto",
+                "lambda_endpoint": "https://api.example.com/presigned-url",
+                "totp_secret": "JBSWY3DPEHPK3PXP",
+                "proxy": {"https_proxy": "http://proxy.company.com:8080"},
+                "upload_timeout": 300,
+                "max_retries": 3,
+            }
+        },
+    )
+
     # Core S3 settings
     bucket: str = Field(..., description="S3 bucket name")
     profile: Optional[str] = Field(None, description="AWS profile name")
@@ -304,21 +322,23 @@ class S3Config(BaseModel):
         le=10,  # At most 10 retries
     )
 
-    # Validators
-    @validator("bucket")
+    @field_validator("bucket")
+    @classmethod
     def bucket_must_not_be_empty(cls, v):
         if not v or not v.strip():
             raise ValueError("S3 bucket cannot be empty")
         return v.strip()
 
-    @validator("lambda_endpoint")
+    @field_validator("lambda_endpoint")
+    @classmethod
     def validate_lambda_endpoint(cls, v):
         if v is not None:
             if not re.match(r"^https://[^\s/$.?#].[^\s]*$", v):
                 raise ValueError("Lambda endpoint must be a valid HTTPS URL")
         return v
 
-    @validator("totp_secret")
+    @field_validator("totp_secret")
+    @classmethod
     def validate_totp_secret(cls, v):
         if v is not None:
             # Basic validation for Base32 encoding
@@ -331,7 +351,8 @@ class S3Config(BaseModel):
                 )
         return v.upper() if v else v
 
-    @validator("totp_token")
+    @field_validator("totp_token")
+    @classmethod
     def validate_totp_token(cls, v):
         if v is not None:
             # TOTP tokens are typically 6 digits
@@ -339,67 +360,29 @@ class S3Config(BaseModel):
                 raise ValueError("TOTP token must be 6 digits")
         return v
 
-    @validator("upload_method")
-    def validate_upload_method_consistency(cls, v, values):
-        """Validate that upload method is consistent with other settings"""
-        if v == "presigned":
-            # If presigned method is explicitly chosen, lambda_endpoint should be provided
-            # Note: This validator runs before lambda_endpoint, so we can't check it here
-            # We'll add a root validator for this
-            pass
-        return v
-
-    @validator("profile")
+    @field_validator("profile")
+    @classmethod
     def validate_profile(cls, v):
         if v is not None and not v.strip():
             return None  # Convert empty string to None
         return v.strip() if v else v
 
-    class Config:
-        # Allow extra fields for forward compatibility
-        extra = "forbid"
-        # Use enum values for serialization
-        use_enum_values = True
-        # Example for documentation
-        json_schema_extra = {
-            "example": {
-                "bucket": "gcover-assets-prod",
-                "profile": "gcover-aws-profile",
-                "upload_method": "auto",
-                "lambda_endpoint": "https://api.example.com/presigned-url",
-                "totp_secret": "JBSWY3DPEHPK3PXP",
-                "proxy": {"https_proxy": "http://proxy.company.com:8080"},
-                "upload_timeout": 300,
-                "max_retries": 3,
-            }
-        }
-
-    # Root validator for cross-field validation
-    @validator("totp_token", always=True)
-    def validate_totp_configuration(cls, v, values):
+    @model_validator(mode="after")
+    def validate_totp_configuration(self) -> "S3Config":
         """Validate TOTP configuration consistency"""
-        upload_method = values.get("upload_method")
-        lambda_endpoint = values.get("lambda_endpoint")
-        totp_secret = values.get("totp_secret")
-
         # If using presigned method, need Lambda endpoint
-        if upload_method == "presigned" and not lambda_endpoint:
+        if self.upload_method == "presigned" and not self.lambda_endpoint:
             raise ValueError(
                 "Lambda endpoint is required when upload_method is 'presigned'"
             )
 
         # If Lambda endpoint is provided, should have at least one TOTP method
-        if lambda_endpoint and not (totp_secret or v):
+        if self.lambda_endpoint and not (self.totp_secret or self.totp_token):
             raise ValueError(
                 "Either totp_secret or totp_token is required when lambda_endpoint is provided"
             )
 
-        # Can't have both TOTP secret and token (token overrides secret)
-        if totp_secret and v:
-            # This is actually OK - token overrides secret, just log a warning
-            pass
-
-        return v
+        return self
 
     # Convenience properties
     @property
@@ -440,13 +423,15 @@ class GlobalConfig(BaseModel):
     logging: LoggingConfig = LoggingConfig()
     proxy: Optional[str] = None
     public_url: Optional[str] = None
-    mapserver: Optional[MapserverConfig]
+    mapserver: Optional[MapserverConfig] = None
 
-    @validator("temp_dir", pre=True)
+    @field_validator("temp_dir", mode="before")
+    @classmethod
     def parse_temp_dir(cls, v):
         return Path(v) if not isinstance(v, Path) else v
 
-    @validator("log_level")
+    @field_validator("log_level")
+    @classmethod
     def log_level_must_be_valid(cls, v):
         valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         if v.upper() not in valid_levels:
@@ -484,7 +469,8 @@ class ProcessingConfig(BaseModel):
     compression_level: int = 6
     max_workers: int = 4
 
-    @validator("compression_level")
+    @field_validator("compression_level")
+    @classmethod
     def compression_level_must_be_valid(cls, v):
         if not 1 <= v <= 9:
             raise ValueError("compression_level must be between 1 and 9")
@@ -496,7 +482,8 @@ class DatabaseConfig(BaseModel):
 
     path: Path
 
-    @validator("path", pre=True)
+    @field_validator("path", mode="before")
+    @classmethod
     def parse_path(cls, v):
         return Path(v) if not isinstance(v, Path) else v
 
@@ -507,7 +494,8 @@ class PublishConfig(BaseModel):
     source_paths: Dict[str, Path]
     tooltip_db_path: Optional[Path] = None
 
-    @validator("source_paths", pre=True)
+    @field_validator("source_paths", mode="before")
+    @classmethod
     def parse_source_paths(cls, v):
         if isinstance(v, dict):
             return {
@@ -527,7 +515,8 @@ class GDBConfig(BaseModel):
     db_path: Path = Path("data/dev_gdb_metadata.duckdb")
     proxy: Optional[str] = None
 
-    @validator("base_paths", pre=True)
+    @field_validator("base_paths", mode="before")
+    @classmethod
     def parse_base_paths(cls, v):
         if isinstance(v, dict):
             return {
@@ -536,7 +525,8 @@ class GDBConfig(BaseModel):
             }
         return v
 
-    @validator("temp_dir", pre=True)
+    @field_validator("temp_dir", mode="before")
+    @classmethod
     def parse_temp_dir(cls, v):
         return Path(v) if not isinstance(v, Path) else v
 
@@ -563,7 +553,8 @@ class SDEInstanceConfig(BaseModel):
     version: str = "SDE.DEFAULT"
     user: Optional[str] = None
 
-    @validator("port")
+    @field_validator("port")
+    @classmethod
     def port_must_be_valid(cls, v):
         if not 1 <= v <= 65535:
             raise ValueError("port must be between 1 and 65535")
@@ -578,11 +569,13 @@ class SDEConfig(BaseModel):
     temp_dir: Path = Path("/tmp/gcover/sde")
     cleanup_on_exit: bool = True
 
-    @validator("temp_dir", pre=True)
+    @field_validator("temp_dir", mode="before")
+    @classmethod
     def parse_temp_dir(cls, v):
         return Path(v) if not isinstance(v, Path) else v
 
-    @validator("connection_timeout")
+    @field_validator("connection_timeout")
+    @classmethod
     def timeout_must_be_positive(cls, v):
         if v <= 0:
             raise ValueError("connection_timeout must be positive")
@@ -599,11 +592,13 @@ class SchemaConfig(BaseModel):
     max_diagram_tables: int = 50
     include_system_tables: bool = False
 
-    @validator("output_dir", "template_dir", "plantuml_path", pre=True)
+    @field_validator("output_dir", "template_dir", "plantuml_path", mode="before")
+    @classmethod
     def parse_paths(cls, v):
         return Path(v) if v and not isinstance(v, Path) else v
 
-    @validator("max_diagram_tables")
+    @field_validator("max_diagram_tables")
+    @classmethod
     def max_tables_must_be_positive(cls, v):
         if v <= 0:
             raise ValueError("max_diagram_tables must be positive")
@@ -620,11 +615,13 @@ class QAConfig(BaseModel):
     processing: ProcessingConfig = ProcessingConfig()
     default_simplify_tolerance: Optional[float] = None
 
-    @validator("output_dir", "temp_dir", pre=True)
+    @field_validator("output_dir", "temp_dir", mode="before")
+    @classmethod
     def parse_paths(cls, v):
         return Path(v) if not isinstance(v, Path) else v
 
-    @validator("default_simplify_tolerance")
+    @field_validator("default_simplify_tolerance")
+    @classmethod
     def tolerance_must_be_positive(cls, v):
         if v is not None and v <= 0:
             raise ValueError("default_simplify_tolerance must be positive")
@@ -643,6 +640,8 @@ class QAConfig(BaseModel):
 class AppConfig(BaseModel):
     """Main application configuration - FIXED schema field conflict"""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     global_: GlobalConfig = Field(alias="global")
     gdb: GDBConfig
     sde: Optional[SDEConfig] = None
@@ -652,11 +651,8 @@ class AppConfig(BaseModel):
     )  # 🔧 FIX: Use alias
     qa: Optional[QAConfig] = None
 
-    class Config:
-        # allow_population_by_field_name = True
-        validate_by_name = True
-
-    @validator("global_", pre=True)
+    @field_validator("global_", mode="before")
+    @classmethod
     def validate_global_config(cls, v):
         if not v:
             raise ValueError("global configuration is required")
