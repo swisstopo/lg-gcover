@@ -65,6 +65,45 @@ UNKNOWN_CODE = 19_999_999   # in range but not in translations
 
 
 @pytest.fixture
+def isolated_config_env(tmp_path):
+    """
+    Create isolated test environment with config files.
+
+    Returns the temporary directory path for further customization.
+    """
+    # Get the test file's directory to resolve relative paths
+    test_dir = Path(__file__).parent
+    repo_root = test_dir.parent
+
+    # Read original config files relative to repo root
+    original_config = (repo_root / "config" / "gcover_config.yaml").read_text(encoding="utf-8")
+    original_test_config = (repo_root / "config" / "environments" / "test.yaml").read_text(
+        encoding="utf-8"
+    )
+
+    # Modify test config to use dummy paths (no real GDB scanning)
+    modified_test_config = original_test_config.replace(
+        "tests/data/examples", str(tmp_path / "dummy_data")
+    )
+
+    # Create directory structure in tmp_path
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "environments").mkdir()
+    (tmp_path / "data").mkdir()
+    (tmp_path / "dummy_data").mkdir()
+    (tmp_path / "logs").mkdir()
+
+    # Write config files
+    (config_dir / "gcover_config.yaml").write_text(original_config, encoding="utf-8")
+    (config_dir / "environments" / "test.yaml").write_text(
+        modified_test_config, encoding="utf-8"
+    )
+
+    return tmp_path
+
+
+@pytest.fixture
 def translations_df():
     """Minimal in-memory translations DataFrame (indexed by GeolCodeInt)."""
     return pd.DataFrame(
@@ -766,6 +805,7 @@ class TestCli:
             ],
         )
         assert result.exit_code != 0 or "Unknown" in result.output
+
 
     def test_full_run_writes_gpkg(self, gpkg_file, translations_csv, tmp_path):
         from click.testing import CliRunner
