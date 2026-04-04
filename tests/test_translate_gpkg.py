@@ -81,6 +81,7 @@ def isolated_config_env(tmp_path):
         encoding="utf-8"
     )
 
+
     # Modify test config to use dummy paths (no real GDB scanning)
     modified_test_config = original_test_config.replace(
         "tests/data/examples", str(tmp_path / "dummy_data")
