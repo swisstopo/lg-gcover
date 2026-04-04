@@ -20,9 +20,9 @@ def isolated_config_env(tmp_path):
     """
     # Read original config files
     original_config = Path("config/gcover_config.yaml").read_text(encoding="utf-8")
-    original_test_config = Path("config/environments/test.yaml").read_text(
-        encoding="utf-8"
-    )
+    test_dir = Path(__file__).parent
+    repo_root = test_dir.parent
+    original_test_config = (repo_root / "config" / "environments" / "test.yaml").read_text(encoding="utf-8")
 
     # Modify test config to use dummy paths (no real GDB scanning)
     modified_test_config = original_test_config.replace(
