@@ -11,6 +11,7 @@ from typing import Any, Dict
 from loguru import logger
 
 SCHEMA_VERSION = 2
+SCHEMA_NAME = "SimpleESRISchema"
 
 # Copy all the functions from document 43:
 # - convert_field_type()
@@ -321,7 +322,8 @@ def transform_esri_flat_json(input_data):
     Transform ESRI JSON format into custom structured format.
     Handles multiple section types: coded_domains, subtypes, relationships, featureclasses, tables
     """
-    result = {"version": SCHEMA_VERSION}
+    result = {"version": SCHEMA_VERSION,
+              "name":    SCHEMA_NAME }
     try:
         # Add metadata if you want to keep it
         if "dateExported" in input_data:
