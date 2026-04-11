@@ -163,6 +163,7 @@ def generate_plantuml_from_schema(
     show_relationships: bool = True,
     show_junction_tables: bool = True,
     max_fields_per_table: int = 20,
+    max_domain_values: int = 5,
     add_legend: bool = True,
     group_by_prefix: bool = True,
     prefix: str = None,
@@ -271,14 +272,14 @@ def generate_plantuml_from_schema(
         # Coded domains
         for domain_name, domain in schema.coded_domains.items():
             lines.extend(
-                generate_domain_uml(domain_name, domain, "coded", prefix, config)
+                generate_domain_uml(domain_name, domain, "coded", prefix, config, max_domain_values)
             )
             lines.append("")
 
         # Range domains
         for domain_name, domain in schema.range_domains.items():
             lines.extend(
-                generate_domain_uml(domain_name, domain, "range", prefix, config)
+                generate_domain_uml(domain_name, domain, "range", prefix, config, max_domain_values)
             )
             lines.append("")
 
@@ -487,6 +488,7 @@ def generate_domain_uml(
     domain_type: str,
     prefix: str,
     config: dict,
+    max_domain_values: int = 5,
 ) -> list[str]:
     """Generate PlantUML for a domain"""
     # TODO
@@ -504,10 +506,10 @@ def generate_domain_uml(
     if domain_type == "coded" and hasattr(domain, "coded_values"):
         lines.append("  --")
         # Show first few coded values
-        for i, cv in enumerate(domain.coded_values[:5]):
+        for i, cv in enumerate(domain.coded_values[:max_domain_values]):
             lines.append(f"  {cv.code} : {cv.name}")
-        if len(domain.coded_values) > 5:
-            lines.append(f"  ... ({len(domain.coded_values) - 5} more values)")
+        if len(domain.coded_values) > max_domain_values:
+            lines.append(f"  ... ({len(domain.coded_values) - max_domain_values} more values)")
     elif domain_type == "range" and hasattr(domain, "min_value"):
         lines.append(f"  Range: {domain.min_value} - {domain.max_value}")
 
