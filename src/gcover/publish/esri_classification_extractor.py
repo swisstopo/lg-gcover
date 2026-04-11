@@ -1664,8 +1664,8 @@ def export_classifications_to_csv(
                     fill_layer_types = ", ".join(fill_types)
                 row["fill_layer_types"] = fill_layer_types
                 row["fill_layer_count"] = len(fill_types)
-                row["has_outline"] = layers.outline
-                row["char_marker_count"] = len(layers.character_markers)
+                row["has_outline"] = layers.get('outline')
+                row["char_marker_count"] = len(layers.get('character_markers', []))
 
             rows.append(row)
 
