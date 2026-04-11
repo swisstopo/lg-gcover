@@ -681,9 +681,17 @@ def extract(source, output, name, format, filter_prefix, remove_prefix):
 @click.option("--title", default="Database Schema")
 @click.option("--no-fields", is_flag=True, help="Exclude field details")
 @click.option("--no-relationships", is_flag=True, help="Exclude relationships")
+@click.option("--no-domains", is_flag=True, help="Exclude domain classes and relationships")
+@click.option("--max-fields", default=20, show_default=True, help="Max fields shown per table (0 = all)")
+@click.option("--max-domain-values", default=5, show_default=True, help="Max coded values shown per domain (0 = all)")
 @click.option("--filter", "-f", multiple=True, help="Include only these tables")
-def diagram(json_file, output, title, no_fields, no_relationships, filter):
-    """Generate PlantUML diagram from schema JSON."""
+def diagram(json_file, output, title, no_fields, no_relationships, no_domains, max_fields, max_domain_values, filter):
+    """Generate PlantUML diagram from schema JSON.
+
+    JSON_FILE must be the original ESRI schema report (as produced by
+    `gcover schema extract`), not the simplified schema variant
+    (*-schema-simple.json).
+    """
     click.echo(f"Generating diagram from {json_file}...")
 
     # Charger le JSON
@@ -697,9 +705,11 @@ def diagram(json_file, output, title, no_fields, no_relationships, filter):
     puml_content = generate_plantuml_from_schema(
         schema=schema,
         title=title,
-        include_fields=not no_fields,
-        include_relationships=not no_relationships,
-        filter_tables=list(filter) if filter else None,
+        show_fields=not no_fields,
+        show_relationships=not no_relationships,
+        show_domains=not no_domains,
+        max_fields_per_table=max_fields,
+        max_domain_values=max_domain_values,
     )
 
     # Sauvegarder

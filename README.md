@@ -1585,6 +1585,15 @@ gcover schema report schema.json --output documentation.html --template datamode
 # Create PlantUML diagram
 gcover schema diagram schema.json --output schema_diagram.puml --title "GeoCover Schema"
 
+# Show all coded values per domain                                                                                                                                                                                                                                                
+gcover schema diagram --max-domain-values 0 --output out.puml schema.json                                                                                                                                                                                                         
+                                                                                                                                                                                                                                                                                    
+# Show only 3 values per domain                                                                                                                                                                                                                                                 
+gcover schema diagram --max-domain-values 3 --output out.puml schema.json                                                                                                                                                                                                         
+                                                                                                                                                                                                                                                                                    
+# Hide domains entirely                                                                                                                                                                                                                                                           
+gcover schema diagram --no-domains --output out.puml schema.json
+
 # Generate multiple documentation formats
 gcover schema report schema.json --template full --format html --output docs.html
 gcover schema report schema.json --template full --format markdown --output docs.md
