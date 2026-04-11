@@ -312,7 +312,7 @@ def generate_plantuml_from_schema(
         if show_domains:
             lines.append("")
             lines.append("' Domain usage relationships")
-            lines.extend(generate_domain_relationships(schema, prefix, config))
+            lines.extend(generate_domain_relationships(schema))
 
     lines.append("")
     lines.append("@enduml")
@@ -490,8 +490,7 @@ def generate_domain_uml(
 ) -> list[str]:
     """Generate PlantUML for a domain"""
     # TODO
-    safe_name = sanitize_name(domain_name)
-    safe_name = remove_prefixes(fc_name)
+    safe_name = remove_prefixes(sanitize_name(domain_name))
     display_name = safe_name
 
     # Handle case where domain might be None or invalid
