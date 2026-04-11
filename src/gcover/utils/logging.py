@@ -40,8 +40,6 @@ class GCoverLogger:
             environment: Environment name for config loading
             config_path: Optional path to config file
         """
-        if self._is_configured:
-            return  # Already configured
 
         self._environment = environment
 
