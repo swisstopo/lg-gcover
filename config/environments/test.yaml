@@ -1,0 +1,10 @@
+
+# Test environment overrides
+data_dir: tests/data/examples
+
+gdb:
+  db_path: "data/test_gdb_metadata.duckdb"
+  base_paths:
+    backup: "tests/data/examples"
+    verification: "tests/data/examples/Verifications"
+    increment: "tests/data/examples"
