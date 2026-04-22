@@ -668,6 +668,92 @@ def create_s3_uploader_with_proxy(
     return S3Uploader(bucket_name=bucket_name, proxy_config=proxy_config, **kwargs)
 
 
+DEFAULT_METADATA_S3_KEY = "gdb-assets/metadata/gdb_assets.parquet"
+
+
+def fetch_metadata_parquet(s3_config, s3_key: str = DEFAULT_METADATA_S3_KEY) -> Path:
+    """Download the metadata Parquet from S3 to a temp file and return its path."""
+    import tempfile
+
+    dest = Path(tempfile.mktemp(suffix=".parquet", prefix="gcover_meta_"))
+    uploader = S3Uploader(
+        bucket_name=s3_config.bucket,
+        aws_profile=s3_config.profile,
+        lambda_endpoint=s3_config.lambda_endpoint,
+        totp_secret=s3_config.totp_secret,
+        totp_token=s3_config.totp_token,
+        proxy_config=s3_config.proxy,
+        upload_method=s3_config.upload_method,
+    )
+    ok = uploader.download_file(s3_key, dest)
+    if not ok:
+        raise RuntimeError(
+            f"Failed to download metadata parquet from s3://{s3_config.bucket}/{s3_key}"
+        )
+    logger.info(f"Fetched metadata parquet to {dest}")
+    return dest
+
+
+def query_latest_assets_by_rc(
+    source: Union[str, Path],
+    asset_type: Optional[str] = None,
+    days_back: Optional[int] = 30,
+) -> Dict[str, Dict[str, Any]]:
+    """Query the latest asset per RC from a local DuckDB file or a Parquet file.
+
+    Mirrors GDBAssetManager.get_latest_assets_by_rc but works without a full manager.
+    """
+    from gcover.gdb.assets import ReleaseCandidate
+
+    source = Path(source)
+    is_parquet = source.suffix == ".parquet"
+
+    if is_parquet:
+        conn = duckdb.connect()
+        table_ref = f"read_parquet('{source}')"
+    else:
+        conn = duckdb.connect(str(source))
+        table_ref = "gdb_assets"
+
+    query = f"""
+        WITH ranked_assets AS (
+            SELECT *,
+                   CASE
+                       WHEN release_candidate = '{ReleaseCandidate.RC1.value}' THEN 'RC1'
+                       WHEN release_candidate = '{ReleaseCandidate.RC2.value}' THEN 'RC2'
+                       ELSE 'Unknown'
+                   END as rc_name,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY release_candidate
+                       ORDER BY timestamp DESC
+                   ) as rn
+            FROM {table_ref}
+            WHERE 1=1
+    """
+    if asset_type:
+        query += f" AND asset_type = '{asset_type}'"
+    if days_back is not None:
+        query += f" AND timestamp >= CURRENT_DATE - INTERVAL {days_back} DAYS"
+    query += """
+        )
+        SELECT rc_name, timestamp, path, asset_type, file_size, uploaded, s3_key
+        FROM ranked_assets
+        WHERE rn = 1 AND rc_name IN ('RC1', 'RC2')
+        ORDER BY rc_name
+    """
+
+    with conn:
+        results = conn.execute(query).fetchall()
+        columns = [desc[0] for desc in conn.description]
+
+    latest_assets = {}
+    for row in results:
+        data = dict(zip(columns, row, strict=False))
+        rc_name = data.pop("rc_name")
+        latest_assets[rc_name] = data
+    return latest_assets
+
+
 class MetadataDB:
     """Handle DuckDB metadata operations"""
 
