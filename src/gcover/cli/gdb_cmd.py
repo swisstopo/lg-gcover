@@ -2433,5 +2433,74 @@ def verify_topology_files_exist(db_path: str) -> Dict[str, bool]:
     return status
 
 
+@gdb.command("publish-metadata")
+@click.option(
+    "--s3-key",
+    default="gdb-assets/metadata/gdb_assets.parquet",
+    show_default=True,
+    help="S3 key for the metadata Parquet file",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(file_okay=False),
+    default=None,
+    help="Local directory for the exported Parquet (default: system temp dir)",
+)
+@click.option("--no-upload", is_flag=True, help="Export Parquet locally without uploading to S3")
+@db_path_option
+@click.pass_context
+def publish_metadata(ctx, s3_key, output_dir, no_upload, db_path):
+    """Export metadata DB to Parquet and upload to S3."""
+    import tempfile
+
+    gdb_config, global_config, environment, verbose = get_configs(ctx)
+    s3_config = global_config.s3
+
+    metadata_db = get_metadata_db(ctx, db_path)
+
+    # Resolve output path
+    if output_dir:
+        parquet_path = Path(output_dir) / "gdb_assets.parquet"
+    else:
+        parquet_path = Path(tempfile.mkdtemp(prefix="gcover_metadata_")) / "gdb_assets.parquet"
+
+    rprint(f"[cyan]Exporting metadata to {parquet_path}...[/cyan]")
+    try:
+        metadata_db.export_to_parquet(parquet_path)
+    except Exception as e:
+        rprint(f"[red]Export failed: {e}[/red]")
+        sys.exit(1)
+
+    size_kb = parquet_path.stat().st_size / 1024
+    rprint(f"[green]Exported {size_kb:.1f} KB — {parquet_path}[/green]")
+
+    if no_upload:
+        return
+
+    rprint(f"[cyan]Uploading to s3://{s3_config.bucket}/{s3_key}...[/cyan]")
+    try:
+        uploader = S3Uploader(
+            bucket_name=s3_config.bucket,
+            aws_profile=s3_config.profile,
+            lambda_endpoint=s3_config.lambda_endpoint,
+            totp_secret=s3_config.totp_secret,
+            totp_token=s3_config.totp_token,
+            proxy_config=s3_config.proxy,
+            upload_method=s3_config.upload_method,
+        )
+        result = uploader.upload_file(parquet_path, s3_key)
+    except Exception as e:
+        rprint(f"[red]Upload failed: {e}[/red]")
+        sys.exit(1)
+
+    if result.success:
+        rprint(f"[green]✅ Metadata published to s3://{s3_config.bucket}/{s3_key}[/green]")
+        if verbose:
+            rprint(f"[dim]Method: {result.method}[/dim]")
+    else:
+        rprint(f"[red]❌ Upload failed (HTTP {result.status_code}): {result.error_message}[/red]")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     gdb()

@@ -729,3 +729,14 @@ class MetadataDB:
                 "SELECT COUNT(*) FROM gdb_assets WHERE path = ?", [str(path)]
             ).fetchone()
             return result[0] > 0
+
+    def export_to_parquet(self, output_path: Union[str, Path]) -> Path:
+        """Export gdb_assets table to a Parquet file."""
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with duckdb.connect(str(self.db_path)) as conn:
+            conn.execute(
+                f"COPY (SELECT * FROM gdb_assets ORDER BY id) TO '{output_path}' (FORMAT PARQUET)"
+            )
+        logger.info(f"Exported metadata to {output_path}")
+        return output_path
