@@ -220,7 +220,7 @@ geocover-aux: $(GEOCOVER_AUX_PATH)
 
 # Master target to run everything
 ## aspect: Add angular aspect to hexagonal grid data
-aspect: aspect-gmm
+aspect: aspect-gmm combine-aspect
 
 ## combine-aspect:  Combine aspect layer for surfaces and unco_deposits
 combine-aspect: aspect-gmm
@@ -235,6 +235,13 @@ combine-aspect: aspect-gmm
 		-nln aux_points_aspect \
 		-sql "SELECT * FROM unco_deposits_filtered_aux_points_aspect" \
 		-unsetFid -append
+
+## inject-aux-aspect: Copy aux_points_aspect layer into the translated GPKG
+inject-aux-aspect: combine-aspect $(TRANSLATED_PATH)
+	@echo "--- Injecting aux_points_aspect into $(TRANSLATED_PATH) ---"
+	-ogrinfo $(TRANSLATED_PATH) -sql "DROP TABLE aux_points_aspect" -dialect OGRSQL > /dev/null 2>&1 || true
+	@ogr2ogr -f GPKG -update -append $(TRANSLATED_PATH) $(GEOCOVER_AUX_PATH) aux_points_aspect
+	@echo "Done."
 
 # Group targets for easier execution
 ## aspect-simple: Add angular aspect using the simple model
