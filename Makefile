@@ -26,7 +26,7 @@ LAST_DATAMODEL_SOURCES = $(DATAMODEL_SOURCES)$(V2)
 RELEASE      := R17
 DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/
 OUTPUT_DIR   := ${HOME}/DATA/Derivations/output/$(RELEASE)/
-STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/styles/2026-03-23/
+STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/styles/2026-04-23/
 TRANSLATION_CSV := $(LAST_DATAMODEL_SOURCES)/geolcodes_translated.csv
 STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/R16/Excels/2026a_Update_stratiLINK.xlsx
 GCOVER_DATA_DIR :=  src/gcover/data/
@@ -40,7 +40,7 @@ ASPECT_LAYERS := $(strip $(ASPECT_LAYERS))
 # File Paths
 MASTER_GDB        := $(OUTPUT_DIR)merged_master.gdb
 DENORMALIZED_GPKG := denormalized.gpkg
-DENORMALIZED_PATH := $(OUTPUT_DIR)$(DENORMALIZED_GPKG)  # name auto
+DENORMALIZED_PATH := $(OUTPUT_DIR)$(DENORMALIZED_GPKG)
 CLASSIFIED_GPKG	  := denormalized_classified.gpkg
 CLASSIFIED_PATH   := $(OUTPUT_DIR)$(CLASSIFIED_GPKG)
 TRANSLATED_GPKG   := denormalized_classified_translated.gpkg
@@ -111,7 +111,6 @@ help:
 	@echo "  Output dir:           $(OUTPUT_DIR)"
 	$(call check_file,MASTER_GDB,$(MASTER_GDB))
 	$(call check_file,DENORMALIZED_PATH,$(DENORMALIZED_PATH))
-	$(call check_file,CLASSIFIED_PATH,$(CLASSIFIED_PATH))
 	$(call check_file,CLASSIFIED_PATH,$(CLASSIFIED_PATH))
 	$(call check_file,TRANSLATED_PATH,$(TRANSLATED_PATH))
 	$(call check_file,GEOCOVER_AUX_PATH,$(GEOCOVER_AUX_PATH))
