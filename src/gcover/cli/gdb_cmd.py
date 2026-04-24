@@ -1505,35 +1505,43 @@ def stats(ctx, by_date, by_type, storage, db_path):
     is_flag=True,
     help="Also show if they form a release couple (created close together)",
 )
+@click.option(
+    "--metadata-s3-key",
+    default=DEFAULT_METADATA_S3_KEY,
+    show_default=True,
+    help="S3 key of the metadata Parquet (used when --db-path is not given)",
+)
 @db_path_option
 @click.pass_context
-def latest_by_rc(ctx, asset_type, days_back, show_couple, db_path):
+def latest_by_rc(ctx, asset_type, days_back, show_couple, metadata_s3_key, db_path):
     """Show the latest asset for each RC (RC1/RC2)"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
 
     s3_config = global_config.s3
 
-    db_path = get_db_path(gdb_config, db_path)
-
-
     try:
-        # Create manager instance (reusing existing logic)
-        s3_bucket = gdb_config.get_s3_bucket(global_config)
-        s3_profile = gdb_config.get_s3_profile(global_config)
-
-        manager = GDBAssetManager(
-            base_paths=gdb_config.base_paths,
-            s3_config=s3_config,  # TODO
-            # s3_bucket=s3_bucket,
-            db_path=db_path ,
-            temp_dir=gdb_config.temp_dir,
-            # aws_profile=s3_profile,
-        )
+        if db_path:
+            rprint(f"[blue]Using local metadata DB: {db_path}[/blue]")
+            manager = GDBAssetManager(
+                base_paths=gdb_config.base_paths,
+                s3_config=s3_config,
+                db_path=db_path,
+                temp_dir=gdb_config.temp_dir,
+            )
+            def _get_latest(atype):
+                return manager.get_latest_assets_by_rc(asset_type=atype, days_back=days_back)
+            def _get_couple(atype):
+                return manager.get_latest_release_couple(asset_type=atype)
+        else:
+            rprint(f"[cyan]Fetching metadata from s3://{s3_config.bucket}/{metadata_s3_key}...[/cyan]")
+            parquet_path = fetch_metadata_parquet(s3_config, metadata_s3_key)
+            def _get_latest(atype):
+                return query_latest_assets_by_rc(parquet_path, asset_type=atype)
+            def _get_couple(atype):
+                return None  # not supported from parquet
 
         # Get latest assets
-        latest_assets = manager.get_latest_assets_by_rc(
-            asset_type=asset_type, days_back=days_back
-        )
+        latest_assets = _get_latest(asset_type)
 
         if not latest_assets:
             asset_filter = f" for {asset_type}" if asset_type else ""
@@ -1573,7 +1581,7 @@ def latest_by_rc(ctx, asset_type, days_back, show_couple, db_path):
 
         # Show release couple information
         if show_couple and len(latest_assets) == 2:
-            couple = manager.get_latest_release_couple(asset_type=asset_type)
+            couple = _get_couple(asset_type)
             if couple:
                 rc1_date, rc2_date = couple
                 days_apart = abs((rc1_date - rc2_date).days)
