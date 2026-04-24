@@ -243,7 +243,7 @@ combine-aspect: aspect-gmm
 		-unsetFid -append
 
 ## inject-aux-aspect: Copy aux_points_aspect layer into the translated GPKG
-inject-aux-aspect: combine-aspect $(TRANSLATED_PATH)
+inject-aux-aspect: combine-aspect | $(TRANSLATED_PATH)
 	@echo "--- Injecting aux_points_aspect into $(TRANSLATED_PATH) ---"
 	-ogrinfo $(TRANSLATED_PATH) -sql "DROP TABLE aux_points_aspect" -dialect OGRSQL > /dev/null 2>&1 || true
 	@ogr2ogr -f GPKG -update -append $(TRANSLATED_PATH) $(GEOCOVER_AUX_PATH) aux_points_aspect
