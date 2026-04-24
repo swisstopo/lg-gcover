@@ -207,6 +207,13 @@ classify: $(CLASSIFIED_PATH)
 ## translate: Add human-readable values for geolcodes
 translate: $(TRANSLATED_PATH)
 
+## checksum: Compute SHA256 checksum of the translated GPKG
+.PHONY: checksum
+checksum:
+	$(call check_file,TRANSLATED_PATH,$(TRANSLATED_PATH))
+	@sha256sum $(TRANSLATED_PATH) | tee $(TRANSLATED_PATH).sha256
+	@echo "Written to $(TRANSLATED_PATH).sha256"
+
 ## geocover-aux: Create auxiliary grid sur surfaces/unco deposits
 
 $(GEOCOVER_AUX_PATH):
