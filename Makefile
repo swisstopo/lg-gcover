@@ -207,6 +207,16 @@ classify: $(CLASSIFIED_PATH)
 ## translate: Add human-readable values for geolcodes
 translate: $(TRANSLATED_PATH)
 
+## pipeline-check: Check feature counts are consistent across merge→denormalize→classify→translate
+.PHONY: pipeline-check
+pipeline-check:
+	@python scripts/check_pipeline_counts.py \
+		$(DENORMALIZED_PATH) \
+		$(CLASSIFIED_PATH) \
+		$(TRANSLATED_PATH) \
+		--gdb $(MASTER_GDB) \
+		--config $(CONFIG_PATH)
+
 ## checksum: Compute SHA256 checksum of the translated GPKG
 .PHONY: checksum
 checksum:
