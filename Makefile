@@ -223,6 +223,16 @@ checksum:
 	$(call check_file,TRANSLATED_PATH,$(TRANSLATED_PATH))
 	@sha256sum $(TRANSLATED_PATH) | tee $(TRANSLATED_PATH).sha256
 	@echo "Written to $(TRANSLATED_PATH).sha256"
+## coverage-check: Check classification coverage and extract unclassified features
+.PHONY: coverage-check
+coverage-check:
+	@python scripts/check_classification_coverage.py \
+		$(CLASSIFIED_PATH) \
+		$(CONFIG_PATH) \
+		--report $(OUTPUT_DIR)unclassified.txt \
+		--top-n 500 \
+		--output-gpkg $(OUTPUT_DIR)unclassified.gpkg
+
 
 ## geocover-aux: Create auxiliary grid sur surfaces/unco deposits
 
