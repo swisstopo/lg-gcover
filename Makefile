@@ -26,7 +26,7 @@ LAST_DATAMODEL_SOURCES = $(DATAMODEL_SOURCES)$(V2)
 RELEASE      := R17
 DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/
 OUTPUT_DIR   := ${HOME}/DATA/Derivations/output/$(RELEASE)/
-STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/styles/2026-03-23/
+STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/styles/2026-04-23/
 TRANSLATION_CSV := $(LAST_DATAMODEL_SOURCES)/geolcodes_translated.csv
 STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/R16/Excels/2026a_Update_stratiLINK.xlsx
 GCOVER_DATA_DIR :=  src/gcover/data/
@@ -40,7 +40,7 @@ ASPECT_LAYERS := $(strip $(ASPECT_LAYERS))
 # File Paths
 MASTER_GDB        := $(OUTPUT_DIR)merged_master.gdb
 DENORMALIZED_GPKG := denormalized.gpkg
-DENORMALIZED_PATH := $(OUTPUT_DIR)$(DENORMALIZED_GPKG)  # name auto
+DENORMALIZED_PATH := $(OUTPUT_DIR)$(DENORMALIZED_GPKG)
 CLASSIFIED_GPKG	  := denormalized_classified.gpkg
 CLASSIFIED_PATH   := $(OUTPUT_DIR)$(CLASSIFIED_GPKG)
 TRANSLATED_GPKG   := denormalized_classified_translated.gpkg
@@ -111,7 +111,6 @@ help:
 	@echo "  Output dir:           $(OUTPUT_DIR)"
 	$(call check_file,MASTER_GDB,$(MASTER_GDB))
 	$(call check_file,DENORMALIZED_PATH,$(DENORMALIZED_PATH))
-	$(call check_file,CLASSIFIED_PATH,$(CLASSIFIED_PATH))
 	$(call check_file,CLASSIFIED_PATH,$(CLASSIFIED_PATH))
 	$(call check_file,TRANSLATED_PATH,$(TRANSLATED_PATH))
 	$(call check_file,GEOCOVER_AUX_PATH,$(GEOCOVER_AUX_PATH))
@@ -208,6 +207,23 @@ classify: $(CLASSIFIED_PATH)
 ## translate: Add human-readable values for geolcodes
 translate: $(TRANSLATED_PATH)
 
+## pipeline-check: Check feature counts are consistent across merge→denormalize→classify→translate
+.PHONY: pipeline-check
+pipeline-check:
+	@python scripts/check_pipeline_counts.py \
+		$(DENORMALIZED_PATH) \
+		$(CLASSIFIED_PATH) \
+		$(TRANSLATED_PATH) \
+		--gdb $(MASTER_GDB) \
+		--config $(CONFIG_PATH)
+
+## checksum: Compute SHA256 checksum of the translated GPKG
+.PHONY: checksum
+checksum:
+	$(call check_file,TRANSLATED_PATH,$(TRANSLATED_PATH))
+	@sha256sum $(TRANSLATED_PATH) | tee $(TRANSLATED_PATH).sha256
+	@echo "Written to $(TRANSLATED_PATH).sha256"
+
 ## geocover-aux: Create auxiliary grid sur surfaces/unco deposits
 
 $(GEOCOVER_AUX_PATH):
@@ -237,7 +253,7 @@ combine-aspect: aspect-gmm
 		-unsetFid -append
 
 ## inject-aux-aspect: Copy aux_points_aspect layer into the translated GPKG
-inject-aux-aspect: combine-aspect $(TRANSLATED_PATH)
+inject-aux-aspect: combine-aspect | $(TRANSLATED_PATH)
 	@echo "--- Injecting aux_points_aspect into $(TRANSLATED_PATH) ---"
 	-ogrinfo $(TRANSLATED_PATH) -sql "DROP TABLE aux_points_aspect" -dialect OGRSQL > /dev/null 2>&1 || true
 	@ogr2ogr -f GPKG -update -append $(TRANSLATED_PATH) $(GEOCOVER_AUX_PATH) aux_points_aspect
