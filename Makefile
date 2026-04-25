@@ -223,6 +223,14 @@ checksum:
 	$(call check_file,TRANSLATED_PATH,$(TRANSLATED_PATH))
 	@sha256sum $(TRANSLATED_PATH) | tee $(TRANSLATED_PATH).sha256
 	@echo "Written to $(TRANSLATED_PATH).sha256"
+## geometry-check: Check geometry validity and bedrock/unco_deposits coverage per mapsheet
+.PHONY: geometry-check
+geometry-check:
+	@python scripts/check_geometry_coverage.py \
+		$(MASTER_GDB) \
+		--output-gpkg $(OUTPUT_DIR)geometry_check.gpkg \
+		--report $(OUTPUT_DIR)geometry_check.txt
+
 ## coverage-check: Check classification coverage and extract unclassified features
 .PHONY: coverage-check
 coverage-check:
