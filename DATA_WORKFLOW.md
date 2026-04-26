@@ -177,3 +177,105 @@ This stage also **normalises all column names to lowercase** (`--lowercase-colum
 | `make clean-denormalize` | Remove denormalized + classified GPKGs |
 | `make clean-all` | Remove all generated GDB and GPKG artefacts |
 | `make merge-diagnostic` | Run the merge diagnostic script without regenerating the master GDB |
+| `make geometry-check`   | Check invalid geometries and bedrock/unco coverage |
+
+
+### Geometries check and coverage
+
+#### Usage
+
+```commandline
+make geometry-check
+
+Loading layers from GDB...
+  GC_BEDROCK: 297,159 features
+  GC_UNCO_DESPOSIT: 234,192 features
+  Mapsheets: 220
+
+Geometry validation...
+  GC_BEDROCK: 297,146 valid  13 invalid  0 empty
+  GC_UNCO_DESPOSIT: 234,186 valid  6 invalid  0 empty
+  ⚠  19 issues written to 'invalid_geometries'
+
+Building spatial indexes...
+
+Analysing mapsheets...
+  [1136] Liechtenstein ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100%
+                       Coverage & Approach Summary                       
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┓
+┃                                          ┃    Count ┃    RC1 ┃    RC2 ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━┩
+│ Approach 1 (bedrock fills, unco          │       21 │      3 │     18 │
+│ overlaps)                                │          │        │        │
+│ Approach 2 (contiguous tiling)           │      151 │    120 │     29 │
+│ Mixed / ambiguous                        │       48 │     21 │     27 │
+│ Bedrock only (no unco_deposits)          │        0 │      0 │      0 │
+│                                          │          │        │        │
+│ Mapsheets with gaps > 100 m²             │       64 │     29 │     33 │
+│ Invalid / empty geometries               │       19 │        │        │
+└──────────────────────────────────────────┴──────────┴────────┴────────┘
+
+✓ Results written to /home/marco/DATA/Derivations/output/R17/geometry_check.gpkg (220 mapsheets, 64 gaps)
+✓ Report written to /home/marco/DATA/Derivations/output/R17/geometry_check.txt
+
+```
+
+
+#### Script structure
+
+Three independent checks per mapsheet
+
+  Load once, iterate 220 times:
+  1. Read GC_BEDROCK + GC_UNCO_DESPOSIT fully into memory (~800 MB, one-time cost)
+  2. Build a STRtree spatial index on each
+  3. Load the 220 mapsheets from gcover.data (mapsheets_sources_only)
+  4. For each mapsheet: query both indexes by bbox → clip to exact boundary → compute all metrics below
+
+  ---
+  Metrics computed per mapsheet
+
+  ┌───────────────────┬────────────────────────────────────────────────────────────────────────────────────────┐
+  │      Metric       │                                          How                                           │
+  ├───────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+  │ bedrock_coverage  │ area(unary_union(clipped_bedrock)) / mapsheet_area                                     │
+  ├───────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+  │ unco_coverage     │ area(unary_union(clipped_unco)) / mapsheet_area                                        │
+  ├───────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+  │ combined_coverage │ area(bedrock_union ∪ unco_union) / mapsheet_area                                       │
+  ├───────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+  │ overlap_ratio     │ area(bedrock_union ∩ unco_union) / unco_area — how much of unco sits on top of bedrock │
+  ├───────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+  │ gap_area          │ mapsheet_geom.difference(bedrock_union ∪ unco_union) — uncovered area                  │
+  └───────────────────┴────────────────────────────────────────────────────────────────────────────────────────┘
+
+  ---
+  Approach detection logic
+
+  - Approach 1 (bedrock fills, unco overlaps on top): bedrock_coverage > 0.95 AND overlap_ratio > 0.30
+  - Approach 2 (contiguous tiling, bedrock + unco together cover the sheet): overlap_ratio < 0.05
+  - Mixed / ambiguous: anything in between — worth flagging for manual review
+
+  SOURCE_RC goes into every output row so gaps and ambiguous mapsheets can be directly attributed to RC1 or RC2.
+
+  ---
+  Output GPKG — three layers
+
+  - mapsheet_metrics — one row per mapsheet: all metrics + approach classification + SOURCE_RC + MSH_MAP_NBR
+  - coverage_gaps — gap polygons with mapsheet number + area (only where gap_area > threshold, default 100 m²)
+  - invalid_geometries — one row per bad feature from either layer, with UUID + layer name + explain_validity() reason
+
+  ---
+  On the border question
+
+  Since mapsheets are the definitive reference and --no-clip-to-swiss-border was used during merge, outer-border mapsheets may show systematic gaps at the national boundary. Worth adding a border_mapsheet flag (detectable if MSH_MAP_NBR is in a known list, or if the mapsheet
+  geometry touches the borders_100m layer) so those false positives can be filtered in the report.
+
+
+                                                                                                                                                                                                                                          
+                                                                                                                                                                                                                                                                                    
+● Clean. A few design notes worth knowing before you run it:                                                                                                                                                                                                                        
+                                                                                                                                                                                                                                                                                    
+  - ~15 min estimate for the full 220 mapsheets with ~531k features — the progress bar shows mapsheet number + title so you can see it moving                                                                                                                                       
+  - The summary table breaks down approach 1/2/mixed by RC1 vs RC2, so you can immediately see if one RC is systematically using a different approach (which could indicate a data consistency issue)                                                                               
+  - bedrock only handles the edge case of mapsheets with zero unco_deposits features — classifying those as approach 2 would be misleading                                                                                                                                          
+  - The mapsheet_metrics layer in the output GPKG carries all numeric columns, so you can visualise e.g. combined_cov_pct or approach directly in QGIS as a choropleth over the mapsheets 
