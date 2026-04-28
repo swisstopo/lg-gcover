@@ -1239,7 +1239,7 @@ def process_all(
                     Path(tempfile.mkdtemp(prefix="gcover_metadata_")) / "gdb_assets.parquet"
                 )
                 manager.metadata_db.export_to_parquet(parquet_path)
-                result = manager.s3_uploader.upload_file(parquet_path, metadata_s3_key)
+                result = manager.s3_uploader.upload_file(parquet_path, metadata_s3_key, overwrite=True)
                 if result.success:
                     rprint(f"[green]Metadata published to s3://{s3_config.bucket}/{metadata_s3_key}[/green]")
                 else:
@@ -2564,7 +2564,7 @@ def publish_metadata(ctx, s3_key, output_dir, no_upload, db_path):
             proxy_config=s3_config.proxy,
             upload_method=s3_config.upload_method,
         )
-        result = uploader.upload_file(parquet_path, s3_key)
+        result = uploader.upload_file(parquet_path, s3_key, overwrite=True)
     except Exception as e:
         rprint(f"[red]Upload failed: {e}[/red]")
         sys.exit(1)
