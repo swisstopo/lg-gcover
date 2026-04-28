@@ -231,6 +231,26 @@ geometry-check:
 		--output-gpkg $(OUTPUT_DIR)geometry_check.gpkg \
 		--report $(OUTPUT_DIR)geometry_check.txt
 
+## line-topology-check: Check tectonic line topology against GC_BEDROCK boundaries per mapsheet
+## Use MAPSHEET=1145 to restrict to a single sheet during debugging.
+.PHONY: line-topology-check
+line-topology-check:
+	@python scripts/check_line_topology.py \
+		$(MASTER_GDB) \
+		--output-gpkg $(OUTPUT_DIR)line_topology_check.gpkg \
+		--report $(OUTPUT_DIR)line_topology_check.txt \
+  		$(if $(MAPSHEET),--mapsheet $(MAPSHEET),)
+
+## polygon-topology-check: Check polygon micro-gaps and overlaps within and across layers per mapsheet
+## Use MAPSHEET=1214 to restrict to a single sheet during debugging.
+.PHONY: polygon-topology-check
+polygon-topology-check:
+	@python scripts/check_polygon_topology.py \
+		$(MASTER_GDB) \
+		--output-gpkg $(OUTPUT_DIR)polygon_topology_check.gpkg \
+		--report $(OUTPUT_DIR)polygon_topology_check.txt \
+		$(if $(MAPSHEET),--mapsheet $(MAPSHEET),)
+
 ## coverage-check: Check classification coverage and extract unclassified features
 .PHONY: coverage-check
 coverage-check:
