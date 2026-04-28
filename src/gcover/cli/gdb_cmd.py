@@ -957,6 +957,11 @@ def process(ctx, gdb_path, no_upload):
     help="Continue processing other assets if one fails",
 )
 @click.option("--no-upload", is_flag=True, help="Skip S3 upload")
+@click.option(
+    "--no-publish-metadata",
+    is_flag=True,
+    help="Skip publishing metadata Parquet to S3 after processing",
+)
 @click.pass_context
 def process_all(
     ctx,
@@ -968,6 +973,7 @@ def process_all(
     max_workers,
     continue_on_error,
     no_upload,
+    no_publish_metadata,
     yes,
 ):
     """Process all GDB assets found by filesystem scan"""
@@ -1221,6 +1227,26 @@ def process_all(
 
         if stats["failed"] > 0 and not continue_on_error:
             sys.exit(1)
+
+        # Auto-publish metadata parquet after processing
+        if not no_upload and not no_publish_metadata and stats["processed"] > 0:
+            import tempfile
+
+            metadata_s3_key = DEFAULT_METADATA_S3_KEY
+            rprint(f"\n[cyan]Publishing metadata to s3://{s3_config.bucket}/{metadata_s3_key}...[/cyan]")
+            try:
+                parquet_path = (
+                    Path(tempfile.mkdtemp(prefix="gcover_metadata_")) / "gdb_assets.parquet"
+                )
+                manager.metadata_db.export_to_parquet(parquet_path)
+                result = manager.s3_uploader.upload_file(parquet_path, metadata_s3_key)
+                if result.success:
+                    rprint(f"[green]Metadata published to s3://{s3_config.bucket}/{metadata_s3_key}[/green]")
+                else:
+                    rprint(f"[red]Metadata upload failed (HTTP {result.status_code}): {result.error_message}[/red]")
+                parquet_path.unlink(missing_ok=True)
+            except Exception as e:
+                rprint(f"[red]Metadata publish failed: {e}[/red]")
 
     except Exception as e:
         rprint(f"[red]Process-all failed: {e}[/red]")
