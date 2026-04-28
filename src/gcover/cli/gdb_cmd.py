@@ -1241,7 +1241,9 @@ def process_all(
                 )
                 manager.metadata_db.export_to_parquet(parquet_path)
 
+
                 result = manager.s3_uploader.upload_file(parquet_path, metadata_s3_key, overwrite=True)
+
 
                 if result.success:
                     rprint(f"[green]Metadata published to s3://{s3_config.bucket}/{metadata_s3_key}[/green]")
