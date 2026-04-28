@@ -852,6 +852,15 @@ class GeoCoverDenormalizer:
         logger.info(f"Loaded {len(mapping_unit_att_df)} mapping unit attributes")
         logger.info(f"Loaded {len(mapping_unit_df)} mapping units")
 
+        # Keep DESCRIPTION from GC_BEDROCK before joins bring in DESCRIPTION from lookup tables
+        if "DESCRIPTION" in bedrock_gdf.columns:
+            bedrock_gdf = bedrock_gdf.rename(columns={"DESCRIPTION": "BEDROCK_DESCRIPTION"})
+            logger.debug("Preserved GC_BEDROCK.DESCRIPTION as BEDROCK_DESCRIPTION")
+        else:
+            logger.warning("GC_BEDROCK has no DESCRIPTION column — BEDROCK_DESCRIPTION will not appear in output")
+
+
+
         if progress and task_id:
             progress.update(task_id, description="Joining bedrock with attributes...")
 
@@ -968,10 +977,8 @@ class GeoCoverDenormalizer:
             columns=columns_to_drop, errors="ignore"
         )
 
-        if (
-                "DESCRIPTION" in denormalized_gdf.columns
-                and "DESCRIPTION" not in bedrock_gdf.columns
-        ):
+        # Any DESCRIPTION still present here came from the joined lookup tables, not GC_BEDROCK
+        if "DESCRIPTION" in denormalized_gdf.columns:
             denormalized_gdf = denormalized_gdf.rename(
                 columns={"DESCRIPTION": "MAPPING_UNIT_DESC"}
             )

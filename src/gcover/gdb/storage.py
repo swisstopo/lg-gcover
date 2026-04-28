@@ -310,20 +310,27 @@ class S3Uploader:
             logger.error(f"Error requesting presigned URL: {e}")
             return None
 
-    def _upload_with_presigned_url(self, file_path: Path, s3_key: str) -> UploadResult:
+    def _upload_with_presigned_url(
+        self, file_path: Path, s3_key: str, overwrite: bool = False
+    ) -> UploadResult:
         """
         Upload file using presigned URL with progress bar
 
         Args:
             file_path: Local file path
             s3_key: S3 object key
+            overwrite: If True, skip the exist-check so the Lambda issues a URL even
+                       when the object is already present (needed for mutable files
+                       like the metadata Parquet snapshot).
 
         Returns:
             UploadResult with status and details
         """
         try:
             file_size = file_path.stat().st_size
-            presigned_data = self._get_presigned_url(s3_key, file_size)
+            presigned_data = self._get_presigned_url(
+                s3_key, file_size, check_exists=not overwrite
+            )
 
             if not presigned_data:
                 return UploadResult(
@@ -562,13 +569,18 @@ class S3Uploader:
                 method="direct",
             )
 
-    def upload_file(self, file_path: Path, s3_key: str) -> UploadResult:
+    def upload_file(
+        self, file_path: Path, s3_key: str, overwrite: bool = False
+    ) -> UploadResult:
         """
         Upload file to S3 using configured method
 
         Args:
             file_path: Local file path
             s3_key: S3 object key
+            overwrite: If True, replace an existing object (skips the 409 exist-guard).
+                       Use for mutable files like metadata snapshots; leave False for
+                       immutable assets (GDB ZIPs) where accidental overwrite is a bug.
 
         Returns:
             UploadResult with status and details
@@ -576,7 +588,7 @@ class S3Uploader:
         logger.info(f"Uploading {file_path} to s3://{self.bucket_name}/{s3_key}")
 
         if self.use_presigned:
-            result = self._upload_with_presigned_url(file_path, s3_key)
+            result = self._upload_with_presigned_url(file_path, s3_key, overwrite=overwrite)
 
             # Fallback to direct upload if presigned fails and s3_client is available
             if not result.success and self.s3_client:
