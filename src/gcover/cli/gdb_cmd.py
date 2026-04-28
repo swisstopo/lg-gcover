@@ -4,6 +4,7 @@ CLI for GDB Asset Management System
 """
 
 import sys
+import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
