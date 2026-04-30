@@ -48,11 +48,10 @@ TRANSLATED_PATH   := $(OUTPUT_DIR)$(TRANSLATED_GPKG)
 FULL_GDB_PATH     := $(DELIVERY_DIR)RC1.gdb     # TODO Val Bregaglia missing GMU_ATT in RC2. RC1 OK
 GEOCOVER_AUX_PATH := $(OUTPUT_DIR)geocover_aux.gpkg
 ADMIN_ZONES_GPKG  := administrative_zones.gpkg
-MAPSERVER_OUTPUT  := mapserver_$(BRANCH)
-DEM_ASPECT_PATH   ?= $(DELIVERY_DIR)swissALTI3DRegio_aspect_50m.tif
 MAPSERVER_OUTPUT  ?= mapserver_$(BRANCH)
+DEM_ASPECT_PATH   ?= $(DELIVERY_DIR)swissALTI3DRegio_aspect_50m.tif
 PA_EXCEL_PATH     ?= $(DELIVERY_DIR)Excels/GC_Sources_PA.xlsx
-CONFIG_PATH       ?=config/esri_classifier_denormalized_geocover.yaml
+CONFIG_PATH       ?= config/esri_classifier_denormalized_geocover.yaml
 
 # Layers for denormalization
 LAYERS := fossils exploit_polygons exploit_points linear_objects point_objects bedrock surfaces unco_deposits
@@ -125,7 +124,14 @@ help:
 
 
 
-.PHONY: merge-diagnostic translate classify denormalize test lint format smoke install-dev doc
+.PHONY: help download administrative-zones all merge merge-diagnostic \
+        denormalize classify translate pipeline-check checksum \
+        geometry-check line-topology-check polygon-topology-check coverage-check \
+        geocover-aux aspect aspect-simple aspect-gmm combine-aspect inject-aux-aspect \
+        mapfiles \
+        install-dev format lint test smoke doc check \
+        clean-denormalize clean-translate clean-classify clean-master clean-all
+
 ### Data
 
 ## download:  Download RC1/RC2  backup
@@ -144,9 +150,9 @@ administrative-zones:
        --sources-file  $(PA_EXCEL_PATH)  \
        --output $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) \
        --overwrite
-	@cp -i $(PA_EXCEL_PATH)   $(GCOVER_DATA_DIR)GC_Sources_PA.xlsx
-	@cp -i $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) $(GCOVER_DATA_DIR)$(ADMIN_ZONES_GPKG)
-	@cp -i $(OUTPUT_DIR)administrative_zones.README $(GCOVER_DATA_DIR)adminstrative_zones.README
+	@cp -f $(PA_EXCEL_PATH)   $(GCOVER_DATA_DIR)GC_Sources_PA.xlsx
+	@cp -f $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) $(GCOVER_DATA_DIR)$(ADMIN_ZONES_GPKG)
+	@cp -f $(OUTPUT_DIR)administrative_zones.README $(GCOVER_DATA_DIR)adminstrative_zones.README
 	@echo "Don't forget to copy to mapserver-geocover/data directory!"
 
 
@@ -208,7 +214,6 @@ classify: $(CLASSIFIED_PATH)
 translate: $(TRANSLATED_PATH)
 
 ## pipeline-check: Check feature counts are consistent across merge→denormalize→classify→translate
-.PHONY: pipeline-check
 pipeline-check:
 	@python scripts/check_pipeline_counts.py \
 		$(DENORMALIZED_PATH) \
@@ -218,13 +223,11 @@ pipeline-check:
 		--config $(CONFIG_PATH)
 
 ## checksum: Compute SHA256 checksum of the translated GPKG
-.PHONY: checksum
 checksum:
 	$(call check_file,TRANSLATED_PATH,$(TRANSLATED_PATH))
 	@sha256sum $(TRANSLATED_PATH) | tee $(TRANSLATED_PATH).sha256
 	@echo "Written to $(TRANSLATED_PATH).sha256"
 ## geometry-check: Check geometry validity and bedrock/unco_deposits coverage per mapsheet
-.PHONY: geometry-check
 geometry-check:
 	@python scripts/check_geometry_coverage.py \
 		$(MASTER_GDB) \
@@ -233,7 +236,6 @@ geometry-check:
 
 ## line-topology-check: Check tectonic line topology against GC_BEDROCK boundaries per mapsheet
 ## Use MAPSHEET=1145 to restrict to a single sheet during debugging.
-.PHONY: line-topology-check
 line-topology-check:
 	@python scripts/check_line_topology.py \
 		$(MASTER_GDB) \
@@ -243,7 +245,6 @@ line-topology-check:
 
 ## polygon-topology-check: Check polygon micro-gaps and overlaps within and across layers per mapsheet
 ## Use MAPSHEET=1214 to restrict to a single sheet during debugging.
-.PHONY: polygon-topology-check
 polygon-topology-check:
 	@python scripts/check_polygon_topology.py \
 		$(MASTER_GDB) \
@@ -252,7 +253,6 @@ polygon-topology-check:
 		$(if $(MAPSHEET),--mapsheet $(MAPSHEET),)
 
 ## coverage-check: Check classification coverage and extract unclassified features
-.PHONY: coverage-check
 coverage-check:
 	@python scripts/check_classification_coverage.py \
 		$(CLASSIFIED_PATH) \
@@ -268,9 +268,7 @@ $(GEOCOVER_AUX_PATH):
 	python scripts/surfaces_auxilliary_points.py --copy-polygons -i $(CLASSIFIED_PATH) -l surfaces -s 80 -b 25 --output $(GEOCOVER_AUX_PATH)
 	python scripts/surfaces_auxilliary_points.py --copy-polygons -i $(CLASSIFIED_PATH) -l unco_deposits -s 80 -b 25 --output $(GEOCOVER_AUX_PATH)
 
-.PHONY: geocover-aux combine-aspect
 geocover-aux: $(GEOCOVER_AUX_PATH)
-.PHONY: aspect aspect-simple aspect-gmm
 
 # Master target to run everything
 ## aspect: Add angular aspect to hexagonal grid data
@@ -324,10 +322,9 @@ aspect-gmm-%: geocover-aux
 	@echo "Deleting auxiliary points (GMM) for $*..."
 	-ogrinfo $(GEOCOVER_AUX_PATH) -sql "DROP TABLE $*_aux_points_aspect" -dialect OGRSQL > /dev/null 2>&1 || true
 	@echo "Assigning aspect (GMM) for $*"
-	@$(eval LAYERNAME_NAME := $(patsubst %_filtered,%,$*))
 	@python scripts/surfaces_assign_aspect.py \
 		--polygons-layer $* \
-		--points-layer  $(LAYERNAME_NAME)_aux_points \
+		--points-layer  $(patsubst %_filtered,%,$*)_aux_points \
 		--output-layer $*_aux_points_aspect \
 		--join-key UUID \
 		$(GEOCOVER_AUX_PATH) $(DEM_ASPECT_PATH) \
@@ -335,11 +332,13 @@ aspect-gmm-%: geocover-aux
 	@ogrinfo $(GEOCOVER_AUX_PATH) -sql "UPDATE gpkg_contents SET description = 'model:gmm' WHERE table_name = '$*_aux_points_aspect'" > /dev/null
 
 
+data/extract_%.gpkg:
+	python scripts/export_test_data.py "$*"
+
+## test-data: Export test data GeoPackages for CI
+test-data: data/extract_bulle.gpkg data/extract_sion.gpkg
 
 
-
-
-.PHONY: mapfiles
 
 
 ## clean-denormalize: Clean denormalized artefacts
