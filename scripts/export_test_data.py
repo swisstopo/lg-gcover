@@ -8,11 +8,15 @@ from sqlalchemy import create_engine
 from loguru import logger
 from rich.console import Console
 
+from gcover.publish.style_config import BatchClassificationConfig
+
 # --- Setup ---
 console = Console()
 ROOT_DIR = Path(__file__).resolve().parent.parent  # Assumes script is in /scripts/
 DATA_DIR = ROOT_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
+
+CONFIG_FILE = ROOT_DIR / "config" / "esri_classifier_denormalized_geocover.yaml"
 
 # Configuration
 EXTRACTS = {
@@ -28,22 +32,23 @@ LAYERS = [
 
 
 def get_db_engine():
-    """Loads env and creates a DB connection."""
+    """Loads env and returns (engine, schema)."""
     load_dotenv(dotenv_path=ROOT_DIR / ".env.local")
 
-    user = os.getenv("POSTGRES_USER")
-    pw = os.getenv("POSTGRES_PASSWORD")
-    db = os.getenv("POSTGRES_DB")
+    user = os.getenv("GCOVER_POSTGIS_USER")
+    pw = os.getenv("GCOVER_POSTGIS_PASSWORD")
+    db = os.getenv("GCOVER_POSTGIS_DBNAME")
+    schema = os.getenv("GCOVER_POSTGIS_SCHEMA", "geol")
 
     if not all([user, pw, db]):
         logger.error("Missing DB environment variables in .env.local")
         sys.exit(1)
 
     url = f"postgresql://{user}:{pw}@localhost:54321/{db}"
-    return create_engine(url)
+    return create_engine(url), schema
 
 
-def run_extraction(target, extent, engine):
+def run_extraction(target, extent, engine, schema):
     """Handles the heavy lifting of spatial queries and file saving."""
     main_gpkg = DATA_DIR / f"extract_{target}.gpkg"
 
@@ -54,7 +59,7 @@ def run_extraction(target, extent, engine):
     for layer in LAYERS:
         # Determine schema/table name
         prefix = "" if layer in {"glacier_hydrology", "surfaces_aux_points"} else "geocover_"
-        table_name = f"geol.{prefix}{layer}"
+        table_name = f"{schema}.{prefix}{layer}"
 
         # Decide output path (Special case for aux points)
         current_out = DATA_DIR / "surfaces_aux.gpkg" if layer == 'surfaces_aux_points' else main_gpkg
@@ -97,6 +102,61 @@ def run_extraction(target, extent, engine):
             logger.error(f"Failed to extract {layer}: {e}")
 
 
+N_SAMPLES = 5  # candidate points per WMS layer; test code picks randomly
+
+
+def build_wms_test_points(gpkg_path: Path) -> None:
+    """
+    Append a wms_test_points layer to the GPKG: up to N_SAMPLES evenly-spaced
+    representative points per active WMS layer (mapfile_name).
+    """
+    if not CONFIG_FILE.exists():
+        logger.warning(f"Config not found, skipping wms_test_points: {CONFIG_FILE}")
+        return
+
+    config = BatchClassificationConfig(CONFIG_FILE)
+
+    # Build gpkg_layer → [mapfile_name, ...] for active classifications
+    layer_map: dict[str, list[str]] = {}
+    for layer_cfg in config.layers:
+        names = [
+            c.mapfile_name.strip()
+            for c in layer_cfg.classifications
+            if c.active and c.mapfile_name and c.mapfile_name.strip()
+        ]
+        if names:
+            layer_map.setdefault(layer_cfg.gpkg_layer, []).extend(names)
+
+    rows = []
+    for gpkg_layer, mapfile_names in layer_map.items():
+        if not gpkg_path.exists():
+            continue
+        try:
+            gdf = gpd.read_file(gpkg_path, layer=gpkg_layer)
+        except Exception:
+            continue
+        if gdf.empty:
+            continue
+
+        # Evenly-spaced sample for spatial variety across the extract
+        step = max(1, len(gdf) // N_SAMPLES)
+        sample_geoms = [
+            geom.representative_point()
+            for geom in gdf.geometry.iloc[::step].iloc[:N_SAMPLES]
+        ]
+        for name in mapfile_names:
+            for geom in sample_geoms:
+                rows.append({"wms_layer": name, "geometry": geom})
+
+    if not rows:
+        console.print("[yellow]⚠ No wms_test_points rows generated.[/yellow]")
+        return
+
+    result = gpd.GeoDataFrame(rows, crs=2056)
+    result.to_file(gpkg_path, layer="wms_test_points", driver="GPKG")
+    console.print(f"[green]✔[/green] Saved [bold]wms_test_points[/bold] ({len(result)} rows)")
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         console.print("[bold red]Usage:[/bold red] python scripts/export_test_data.py <target_name>")
@@ -108,10 +168,11 @@ if __name__ == "__main__":
         sys.exit(1)
 
     bbox = EXTRACTS[target]
-    engine = get_db_engine()
+    engine, schema = get_db_engine()
 
     console.print(f"=== [magenta]Extracting {target.upper()}[/magenta] ===", style="bold")
-    run_extraction(target, bbox, engine)
+    run_extraction(target, bbox, engine, schema)
+    build_wms_test_points(DATA_DIR / f"extract_{target}.gpkg")
 
     # Info for next steps
     profile = os.getenv("MAPSERVER_S3_PROFILE", "default")
