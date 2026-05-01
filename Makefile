@@ -48,10 +48,13 @@ TRANSLATED_PATH   := $(OUTPUT_DIR)$(TRANSLATED_GPKG)
 FULL_GDB_PATH     := $(DELIVERY_DIR)RC1.gdb     # TODO Val Bregaglia missing GMU_ATT in RC2. RC1 OK
 GEOCOVER_AUX_PATH := $(OUTPUT_DIR)geocover_aux.gpkg
 ADMIN_ZONES_GPKG  := administrative_zones.gpkg
-MAPSERVER_OUTPUT  ?= mapserver_$(BRANCH)
-DEM_ASPECT_PATH   ?= $(DELIVERY_DIR)swissALTI3DRegio_aspect_50m.tif
-PA_EXCEL_PATH     ?= $(DELIVERY_DIR)Excels/GC_Sources_PA.xlsx
-CONFIG_PATH       ?= config/esri_classifier_denormalized_geocover.yaml
+MAPSERVER_OUTPUT      ?= mapserver_$(BRANCH)
+DEM_ASPECT_PATH       ?= $(DELIVERY_DIR)swissALTI3DRegio_aspect_50m.tif
+PA_EXCEL_PATH         ?= $(DELIVERY_DIR)Excels/GC_Sources_PA.xlsx
+CONFIG_PATH           ?= config/esri_classifier_denormalized_geocover.yaml
+MAPSERVER_S3_BUCKET   ?= tf-cloudfront-s3-dubious-cloud
+MAPSERVER_S3_PROFILE  ?= default
+S3_GEODATA_PREFIX     := GEODATA/mapserver-geocover
 
 # Layers for denormalization
 LAYERS := fossils exploit_polygons exploit_points linear_objects point_objects bedrock surfaces unco_deposits
@@ -130,7 +133,8 @@ help:
         geocover-aux aspect aspect-simple aspect-gmm combine-aspect inject-aux-aspect \
         mapfiles \
         install-dev format lint test smoke doc check \
-        clean-denormalize clean-translate clean-classify clean-master clean-all
+        clean-denormalize clean-translate clean-classify clean-master clean-all \
+        upload-test-data
 
 ### Data
 
@@ -338,6 +342,18 @@ data/extract_%.gpkg:
 ## test-data: Export test data GeoPackages for CI
 test-data: data/extract_bulle.gpkg data/extract_sion.gpkg
 
+## upload-test-data: Upload CI test GeoPackages to S3 (requires test-data)
+upload-test-data: data/extract_bulle.gpkg data/surfaces_aux.gpkg
+	@echo "--- Uploading test data to s3://$(MAPSERVER_S3_BUCKET)/$(S3_GEODATA_PREFIX)/ ---"
+	aws s3 --profile $(MAPSERVER_S3_PROFILE) cp data/extract_bulle.gpkg \
+		s3://$(MAPSERVER_S3_BUCKET)/$(S3_GEODATA_PREFIX)/test_geodata.gpkg
+	aws s3 --profile $(MAPSERVER_S3_PROFILE) cp data/surfaces_aux.gpkg \
+		s3://$(MAPSERVER_S3_BUCKET)/$(S3_GEODATA_PREFIX)/surfaces_aux.gpkg
+
+## clean-test-data: Delete test data GeoPackages
+clean-test-data:
+	rm -f data/extract_bulle.gpkg
+	rm -f data/extract_sion.gpkg
 
 
 
