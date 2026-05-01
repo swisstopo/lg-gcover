@@ -1,20 +1,56 @@
 #!/usr/bin/env python
 
 """
-Create administrative_zones.gpkg from 4 standardized source files (WU, lots, mapsheet and sources.xlsx).
+Create administrative_zones.gpkg from 4 standardized source files.
 
-Simplified script that handles the real data sources with their actual attributes.
+Inputs
+------
+- lots.geojson         — lot polygons with LOT_NR, Resp, Status
+- WU.json              — work-unit polygons with NAME (→ WU_NAME)
+- mapsheets.geojson    — 1:25 000 mapsheet polygons with MSH_* attributes
+- GC_Sources_PA.xlsx   — per-mapsheet source assignments (BKP → SOURCE_RC)
+                         and document availability flags (BER, ERL)
 
-2025-09-05  Added `SOURCE_RC` sources for BKP (data for publication)
-2025-10-13  Added sources `SOURCE_QA`  for QA (before publication)
-2025-10-14  Added borders_100m layer (100m buffer around mapsheet borders)
-2026-01-28  Only warning if missing  `QA_SOURCE`
-2026-03-13  Adding BER and ERL, as well as complete links
-2026-03-15  Removed the `QA_SOURCE` completly
-2026-03-24  New WU.json export. Remomved sheet `Campodolcino`  (merged with `Val Bregaglia`). Using provisonal PA from R17
+Output layers (administrative_zones.gpkg)
+-----------------------------------------
+mapsheets_sources_only  Base mapsheets joined with SOURCE_RC, Version,
+                        and document links (ber_link, erl_link).
+mapsheets_with_sources  Same, further enriched with LOT_NR, WU_NAME (spatial
+                        join; values from multiple lots/WUs are pipe-separated).
+borders_100m            Single polygon: full mapped area minus a 100 m buffer
+                        around all internal mapsheet borders.  Used to identify
+                        features well away from any join line.
+border_segments         Classified border lines between adjacent mapsheets:
+                          RC1-RC1  both neighbours from RC1 (tolerant)
+                          RC1-RC2  one RC1, one RC2 (tolerant)
+                          RC2-RC2  both from RC2 (strict)
+                          land     external perimeter of the mapped area (strict)
+tolerance_zones_100m    Single polygon: 100 m buffer around tolerant borders
+                        (RC1-RC1 and RC1-RC2).  QA errors intersecting this zone
+                        can be ignored.
+strict_zones_100m       Full mapped area minus tolerance_zones_100m.  Only QA
+                        errors inside this zone need investigation.
+lots                    Raw lot polygons.
+work_units              Raw work-unit polygons.
+mapsheets               Raw mapsheet polygons (no source join).
+
+Changelog
+---------
+2025-09-05  Added SOURCE_RC (BKP) per mapsheet for publication tracking
+2025-10-13  Added SOURCE_QA per mapsheet for pre-publication QA
+2025-10-14  Added borders_100m layer
+2026-01-28  Downgraded missing SOURCE_QA to warning only
+2026-03-13  Added BER/ERL flags and ber_link/erl_link URL columns
+2026-03-15  Removed SOURCE_QA column entirely
+2026-03-24  New WU.json format; removed Campodolcino sheet (merged into Val Bregaglia); provisional PA for R17
+2026-04-25  Added border_segments, tolerance_zones_Xm, strict_zones_Xm for QA error border filtering
+2026-04-26  Improved docstring; added HTTP check for ber_link/erl_link URLs
+
 """
 
 import os
+import urllib.error
+import urllib.request
 import warnings
 from datetime import datetime as dt
 from importlib.resources import files
@@ -27,6 +63,7 @@ import pandas as pd
 from loguru import logger
 from rich.console import Console
 from rich.table import Table
+from shapely import STRtree
 from shapely.ops import unary_union
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -37,6 +74,24 @@ ERLAUETERUNG_LINK = "https://data.geo.admin.ch/ch.swisstopo.geologie-geologische
 BERICHT_LINK =      "https://data.geo.admin.ch/ch.swisstopo.geologie-geocover/berichte/BER_"
 
 console = Console()
+
+
+def _check_pdf_urls(df: pd.DataFrame, url_cols: list[str], timeout: int = 5) -> None:
+    """Issue a HEAD request for every non-empty URL and warn on HTTP errors."""
+    for col in url_cols:
+        if col not in df.columns:
+            continue
+        urls = df[col].dropna()
+        urls = urls[urls != ""]
+        for url in urls:
+            try:
+                req = urllib.request.Request(url, method="HEAD")
+                with urllib.request.urlopen(req, timeout=timeout):
+                    pass
+            except urllib.error.HTTPError as exc:
+                logger.warning(f"PDF not found ({exc.code}): {url}")
+            except Exception as exc:
+                logger.warning(f"PDF unreachable ({exc}): {url}")
 
 
 def load_lots(lots_path: Path) -> gpd.GeoDataFrame:
@@ -206,6 +261,7 @@ def load_sources(sources_path: Path) -> pd.DataFrame:
           axis = 1
         )
 
+        _check_pdf_urls(sources_clean, ["erl_link", "ber_link"])
 
         logger.info(
             f"Loaded {len(sources_clean)} source records with columns: {list(sources_clean.columns)}"
@@ -451,6 +507,131 @@ def border_mapsheet(
     inner_area_gdf = gpd.GeoDataFrame(geometry=[inner_area], crs=mapsheets.crs)
 
     return inner_area_gdf
+
+
+def classify_border_segments(
+    mapsheets_with_sources: gpd.GeoDataFrame,
+    buffer_distance: float = 100,
+) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
+    """Find adjacent mapsheet pairs, classify shared borders by RC type.
+
+    Returns (border_segments_gdf, tolerance_zones_gdf).
+    Tolerant borders (RC1-RC1, RC1-RC2) are buffered to form the tolerance zones.
+    Land border = external perimeter; classified strict (not buffered).
+    """
+    msh = mapsheets_with_sources.reset_index(drop=True)
+    geoms = list(msh.geometry)
+    tree = STRtree(geoms)
+
+    border_rows = []
+    seen_pairs: set[tuple[int, int]] = set()
+
+    for i, geom_i in enumerate(geoms):
+        candidates = tree.query(geom_i)
+        for j in candidates:
+            if j <= i:
+                continue
+            if (i, j) in seen_pairs:
+                continue
+            seen_pairs.add((i, j))
+
+            try:
+                shared = geom_i.intersection(geoms[j])
+            except Exception:
+                continue
+
+            if shared.is_empty:
+                continue
+            if shared.geom_type in ("Point", "MultiPoint"):
+                continue
+            if shared.geom_type == "GeometryCollection":
+                lines = [g for g in shared.geoms if "Line" in g.geom_type]
+                if not lines:
+                    continue
+                shared = unary_union(lines)
+            if "Line" not in shared.geom_type:
+                continue
+
+            left_rc = msh.iloc[i].get("SOURCE_RC") if "SOURCE_RC" in msh.columns else None
+            right_rc = msh.iloc[j].get("SOURCE_RC") if "SOURCE_RC" in msh.columns else None
+
+            left_rc_str = str(left_rc) if pd.notna(left_rc) else "unknown"
+            right_rc_str = str(right_rc) if pd.notna(right_rc) else "unknown"
+            pair_rcs = tuple(sorted([left_rc_str, right_rc_str]))
+
+            if pair_rcs == ("RC1", "RC1"):
+                border_type = "RC1-RC1"
+            elif pair_rcs == ("RC2", "RC2"):
+                border_type = "RC2-RC2"
+            elif set(pair_rcs) == {"RC1", "RC2"}:
+                border_type = "RC1-RC2"
+            else:
+                border_type = "-".join(pair_rcs)
+
+            border_rows.append({
+                "geometry": shared,
+                "border_type": border_type,
+                "left_msh": msh.iloc[i].get("MSH_MAP_NBR"),
+                "right_msh": msh.iloc[j].get("MSH_MAP_NBR"),
+                "left_rc": left_rc_str,
+                "right_rc": right_rc_str,
+            })
+
+    if border_rows:
+        border_segments_gdf = gpd.GeoDataFrame(border_rows, crs=msh.crs)
+    else:
+        border_segments_gdf = gpd.GeoDataFrame(
+            columns=["geometry", "border_type", "left_msh", "right_msh", "left_rc", "right_rc"],
+            crs=msh.crs,
+        )
+
+    # Land border = outer perimeter of the union of all mapsheets.
+    # Internal shared segments lie in the interior of the union and are absent here.
+    land_geom = unary_union(geoms).boundary
+    if not land_geom.is_empty:
+        land_row = gpd.GeoDataFrame([{
+            "geometry": land_geom,
+            "border_type": "land",
+            "left_msh": None,
+            "right_msh": None,
+            "left_rc": None,
+            "right_rc": None,
+        }], crs=msh.crs)
+        border_segments_gdf = pd.concat([border_segments_gdf, land_row], ignore_index=True)
+
+    # Tolerance zones: buffer RC1-RC1 and RC1-RC2 borders only
+    total_area = unary_union(geoms)
+    tolerant = border_segments_gdf[border_segments_gdf["border_type"].isin(["RC1-RC1", "RC1-RC2"])]
+    if not tolerant.empty:
+        tolerant_union = unary_union(tolerant.geometry.values)
+        tolerance_poly = tolerant_union.buffer(buffer_distance)
+        tolerance_zones_gdf = gpd.GeoDataFrame(
+            [{
+                "geometry": tolerance_poly,
+                "buffer_m": buffer_distance,
+                "border_types": "RC1-RC1,RC1-RC2",
+                "description": f"{buffer_distance}m tolerance zone around RC1 borders",
+            }],
+            crs=msh.crs,
+        )
+        strict_poly = total_area.difference(tolerance_poly)
+    else:
+        tolerance_zones_gdf = gpd.GeoDataFrame(
+            columns=["geometry", "buffer_m", "border_types", "description"],
+            crs=msh.crs,
+        )
+        strict_poly = total_area
+
+    strict_zones_gdf = gpd.GeoDataFrame(
+        [{
+            "geometry": strict_poly,
+            "buffer_m": buffer_distance,
+            "description": f"Mapped area minus {buffer_distance}m RC1 border tolerance zones",
+        }],
+        crs=msh.crs,
+    )
+
+    return border_segments_gdf, tolerance_zones_gdf, strict_zones_gdf
 
 
 def clean_wu(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -736,6 +917,28 @@ def create_administrative_zones(
         border_gdf.to_file(
             output_path, layer=f"borders_{buffer_distance}m", driver="GPKG", mode="a"
         )
+
+        # Classified border segments and tolerance zones
+        click.echo("🗺️  Classifying border segments...")
+        border_segments_gdf, tolerance_zones_gdf, strict_zones_gdf = classify_border_segments(
+            mapsheets_with_sources, buffer_distance=buffer_distance
+        )
+        border_segments_gdf.to_file(
+            output_path, layer="border_segments", driver="GPKG", mode="a"
+        )
+        logger.info(f"✓ Written layer: border_segments ({len(border_segments_gdf)} features)")
+
+        tolerance_layer = f"tolerance_zones_{buffer_distance}m"
+        tolerance_zones_gdf.to_file(
+            output_path, layer=tolerance_layer, driver="GPKG", mode="a"
+        )
+        logger.info(f"✓ Written layer: {tolerance_layer} ({len(tolerance_zones_gdf)} features)")
+
+        strict_layer = f"strict_zones_{buffer_distance}m"
+        strict_zones_gdf.to_file(
+            output_path, layer=strict_layer, driver="GPKG", mode="a"
+        )
+        logger.info(f"✓ Written layer: {strict_layer} ({len(strict_zones_gdf)} features)")
 
         # Individual zone layers
         lots_gdf.to_file(output_path, layer="lots", driver="GPKG", mode="a")
