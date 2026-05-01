@@ -38,7 +38,7 @@ ASPECT_LAYERS := $(strip $(ASPECT_LAYERS))
 
 
 # File Paths
-MASTER_GDB        := $(OUTPUT_DIR)merged_master.gdb
+MASTER_GDB        ?= $(OUTPUT_DIR)merged_master.gdb
 DENORMALIZED_GPKG := denormalized.gpkg
 DENORMALIZED_PATH := $(OUTPUT_DIR)$(DENORMALIZED_GPKG)
 CLASSIFIED_GPKG	  := denormalized_classified.gpkg
@@ -197,6 +197,7 @@ $(DENORMALIZED_PATH): $(MASTER_GDB)/timestamps
 	done
 
 $(TRANSLATED_PATH): $(CLASSIFIED_PATH)
+	@echo "--- Translating $(CLASSIFIED_PATH) ---"
 	@echo "Saving to $(TRANSLATED_PATH)"
 	python ./scripts/translate_gpkg.py -t $(TRANSLATION_CSV) \
 		--strati-links $(STRATI_LINK_PATH) \
@@ -204,7 +205,7 @@ $(TRANSLATED_PATH): $(CLASSIFIED_PATH)
 		--lowercase-columns --output $(TRANSLATED_PATH)  --langs de,fr  $(CLASSIFIED_PATH)
 
 $(CLASSIFIED_PATH): $(DENORMALIZED_PATH)
-	@echo "--- Applying Style Configuration ---"
+	@echo "--- Applying Style Configuration to $(DENORMALIZED_PATH)---"
 	@gcover --env sandisk publish apply-config --styles-dir $(STYLES_DIR) \
 		$(DENORMALIZED_PATH) $(CONFIG_PATH)
 
@@ -236,11 +237,6 @@ pipeline-check:
 		--config $(CONFIG_PATH)
 
 
-## checksum: Compute SHA256 checksum of the translated GPKG
-checksum:
-	$(call check_file,TRANSLATED_PATH,$(TRANSLATED_PATH))
-	@sha256sum $(TRANSLATED_PATH) | tee $(TRANSLATED_PATH).sha256
-	@echo "Written to $(TRANSLATED_PATH).sha256"
 ## geometry-check: Check geometry validity and bedrock/unco_deposits coverage per mapsheet
 geometry-check:
 	@python scripts/check_geometry_coverage.py \

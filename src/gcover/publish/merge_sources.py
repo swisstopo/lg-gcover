@@ -1705,6 +1705,228 @@ class GDBMerger:
 
 
 # =============================================================================
+# SINGLE-GDB TRANSFORM
+# =============================================================================
+
+@dataclass
+class TransformConfig:
+    """Configuration for transforming a single FileGDB to the custom format."""
+    input_path: Path
+    output_path: Path
+    preserve_z: bool = True
+    validate_geometries: bool = True
+    exclude_fields: Optional[List[str]] = None
+    # None = auto-discover all layers from the input GDB
+    spatial_layers: Optional[List[str]] = None
+    skip_tables: bool = False
+
+
+class GDBTransformer:
+    """
+    Normalizes a single FileGDB to the custom publication format.
+
+    Applies the same geometry normalization pipeline as GDBMerger
+    (type normalization, 2D/3D handling, field exclusion, validation)
+    without the multi-source merging step.
+    """
+
+    def __init__(self, config: TransformConfig, verbose: bool = False):
+        self.config = config
+        self.verbose = verbose
+        self.stats = MergeStats()
+
+    def _discover_layers(self) -> Tuple[List[str], List[str]]:
+        """Return (spatial_layers, non_spatial_tables) from the input GDB."""
+        all_layers = fiona.listlayers(self.config.input_path)
+        spatial: List[str] = []
+        tables: List[str] = []
+        for name in all_layers:
+            try:
+                with fiona.open(self.config.input_path, layer=name) as src:
+                    geom_type = src.schema.get("geometry")
+                    if geom_type and geom_type.lower() != "none":
+                        spatial.append(name)
+                    else:
+                        tables.append(name)
+            except Exception:
+                tables.append(name)
+        return spatial, tables
+
+    def _read_and_normalize_layer(self, layer_name: str) -> Optional[gpd.GeoDataFrame]:
+        """Read, validate, and normalize one spatial layer."""
+        actual = layer_name.split("/")[-1]
+        try:
+            gdf = gpd.read_file(
+                self.config.input_path,
+                layer=actual,
+                engine="pyogrio",
+            )
+        except Exception as e:
+            logger.warning(f"Could not read {actual}: {e}")
+            self.stats.errors.append(f"Read {actual}: {e}")
+            return None
+
+        if gdf.empty:
+            return None
+
+        if self.config.validate_geometries:
+            from gcover.core.geometry import validate_and_repair_geometries
+            gdf = validate_and_repair_geometries(gdf)
+
+        expected_type = get_expected_geometry_type(layer_name)
+        gdf = normalize_geodataframe_geometries(
+            gdf,
+            target_type=expected_type,
+            preserve_z=self.config.preserve_z,
+        )
+        return gdf if not gdf.empty else None
+
+    def _copy_table(self, table_name: str) -> Optional[pd.DataFrame]:
+        """Read a non-spatial table from the input GDB."""
+        try:
+            import pyogrio
+            return pyogrio.read_dataframe(
+                self.config.input_path, layer=table_name, read_geometry=False
+            )
+        except Exception as e:
+            logger.warning(f"Could not read table {table_name}: {e}")
+            return None
+
+    def _save_layer(
+        self,
+        gdf: gpd.GeoDataFrame,
+        layer_name: str,
+        first_layer: bool,
+        driver: str,
+    ) -> bool:
+        """Write one spatial layer to the output. Returns True on success."""
+        actual = layer_name.split("/")[-1]
+        output_ext = self.config.output_path.suffix.lower()
+
+        exclude = self.config.exclude_fields or []
+        if exclude:
+            cols_to_drop = [c for c in exclude if c in gdf.columns and c != "geometry"]
+            if cols_to_drop:
+                gdf = gdf.drop(columns=cols_to_drop)
+
+        try:
+            import pyogrio
+
+            if first_layer and output_ext == ".gdb" and self.config.output_path.exists():
+                import shutil
+                shutil.rmtree(self.config.output_path)
+
+            pyogrio.write_dataframe(
+                gdf,
+                self.config.output_path,
+                layer=actual,
+                driver=driver,
+                promote_to_multi=True,
+            )
+            console.print(f"  [green]✓[/green] {actual}: {len(gdf):,} features")
+            self.stats.features_per_layer[layer_name] = len(gdf)
+            self.stats.layers_processed += 1
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to save {actual}: {e}")
+            self.stats.errors.append(f"Save {actual}: {e}")
+            return False
+
+    def _save_table(self, df: pd.DataFrame, table_name: str, driver: str) -> bool:
+        """Write one non-spatial table to the output."""
+        try:
+            import pyogrio
+            pyogrio.write_dataframe(
+                df,
+                self.config.output_path,
+                layer=table_name,
+                driver=driver,
+            )
+            self.stats.tables_copied += 1
+            console.print(f"  [green]✓[/green] {table_name}: {len(df):,} rows")
+            return True
+        except Exception as e:
+            logger.warning(f"Could not save table {table_name}: {e}")
+            self.stats.warnings.append(f"Table {table_name}: {e}")
+            return False
+
+    def transform(self) -> MergeStats:
+        """Execute the transform operation."""
+        console.print("\n[bold blue]🔄 Starting GDB Transform[/bold blue]\n")
+        total_start = time.time()
+
+        discovered_spatial, discovered_tables = self._discover_layers()
+
+        if self.config.spatial_layers is not None:
+            spatial_layers = [
+                ll for ll in self.config.spatial_layers
+                if ll.split("/")[-1] in discovered_spatial
+            ]
+            missing = [
+                ll for ll in self.config.spatial_layers
+                if ll.split("/")[-1] not in discovered_spatial
+            ]
+            if missing:
+                logger.warning(f"Layers not found in input: {missing}")
+        else:
+            spatial_layers = discovered_spatial
+
+        tables = [] if self.config.skip_tables else discovered_tables
+
+        output_ext = self.config.output_path.suffix.lower()
+        driver = "OpenFileGDB" if output_ext == ".gdb" else "GPKG"
+
+        console.print(f"[dim]Input:  {self.config.input_path}[/dim]")
+        console.print(f"[dim]Output: {self.config.output_path} ({driver})[/dim]")
+        console.print(f"[dim]{len(spatial_layers)} spatial layers, {len(tables)} tables[/dim]\n")
+
+        self.config.output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        first_layer = True
+
+        console.print("[bold chartreuse2]===== Transforming spatial layers... =====[/bold chartreuse2]")
+        for layer_name in spatial_layers:
+            gdf = self._read_and_normalize_layer(layer_name)
+            if gdf is None:
+                console.print(f"  [yellow]○[/yellow] {layer_name.split('/')[-1]}: no features")
+                continue
+            self._save_layer(gdf, layer_name, first_layer, driver)
+            first_layer = False
+
+        if tables:
+            console.print(
+                "\n[bold chartreuse2]===== Copying reference tables... =====[/bold chartreuse2]"
+            )
+            for table_name in tables:
+                df = self._copy_table(table_name)
+                if df is not None:
+                    self._save_table(df, table_name, driver)
+
+        total_elapsed = time.time() - total_start
+        total_features = sum(self.stats.features_per_layer.values())
+        mins, secs = divmod(total_elapsed, 60)
+
+        console.print("\n[bold green]✅ Transform Complete![/bold green]")
+        console.print(
+            f"[dim]{self.stats.layers_processed} layers, {total_features:,} features, "
+            f"{self.stats.tables_copied} tables — {int(mins)}m {secs:.1f}s[/dim]"
+        )
+        console.print(f"[dim]Output: {self.config.output_path}[/dim]")
+
+        if self.stats.warnings:
+            console.print("\n[yellow]⚠ Warnings:[/yellow]")
+            for w in self.stats.warnings:
+                console.print(f"  • {w}")
+        if self.stats.errors:
+            console.print("\n[red]✗ Errors:[/red]")
+            for err in self.stats.errors:
+                console.print(f"  • {err}")
+
+        return self.stats
+
+
+# =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
 
