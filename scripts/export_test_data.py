@@ -106,55 +106,50 @@ N_SAMPLES = 5  # candidate points per WMS layer; test code picks randomly
 
 
 def build_wms_test_points(gpkg_path: Path) -> None:
-    """
-    Append a wms_test_points layer to the GPKG: up to N_SAMPLES evenly-spaced
-    representative points per active WMS layer (mapfile_name).
-    """
-    if not CONFIG_FILE.exists():
-        logger.warning(f"Config not found, skipping wms_test_points: {CONFIG_FILE}")
-        return
+      if not CONFIG_FILE.exists():
+          logger.warning(f"Config not found, skipping wms_test_points: {CONFIG_FILE}")
+          return
 
-    config = BatchClassificationConfig(CONFIG_FILE)
+      config = BatchClassificationConfig(CONFIG_FILE)
 
-    # Build gpkg_layer → [mapfile_name, ...] for active classifications
-    layer_map: dict[str, list[str]] = {}
-    for layer_cfg in config.layers:
-        names = [
-            c.mapfile_name.strip()
-            for c in layer_cfg.classifications
-            if c.active and c.mapfile_name and c.mapfile_name.strip()
-        ]
-        if names:
-            layer_map.setdefault(layer_cfg.gpkg_layer, []).extend(names)
+      rows = []
+      for layer_cfg in config.layers:
+          if not gpkg_path.exists():
+              continue
+          try:
+              gdf = gpd.read_file(gpkg_path, layer=layer_cfg.gpkg_layer)
+          except Exception:
+              continue
+          if gdf.empty:
+              continue
 
-    rows = []
-    for gpkg_layer, mapfile_names in layer_map.items():
-        if not gpkg_path.exists():
-            continue
-        try:
-            gdf = gpd.read_file(gpkg_path, layer=gpkg_layer)
-        except Exception:
-            continue
-        if gdf.empty:
-            continue
+          for c in layer_cfg.classifications:
+              if not c.active or not c.mapfile_name or not c.mapfile_name.strip():
+                  continue
 
-        # Evenly-spaced sample for spatial variety across the extract
-        step = max(1, len(gdf) // N_SAMPLES)
-        sample_geoms = [
-            geom.representative_point()
-            for geom in gdf.geometry.iloc[::step].iloc[:N_SAMPLES]
-        ]
-        for name in mapfile_names:
-            for geom in sample_geoms:
-                rows.append({"wms_layer": name, "geometry": geom})
+              # Filter to features that actually belong to this WMS sub-layer
+              prefix = c.symbol_prefix.strip() if c.symbol_prefix else None
+              if prefix:
+                  subset = gdf[gdf["map_symbol"].str.startswith(prefix, na=False)]
+              else:
+                  subset = gdf
 
-    if not rows:
-        console.print("[yellow]⚠ No wms_test_points rows generated.[/yellow]")
-        return
+              if subset.empty:
+                  logger.warning(f"No features for {c.mapfile_name!r} (prefix={prefix!r}) in {gpkg_path.name}")
+                  continue
 
-    result = gpd.GeoDataFrame(rows, crs=2056)
-    result.to_file(gpkg_path, layer="wms_test_points", driver="GPKG")
-    console.print(f"[green]✔[/green] Saved [bold]wms_test_points[/bold] ({len(result)} rows)")
+              step = max(1, len(subset) // N_SAMPLES)
+              for geom in subset.geometry.iloc[::step].iloc[:N_SAMPLES]:
+                  rows.append({"wms_layer": c.mapfile_name.strip(), "geometry": geom.representative_point()})
+
+      if not rows:
+          console.print("[yellow]⚠ No wms_test_points rows generated.[/yellow]")
+          return
+
+      result = gpd.GeoDataFrame(rows, crs=2056)
+      result.to_file(gpkg_path, layer="wms_test_points", driver="GPKG")
+      console.print(f"[green]✔[/green] Saved [bold]wms_test_points[/bold] ({len(result)} rows)")
+
 
 
 if __name__ == "__main__":
