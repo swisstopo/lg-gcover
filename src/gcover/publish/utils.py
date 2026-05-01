@@ -289,6 +289,31 @@ def translate_esri_to_pandas(esri_expression):
     return expr
 
 
+def translate_esri_to_sql(esri_expression: str) -> str:
+    """
+    Translate an ESRI/Python-style filter expression to standard SQL.
+
+    Handles the operators that ESRI and pandas use but SQL does not:
+    - == → =
+    - != → <>
+    - lowercase and/or → AND/OR  (SQL is case-insensitive, but normalise anyway)
+    IN, NOT IN, IS NULL, IS NOT NULL, <, >, <=, >= are left unchanged.
+    """
+    expr = esri_expression
+
+    # == → = (but not != or <= or >=)
+    expr = re.sub(r"(?<![!<>])==", "=", expr)
+
+    # != → <>
+    expr = re.sub(r"!=", "<>", expr)
+
+    # normalise logical operators to uppercase
+    expr = re.sub(r"\band\b", "AND", expr, flags=re.IGNORECASE)
+    expr = re.sub(r"\bor\b", "OR", expr, flags=re.IGNORECASE)
+
+    return expr
+
+
 # ============================================================================
 # APPLYING TRANSLATED FILTERS
 # ============================================================================
