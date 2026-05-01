@@ -1,4 +1,5 @@
 
+import re
 import pytest
 
 from gcover.publish.generator import MapServerGenerator
@@ -25,13 +26,14 @@ def test_build_lang_data_ordering(generator):
     # We want a specific order: litho first, then kind
     include_items = "kind_desc,lpro_litho_desc, strike_deg"
 
-    result = generator._build_lang_data(
+    raw_result = generator._build_lang_data(
         data=data_input,
         lang_fields=lang_fields,
         include_items=include_items,
         symbol_field="map_symbol",
         geom_col="geom"
     )
+    result = re.sub(r"\s+", " ", raw_result)
 
     # Assertions
     # geom FROM (

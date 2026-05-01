@@ -1056,6 +1056,7 @@ def mapserver(
     identifier_fields = {}
     lang_fields_dict = {}
     translations_dict = {}
+    filter_dict = {}
 
 
     env = ctx.obj.get('environment')
@@ -1172,6 +1173,7 @@ def mapserver(
                     mapfile_configs[key]  = class_config.mapfile_config
                     translations_dict[key] = class_config.translations
                     lang_fields_dict[key] = class_config.lang_fields
+                    filter_dict[key] = class_config.filter
                     if class_config.symbol_prefix:
                         prefix_map[key] = class_config.symbol_prefix
                     if class_config.mapfile_group:
@@ -1330,6 +1332,7 @@ def mapserver(
 
             translations = translations_dict.get(layer_name)
             lang_fields = lang_fields_dict.get(layer_name)
+            data_filter = filter_dict.get(layer_name)
 
 
             # 2. Robust include_items logic
@@ -1390,6 +1393,7 @@ def mapserver(
                 staging_mode=staging_mode,
                 lang_fields=lang_fields,
                 translations=translations,
+                data_filter=data_filter,
             )
 
 

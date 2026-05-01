@@ -39,7 +39,7 @@ from gcover.publish.symbol_utils import (
     sanitize_font_name,
 )
 from gcover.publish.tooltips_enricher import LayerType
-from gcover.publish.utils import generate_font_image
+from gcover.publish.utils import generate_font_image, translate_esri_to_sql
 from gcover.config.models import MapserverConnection
 
 from gcover.publish.label_extractor_extension import LabelInfo
@@ -50,6 +50,13 @@ from gcover.publish.rotation_extractor_extension import (
 
 
 DEFAULT_IMAGES_DIR = "patterns"  # or img or "etc/img"  for KOGIS
+
+# GDB uppercase field names → PostGIS lowercase, for filter injection
+_FILTER_FIELD_MAP = {
+    "KIND": "kind",
+    "RUNC_LITHO": "runc_litho",
+    "ABOR_DEPTH_BEDR": "abor_depth_bedr",
+}
 
 console = Console()
 
@@ -410,13 +417,18 @@ class MapServerGenerator:
         # TIER 2: Main Body (Include items + Translations)
         for col in include_list:
             if col in lang_aliases:
-                add_col(col, f"{lang_fields[col]} AS {col}")
+                pattern = lang_fields[col]
+                if pattern:  # skip None/empty lang_fields entries
+                    add_col(col, f"{pattern} AS {col}")
+                else:
+                    add_col(col, col)
             else:
                 add_col(col, col)
 
         # TIER 3: Residual Translations
         for alias, pattern_str in lang_fields.items():
-            add_col(alias, f"{pattern_str} AS {alias}")
+            if pattern_str:  # skip None/empty lang_fields entries
+                add_col(alias, f"{pattern_str} AS {alias}")
 
         # TIER 4: Residual Subquery columns
         for col_expr in existing_cols:
@@ -427,11 +439,18 @@ class MapServerGenerator:
         for col in tail_names:
             add_col(col, col, force_tail=True)
 
-        full_select = ", ".join(final_cols.values())
-
-        # 4. Final Reconstruction
-        # We ensure there's a space before USING to avoid "subqueryUSING"
-        return f"{geom_ref} FROM (SELECT {full_select} FROM {from_table}) AS {alias_name} {using_clauses}"
+        # 4. Final Reconstruction — multi-line for readability
+        indent = "\n      "
+        cols_formatted = indent.join(
+            f"{expr}," for expr in list(final_cols.values())[:-1]
+        ) + indent + list(final_cols.values())[-1]
+        return (
+            f"{geom_ref} FROM (\n"
+            f"    SELECT\n"
+            f"      {cols_formatted}\n"
+            f"    FROM {from_table}\n"
+            f"  ) AS {alias_name} {using_clauses}"
+        )
 
     def _build_validation_block(
             self,
@@ -452,6 +471,61 @@ class MapServerGenerator:
             f'    "default_lang" "{default_language}"',
             "  END",
         ]
+
+    def _inject_data_filter(self, data: str, filter_expr: str) -> str:
+        """
+        Append a YAML filter expression to the WHERE clause of a MapServer DATA string.
+
+        Field names are normalized from GDB uppercase (KIND, RUNC_LITHO, ABOR_DEPTH_BEDR)
+        to their PostGIS lowercase equivalents.  Layers with no filter are left untouched.
+        """
+        if not filter_expr:
+            return data
+
+        pg_filter = translate_esri_to_sql(filter_expr)
+        for gdb_name, pg_name in _FILTER_FIELD_MAP.items():
+            pg_filter = re.sub(rf"\b{gdb_name}\b", pg_name, pg_filter)
+
+        outer = re.match(
+            r"(?i)^\s*(?P<geom_ref>\S+)\s+FROM\s+(?P<source>.*?)\s+(?P<clauses>USING.*)$",
+            data.strip(),
+            re.DOTALL,
+        )
+        if not outer:
+            return data
+
+        geom_ref = outer.group("geom_ref")
+        source = outer.group("source").strip()
+        clauses = outer.group("clauses").strip()
+
+        subq = re.match(
+            r"(?i)\(\s*SELECT\s+(?P<cols>.*?)\s+FROM\s+(?P<from_clause>.*?)\s*\)\s+AS\s+(?P<alias>\w+)",
+            source,
+            re.DOTALL,
+        )
+        if subq:
+            cols = subq.group("cols")
+            from_clause = subq.group("from_clause").strip()
+            alias = subq.group("alias")
+            if re.search(r"\bWHERE\b", from_clause, re.IGNORECASE):
+                new_from = f"{from_clause}\n      AND ({pg_filter})"
+            else:
+                new_from = f"{from_clause}\n    WHERE ({pg_filter})"
+            return (
+                f"{geom_ref} FROM (\n"
+                f"    SELECT\n"
+                f"      {cols}\n"
+                f"    FROM {new_from}\n"
+                f"  ) AS {alias} {clauses}"
+            )
+        else:
+            # Plain table ref: wrap in a subquery
+            return (
+                f"{geom_ref} FROM (\n"
+                f"    SELECT * FROM {source}\n"
+                f"    WHERE ({pg_filter})\n"
+                f"  ) AS filter_sub {clauses}"
+            )
 
     # ========================================================================
     # LAYER AND CLASS GENERATION
@@ -476,6 +550,7 @@ class MapServerGenerator:
             staging_mode: bool = False,
             lang_fields: Optional[Dict[str, str]] = None,
             translations: Optional[Dict[str, Dict[str, str]]] = None,
+            data_filter: Optional[str] = None,
 
     ) -> str:
         """
@@ -565,6 +640,9 @@ class MapServerGenerator:
                 label_col=label_col,
             )
 
+        # Append YAML filter to the DATA subquery WHERE clause
+        if data and data_filter:
+            data = self._inject_data_filter(data, data_filter)
 
         def build_layer_block(
                 classification,
