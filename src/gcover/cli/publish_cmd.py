@@ -32,7 +32,8 @@ from gcover.publish.esri_classification_extractor import (
     ClassificationJSONEncoder, explore_layer_structure,
     export_classifications_to_csv, extract_lyrx_complete, to_serializable_dict)
 from gcover.publish.generator import MapServerGenerator
-from gcover.publish.merge_sources import (GDBMerger, MergeConfig,
+from gcover.publish.merge_sources import (GDBMerger, GDBTransformer,
+                                          MergeConfig, TransformConfig,
                                           create_merge_config)
 from gcover.publish.qgis_generator import QGISGenerator
 from gcover.publish.style_config import (BatchClassificationConfig,
@@ -2378,6 +2379,165 @@ def _preview_merge(config: MergeConfig) -> None:
 
     except Exception as e:
         console.print(f"[red]Error loading preview: {e}[/red]")
+
+
+@publish_commands.command()
+@click.pass_context
+@click.argument("input_gdb", metavar="INPUT_GDB", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    required=True,
+    help="Output path (.gdb for FileGDB, .gpkg for GeoPackage)",
+)
+@click.option(
+    "--format",
+    "-f",
+    "output_format",
+    type=click.Choice(["auto", "gdb", "gpkg"]),
+    default="auto",
+    help="Output format (auto=detect from extension)",
+)
+@click.option(
+    "--layers",
+    "-l",
+    multiple=True,
+    help="Specific spatial layers to transform (default: all layers in the input GDB)",
+)
+@click.option(
+    "--force-2d",
+    is_flag=True,
+    help="Force 2D geometries (drop Z coordinates)",
+)
+@click.option(
+    "--exclude-metadata",
+    is_flag=True,
+    help="Exclude metadata fields (CREATED_USER, LAST_EDITED_DATE, GlobalID, etc.)",
+)
+@click.option(
+    "--skip-tables",
+    is_flag=True,
+    help="Skip copying non-spatial reference tables",
+)
+@click.option(
+    "--validate-geometries/--no-validate-geometries",
+    default=True,
+    help="Validate and fix geometries",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="List layers that would be processed without executing",
+)
+def transform(
+    ctx,
+    input_gdb: Path,
+    output: Path,
+    output_format: str,
+    layers: tuple,
+    force_2d: bool,
+    exclude_metadata: bool,
+    skip_tables: bool,
+    validate_geometries: bool,
+    dry_run: bool,
+):
+    """
+    Normalize a single FileGDB to the custom publication format.
+
+    Applies the same geometry normalization pipeline as `merge`
+    (type normalization, 2D/3D handling, field exclusion, validation)
+    to a single input GDB — no mapsheet assignments needed.
+
+    \b
+    Examples:
+      # Convert a FileGDB to GeoPackage with 2D geometries
+      gcover publish transform input.gdb --output output.gpkg --force-2d
+
+      # Transform to FileGDB, excluding metadata fields
+      gcover publish transform input.gdb --output output.gdb --exclude-metadata
+
+      # Process specific layers only
+      gcover publish transform input.gdb --output output.gpkg \\
+        -l GC_BEDROCK -l GC_SURFACES
+
+      # Dry run to preview layers
+      gcover publish transform input.gdb --output output.gpkg --dry-run
+    """
+    verbose = ctx.obj.get("verbose", False)
+
+    # Resolve output format / extension
+    if output_format == "auto":
+        ext = output.suffix.lower()
+        if ext == ".gpkg":
+            output_format = "gpkg"
+        elif ext == ".gdb":
+            output_format = "gdb"
+        else:
+            console.print(f"[yellow]Unknown extension '{ext}', defaulting to GPKG[/yellow]")
+            output = output.with_suffix(".gpkg")
+            output_format = "gpkg"
+    elif output_format == "gpkg" and output.suffix.lower() != ".gpkg":
+        output = output.with_suffix(".gpkg")
+    elif output_format == "gdb" and output.suffix.lower() != ".gdb":
+        output = output.with_suffix(".gdb")
+
+    config = TransformConfig(
+        input_path=input_gdb,
+        output_path=output,
+        preserve_z=not force_2d,
+        validate_geometries=validate_geometries,
+        exclude_fields=DEFAULT_EXCLUDED_FIELDS if exclude_metadata else None,
+        spatial_layers=list(layers) if layers else None,
+        skip_tables=skip_tables,
+    )
+
+    console.print(f"\n[bold blue]🔄 GeoCover GDB Transform[/bold blue]\n")
+
+    if dry_run:
+        import fiona
+        console.print(f"[dim]Input:  {input_gdb}[/dim]")
+        console.print(f"[dim]Output: {output}[/dim]")
+        try:
+            all_layers = fiona.listlayers(input_gdb)
+            console.print(f"\n[bold]Layers in {input_gdb.name}:[/bold]")
+            for name in all_layers:
+                try:
+                    with fiona.open(input_gdb, layer=name) as src:
+                        geom_type = src.schema.get("geometry", "none")
+                        is_spatial = geom_type and geom_type.lower() != "none"
+                        tag = "[cyan]spatial[/cyan]" if is_spatial else "[dim]table[/dim]"
+                        n = len(src)
+                    console.print(f"  {tag}  {name} ({n:,} features)")
+                except Exception as e:
+                    console.print(f"  [yellow]?[/yellow]  {name} (error: {e})")
+        except Exception as e:
+            console.print(f"[red]Error reading {input_gdb}: {e}[/red]")
+            raise click.Abort()
+        console.print("\n[yellow]Dry run completed. Remove --dry-run to execute.[/yellow]")
+        return
+
+    if not click.confirm("\nProceed with transform?"):
+        console.print("Transform cancelled.")
+        return
+
+    try:
+        transformer = GDBTransformer(config, verbose=verbose)
+        stats = transformer.transform()
+
+        if stats.errors:
+            console.print(
+                f"\n[yellow]⚠ Transform completed with {len(stats.errors)} error(s)[/yellow]"
+            )
+        else:
+            console.print("\n[bold green]🎉 Transform completed successfully![/bold green]")
+
+    except Exception as e:
+        console.print(f"[red]Transform failed: {e}[/red]")
+        if verbose:
+            import traceback
+            console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise click.Abort()
 
 
 @publish_commands.command()
