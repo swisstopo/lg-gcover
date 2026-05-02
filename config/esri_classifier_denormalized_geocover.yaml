@@ -743,6 +743,8 @@ layers:
           maxscaledenom: 50000
           map_label: False
           mapfile_config:
+            classes_mode: frozen
+            symbol_scale: 8000
             metadata:
               wms_group_title: Unconsolidated
           symbol_prefix: unco_chrono_t
