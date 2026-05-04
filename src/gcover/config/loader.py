@@ -35,6 +35,17 @@ class ConfigManager:
         console.print(f"[blue]Environment: {environment}[/blue]")
         self.verbose = verbose
 
+        # Resolve config path once so both base config and env config search the same dir
+        if config_path is None:
+            config_path = self._find_base_config_file()
+        else:
+            config_path = config_path.expanduser()
+            if config_path.is_dir():
+                resolved = self._resolve_config_path(config_path)
+                if resolved is None:
+                    raise FileNotFoundError(f"No gcover_config.yaml or config.yaml found in: {config_path}")
+                config_path = resolved
+
         # 1. Load secrets first (from .env files and environment)
         if load_secrets and not self._secrets_loaded:
             self._load_secrets(environment)
@@ -308,18 +319,8 @@ class ConfigManager:
                     return candidate
         return None
 
-    def _load_base_config(self, config_path: Path | None) -> dict:
+    def _load_base_config(self, config_path: Path) -> dict:
         """Load the base configuration file"""
-        if config_path is None:
-            config_path = self._find_base_config_file()
-        else:
-            config_path = config_path.expanduser()
-            if config_path.is_dir():
-                resolved = self._resolve_config_path(config_path)
-                if resolved is None:
-                    raise FileNotFoundError(f"No gcover_config.yaml or config.yaml found in: {config_path}")
-                config_path = resolved
-
         if self.verbose:
             console.log(f"🔧 Loading base config: {config_path}")
 
