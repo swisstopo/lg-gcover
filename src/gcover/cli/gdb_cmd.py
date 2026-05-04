@@ -3,6 +3,7 @@
 CLI for GDB Asset Management System
 """
 
+import json
 import sys
 import shutil
 from datetime import datetime, timedelta
@@ -2048,7 +2049,34 @@ def download(
             )
             return
 
-        # Display download plan
+        # Build asset summary shared between human and JSON output
+        total_size = 0
+        assets_summary = []
+        for rc_name in ["RC1", "RC2"]:
+            if rc_name in downloadable:
+                data = downloadable[rc_name]
+                size = data.get("file_size", 0) or 0
+                total_size += size
+                assets_summary.append({
+                    "rc": rc_name,
+                    "type": actual_type_used.get(rc_name, data.get("asset_type", "?")),
+                    "timestamp": data["timestamp"].isoformat(),
+                    "s3_key": data["s3_key"],
+                    "filename": Path(data["s3_key"]).name,
+                    "size_bytes": size,
+                })
+
+        if ctx.obj.get("output") == "json":
+            click.echo(json.dumps({
+                "dry_run": dry_run,
+                "asset_type": asset_type,
+                "destination": str(output_path.absolute()),
+                "total_size_bytes": total_size,
+                "assets": assets_summary,
+            }, indent=2))
+            return
+
+        # Human output: Rich table
         title = f"Download Plan: {asset_type}"
         if is_alias:
             title += " (alias)"
@@ -2059,19 +2087,14 @@ def download(
         table.add_column("S3 Key", style="yellow", max_width=45)
         table.add_column("Size", justify="right", style="blue", width=12)
 
-        total_size = 0
-        for rc_name in ["RC1", "RC2"]:
-            if rc_name in downloadable:
-                data = downloadable[rc_name]
-                size = data.get("file_size", 0) or 0
-                total_size += size
-                table.add_row(
-                    rc_name,
-                    actual_type_used.get(rc_name, data.get("asset_type", "?")),
-                    data["timestamp"].strftime("%Y-%m-%d %H:%M"),
-                    Path(data["s3_key"]).name,
-                    format_size(size) if size else "Unknown",
-                )
+        for item in assets_summary:
+            table.add_row(
+                item["rc"],
+                item["type"],
+                item["timestamp"][:16].replace("T", " "),
+                item["filename"],
+                format_size(item["size_bytes"]) if item["size_bytes"] else "Unknown",
+            )
 
         console.print(table)
         rprint(f"\n[cyan]Total download size: {format_size(total_size)}[/cyan]")

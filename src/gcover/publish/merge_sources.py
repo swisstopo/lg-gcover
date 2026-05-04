@@ -43,7 +43,7 @@ from shapely import STRtree
 from gcover.core.geometry import (load_gpkg_with_validation,
                                   validate_and_repair_geometries)
 
-console = Console()
+console = Console(stderr=True)
 
 has_pyarrow = False
 try:

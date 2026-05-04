@@ -30,6 +30,7 @@ class GCoverLogger:
         log_file: Optional[Path] = None,
         environment: str = "development",
         config_path: Optional[Path] = None,
+        json_mode: bool = False,
     ):
         """
         Setup logging using the unified configuration system.
@@ -66,8 +67,9 @@ class GCoverLogger:
         # Remove default loguru handler
         logger.remove()
 
-        # Setup console logging
-        self._setup_console_logging(log_level, verbose, logging_config["console"])
+        # In JSON mode skip the console sink so stdout stays clean for machine output
+        if not json_mode:
+            self._setup_console_logging(log_level, verbose, logging_config["console"])
 
         # Setup file logging
         if log_file:
@@ -323,21 +325,14 @@ def setup_logging(
     log_file: Optional[Path] = None,
     environment: str = "development",
     config_path: Optional[Path] = None,
+    json_mode: bool = False,
 ):
-    """
-    Setup logging for gcover application using unified configuration.
-
-    Args:
-        verbose: Enable debug logging
-        log_file: Optional custom log file path
-        environment: Environment name
-        config_path: Optional path to config file
-    """
     gcover_logger.setup(
         verbose=verbose,
         log_file=log_file,
         environment=environment,
         config_path=config_path,
+        json_mode=json_mode,
     )
 
 
