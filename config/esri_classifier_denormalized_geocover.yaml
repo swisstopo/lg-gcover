@@ -94,6 +94,7 @@ layers:
         RUNC_ROCK_TYP: Int64
         DIP: Int64
         ABOR_FM_A: Int64
+        ABOR_FM_B: Int64
         MPLA_POLARITY: Int64
         TDEF_FOLD_TYP: Int64
         AEXP_STATUS: Int64
@@ -248,6 +249,9 @@ layers:
             KIND: KIND
             ABOR_FM_A: ABOR_FM_A
           symbol_prefix: bohrung_fels_erreicht
+          # Use GMU_CODE as class ID
+          identifier_field: ABOR_FM_A
+          identifier_mode: field
 
         - style_file: styles/Point_Objects_Sondierung.lyrx
           index: 27
@@ -840,7 +844,7 @@ layers:
               correlation_desc: "correlation_%lang%"
               litstrat_formation_bank: "litstrat_formation_bank_%lang%"
           # These names stay stable for all clients regardless of LANGUAGE= param
-          include_items: "gmu_desc,tecto_desc,litho_desc,chrono_desc,correlation_desc,strati_link,erl_link,ber_link"
+          include_items: "gmu_desc,gmu_code_desc,tecto_desc,litho_desc,chrono_desc,correlation_desc,strati_link,erl_link,ber_link"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             GMU_CODE: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT
