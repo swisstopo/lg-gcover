@@ -236,5 +236,10 @@ terraform.rc
 .env
 .env.local
 .env.*.local
+.env.*
+
+# Environment-specific config overrides (machine-local, kept in ~/.config/gcover/)
+config/environments/production.yaml
+config/environments/development.yaml
 
 src/gcover/_version.py
