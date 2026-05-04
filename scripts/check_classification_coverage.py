@@ -16,6 +16,7 @@ from gcover.publish.style_config import BatchClassificationConfig
 from gcover.publish.utils import translate_esri_to_pandas
 
 console = Console(record=True)
+report_console = Console(record=True)  # report-only content (not printed to terminal)
 
 SKIP_LAYERS = {"aux_points_aspect"}
 EXCLUDE_COLUMNS = {"geometry", "fid", "ogc_fid"}
@@ -63,7 +64,9 @@ def _apply_filter(gdf: gpd.GeoDataFrame, esri_filter: str | None, field_types: d
               help="Write plain-text summary to this file")
 @click.option("--top-n", default=15, show_default=True,
               help="Number of top unclassified attribute patterns to show")
-def main(classified_gpkg, config, output_gpkg, report, top_n):
+@click.option("--counts", "counts_file", type=click.Path(), default=None,
+              help="Write per-class feature counts to this CSV or XLSX file")
+def main(classified_gpkg, config, output_gpkg, report, top_n, counts_file):
     """Report classification coverage and extract unclassified features."""
     gpkg_path = Path(classified_gpkg)
     out_gpkg = Path(output_gpkg) if output_gpkg else None
@@ -78,11 +81,16 @@ def main(classified_gpkg, config, output_gpkg, report, top_n):
     overall_total = 0
     overall_unclassified = 0
     layer_summaries = []
+    counts_rows = []
     any_incomplete = False
 
     for layer_name in all_layers:
         gdf = gpd.read_file(str(gpkg_path), layer=layer_name)
         layer_cfg = cfg.get_layer_config(layer_name)
+
+        if symbol_field not in gdf.columns:
+            console.print(f"\nLayer: [bold cyan]{layer_name}[/] — [dim]skipped (no {symbol_field} column)[/]")
+            continue
 
         total = len(gdf)
         unclassified = gdf[gdf[symbol_field].isna()]
@@ -170,6 +178,28 @@ def main(classified_gpkg, config, output_gpkg, report, top_n):
 
         layer_summaries.append((layer_name, total, n_classified, n_unclassified, coverage))
 
+        # Per-class feature counts (report + structured output)
+        classified = gdf[gdf[symbol_field].notna()]
+        has_label = "label" in classified.columns
+        group_cols = [symbol_field, "label"] if has_label else [symbol_field]
+        class_counts = (
+            classified.groupby(group_cols, dropna=False)
+            .size()
+            .reset_index(name="n")
+            .sort_values(symbol_field)
+        )
+        report_console.print(f"\n[bold]Features per class — {layer_name}[/]")
+        for _, row in class_counts.iterrows():
+            label_val = row["label"] if has_label else ""
+            label_part = f"  {label_val}" if has_label else ""
+            report_console.print(f"  {row[symbol_field]}{label_part}: {row['n']:,}")
+            counts_rows.append({
+                "class": layer_name,
+                "classification": row[symbol_field],
+                "label": label_val if has_label else None,
+                "count": int(row["n"]),
+            })
+
         # Export unclassified features
         if n_unclassified > 0 and out_gpkg:
             unclassified.to_file(str(out_gpkg), layer=layer_name, driver="GPKG",
@@ -206,8 +236,19 @@ def main(classified_gpkg, config, output_gpkg, report, top_n):
         console.print(f"\n[green]✓[/] Unclassified features written to [bold]{out_gpkg}[/]")
 
     if report:
-        Path(report).write_text(console.export_text())
+        Path(report).write_text(
+            console.export_text() + "\n\n--- Features per class ---\n" + report_console.export_text()
+        )
         console.print(f"[green]✓[/] Report written to [bold]{report}[/]")
+
+    if counts_file and counts_rows:
+        counts_df = pd.DataFrame(counts_rows, columns=["class", "classification", "label", "count"])
+        counts_path = Path(counts_file)
+        if counts_path.suffix.lower() == ".xlsx":
+            counts_df.to_excel(counts_path, index=False)
+        else:
+            counts_df.to_csv(counts_path, index=False)
+        console.print(f"[green]✓[/] Feature counts written to [bold]{counts_path}[/]")
 
     if any_incomplete:
         sys.exit(1)
