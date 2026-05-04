@@ -25,7 +25,7 @@ console = Console()
 # =============================================================================
 
 
-def slugify_label(label: str, max_length: int = 50) -> str:
+def slugify_label(label: str, max_length: int = 80) -> str:
     """
     Convert label to a stable, URL-safe identifier.
 

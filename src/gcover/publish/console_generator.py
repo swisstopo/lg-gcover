@@ -6,6 +6,7 @@ Prints extracted style information to console in readable format.
 Useful for inspecting what was extracted from ESRI style files.
 """
 
+import re
 from pathlib import Path
 from typing import List, Optional
 
@@ -21,6 +22,7 @@ from gcover.publish.esri_classification_extractor import (
     IdentifierMode,
 )
 from gcover.publish.symbol_utils import extract_polygon_symbol_layers
+from gcover.publish.utils import slugify_label
 
 console = Console()
 
@@ -116,27 +118,27 @@ class ConsoleStyleGenerator:
         )
         table.add_column("#", style="dim", width=4, justify="right")
         table.add_column("Label", style="cyan", width=45, no_wrap=False)
-        table.add_column("Map Symbol ID", style="green", width=35)
-        table.add_column("Field Values", style="white", width=25)
+        table.add_column("Map Symbol ID", style="green", width=50)
+        table.add_column("Field Values", style="white", width=30)
         table.add_column("Vis", style="yellow", width=3, justify="center")
+
+        warnings_list = []
 
         for idx, class_obj in enumerate(classification.classes, 1):
             # Get identifier
             identifier_str = ""
             full_symbol_id = ""
-            
+            raw_label = ""
+
             if hasattr(class_obj, "identifier") and class_obj.identifier:
+                raw_label = class_obj.identifier.label or ""
                 try:
                     key = class_obj.identifier.to_key()
-                    # Extract just the identifier value (last part after ::)
                     identifier_str = key.split("::")[-1] if "::" in key else key
-                    
-                    # Build full symbol ID with prefix
                     if self.symbol_prefix:
                         full_symbol_id = f"{self.symbol_prefix}_{identifier_str}"
                     else:
                         full_symbol_id = identifier_str
-                        
                     self.style_summary["identifiers"].append(full_symbol_id)
                 except Exception:
                     identifier_str = "?"
@@ -145,28 +147,69 @@ class ConsoleStyleGenerator:
             # Field values
             values_str = ""
             if class_obj.field_values:
-                for fv in class_obj.field_values[:2]:  # Show first 2 value sets
+                for fv in class_obj.field_values[:2]:
                     values_str += " | ".join(str(v)[:10] for v in fv) + "\n"
                 values_str = values_str.strip()
                 if len(class_obj.field_values) > 2:
                     values_str += f"\n(+{len(class_obj.field_values) - 2} more)"
 
-            # Visibility
             visibility = "✓" if class_obj.visible else "✗"
-
-            # Update stats
             if class_obj.visible:
                 self.style_summary["total_classes"] += 1
                 self.style_summary["visible_classes"] += 1
 
+            reasons = self._compute_label_warnings(raw_label, identifier_str)
+            label_display = class_obj.label[:45] if class_obj.label else ""
+            if reasons:
+                label_display = f"[yellow]⚠[/yellow] {label_display[:43]}"
+                warnings_list.append((idx, raw_label, full_symbol_id, reasons))
+
             table.add_row(
                 str(idx),
-                class_obj.label[:45] if class_obj.label else "",
+                label_display,
                 full_symbol_id,
                 values_str[:25] if values_str else "",
                 visibility,
             )
 
+        console.print(table)
+
+        if warnings_list:
+            self._display_warnings_table(warnings_list)
+
+    def _compute_label_warnings(self, raw_label: str, slug: str) -> List[str]:
+        """Return warning reasons for a raw label / slug pair."""
+        reasons = []
+        if not raw_label:
+            return reasons
+        if ";" in raw_label:
+            reasons.append("compound label (';')")
+        if "Unknown" in raw_label:
+            reasons.append("'Unknown' in label")
+        if re.search(r",\s*Null\b", raw_label):
+            reasons.append("'Null' in label")
+        full_slug = slugify_label(raw_label, max_length=200)
+        if len(full_slug) > 80:
+            reasons.append(f"slug truncated ({len(full_slug)} chars raw)")
+        if slug and re.search(r"_\d+$", slug):
+            reasons.append("duplicate label (counter added)")
+        return reasons
+
+    def _display_warnings_table(self, warnings: list):
+        """Display a summary table of suspicious labels after the classes table."""
+        table = Table(
+            title="[bold yellow]⚠ Suspicious Labels[/bold yellow]",
+            show_header=True,
+            header_style="bold yellow",
+        )
+        table.add_column("#", style="dim", width=4, justify="right")
+        table.add_column("Raw Label", style="yellow", width=70)
+        table.add_column("Issues", style="red", width=40)
+
+        for idx, raw_label, _slug, reasons in warnings:
+            table.add_row(str(idx), raw_label[:70], ", ".join(reasons))
+
+        console.print()
         console.print(table)
 
     def _display_class(self, class_obj, index: int, fields: List, detailed: bool):
