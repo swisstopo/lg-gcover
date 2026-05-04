@@ -838,6 +838,7 @@ layers:
           # Constant alias names → language-specific columns
           lang_fields:
               gmu_code_desc: "gmu_%lang%"
+              gmu_desc: "gmu_%lang%"
               tecto_desc: "tecto_%lang%"
               litho_desc: "litho_combined_%lang%"
               chrono_desc: "chrono_combined_%lang%"
