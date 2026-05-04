@@ -297,10 +297,28 @@ class ConfigManager:
         field_lower = field_name.lower()
         return any(keyword in field_lower for keyword in secret_keywords)
 
+    def _resolve_config_path(self, path: Path) -> Path | None:
+        """Resolve a file or directory path to an actual config file."""
+        if path.is_file():
+            return path
+        if path.is_dir():
+            for name in ("gcover_config.yaml", "config.yaml"):
+                candidate = path / name
+                if candidate.exists():
+                    return candidate
+        return None
+
     def _load_base_config(self, config_path: Path | None) -> dict:
         """Load the base configuration file"""
         if config_path is None:
             config_path = self._find_base_config_file()
+        else:
+            config_path = config_path.expanduser()
+            if config_path.is_dir():
+                resolved = self._resolve_config_path(config_path)
+                if resolved is None:
+                    raise FileNotFoundError(f"No gcover_config.yaml or config.yaml found in: {config_path}")
+                config_path = resolved
 
         if self.verbose:
             console.log(f"🔧 Loading base config: {config_path}")
@@ -348,9 +366,20 @@ class ConfigManager:
 
     def _find_base_config_file(self) -> Path:
         """Find the base configuration file"""
+        env_config_path = os.environ.get("GCOVER_CONFIG_PATH")
+        if env_config_path:
+            p = Path(env_config_path).expanduser()
+            resolved = self._resolve_config_path(p)
+            if resolved is not None:
+                return resolved
+            raise FileNotFoundError(
+                f"GCOVER_CONFIG_PATH='{env_config_path}' but no config file found there"
+            )
+
         search_paths = [
             Path("config/gcover_config.yaml"),
             Path("config/config.yaml"),
+            Path("~/.config/gcover/gcover_config.yaml").expanduser(),
             Path("~/.config/gcover/config.yaml").expanduser(),
             Path("/etc/gcover/config.yaml"),
         ]

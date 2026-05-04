@@ -79,7 +79,7 @@ def confirm_extended(prompt: str, default=True):
 @click.group(context_settings={"show_default": True})
 @click.version_option(version=__version__, prog_name="gcover")
 @click.option(
-    "--config", "-c", type=click.Path(exists=True), help="Configuration file path"
+    "--config", "-c", type=click.Path(exists=True), help="Config file or directory (overrides GCOVER_CONFIG_PATH)"
 )
 @click.option(
     "--env",
@@ -111,7 +111,11 @@ def cli(ctx, config, log_file, log_info, env, verbose):
 
     try:
         # Load centralized configuration
-        app_config: AppConfig = load_config(environment=environment, verbose=verbose)
+        app_config: AppConfig = load_config(
+            config_path=Path(config) if config else None,
+            environment=environment,
+            verbose=verbose,
+        )
 
         # ctx.obj["config_manager"] = config_manager
         ctx.obj["config_path"] = config
