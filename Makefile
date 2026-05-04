@@ -25,7 +25,7 @@ LAST_DATAMODEL_SOURCES = $(DATAMODEL_SOURCES)$(V2)
 # --- Variables ---
 RELEASE      := R17
 DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/
-OUTPUT_DIR   := ${HOME}/DATA/Derivations/output/$(RELEASE)/
+OUTPUT_DIR   ?= ${HOME}/DATA/Derivations/output/$(RELEASE)/
 STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/styles/2026-04-23/
 TRANSLATION_CSV := $(LAST_DATAMODEL_SOURCES)/geolcodes_translated.csv
 STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/R16/Excels/2026a_Update_stratiLINK.xlsx
@@ -264,7 +264,8 @@ polygon-topology-check:
 
 ## coverage-check: Check classification coverage and extract unclassified features
 coverage-check:
-	@python scripts/check_classification_coverage.py \
+	@echo "Checking on $(CLASSIFIED_PATH) with $(CONFIG_PATH)"
+	python scripts/check_classification_coverage.py \
 		$(CLASSIFIED_PATH) \
 		$(CONFIG_PATH) \
 		--report $(OUTPUT_DIR)unclassified.txt \
