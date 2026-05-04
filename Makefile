@@ -269,6 +269,7 @@ coverage-check:
 		$(CONFIG_PATH) \
 		--report $(OUTPUT_DIR)unclassified.txt \
 		--top-n 500 \
+		--counts $(OUTPUT_DIR)feature_counts.xlsx  \
 		--output-gpkg $(OUTPUT_DIR)unclassified.gpkg
 
 
