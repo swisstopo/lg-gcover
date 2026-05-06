@@ -52,9 +52,11 @@ MAPSERVER_OUTPUT      ?= mapserver_$(BRANCH)
 DEM_ASPECT_PATH       ?= $(DELIVERY_DIR)swissALTI3DRegio_aspect_50m.tif
 PA_EXCEL_PATH         ?= $(DELIVERY_DIR)Excels/GC_Sources_PA.xlsx
 CONFIG_PATH           ?= config/esri_classifier_denormalized_geocover.yaml
-MAPSERVER_S3_BUCKET   ?= tf-cloudfront-s3-dubious-cloud
-MAPSERVER_S3_PROFILE  ?= default
+-include .env.local
+MAPSERVER_S3_BUCKET   ?= use-real-dubious-bucket
+MAPSERVER_S3_PROFILE  ?= use-real-profile
 S3_GEODATA_PREFIX     := GEODATA/mapserver-geocover
+S3_ZONES_PREFIX       := geocover/zones
 
 # Layers for denormalization
 LAYERS := fossils exploit_polygons exploit_points linear_objects point_objects bedrock surfaces unco_deposits
@@ -134,30 +136,14 @@ help:
         mapfiles \
         install-dev format lint test smoke doc check \
         clean-denormalize clean-translate clean-classify clean-master clean-all \
-        upload-test-data
+        upload-zones upload-test-data
 
-### Data
+### Geocover data
 
-## download:  Download RC1/RC2  backup
+## download:  Download RC1/RC2  backups
 download:
 	@gcover --env production --verbose  gdb download-couple --type backup --output-dir $(DELIVERY_DIR)  \
 	 --unzip --no-keep-zip
-
-
-## administrative-zones: Create the adminstratives zones (lots, WU, mapsheets)
-administrative-zones:
-	@echo "--- Creating administrative zones to $(ADMIN_ZONES_GPKG) ---"
-	@python ./scripts/create_administrative_zones.py  \
-	   --lots-file $(GCOVER_DATA_DIR)lots.geojson \
-       --wu-file $(GCOVER_DATA_DIR)WU.json \
-       --mapsheets-file $(GCOVER_DATA_DIR)mapsheets.geojson \
-       --sources-file  $(PA_EXCEL_PATH)  \
-       --output $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) \
-       --overwrite
-	@cp -f $(PA_EXCEL_PATH)   $(GCOVER_DATA_DIR)GC_Sources_PA.xlsx
-	@cp -f $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) $(GCOVER_DATA_DIR)$(ADMIN_ZONES_GPKG)
-	@cp -f $(OUTPUT_DIR)administrative_zones.README $(GCOVER_DATA_DIR)adminstrative_zones.README
-	@echo "Don't forget to copy to mapserver-geocover/data directory!"
 
 
 ## all: Run the entire workflow (Merge -> Import -> Denormalize -> Symbolize)
@@ -274,7 +260,39 @@ coverage-check:
 		--output-gpkg $(OUTPUT_DIR)unclassified.gpkg
 
 
+### Administratives zones
+
+
+## administrative-zones: Create the adminstratives zones (lots, WU, mapsheets)
+administrative-zones:
+	@echo "--- Creating administrative zones to $(ADMIN_ZONES_GPKG) ---"
+	@python ./scripts/create_administrative_zones.py  \
+	   --lots-file $(GCOVER_DATA_DIR)lots.geojson \
+       --wu-file $(GCOVER_DATA_DIR)WU.json \
+       --mapsheets-file $(GCOVER_DATA_DIR)mapsheets.geojson \
+       --sources-file  $(PA_EXCEL_PATH)  \
+       --output $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) \
+       --format gpkg --format geojson --format parquet \
+       --overwrite
+	@cp -f $(PA_EXCEL_PATH)   $(GCOVER_DATA_DIR)GC_Sources_PA.xlsx
+	@cp -f $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) $(GCOVER_DATA_DIR)$(ADMIN_ZONES_GPKG)
+	@cp -f $(OUTPUT_DIR)administrative_zones.README $(GCOVER_DATA_DIR)adminstrative_zones.README
+	@echo "Don't forget to copy to mapserver-geocover/data directory!"
+
+## upload-zones: Upload administrative zones (GPKG + GeoJSON + GeoParquet) to S3
+upload-zones: $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG)
+	@echo "--- Uploading administrative zones to s3://$(MAPSERVER_S3_BUCKET)/$(S3_ZONES_PREFIX)/ ---"
+	aws s3 --profile $(MAPSERVER_S3_PROFILE) cp \
+		$(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) \
+		s3://$(MAPSERVER_S3_BUCKET)/$(S3_ZONES_PREFIX)/$(ADMIN_ZONES_GPKG)
+	aws s3 --profile $(MAPSERVER_S3_PROFILE) sync \
+		$(OUTPUT_DIR)administrative_zones/ \
+		s3://$(MAPSERVER_S3_BUCKET)/$(S3_ZONES_PREFIX)/administrative_zones/ \
+		--delete
+
 ### Auxilliary data
+
+
 ## geocover-aux: Create auxiliary grid sur surfaces/unco deposits
 
 $(GEOCOVER_AUX_PATH):
@@ -345,11 +363,18 @@ aspect-gmm-%: geocover-aux
 	@ogrinfo $(GEOCOVER_AUX_PATH) -sql "UPDATE gpkg_contents SET description = 'model:gmm' WHERE table_name = '$*_aux_points_aspect'" > /dev/null
 
 
+
+### Test data
+
 data/extract_%.gpkg:
 	python scripts/export_test_data.py "$*"
 
 ## test-data: Export test data GeoPackages for CI
 test-data: data/extract_bulle.gpkg data/extract_sion.gpkg
+
+
+
+
 
 ## upload-test-data: Upload CI test GeoPackages to S3 (requires test-data)
 upload-test-data: data/extract_bulle.gpkg data/surfaces_aux.gpkg
@@ -364,7 +389,7 @@ clean-test-data:
 	rm -f data/extract_bulle.gpkg
 	rm -f data/extract_sion.gpkg
 
-
+### Cleanup
 
 ## clean-denormalize: Clean denormalized artefacts
 clean-denormalize: clean-classify clean-translate

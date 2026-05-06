@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-Create administrative_zones.gpkg from 4 standardized source files.
+Create administrative zones from 4 standardized source files.
 
 Inputs
 ------
@@ -11,8 +11,17 @@ Inputs
 - GC_Sources_PA.xlsx   — per-mapsheet source assignments (BKP → SOURCE_RC)
                          and document availability flags (BER, ERL)
 
-Output layers (administrative_zones.gpkg)
------------------------------------------
+Output formats (--format, repeatable)
+--------------------------------------
+gpkg      Multi-layer GeoPackage at the path given by --output (default).
+geojson   One GeoJSON file per layer in {output_stem}/ (EPSG:2056).
+parquet   One GeoParquet file per layer in {output_stem}/ (EPSG:2056).
+
+All three formats can be produced in a single run:
+  create-administrative-zones -f gpkg -f geojson -f parquet --overwrite
+
+Output layers
+-------------
 mapsheets_sources_only  Base mapsheets joined with SOURCE_RC, Version,
                         and document links (ber_link, erl_link).
 mapsheets_with_sources  Same, further enriched with LOT_NR, WU_NAME (spatial
@@ -45,6 +54,7 @@ Changelog
 2026-03-24  New WU.json format; removed Campodolcino sheet (merged into Val Bregaglia); provisional PA for R17
 2026-04-25  Added border_segments, tolerance_zones_Xm, strict_zones_Xm for QA error border filtering
 2026-04-26  Improved docstring; added HTTP check for ber_link/erl_link URLs
+2026-05-05  Added GeoJSON and GeoParquet output formats via --format option
 
 """
 
@@ -707,6 +717,35 @@ def clean_wu(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return gdf
 
 
+def _write_layers(
+    layers: dict[str, gpd.GeoDataFrame],
+    output_path: Path,
+    formats: tuple[str, ...],
+) -> None:
+    """Write all layers in each requested format."""
+    if "gpkg" in formats:
+        first = True
+        for name, gdf in layers.items():
+            mode = "w" if first else "a"
+            gdf.to_file(output_path, layer=name, driver="GPKG", mode=mode)
+            logger.info(f"✓ Written GPKG layer: {name} ({len(gdf)} features)")
+            first = False
+
+    web_formats = [f for f in ("geojson", "parquet") if f in formats]
+    if web_formats:
+        layers_dir = output_path.parent / output_path.stem
+        layers_dir.mkdir(parents=True, exist_ok=True)
+        for name, gdf in layers.items():
+            if "geojson" in web_formats:
+                out = layers_dir / f"{name}.geojson"
+                gdf.to_file(out, driver="GeoJSON")
+                logger.info(f"✓ Written GeoJSON: {out}")
+            if "parquet" in web_formats:
+                out = layers_dir / f"{name}.parquet"
+                gdf.to_parquet(out)
+                logger.info(f"✓ Written GeoParquet: {out}")
+
+
 @click.command(context_settings={"show_default": True})
 @click.option(
     "--output",
@@ -714,7 +753,17 @@ def clean_wu(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     "output_path",
     default=str(files("gcover.data").joinpath("administrative_zones.gpkg")),
     type=click.Path(path_type=Path),
-    help="Output GPKG file path",
+    help="Output base path (GPKG); layer files go into a sibling directory with the same stem",
+)
+@click.option(
+    "--format",
+    "-f",
+    "formats",
+    multiple=True,
+    type=click.Choice(["gpkg", "geojson", "parquet"], case_sensitive=False),
+    default=("gpkg",),
+    show_default=True,
+    help="Output format(s). Repeat to enable multiple: -f gpkg -f geojson",
 )
 @click.option(
     "--lots-file",
@@ -752,6 +801,7 @@ def create_administrative_zones(
     wu_file: Path,
     mapsheets_file: Path,
     sources_file: Path,
+    formats: tuple[str, ...],
     overwrite: bool,
     verbose: bool,
 ):
@@ -776,17 +826,22 @@ def create_administrative_zones(
         logger.add(lambda msg: click.echo(msg, err=True), level="DEBUG")
 
     # Check if output exists
-
-    if output_path.exists() and not overwrite:
-        click.echo(f"❌ Output file exists: {output_path}")
-        click.echo("   Use --overwrite to replace it")
-        return
+    layers_dir = output_path.parent / output_path.stem
+    if not overwrite:
+        if "gpkg" in formats and output_path.exists():
+            click.echo(f"❌ Output file exists: {output_path}")
+            click.echo("   Use --overwrite to replace it")
+            return
+        if any(f in formats for f in ("geojson", "parquet")) and layers_dir.exists():
+            click.echo(f"❌ Output directory exists: {layers_dir}")
+            click.echo("   Use --overwrite to replace it")
+            return
 
     # Create output directory
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Remove existing file
-    if output_path.exists():
+    if "gpkg" in formats and output_path.exists():
         output_path.unlink()
         logger.info(f"Removed existing file: {output_path}")
 
@@ -847,14 +902,7 @@ def create_administrative_zones(
             mapsheets_with_lots, wu_gdf, ["WU_NAME", "WU_ID"], "mapsheets-work_units"
         )
 
-        # 4. Write to GPKG
-        click.echo(f"💾 Writing to {output_path}")
-
-        # Main layer: mapsheets with all attributes
-        # TODO: only source is OK?
-        mapsheets_with_sources.to_file(
-            output_path, layer="mapsheets_sources_only", driver="GPKG"
-        )
+        # 4. Aggregate mapsheets_complete
 
         # Define the grouping columns (mapsheet columns)
         mapsheet_cols = [
@@ -906,50 +954,30 @@ def create_administrative_zones(
             gdf_aggregated, geometry="geometry", crs=mapsheets_gdf.crs
         )
 
-        mapsheets_complete.to_file(
-            output_path, layer="mapsheets_with_sources", driver="GPKG"
-        )
-        logger.info(
-            f"✓ Written layer: mapsheets_with_sources ({len(mapsheets_complete)} features)"
-        )
         buffer_distance = 100
         border_gdf = border_mapsheet(mapsheets_gdf, buffer_distance=buffer_distance)
-        border_gdf.to_file(
-            output_path, layer=f"borders_{buffer_distance}m", driver="GPKG", mode="a"
-        )
 
         # Classified border segments and tolerance zones
         click.echo("🗺️  Classifying border segments...")
         border_segments_gdf, tolerance_zones_gdf, strict_zones_gdf = classify_border_segments(
             mapsheets_with_sources, buffer_distance=buffer_distance
         )
-        border_segments_gdf.to_file(
-            output_path, layer="border_segments", driver="GPKG", mode="a"
-        )
-        logger.info(f"✓ Written layer: border_segments ({len(border_segments_gdf)} features)")
 
-        tolerance_layer = f"tolerance_zones_{buffer_distance}m"
-        tolerance_zones_gdf.to_file(
-            output_path, layer=tolerance_layer, driver="GPKG", mode="a"
-        )
-        logger.info(f"✓ Written layer: {tolerance_layer} ({len(tolerance_zones_gdf)} features)")
+        # 5. Collect all layers and write in requested format(s)
+        layers: dict[str, gpd.GeoDataFrame] = {
+            "mapsheets_sources_only": mapsheets_with_sources,
+            "mapsheets_with_sources": mapsheets_complete,
+            f"borders_{buffer_distance}m": border_gdf,
+            "border_segments": border_segments_gdf,
+            f"tolerance_zones_{buffer_distance}m": tolerance_zones_gdf,
+            f"strict_zones_{buffer_distance}m": strict_zones_gdf,
+            "lots": lots_gdf,
+            "work_units": wu_gdf,
+            "mapsheets": mapsheets_gdf,
+        }
 
-        strict_layer = f"strict_zones_{buffer_distance}m"
-        strict_zones_gdf.to_file(
-            output_path, layer=strict_layer, driver="GPKG", mode="a"
-        )
-        logger.info(f"✓ Written layer: {strict_layer} ({len(strict_zones_gdf)} features)")
-
-        # Individual zone layers
-        lots_gdf.to_file(output_path, layer="lots", driver="GPKG", mode="a")
-        logger.info(f"✓ Written layer: lots ({len(lots_gdf)} features)")
-
-        wu_gdf.to_file(output_path, layer="work_units", driver="GPKG", mode="a")
-        logger.info(f"✓ Written layer: work_units ({len(wu_gdf)} features)")
-
-        # Base mapsheets layer (for reference)
-        mapsheets_gdf.to_file(output_path, layer="mapsheets", driver="GPKG", mode="a")
-        logger.info(f"✓ Written layer: mapsheets ({len(mapsheets_gdf)} features)")
+        click.echo(f"💾 Writing to {output_path} (formats: {', '.join(formats)})")
+        _write_layers(layers, output_path, formats)
 
         # 5. Summary and validation
         click.echo(f"✅ Administrative zones created successfully!")
@@ -1020,8 +1048,10 @@ def create_administrative_zones(
         # Write the docstring to a file
         now = dt.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        layers = fiona.listlayers(output_path)
-        layer_string = "\n * ".join(layers)
+        layer_string = "\n * ".join(layers.keys())
+        if "gpkg" in formats and output_path.exists():
+            gpkg_layers = fiona.listlayers(output_path)
+            layer_string = "\n * ".join(gpkg_layers)
         docstring = f"""{__doc__ or ""}\n\nXLSX file:{str(sources_file)}\n\nLayer list:\n * {layer_string}\n\n-- 'mapsheets_sources_only' --\n\n{validation_str}\n\n\nGenerated on {now}"""
         output_without_ext = output_path.with_suffix("")
         with open(output_without_ext.with_suffix(".README"), "w", encoding="utf-8") as f:
