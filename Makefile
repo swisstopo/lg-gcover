@@ -52,11 +52,6 @@ MAPSERVER_OUTPUT      ?= mapserver_$(BRANCH)
 DEM_ASPECT_PATH       ?= $(DELIVERY_DIR)swissALTI3DRegio_aspect_50m.tif
 PA_EXCEL_PATH         ?= $(DELIVERY_DIR)Excels/GC_Sources_PA.xlsx
 CONFIG_PATH           ?= config/esri_classifier_denormalized_geocover.yaml
--include .env.local
-MAPSERVER_S3_BUCKET   ?= use-real-dubious-bucket
-MAPSERVER_S3_PROFILE  ?= use-real-profile
-S3_GEODATA_PREFIX     := GEODATA/mapserver-geocover
-S3_ZONES_PREFIX       := geocover/zones
 
 # Layers for denormalization
 LAYERS := fossils exploit_polygons exploit_points linear_objects point_objects bedrock surfaces unco_deposits
@@ -135,8 +130,7 @@ help:
         geocover-aux aspect aspect-simple aspect-gmm combine-aspect inject-aux-aspect \
         mapfiles \
         install-dev format lint test smoke doc check \
-        clean-denormalize clean-translate clean-classify clean-master clean-all \
-        upload-zones upload-test-data
+        clean-denormalize clean-translate clean-classify clean-master clean-all
 
 ### Geocover data
 
@@ -279,16 +273,6 @@ administrative-zones:
 	@cp -f $(OUTPUT_DIR)administrative_zones.README $(GCOVER_DATA_DIR)adminstrative_zones.README
 	@echo "Don't forget to copy to mapserver-geocover/data directory!"
 
-## upload-zones: Upload administrative zones (GPKG + GeoJSON + GeoParquet) to S3
-upload-zones: $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG)
-	@echo "--- Uploading administrative zones to s3://$(MAPSERVER_S3_BUCKET)/$(S3_ZONES_PREFIX)/ ---"
-	aws s3 --profile $(MAPSERVER_S3_PROFILE) cp \
-		$(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) \
-		s3://$(MAPSERVER_S3_BUCKET)/$(S3_ZONES_PREFIX)/$(ADMIN_ZONES_GPKG)
-	aws s3 --profile $(MAPSERVER_S3_PROFILE) sync \
-		$(OUTPUT_DIR)administrative_zones/ \
-		s3://$(MAPSERVER_S3_BUCKET)/$(S3_ZONES_PREFIX)/administrative_zones/ \
-		--delete
 
 ### Auxilliary data
 
@@ -376,13 +360,6 @@ test-data: data/extract_bulle.gpkg data/extract_sion.gpkg
 
 
 
-## upload-test-data: Upload CI test GeoPackages to S3 (requires test-data)
-upload-test-data: data/extract_bulle.gpkg data/surfaces_aux.gpkg
-	@echo "--- Uploading test data to s3://$(MAPSERVER_S3_BUCKET)/$(S3_GEODATA_PREFIX)/ ---"
-	aws s3 --profile $(MAPSERVER_S3_PROFILE) cp data/extract_bulle.gpkg \
-		s3://$(MAPSERVER_S3_BUCKET)/$(S3_GEODATA_PREFIX)/test_geodata.gpkg
-	aws s3 --profile $(MAPSERVER_S3_PROFILE) cp data/surfaces_aux.gpkg \
-		s3://$(MAPSERVER_S3_BUCKET)/$(S3_GEODATA_PREFIX)/surfaces_aux.gpkg
 
 ## clean-test-data: Delete test data GeoPackages
 clean-test-data:
