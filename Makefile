@@ -132,28 +132,12 @@ help:
         install-dev format lint test smoke doc check \
         clean-denormalize clean-translate clean-classify clean-master clean-all
 
-### Data
+### Geocover data
 
-## download:  Download RC1/RC2  backup
+## download:  Download RC1/RC2  backups
 download:
 	@gcover --env production --verbose  gdb download-couple --type backup --output-dir $(DELIVERY_DIR)  \
 	 --unzip --no-keep-zip
-
-
-## administrative-zones: Create the adminstratives zones (lots, WU, mapsheets)
-administrative-zones:
-	@echo "--- Creating administrative zones to $(ADMIN_ZONES_GPKG) ---"
-	@python ./scripts/create_administrative_zones.py  \
-	   --lots-file $(GCOVER_DATA_DIR)lots.geojson \
-       --wu-file $(GCOVER_DATA_DIR)WU.json \
-       --mapsheets-file $(GCOVER_DATA_DIR)mapsheets.geojson \
-       --sources-file  $(PA_EXCEL_PATH)  \
-       --output $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) \
-       --overwrite
-	@cp -f $(PA_EXCEL_PATH)   $(GCOVER_DATA_DIR)GC_Sources_PA.xlsx
-	@cp -f $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) $(GCOVER_DATA_DIR)$(ADMIN_ZONES_GPKG)
-	@cp -f $(OUTPUT_DIR)administrative_zones.README $(GCOVER_DATA_DIR)adminstrative_zones.README
-	@echo "Don't forget to copy to mapserver-geocover/data directory!"
 
 
 ## all: Run the entire workflow (Merge -> Import -> Denormalize -> Symbolize)
@@ -270,7 +254,29 @@ coverage-check:
 		--output-gpkg $(OUTPUT_DIR)unclassified.gpkg
 
 
+### Administratives zones
+
+
+## administrative-zones: Create the adminstratives zones (lots, WU, mapsheets)
+administrative-zones:
+	@echo "--- Creating administrative zones to $(ADMIN_ZONES_GPKG) ---"
+	@python ./scripts/create_administrative_zones.py  \
+	   --lots-file $(GCOVER_DATA_DIR)lots.geojson \
+       --wu-file $(GCOVER_DATA_DIR)WU.json \
+       --mapsheets-file $(GCOVER_DATA_DIR)mapsheets.geojson \
+       --sources-file  $(PA_EXCEL_PATH)  \
+       --output $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) \
+       --format gpkg --format geojson --format parquet \
+       --overwrite
+	@cp -f $(PA_EXCEL_PATH)   $(GCOVER_DATA_DIR)GC_Sources_PA.xlsx
+	@cp -f $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) $(GCOVER_DATA_DIR)$(ADMIN_ZONES_GPKG)
+	@cp -f $(OUTPUT_DIR)administrative_zones.README $(GCOVER_DATA_DIR)adminstrative_zones.README
+	@echo "Don't forget to copy to mapserver-geocover/data directory!"
+
+
 ### Auxilliary data
+
+
 ## geocover-aux: Create auxiliary grid sur surfaces/unco deposits
 
 $(GEOCOVER_AUX_PATH):
@@ -341,6 +347,9 @@ aspect-gmm-%: geocover-aux
 	@ogrinfo $(GEOCOVER_AUX_PATH) -sql "UPDATE gpkg_contents SET description = 'model:gmm' WHERE table_name = '$*_aux_points_aspect'" > /dev/null
 
 
+
+### Test data
+
 data/extract_%.gpkg:
 	python scripts/export_test_data.py "$*"
 
@@ -348,12 +357,16 @@ data/extract_%.gpkg:
 test-data: data/extract_bulle.gpkg data/extract_sion.gpkg
 
 
+
+
+
+
 ## clean-test-data: Delete test data GeoPackages
 clean-test-data:
 	rm -f data/extract_bulle.gpkg
 	rm -f data/extract_sion.gpkg
 
-
+### Cleanup
 
 ## clean-denormalize: Clean denormalized artefacts
 clean-denormalize: clean-classify clean-translate

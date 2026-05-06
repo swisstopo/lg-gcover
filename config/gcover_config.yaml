@@ -12,7 +12,8 @@ global:
 
   s3:
     bucket: "gcover-assets-dev"
-    profile: "default-aws-profile" # AWS profile name
+    # AWS profile name
+    profile:
     # Enhanced S3 upload configuration
     upload_method: "auto" # Options: "auto", "direct", "presigned"
     public_prefix: "public/"  # AWS S3 key prefix for public part of the bucket
