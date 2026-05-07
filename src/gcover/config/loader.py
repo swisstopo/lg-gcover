@@ -5,6 +5,7 @@ Configuration loader supporting separate environment files and secret management
 
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -85,6 +86,12 @@ class ConfigManager:
 
             # Load .env files in priority order
             env_files = self._find_env_files(environment)
+
+            if self.verbose and sys.platform == "win32":
+                console.log(f"[cyan]Windows .env search paths ('{environment}'):[/cyan]")
+                for p in env_files:
+                    status = "✅" if p.exists() else "❌"
+                    console.log(f"  {status} {p}")
 
             for env_file in env_files:
                 if env_file.exists():
@@ -347,6 +354,12 @@ class ConfigManager:
         # Try to find environment file in multiple locations
         env_paths = self._find_environment_config_paths(base_config_path, environment)
 
+        if self.verbose and sys.platform == "win32":
+            console.log(f"[cyan]Windows environment config search paths ('{environment}'):[/cyan]")
+            for p in env_paths:
+                status = "✅" if p.exists() else "❌"
+                console.log(f"  {status} {p}")
+
         for env_path in env_paths:
             if env_path.exists():
                 if self.verbose:
@@ -384,6 +397,12 @@ class ConfigManager:
             Path("~/.config/gcover/config.yaml").expanduser(),
             Path("/etc/gcover/config.yaml"),
         ]
+
+        if self.verbose and sys.platform == "win32":
+            console.log("[cyan]Windows config search paths:[/cyan]")
+            for p in search_paths:
+                status = "✅" if p.exists() else "❌"
+                console.log(f"  {status} {p}")
 
         for path in search_paths:
             if path.exists():
