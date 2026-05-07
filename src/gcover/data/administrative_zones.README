@@ -1,0 +1,98 @@
+
+Create administrative zones from 4 standardized source files.
+
+Inputs
+------
+- lots.geojson         — lot polygons with LOT_NR, Resp, Status
+- WU.json              — work-unit polygons with NAME (→ WU_NAME)
+- mapsheets.geojson    — 1:25 000 mapsheet polygons with MSH_* attributes
+- GC_Sources_PA.xlsx   — per-mapsheet source assignments (BKP → SOURCE_RC)
+                         and document availability flags (BER, ERL)
+
+Output formats (--format, repeatable)
+--------------------------------------
+gpkg      Multi-layer GeoPackage at the path given by --output (default).
+geojson   One GeoJSON file per layer in {output_stem}/ (EPSG:2056).
+parquet   One GeoParquet file per layer in {output_stem}/ (EPSG:2056).
+
+All three formats can be produced in a single run:
+  create-administrative-zones -f gpkg -f geojson -f parquet --overwrite
+
+Output layers
+-------------
+mapsheets_sources_only  Base mapsheets joined with SOURCE_RC, Version,
+                        and document links (ber_link, erl_link).
+mapsheets_with_sources  Same, further enriched with LOT_NR, WU_NAME (spatial
+                        join; values from multiple lots/WUs are pipe-separated).
+borders_50m             Single polygon: full mapped area minus a 50 m buffer
+                        around all internal mapsheet borders.  Used to identify
+                        features well away from any join line.
+border_segments         Classified border lines between adjacent mapsheets:
+                          RC1-RC1  both neighbours from RC1 (tolerant)
+                          RC1-RC2  one RC1, one RC2 (tolerant)
+                          RC2-RC2  both from RC2 (strict)
+                          land     external perimeter of the mapped area (strict)
+tolerance_zones_50m     Single polygon: 50 m buffer around tolerant borders
+                        (RC1-RC1 and RC1-RC2).  QA errors intersecting this zone
+                        can be ignored.
+strict_zones_50m        Full mapped area minus tolerance_zones_50m.  Only QA
+                        errors inside this zone need investigation.
+lots                    Raw lot polygons.
+work_units              Raw work-unit polygons.
+mapsheets               Raw mapsheet polygons (no source join).
+qa_rand_gc              Raw QA_Rand_GC.gdb layer (first layer), reprojected to
+                        EPSG:2056; all column names lowercased.  Only present
+                        when --qa-rand-gc is supplied.
+qa_rand_gc_buffer_50m   Single polygon: full mapped area minus a 50 m buffer
+                        around active border features (rand != '1'; rand = '1'
+                        means terminated and is excluded).  Used to
+                        select features that lie well away from active borders.
+                        Only present when --qa-rand-gc is supplied.
+
+Changelog
+---------
+2025-09-05  Added SOURCE_RC (BKP) per mapsheet for publication tracking
+2025-10-13  Added SOURCE_QA per mapsheet for pre-publication QA
+2025-10-14  Added borders_100m layer
+2026-01-28  Downgraded missing SOURCE_QA to warning only
+2026-03-13  Added BER/ERL flags and ber_link/erl_link URL columns
+2026-03-15  Removed SOURCE_QA column entirely
+2026-03-24  New WU.json format; removed Campodolcino sheet (merged into Val Bregaglia); provisional PA for R17
+2026-04-25  Added border_segments, tolerance_zones_Xm, strict_zones_Xm for QA error border filtering
+2026-04-26  Improved docstring; added HTTP check for ber_link/erl_link URLs
+2026-05-05  Added GeoJSON and GeoParquet output formats via --format option
+2026-05-07  Added qa_rand_gc and qa_rand_gc_buffer_50m layers via --qa-rand-gc
+
+
+
+XLSX file:/home/marco/DATA/Derivations/delivery/R17/Excels/GC_Sources_PA.xlsx
+
+Layer list:
+ * mapsheets_sources_only
+ * mapsheets_with_sources
+ * borders_50m
+ * border_segments
+ * tolerance_zones_50m
+ * strict_zones_50m
+ * lots
+ * work_units
+ * mapsheets
+ * qa_rand_gc
+ * qa_rand_gc_buffer_50m
+
+-- 'mapsheets_sources_only' --
+
+   Unique SOURCE_RC values   
+┏━━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
+┃ Source            ┃ Count ┃
+┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
+│ RC1               │   144 │
+│ RC2               │    74 │
+│ BCK_2016          │     1 │
+│ 20300501_Saas.gdb │     1 │
+│ Total             │   220 │
+└───────────────────┴───────┘
+
+
+
+Generated on 2026-05-07 13:27:49
