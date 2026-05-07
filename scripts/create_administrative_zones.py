@@ -42,6 +42,13 @@ strict_zones_100m       Full mapped area minus tolerance_zones_100m.  Only QA
 lots                    Raw lot polygons.
 work_units              Raw work-unit polygons.
 mapsheets               Raw mapsheet polygons (no source join).
+qa_rand_gc              Raw QA_Rand_GC.gdb layer (first layer), reprojected to
+                        EPSG:2056; all column names lowercased.  Only present
+                        when --qa-rand-gc is supplied.
+qa_rand_gc_buffer_50m   Single polygon: full mapped area minus a 50 m buffer
+                        around all features where rand <> 1.  Used to select
+                        features that lie well away from those borders.  Only
+                        present when --qa-rand-gc is supplied.
 
 Changelog
 ---------
@@ -55,6 +62,7 @@ Changelog
 2026-04-25  Added border_segments, tolerance_zones_Xm, strict_zones_Xm for QA error border filtering
 2026-04-26  Improved docstring; added HTTP check for ber_link/erl_link URLs
 2026-05-05  Added GeoJSON and GeoParquet output formats via --format option
+2026-05-07  Added qa_rand_gc and qa_rand_gc_buffer_50m layers via --qa-rand-gc
 
 """
 
@@ -644,6 +652,22 @@ def classify_border_segments(
     return border_segments_gdf, tolerance_zones_gdf, strict_zones_gdf
 
 
+def load_qa_rand_gc(gdb_path: Path) -> gpd.GeoDataFrame:
+    """Load QA_Rand_GC GDB; lowercase all column names (geometry kept as-is)."""
+    logger.info(f"Loading QA Rand GC from {gdb_path}")
+    layers = fiona.listlayers(str(gdb_path))
+    if not layers:
+        raise ValueError(f"No layers found in {gdb_path}")
+    layer_name = layers[0]
+    if len(layers) > 1:
+        logger.warning(f"Multiple layers in {gdb_path}, using first: {layer_name}")
+    gdf = gpd.read_file(gdb_path, layer=layer_name)
+    gdf = gdf.to_crs(DEFAULT_CRS)
+    gdf.columns = [c.lower() if c != "geometry" else c for c in gdf.columns]
+    logger.info(f"Loaded {len(gdf)} features, columns: {list(gdf.columns)}")
+    return gdf
+
+
 def clean_wu(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """
     Cleans the WU (Work Unit) GeoDataFrame by removing a predefined list of columns.
@@ -793,6 +817,14 @@ def _write_layers(
     help="Path to sources Excel file",
     default=str(files("gcover.data").joinpath("GC_Sources_QA.xlsx")),
 )
+@click.option(
+    "--qa-rand-gc",
+    "qa_rand_gc_file",
+    required=False,
+    default=None,
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to QA_Rand_GC.gdb; adds raw layer and a 50 m buffer of rand<>1 features",
+)
 @click.option("--overwrite", is_flag=True, help="Overwrite existing output file")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 def create_administrative_zones(
@@ -802,6 +834,7 @@ def create_administrative_zones(
     mapsheets_file: Path,
     sources_file: Path,
     formats: tuple[str, ...],
+    qa_rand_gc_file: Path | None,
     overwrite: bool,
     verbose: bool,
 ):
@@ -975,6 +1008,24 @@ def create_administrative_zones(
             "work_units": wu_gdf,
             "mapsheets": mapsheets_gdf,
         }
+
+        if qa_rand_gc_file is not None:
+            click.echo("📁 Loading QA_Rand_GC...")
+            qa_rand_gc_gdf = load_qa_rand_gc(qa_rand_gc_file)
+            layers["qa_rand_gc"] = qa_rand_gc_gdf
+
+            if "rand" not in qa_rand_gc_gdf.columns:
+                logger.warning("'rand' column not found in QA_Rand_GC; skipping buffer layer")
+            else:
+                rand_borders = qa_rand_gc_gdf[qa_rand_gc_gdf["rand"] != 1]
+                total_area = unary_union(mapsheets_gdf.geometry)
+                rand_buffer = unary_union(rand_borders.geometry).buffer(50)
+                inner_area = total_area.difference(rand_buffer)
+                layers["qa_rand_gc_buffer_50m"] = gpd.GeoDataFrame(
+                    [{"geometry": inner_area, "buffer_m": 50}],
+                    crs=qa_rand_gc_gdf.crs,
+                )
+                logger.info(f"Buffer layer: mapsheets minus 50 m zone around {len(rand_borders)} rand<>1 features")
 
         click.echo(f"💾 Writing to {output_path} (formats: {', '.join(formats)})")
         _write_layers(layers, output_path, formats)
