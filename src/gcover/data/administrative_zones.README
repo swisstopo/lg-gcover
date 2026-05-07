@@ -12,11 +12,12 @@ Inputs
 Output formats (--format, repeatable)
 --------------------------------------
 gpkg      Multi-layer GeoPackage at the path given by --output (default).
+filegdb   ESRI FileGDB at the same base path with a .gdb extension.
 geojson   One GeoJSON file per layer in {output_stem}/ (EPSG:2056).
 parquet   One GeoParquet file per layer in {output_stem}/ (EPSG:2056).
 
-All three formats can be produced in a single run:
-  create-administrative-zones -f gpkg -f geojson -f parquet --overwrite
+All formats can be produced in a single run:
+  create-administrative-zones -f gpkg -f filegdb -f geojson -f parquet --overwrite
 
 Output layers
 -------------
@@ -87,12 +88,12 @@ Layer list:
 ┃ Source            ┃ Count ┃
 ┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
 │ RC1               │   144 │
-│ RC2               │    74 │
+│ RC2               │    72 │
 │ BCK_2016          │     1 │
 │ 20300501_Saas.gdb │     1 │
-│ Total             │   220 │
+│ Total             │   218 │
 └───────────────────┴───────┘
 
 
 
-Generated on 2026-05-07 13:27:49
+Generated on 2026-05-07 18:01:26

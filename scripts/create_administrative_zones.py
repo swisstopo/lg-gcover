@@ -993,8 +993,9 @@ def create_administrative_zones(
         # 4. Aggregate mapsheets_complete
 
         # Define the grouping columns (mapsheet columns)
-        mapsheet_cols = [
-            "geometry",
+        # "geometry" is always kept — it is the per-mapsheet deduplication key.
+        # All other columns are optional: missing ones are silently dropped with a warning.
+        _wanted_mapsheet_cols = [
             "MSH_MAP_TITLE",
             "MSH_MAP_NBR",
             "MSH_MAP_SCALE",
@@ -1007,16 +1008,20 @@ def create_administrative_zones(
             "MSH_MORE_INFO",
             "MSH_TOPO_NR",
             "SOURCE_RC",
-               "Version",
+            "Version",
         ]
 
-        missing_cols = sorted(set(mapsheet_cols) - set(sources_df.columns))
-
+        missing_cols = sorted(c for c in _wanted_mapsheet_cols if c not in mapsheets_complete.columns)
         if missing_cols:
-            click.secho("Error: The DataFrame is missing required columns:", fg="red", bold=True)
+            click.secho("Warning: grouping columns not found and will be skipped:", fg="yellow")
             for col in missing_cols:
                 click.secho(f"  • {col}", fg="yellow")
-            # raise click.Abort()
+
+        if "geometry" not in mapsheets_complete.columns:
+            raise ValueError("mapsheets_complete has no geometry column — cannot aggregate")
+
+        mapsheet_cols = ["geometry"] + [c for c in _wanted_mapsheet_cols if c in mapsheets_complete.columns]
+
         SOURCES_COLUMNS = ("SOURCE_RC",)
 
 
