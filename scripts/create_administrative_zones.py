@@ -14,11 +14,12 @@ Inputs
 Output formats (--format, repeatable)
 --------------------------------------
 gpkg      Multi-layer GeoPackage at the path given by --output (default).
+filegdb   ESRI FileGDB at the same base path with a .gdb extension.
 geojson   One GeoJSON file per layer in {output_stem}/ (EPSG:2056).
 parquet   One GeoParquet file per layer in {output_stem}/ (EPSG:2056).
 
-All three formats can be produced in a single run:
-  create-administrative-zones -f gpkg -f geojson -f parquet --overwrite
+All formats can be produced in a single run:
+  create-administrative-zones -f gpkg -f filegdb -f geojson -f parquet --overwrite
 
 Output layers
 -------------
@@ -742,6 +743,27 @@ def clean_wu(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return gdf
 
 
+def _promote_to_multi(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Promote single geometries to Multi* and LinearRing to LineString.
+
+    FileGDB requires homogeneous geometry types with no LinearRing.
+    """
+    from shapely.geometry import LineString, MultiLineString, MultiPoint, MultiPolygon
+
+    _promote_map = {
+        "Polygon":    lambda g: MultiPolygon([g]),
+        "LineString": lambda g: MultiLineString([g]),
+        "LinearRing": lambda g: MultiLineString([LineString(g)]),
+        "Point":      lambda g: MultiPoint([g]),
+    }
+
+    gdf = gdf.copy()
+    gdf["geometry"] = gdf.geometry.apply(
+        lambda g: _promote_map[g.geom_type](g) if g is not None and g.geom_type in _promote_map else g
+    )
+    return gdf
+
+
 def _write_layers(
     layers: dict[str, gpd.GeoDataFrame],
     output_path: Path,
@@ -754,6 +776,18 @@ def _write_layers(
             mode = "w" if first else "a"
             gdf.to_file(output_path, layer=name, driver="GPKG", mode=mode)
             logger.info(f"✓ Written GPKG layer: {name} ({len(gdf)} features)")
+            first = False
+
+    if "filegdb" in formats:
+        import shutil
+        gdb_path = output_path.with_suffix(".gdb")
+        if gdb_path.exists():
+            shutil.rmtree(gdb_path)
+        first = True
+        for name, gdf in layers.items():
+            mode = "w" if first else "a"
+            _promote_to_multi(gdf).to_file(gdb_path, layer=name, driver="OpenFileGDB", mode=mode)
+            logger.info(f"✓ Written FileGDB layer: {name} ({len(gdf)} features)")
             first = False
 
     web_formats = [f for f in ("geojson", "parquet") if f in formats]
@@ -785,10 +819,10 @@ def _write_layers(
     "-f",
     "formats",
     multiple=True,
-    type=click.Choice(["gpkg", "geojson", "parquet"], case_sensitive=False),
+    type=click.Choice(["gpkg", "filegdb", "geojson", "parquet"], case_sensitive=False),
     default=("gpkg",),
     show_default=True,
-    help="Output format(s). Repeat to enable multiple: -f gpkg -f geojson",
+    help="Output format(s). Repeat to enable multiple: -f gpkg -f filegdb",
 )
 @click.option(
     "--lots-file",
@@ -866,6 +900,10 @@ def create_administrative_zones(
             click.echo(f"❌ Output file exists: {output_path}")
             click.echo("   Use --overwrite to replace it")
             return
+        if "filegdb" in formats and output_path.with_suffix(".gdb").exists():
+            click.echo(f"❌ Output FileGDB exists: {output_path.with_suffix('.gdb')}")
+            click.echo("   Use --overwrite to replace it")
+            return
         if any(f in formats for f in ("geojson", "parquet")) and layers_dir.exists():
             click.echo(f"❌ Output directory exists: {layers_dir}")
             click.echo("   Use --overwrite to replace it")
@@ -881,7 +919,23 @@ def create_administrative_zones(
 
     try:
         # 1. Load all source data
-        click.echo("📁 Loading source data...")
+        input_files = {
+            "lots":       lots_file,
+            "work units": wu_file,
+            "mapsheets":  mapsheets_file,
+            "sources":    sources_file,
+        }
+        if qa_rand_gc_file is not None:
+            input_files["qa rand gc"] = qa_rand_gc_file
+
+        table = Table(title="Input files", show_header=True, header_style="bold cyan")
+        table.add_column("Source", style="cyan", no_wrap=True)
+        table.add_column("Path")
+        table.add_column("Modified", style="green", no_wrap=True)
+        for label, path in input_files.items():
+            mtime = dt.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+            table.add_row(label, str(path.resolve()), mtime)
+        console.print(table)
 
         lots_gdf = load_lots(lots_file)
         wu_gdf = load_work_units(wu_file)
@@ -939,8 +993,9 @@ def create_administrative_zones(
         # 4. Aggregate mapsheets_complete
 
         # Define the grouping columns (mapsheet columns)
-        mapsheet_cols = [
-            "geometry",
+        # "geometry" is always kept — it is the per-mapsheet deduplication key.
+        # All other columns are optional: missing ones are silently dropped with a warning.
+        _wanted_mapsheet_cols = [
             "MSH_MAP_TITLE",
             "MSH_MAP_NBR",
             "MSH_MAP_SCALE",
@@ -953,16 +1008,20 @@ def create_administrative_zones(
             "MSH_MORE_INFO",
             "MSH_TOPO_NR",
             "SOURCE_RC",
-               "Version",
+            "Version",
         ]
 
-        missing_cols = sorted(set(mapsheet_cols) - set(sources_df.columns))
-
+        missing_cols = sorted(c for c in _wanted_mapsheet_cols if c not in mapsheets_complete.columns)
         if missing_cols:
-            click.secho("Error: The DataFrame is missing required columns:", fg="red", bold=True)
+            click.secho("Warning: grouping columns not found and will be skipped:", fg="yellow")
             for col in missing_cols:
                 click.secho(f"  • {col}", fg="yellow")
-            # raise click.Abort()
+
+        if "geometry" not in mapsheets_complete.columns:
+            raise ValueError("mapsheets_complete has no geometry column — cannot aggregate")
+
+        mapsheet_cols = ["geometry"] + [c for c in _wanted_mapsheet_cols if c in mapsheets_complete.columns]
+
         SOURCES_COLUMNS = ("SOURCE_RC",)
 
 

@@ -270,7 +270,7 @@ administrative-zones:
        --sources-file  $(PA_EXCEL_PATH)  \
        --qa-rand-gc $(QA_RAND_PATH) \
        --output $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) \
-       --format gpkg --format geojson --format parquet \
+       --format gpkg --format geojson --format filegdb --format parquet \
        --overwrite
 	@cp -f $(PA_EXCEL_PATH)   $(GCOVER_DATA_DIR)GC_Sources_PA.xlsx
 	@cp -f $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) $(GCOVER_DATA_DIR)$(ADMIN_ZONES_GPKG)
