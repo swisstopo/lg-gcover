@@ -919,7 +919,23 @@ def create_administrative_zones(
 
     try:
         # 1. Load all source data
-        click.echo("📁 Loading source data...")
+        input_files = {
+            "lots":       lots_file,
+            "work units": wu_file,
+            "mapsheets":  mapsheets_file,
+            "sources":    sources_file,
+        }
+        if qa_rand_gc_file is not None:
+            input_files["qa rand gc"] = qa_rand_gc_file
+
+        table = Table(title="Input files", show_header=True, header_style="bold cyan")
+        table.add_column("Source", style="cyan", no_wrap=True)
+        table.add_column("Path")
+        table.add_column("Modified", style="green", no_wrap=True)
+        for label, path in input_files.items():
+            mtime = dt.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+            table.add_row(label, str(path.resolve()), mtime)
+        console.print(table)
 
         lots_gdf = load_lots(lots_file)
         wu_gdf = load_work_units(wu_file)
