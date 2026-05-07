@@ -51,6 +51,7 @@ ADMIN_ZONES_GPKG  := administrative_zones.gpkg
 MAPSERVER_OUTPUT      ?= mapserver_$(BRANCH)
 DEM_ASPECT_PATH       ?= $(DELIVERY_DIR)swissALTI3DRegio_aspect_50m.tif
 PA_EXCEL_PATH         ?= $(DELIVERY_DIR)Excels/GC_Sources_PA.xlsx
+QA_RAND_PATH          ?= $(DELIVERY_DIR)rand_qa_gc.geojson
 CONFIG_PATH           ?= config/esri_classifier_denormalized_geocover.yaml
 
 # Layers for denormalization
@@ -105,6 +106,7 @@ help:
 	$(call check_file,STRATI_LINK_PATH,$(STRATI_LINK_PATH))
 	$(call check_file,PA_EXCEL_PATH,$(PA_EXCEL_PATH))
 	$(call check_file,DEM_ASPECT,$(DEM_ASPECT_PATH))
+	$(call check_file,QA_RAND_PATH,$(QA_RAND_PATH))
 	@echo ""
 	@echo "$(YELLOW)Output$(RESET)"
 	@echo "  Output dir:           $(OUTPUT_DIR)"
@@ -114,6 +116,7 @@ help:
 	$(call check_file,TRANSLATED_PATH,$(TRANSLATED_PATH))
 	$(call check_file,GEOCOVER_AUX_PATH,$(GEOCOVER_AUX_PATH))
 	$(call check_file,CONFIG_PATH,$(CONFIG_PATH))
+
 	@echo ""
 	@echo "  LAST_SCHEMA_RELEASE=$(LAST_SCHEMA_RELEASE)"
 	@echo "  Last source $(V2)"
@@ -265,6 +268,7 @@ administrative-zones:
        --wu-file $(GCOVER_DATA_DIR)WU.json \
        --mapsheets-file $(GCOVER_DATA_DIR)mapsheets.geojson \
        --sources-file  $(PA_EXCEL_PATH)  \
+       --qa-rand-gc $(QA_RAND_PATH) \
        --output $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) \
        --format gpkg --format geojson --format parquet \
        --overwrite

@@ -26,7 +26,7 @@ mapsheets_sources_only  Base mapsheets joined with SOURCE_RC, Version,
                         and document links (ber_link, erl_link).
 mapsheets_with_sources  Same, further enriched with LOT_NR, WU_NAME (spatial
                         join; values from multiple lots/WUs are pipe-separated).
-borders_100m            Single polygon: full mapped area minus a 100 m buffer
+borders_50m             Single polygon: full mapped area minus a 50 m buffer
                         around all internal mapsheet borders.  Used to identify
                         features well away from any join line.
 border_segments         Classified border lines between adjacent mapsheets:
@@ -34,10 +34,10 @@ border_segments         Classified border lines between adjacent mapsheets:
                           RC1-RC2  one RC1, one RC2 (tolerant)
                           RC2-RC2  both from RC2 (strict)
                           land     external perimeter of the mapped area (strict)
-tolerance_zones_100m    Single polygon: 100 m buffer around tolerant borders
+tolerance_zones_50m     Single polygon: 50 m buffer around tolerant borders
                         (RC1-RC1 and RC1-RC2).  QA errors intersecting this zone
                         can be ignored.
-strict_zones_100m       Full mapped area minus tolerance_zones_100m.  Only QA
+strict_zones_50m        Full mapped area minus tolerance_zones_50m.  Only QA
                         errors inside this zone need investigation.
 lots                    Raw lot polygons.
 work_units              Raw work-unit polygons.
@@ -46,9 +46,10 @@ qa_rand_gc              Raw QA_Rand_GC.gdb layer (first layer), reprojected to
                         EPSG:2056; all column names lowercased.  Only present
                         when --qa-rand-gc is supplied.
 qa_rand_gc_buffer_50m   Single polygon: full mapped area minus a 50 m buffer
-                        around all features where rand <> 1.  Used to select
-                        features that lie well away from those borders.  Only
-                        present when --qa-rand-gc is supplied.
+                        around active border features (rand != '1'; rand = '1'
+                        means terminated and is excluded).  Used to
+                        select features that lie well away from active borders.
+                        Only present when --qa-rand-gc is supplied.
 
 Changelog
 ---------
@@ -987,7 +988,7 @@ def create_administrative_zones(
             gdf_aggregated, geometry="geometry", crs=mapsheets_gdf.crs
         )
 
-        buffer_distance = 100
+        buffer_distance = 50
         border_gdf = border_mapsheet(mapsheets_gdf, buffer_distance=buffer_distance)
 
         # Classified border segments and tolerance zones
@@ -1017,15 +1018,15 @@ def create_administrative_zones(
             if "rand" not in qa_rand_gc_gdf.columns:
                 logger.warning("'rand' column not found in QA_Rand_GC; skipping buffer layer")
             else:
-                rand_borders = qa_rand_gc_gdf[qa_rand_gc_gdf["rand"] != 1]
+                rand_borders = qa_rand_gc_gdf[qa_rand_gc_gdf["rand"].astype(str) != "1"]
                 total_area = unary_union(mapsheets_gdf.geometry)
-                rand_buffer = unary_union(rand_borders.geometry).buffer(50)
+                rand_buffer = unary_union(rand_borders.geometry).buffer(buffer_distance)
                 inner_area = total_area.difference(rand_buffer)
-                layers["qa_rand_gc_buffer_50m"] = gpd.GeoDataFrame(
-                    [{"geometry": inner_area, "buffer_m": 50}],
+                layers[f"qa_rand_gc_buffer_{buffer_distance}m"] = gpd.GeoDataFrame(
+                    [{"geometry": inner_area, "buffer_m": buffer_distance}],
                     crs=qa_rand_gc_gdf.crs,
                 )
-                logger.info(f"Buffer layer: mapsheets minus 50 m zone around {len(rand_borders)} rand<>1 features")
+                logger.info(f"Buffer layer: mapsheets minus {buffer_distance} m zone around {len(rand_borders)} active (rand != '1') features")
 
         click.echo(f"💾 Writing to {output_path} (formats: {', '.join(formats)})")
         _write_layers(layers, output_path, formats)
