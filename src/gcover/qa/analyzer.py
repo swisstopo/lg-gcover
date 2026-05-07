@@ -515,13 +515,20 @@ class QAAnalyzer:
                 "found in the zones file — regenerate it with --qa-rand-gc or pass --rand-border-filter none"
             )
 
-        # Count IssueType breakdown across all kept layers
-        issue_type_counts: Dict[str, int] = {}
-        for gdf in all_filtered_data.values():
-            if "IssueType" in gdf.columns:
-                for val, cnt in gdf["IssueType"].value_counts().items():
-                    issue_type_counts[val] = issue_type_counts.get(val, 0) + int(cnt)
-        stats["issue_type_counts"] = issue_type_counts
+        # Count IssueType breakdown — total and per RC — after all filters
+        def _count_issue_types(data: Dict[str, gpd.GeoDataFrame]) -> Dict[str, int]:
+            counts: Dict[str, int] = {}
+            for gdf in data.values():
+                if "IssueType" in gdf.columns:
+                    for val, cnt in gdf["IssueType"].value_counts().items():
+                        counts[val] = counts.get(val, 0) + int(cnt)
+            return counts
+
+        stats["issue_type_counts"] = _count_issue_types(all_filtered_data)
+        stats["rc1_issue_type_counts"] = _count_issue_types(rc1_filtered_data)
+        stats["rc2_issue_type_counts"] = _count_issue_types(rc2_filtered_data)
+        stats["rc1_issues"] = sum(stats["rc1_issue_type_counts"].values())
+        stats["rc2_issues"] = sum(stats["rc2_issue_type_counts"].values())
 
         # ========================================================================
         # Save RC1 issues separately
