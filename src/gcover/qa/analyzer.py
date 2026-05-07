@@ -510,10 +510,18 @@ class QAAnalyzer:
                     f"Wrote {stats['rand_buffer_dropped']} rejected issues to {rejected_path}"
                 )
         elif rand_buffer_predicate != "none":
-            logger.warning(
+            raise ValueError(
                 "rand_buffer_predicate is set but 'qa_rand_gc_buffer_50m' layer was not "
-                "found in the zones file — rand-buffer filtering skipped"
+                "found in the zones file — regenerate it with --qa-rand-gc or pass --rand-border-filter none"
             )
+
+        # Count IssueType breakdown across all kept layers
+        issue_type_counts: Dict[str, int] = {}
+        for gdf in all_filtered_data.values():
+            if "IssueType" in gdf.columns:
+                for val, cnt in gdf["IssueType"].value_counts().items():
+                    issue_type_counts[val] = issue_type_counts.get(val, 0) + int(cnt)
+        stats["issue_type_counts"] = issue_type_counts
 
         # ========================================================================
         # Save RC1 issues separately
