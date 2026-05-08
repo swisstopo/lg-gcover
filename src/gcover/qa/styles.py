@@ -242,24 +242,24 @@ CREATE TABLE IF NOT EXISTS layer_styles (
     description       TEXT(200),
     owner             TEXT(30),
     ui                TEXT(30),
-    update_datetime   DATETIME
+    update_time       DATETIME
 )
 """
 
 _UPSERT = """
 INSERT INTO layer_styles
     (f_table_catalog, f_table_schema, f_table_name, f_geometry_column,
-     styleName, styleQML, styleSLD, useAsDefault, description, owner, ui, update_datetime)
+     styleName, styleQML, styleSLD, useAsDefault, description, owner, ui, update_time)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(f_table_name, f_geometry_column, styleName)
-DO UPDATE SET styleQML=excluded.styleQML, update_datetime=excluded.update_datetime
+DO UPDATE SET styleQML=excluded.styleQML, update_time=excluded.update_time
 """
 
 # Fallback insert when the table has no UNIQUE constraint (first-time population)
 _INSERT = """
 INSERT OR REPLACE INTO layer_styles
     (f_table_catalog, f_table_schema, f_table_name, f_geometry_column,
-     styleName, styleQML, styleSLD, useAsDefault, description, owner, ui, update_datetime)
+     styleName, styleQML, styleSLD, useAsDefault, description, owner, ui, update_time)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
