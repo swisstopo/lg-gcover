@@ -8,6 +8,8 @@ DATAMODEL_SOURCES=$(DATAMODEL_CLONE)/sources/
 
 BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
 LAST_SCHEMA_RELEASE=$(shell python -c "import yaml; print(yaml.safe_load(open('${DATAMODEL_CLONE}release.yaml'))['model']['revision'])")
+LATEST_TAG := $(shell git describe --tags --match "v*" --abbrev=0)
+
 
 # regex: 4 digits, dash, 2 digits, dash, 2 digits
 DATE_PATTERN := ^[0-9]{4}-[0-9]{2}-[0-9]{2}$$
@@ -124,6 +126,8 @@ help:
 	@echo ""
 	@echo "$(YELLOW)Mapserver$(RESET)"
 	@echo "  Mapserver dir:        $(MAPSERVER_OUTPUT)"
+	@echo ""
+	@echo "TAG:     $(LATEST_TAG)"
 
 
 

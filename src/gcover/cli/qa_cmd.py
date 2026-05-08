@@ -1835,25 +1835,23 @@ def extract(
                 rc1_gdb, rc2_gdb, issue_output, output_format.lower()
             )
 
-        # Summary
+        # Summary — based on RC_combined output only
+        it = stats.get("issue_type_counts", {})
+        errors = it.get("Error", 0)
+        warnings = it.get("Warning", 0)
+        rc1_errors = stats.get("rc1_issue_type_counts", {}).get("Error", 0)
+        rc2_errors = stats.get("rc2_issue_type_counts", {}).get("Error", 0)
+        rejected_path = issue_output.parent / "rejected" / issue_output.name
+
         click.echo("✅ Extraction complete!")
-        click.echo(f"   📊 {stats['total_issues']:,} total issues extracted")
-        for issue_type, count in sorted(stats.get("issue_type_counts", {}).items()):
-            click.echo(f"      {'❌' if issue_type == 'Error' else '⚠️ '} {count:,} {issue_type}s")
-        click.echo(f"   🔵 {stats['rc1_issues']:,} RC1 issues")
-        for issue_type, count in sorted(stats.get("rc1_issue_type_counts", {}).items()):
-            click.echo(f"      {'❌' if issue_type == 'Error' else '⚠️ '} {count:,} {issue_type}s")
-        click.echo(f"   🟢 {stats['rc2_issues']:,} RC2 issues")
-        for issue_type, count in sorted(stats.get("rc2_issue_type_counts", {}).items()):
-            click.echo(f"      {'❌' if issue_type == 'Error' else '⚠️ '} {count:,} {issue_type}s")
-        if stats.get("rand_buffer_dropped", 0):
-            rejected_path = issue_output.parent / "rejected" / issue_output.name
-            click.echo(f"   🚫 {stats['rand_buffer_dropped']:,} issues rejected by rand-border filter → {rejected_path.with_suffix(output_file.suffix)}")
+        click.echo(f"   📊 {stats['total_issues']:,} total issues")
+        click.echo(f"      ❌ {errors:,} Errors  (RC1: {rc1_errors:,}, RC2: {rc2_errors:,})")
+        click.echo(f"      ⚠️  {warnings:,} Warnings")
+        click.echo(f"   🚫 {stats.get('rand_buffer_dropped', 0):,} discarded by rand-border filter")
         click.echo(f"   📁 Output: {output_file}")
         click.echo(
             f"   🔧 Format: {output_format.upper()} ({'analysis' if output_format.lower() == 'gpkg' else 'ESRI tools'})"
         )
-
         if filter_by_source:
             click.echo("   🎯 Source filtering: enabled (mapsheet-specific)")
         else:
