@@ -1708,6 +1708,13 @@ def _auto_discover_rc_gdbs(base_dir: Path) -> tuple[Optional[Path], Optional[Pat
     help="Use ESRI ArcMap FileGDB format",
 )
 @click.option(
+    "--include-source-layers/--no-source-layers",
+    "include_source_layers",
+    default=True,
+    show_default=True,
+    help="Write the zone layers used (mapsheets_sources_only, qa_rand_gc_buffer_50m) into the output file for provenance.",
+)
+@click.option(
     "--yes", is_flag=True, help="Automatically confirm prompts (for scripting)"
 )
 @click.pass_context
@@ -1720,6 +1727,7 @@ def extract(
     output_format: str,
     filter_by_source: bool,
     rand_border_filter: str,
+    include_source_layers: bool,
     yes: bool,
     asset_type: str,
     use_arcmap: bool,
@@ -1819,6 +1827,7 @@ def extract(
                 output_path=issue_output,
                 output_format=output_format.lower(),
                 rand_buffer_predicate=rand_border_filter,
+                include_source_layers=include_source_layers,
             )
         else:
             logger.warning("Extracting all issues (no source filtering)")

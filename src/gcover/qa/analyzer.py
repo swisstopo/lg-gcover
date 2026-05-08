@@ -38,6 +38,8 @@ def custom_warning_handler(message, category, filename, lineno, file=None, line=
 
 warnings.showwarning = custom_warning_handler
 
+_RAND_BUFFER_LAYER = "qa_rand_gc_buffer_50m"
+
 
 class QAAnalyzer:
     """
@@ -120,7 +122,7 @@ class QAAnalyzer:
 
             # Optional rand-buffer zone — present only when create-administrative-zones
             # was run with --qa-rand-gc.
-            _RAND_BUFFER_LAYER = "qa_rand_gc_buffer_50m"
+
             try:
                 gdf = gpd.read_file(self.zones_file, layer=_RAND_BUFFER_LAYER)
                 if not gdf.empty:
@@ -301,6 +303,7 @@ class QAAnalyzer:
         output_format: str = "gpkg",
         deduplicate_cross_zone: bool = True,
         rand_buffer_predicate: str = "intersects",
+        include_source_layers: bool = True,
     ) -> Dict[str, int]:
         """
         Extract only relevant QA issues based on mapsheet source mapping.
@@ -322,6 +325,9 @@ class QAAnalyzer:
             output_format: 'gpkg' or 'filegdb'
             deduplicate_cross_zone: Whether to deduplicate features crossing multiple zones
             rand_buffer_predicate: 'intersects', 'within', or 'none'
+            include_source_layers: When True, write the zone layers used
+                (mapsheets_sources_only, and qa_rand_gc_buffer_50m if active)
+                into the output file for provenance.
 
         Returns:
             Dictionary with extraction statistics
@@ -563,8 +569,14 @@ class QAAnalyzer:
             if layer_gdfs:
                 combined_layers[layer_type] = pd.concat(layer_gdfs, ignore_index=True)
 
+        # Optionally append the zone layers used so the output is self-documenting
+        if include_source_layers:
+            combined_layers["mapsheets_sources_only"] = self.zones_data["mapsheets"]
+            if rand_buffer_predicate != "none" and "rand_buffer" in self.zones_data:
+                combined_layers[_RAND_BUFFER_LAYER] = self.zones_data["rand_buffer"]
+            logger.info("Including source zone layers in output for provenance")
+
         # Write output
-        # TODO cleanup temp_merged_RC_combined.gpkg
         output_path.parent.mkdir(parents=True, exist_ok=True)
         self._write_spatial_output(combined_layers, output_path, output_format)
 
