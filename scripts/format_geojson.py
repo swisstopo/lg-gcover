@@ -5,6 +5,7 @@ Properties are pretty-printed (one attribute per line); geometry is kept on a
 single compact line so coordinate noise does not pollute diffs.
 """
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -15,9 +16,28 @@ from rich.text import Text
 
 console = Console()
 
+_GEOM_COORD_PRECISION = 2  # metres → 1 cm, enough to absorb float noise
 
-def fmt_props(props: dict) -> str:
-    s = json.dumps(props, indent=2, ensure_ascii=False)
+
+def _round_coords(obj):
+    if isinstance(obj, float):
+        return round(obj, _GEOM_COORD_PRECISION)
+    if isinstance(obj, list):
+        return [_round_coords(v) for v in obj]
+    return obj
+
+
+def geom_hash(geom: dict) -> str:
+    normalized = json.dumps(
+        {"type": geom["type"], "coordinates": _round_coords(geom["coordinates"])},
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(normalized.encode()).hexdigest()[:10]
+
+
+def fmt_props(props: dict, geom: dict) -> str:
+    enriched = {"_geom_hash": geom_hash(geom), **props}
+    s = json.dumps(enriched, indent=2, ensure_ascii=False)
     lines = s.splitlines()
     return lines[0] + "\n" + "\n".join("      " + l for l in lines[1:])
 
@@ -32,7 +52,7 @@ def format_geojson(data: dict) -> str:
         features.append(
             "    {\n"
             '      "type": "Feature",\n'
-            f'      "properties": {fmt_props(feat["properties"])},\n'
+            f'      "properties": {fmt_props(feat["properties"], feat["geometry"])},\n'
             f'      "geometry": {fmt_geom(feat["geometry"])}\n'
             "    }"
         )
