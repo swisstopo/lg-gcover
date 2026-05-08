@@ -84,7 +84,7 @@ import pandas as pd
 from loguru import logger
 from rich.console import Console
 from rich.table import Table
-from shapely import STRtree
+from shapely import STRtree, force_2d
 from shapely.ops import unary_union
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -121,7 +121,7 @@ def load_lots(lots_path: Path) -> gpd.GeoDataFrame:
 
     try:
         lots_gdf = gpd.read_file(lots_path)
-        lots_gdf = lots_gdf.to_crs(DEFAULT_CRS)
+        lots_gdf = lots_gdf.set_crs(DEFAULT_CRS, allow_override=True)
 
         # Ensure we have the essential columns
         excluded = {"Id", "LOT_NR"}
@@ -154,7 +154,7 @@ def load_work_units(wu_path: Path) -> gpd.GeoDataFrame:
 
     try:
         wu_gdf = gpd.read_file(wu_path)
-        wu_gdf = wu_gdf.to_crs(DEFAULT_CRS)
+        wu_gdf = wu_gdf.set_crs(DEFAULT_CRS, allow_override=True)
 
         # Ensure we have the essential columns
         if "NAME" not in wu_gdf.columns:
@@ -191,8 +191,10 @@ def load_mapsheets(mapsheets_path: Path) -> gpd.GeoDataFrame:
     logger.info(f"Loading mapsheets from {mapsheets_path}")
 
     try:
-        mapsheets_gdf = gpd.read_file(mapsheets_path)
-        mapsheets_gdf = mapsheets_gdf.to_crs(DEFAULT_CRS)
+        # All source files use LV95 (EPSG:2056) coordinates regardless of any
+        # CRS declaration.  GeoJSON with Z triggers EPSG:4979 in geopandas which
+        # then corrupts coordinates on to_crs — always declare, never reproject.
+        mapsheets_gdf = gpd.read_file(mapsheets_path).set_crs(DEFAULT_CRS, allow_override=True)
 
         # Check for essential columns
         required_cols = ["MSH_MAP_NBR", "MSH_TOPO_NR"]
@@ -787,8 +789,14 @@ def _write_layers(
         first = True
         for name, gdf in layers.items():
             mode = "w" if first else "a"
-            _promote_to_multi(gdf).to_file(gdb_path, layer=name, driver="OpenFileGDB", mode=mode)
-            logger.info(f"✓ Written FileGDB layer: {name} ({len(gdf)} features)")
+            gdf_out = _promote_to_multi(gdf).copy()
+            gdf_out.geometry = gpd.GeoSeries(force_2d(gdf_out.geometry.values), crs=gdf_out.crs)
+            try:
+                gdf_out.to_file(gdb_path, layer=name, driver="OpenFileGDB", mode=mode)
+                logger.info(f"✓ Written FileGDB layer: {name} ({len(gdf)} features)")
+            except Exception as e:
+                logger.error(f"✗ Failed FileGDB layer '{name}': {e}")
+                raise
             first = False
 
     web_formats = [f for f in ("geojson", "parquet", "flatgeobuf") if f in formats]
@@ -796,20 +804,27 @@ def _write_layers(
         layers_dir = output_path.parent / output_path.stem
         layers_dir.mkdir(parents=True, exist_ok=True)
         for name, gdf in layers.items():
-            if "geojson" in web_formats:
-                out = layers_dir / f"{name}.geojson"
-                gdf.to_file(out, driver="GeoJSON")
-                logger.info(f"✓ Written GeoJSON: {out}")
-            if "parquet" in web_formats:
-                out = layers_dir / f"{name}.parquet"
-                gdf.to_parquet(out)
-                logger.info(f"✓ Written GeoParquet: {out}")
-            if "flatgeobuf" in web_formats:
-                out = layers_dir / f"{name}.fgb"
-                # Convert to WGS84 for web compatibility
-                gdf_web = gdf.to_crs("EPSG:4326")
-                gdf_web.to_file(out, driver="FlatGeobuf")
-                logger.info(f"Converted to FlatGeoBuffer (EPSG:4326): {out}")
+            # Strip Z — GeoJSON and FlatGeobuf don't support it; parquet is fine
+            # either way but consistent 2D avoids driver warnings.
+            gdf_2d = gdf.copy()
+            gdf_2d.geometry = gpd.GeoSeries(force_2d(gdf_2d.geometry.values), crs=gdf_2d.crs)
+            try:
+                if "geojson" in web_formats:
+                    out = layers_dir / f"{name}.geojson"
+                    gdf_2d.to_file(out, driver="GeoJSON")
+                    logger.info(f"✓ Written GeoJSON: {out}")
+                if "parquet" in web_formats:
+                    out = layers_dir / f"{name}.parquet"
+                    gdf_2d.to_parquet(out)
+                    logger.info(f"✓ Written GeoParquet: {out}")
+                if "flatgeobuf" in web_formats:
+                    out = layers_dir / f"{name}.fgb"
+                    gdf_web = gdf_2d.to_crs("EPSG:4326")
+                    gdf_web.to_file(out, driver="FlatGeobuf")
+                    logger.info(f"✓ Written FlatGeobuf (EPSG:4326): {out}")
+            except Exception as e:
+                logger.error(f"✗ Failed web layer '{name}': {e}")
+                raise
 
 
 
