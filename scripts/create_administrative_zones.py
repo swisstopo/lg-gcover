@@ -13,10 +13,11 @@ Inputs
 
 Output formats (--format, repeatable)
 --------------------------------------
-gpkg      Multi-layer GeoPackage at the path given by --output (default).
-filegdb   ESRI FileGDB at the same base path with a .gdb extension.
-geojson   One GeoJSON file per layer in {output_stem}/ (EPSG:2056).
-parquet   One GeoParquet file per layer in {output_stem}/ (EPSG:2056).
+gpkg        Multi-layer GeoPackage at the path given by --output (default).
+filegdb     ESRI FileGDB at the same base path with a .gdb extension.
+geojson     One GeoJSON file per layer in {output_stem}/ (EPSG:2056).
+parquet     One GeoParquet file per layer in {output_stem}/ (EPSG:2056).
+flatgeobuf  One FlatGeobuffer file per layer {output_stem}/ (EPSG:4326).
 
 All formats can be produced in a single run:
   create-administrative-zones -f gpkg -f filegdb -f geojson -f parquet --overwrite
@@ -790,7 +791,7 @@ def _write_layers(
             logger.info(f"✓ Written FileGDB layer: {name} ({len(gdf)} features)")
             first = False
 
-    web_formats = [f for f in ("geojson", "parquet") if f in formats]
+    web_formats = [f for f in ("geojson", "parquet", "flatgeobuf") if f in formats]
     if web_formats:
         layers_dir = output_path.parent / output_path.stem
         layers_dir.mkdir(parents=True, exist_ok=True)
@@ -803,6 +804,13 @@ def _write_layers(
                 out = layers_dir / f"{name}.parquet"
                 gdf.to_parquet(out)
                 logger.info(f"✓ Written GeoParquet: {out}")
+            if "flatgeobuf" in web_formats:
+                out = layers_dir / f"{name}.fgb"
+                # Convert to WGS84 for web compatibility
+                gdf_web = gdf.to_crs("EPSG:4326")
+                gdf_web.to_file(out, driver="FlatGeobuf")
+                logger.info(f"Converted to FlatGeoBuffer (EPSG:4326): {out}")
+
 
 
 @click.command(context_settings={"show_default": True})
@@ -819,7 +827,7 @@ def _write_layers(
     "-f",
     "formats",
     multiple=True,
-    type=click.Choice(["gpkg", "filegdb", "geojson", "parquet"], case_sensitive=False),
+    type=click.Choice(["gpkg", "filegdb", "geojson", "parquet","flatgeobuf"], case_sensitive=False),
     default=("gpkg",),
     show_default=True,
     help="Output format(s). Repeat to enable multiple: -f gpkg -f filegdb",
