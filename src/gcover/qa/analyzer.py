@@ -14,6 +14,8 @@ import geopandas as gpd
 import pandas as pd
 from loguru import logger
 
+from gcover.qa.styles import write_layer_styles
+
 # Suppress shapely warnings for cleaner output
 warnings.filterwarnings("ignore", category=UserWarning, module="shapely")
 
@@ -1313,6 +1315,9 @@ class QAAnalyzer:
                 logger.error(f"Failed to write layer '{layer_name}': {e}")
 
         logger.success(f"Spatial data written to {output_file}")
+
+        if output_format == "gpkg":
+            write_layer_styles(output_file)
 
     def write_aggregated_stats(
         self,
