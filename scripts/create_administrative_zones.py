@@ -883,6 +883,13 @@ def _write_layers(
     type=click.Path(exists=True, path_type=Path),
     help="Path to QA_Rand_GC.gdb; adds raw layer and a 50 m buffer of rand<>1 features",
 )
+@click.option(
+    "--border-zones",
+    "border_zones",
+    is_flag=True,
+    default=False,
+    help="Also create border_segments, tolerance_zones and strict_zones layers (off by default).",
+)
 @click.option("--overwrite", is_flag=True, help="Overwrite existing output file")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 def create_administrative_zones(
@@ -893,6 +900,7 @@ def create_administrative_zones(
     sources_file: Path,
     formats: tuple[str, ...],
     qa_rand_gc_file: Path | None,
+    border_zones: bool,
     overwrite: bool,
     verbose: bool,
 ):
@@ -1073,24 +1081,24 @@ def create_administrative_zones(
         buffer_distance = 50
         border_gdf = border_mapsheet(mapsheets_gdf, buffer_distance=buffer_distance)
 
-        # Classified border segments and tolerance zones
-        click.echo("🗺️  Classifying border segments...")
-        border_segments_gdf, tolerance_zones_gdf, strict_zones_gdf = classify_border_segments(
-            mapsheets_with_sources, buffer_distance=buffer_distance
-        )
-
         # 5. Collect all layers and write in requested format(s)
         layers: dict[str, gpd.GeoDataFrame] = {
             "mapsheets_sources_only": mapsheets_with_sources,
             "mapsheets_with_sources": mapsheets_complete,
             f"borders_{buffer_distance}m": border_gdf,
-            "border_segments": border_segments_gdf,
-            f"tolerance_zones_{buffer_distance}m": tolerance_zones_gdf,
-            f"strict_zones_{buffer_distance}m": strict_zones_gdf,
             "lots": lots_gdf,
             "work_units": wu_gdf,
             "mapsheets": mapsheets_gdf,
         }
+
+        if border_zones:
+            click.echo("🗺️  Classifying border segments...")
+            border_segments_gdf, tolerance_zones_gdf, strict_zones_gdf = classify_border_segments(
+                mapsheets_with_sources, buffer_distance=buffer_distance
+            )
+            layers["border_segments"] = border_segments_gdf
+            layers[f"tolerance_zones_{buffer_distance}m"] = tolerance_zones_gdf
+            layers[f"strict_zones_{buffer_distance}m"] = strict_zones_gdf
 
         if qa_rand_gc_file is not None:
             click.echo("📁 Loading QA_Rand_GC...")
