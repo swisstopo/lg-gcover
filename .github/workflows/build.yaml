@@ -63,7 +63,12 @@ jobs:
           pytest \
           pytest-cov \
           black \
-          ruff conda-build pip setuptools setuptools-scm build
+          ruff \
+          conda-build \
+          pip \
+          setuptools \
+          setuptools-scm \
+          build
           conda list
 
       - name: Install test dependencies
@@ -151,7 +156,9 @@ jobs:
     - name: Install build tools
       shell: bash -el {0}
       run: |
-        conda install -y conda-build pip setuptools setuptools-scm build gdal
+        # conda-build must live in the base env so `conda build` is a valid subcommand
+        conda install -n base -y conda-build
+        conda install -y pip setuptools setuptools-scm build gdal
 
     - name: Get version from SCM
       shell: bash -el {0}
@@ -164,11 +171,14 @@ jobs:
       run: |
         echo "Detected version: ${{ steps.get_version.outputs.version }}"
 
-    - name: Find conda build artifacts
+    - name: Conda build with dynamic version
       shell: bash -el {0}
-      id: find_artifacts
+      id: conda_build
+      env:
+        SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.get_version.outputs.version }}
       run: |
-        # Get the conda build output path directly
+        conda build conda-recipe
+        # Resolve the output path after the build so the file actually exists
         CONDA_OUTPUT=$(conda build conda-recipe --output)
         CONDA_BLD_DIR=$(dirname "$CONDA_OUTPUT")
         echo "conda_build_path=$CONDA_BLD_DIR" >> "$GITHUB_OUTPUT"
@@ -176,18 +186,11 @@ jobs:
         echo "Conda build directory: $CONDA_BLD_DIR"
         echo "Conda output file: $CONDA_OUTPUT"
 
-    - name: Conda build with dynamic version
-      shell: bash -el {0}
-      env:
-        SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.get_version.outputs.version }}
-      run: |
-        conda build conda-recipe
-
     - name: Upload Conda build artifacts
       uses: actions/upload-artifact@v7.0.0
       with:
           name: conda-artifacts
-          path: ${{ steps.find_artifacts.outputs.conda_build_path }}
+          path: ${{ steps.conda_build.outputs.conda_build_path }}
           if-no-files-found: warn
 
     - name: Build Python wheel

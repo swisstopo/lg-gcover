@@ -28,7 +28,7 @@ LAST_DATAMODEL_SOURCES = $(DATAMODEL_SOURCES)$(V2)
 RELEASE      := R17
 DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/
 OUTPUT_DIR   ?= ${HOME}/DATA/Derivations/output/$(RELEASE)/
-STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/styles/2026-04-23/
+STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/styles/2026-05-11/
 TRANSLATION_CSV := $(LAST_DATAMODEL_SOURCES)/geolcodes_translated.csv
 STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/R16/Excels/2026a_Update_stratiLINK.xlsx
 GCOVER_DATA_DIR :=  src/gcover/data/
@@ -156,18 +156,25 @@ merge: $(MASTER_GDB)/timestamps
 # 1. Merge sources and run diagnosis
 $(MASTER_GDB)/timestamps: $(DELIVERY_DIR)RC1.gdb $(DELIVERY_DIR)RC2.gdb
 	@echo "--- Merging Sources ---"
-	gcover publish merge \
+	@gcover publish merge \
 		--rc1 $(DELIVERY_DIR)RC1.gdb \
 		--rc2 $(DELIVERY_DIR)RC2.gdb \
 		--custom-sources-dir $(DELIVERY_DIR) \
 		--force-2d --output $(MASTER_GDB) \
 		--no-clip-to-swiss-border \
-		--enrich-mapsheet-links
+		--enrich-mapsheet-links; \
+	rc=$$?; \
+	if [ $$rc -eq 130 ]; then \
+		echo ""; \
+		echo "Merge cancelled — build stopped. Run 'make merge' to retry."; \
+		exit 1; \
+	fi; \
+	exit $$rc
 
 ## merge-diagnostic: Merge diagnostic
 merge-diagnostic:
 	@echo "--- Running Diagnosis ---"
-	python scripts/diagnose_merge.py $(DELIVERY_DIR)RC1.gdb $(DELIVERY_DIR)RC2.gdb data/administrative_zones.gpkg
+	python scripts/diagnose_merge.py $(DELIVERY_DIR)RC1.gdb $(DELIVERY_DIR)RC2.gdb src/gcover/data/administrative_zones.gpkg
 
 
 
