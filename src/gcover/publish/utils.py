@@ -5,6 +5,7 @@ import shutil
 import sys
 import tempfile
 import unicodedata
+import uuid as _uuid_mod
 import zipfile
 from dataclasses import asdict, dataclass, field
 from enum import Enum
@@ -18,6 +19,26 @@ from PIL import Image, ImageDraw, ImageFont
 from rich.console import Console
 
 console = Console()
+
+
+# =============================================================================
+# UUID HELPERS
+# =============================================================================
+
+def new_uuid(esri_style: bool = True) -> str:
+    """Generate a new random UUID.
+
+    Args:
+        esri_style: When True (default) return ESRI/FileGDB canonical format:
+                    ``{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`` (uppercase, braces).
+                    When False return the standard Python format:
+                    ``xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`` (lowercase, no braces).
+    """
+    uid = _uuid_mod.uuid4()
+    if esri_style:
+        return "{" + str(uid).upper() + "}"
+    return str(uid)
+
 
 
 # =============================================================================
