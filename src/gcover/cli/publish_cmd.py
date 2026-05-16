@@ -2228,7 +2228,7 @@ def merge(
     # Confirm before processing
     if not click.confirm("\nProceed with merge?"):
         console.print("Merge cancelled.")
-        return
+        raise SystemExit(130)
 
     # Execute merge - try arcpy first if available
     try:
@@ -2275,13 +2275,15 @@ def _display_merge_config(config: MergeConfig, dry_run: bool) -> None:
     # Sources
     if config.rc1_path:
         status = "✓" if config.rc1_path.exists() else "✗"
-        table.add_row("RC1 Source", f"{status} {config.rc1_path}")
+        symlink_hint = f" [dim]({config.rc1_path.resolve().name})[/dim]" if config.rc1_path.is_symlink() else ""
+        table.add_row("RC1 Source", f"{status} {config.rc1_path}{symlink_hint}")
     else:
         table.add_row("RC1 Source", "[dim]Not specified[/dim]")
 
     if config.rc2_path:
         status = "✓" if config.rc2_path.exists() else "✗"
-        table.add_row("RC2 Source", f"{status} {config.rc2_path}")
+        symlink_hint = f" [dim]({config.rc2_path.resolve().name})[/dim]" if config.rc2_path.is_symlink() else ""
+        table.add_row("RC2 Source", f"{status} {config.rc2_path}{symlink_hint}")
     else:
         table.add_row("RC2 Source", "[dim]Not specified[/dim]")
 

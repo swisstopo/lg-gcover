@@ -37,6 +37,8 @@ from shapely.geometry import (GeometryCollection, LineString, MultiLineString,
                               MultiPoint, MultiPolygon, Point, Polygon)
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import linemerge, unary_union
+
+from gcover.publish.utils import new_uuid
 from shapely import STRtree
 
 
@@ -1046,13 +1048,12 @@ class GDBMerger:
             # clipped to its own half. Dropping one half silently loses area; instead
             # we give the "already seen" copy a fresh UUID so both halves survive.
             if 'UUID' in clipped.columns:
-                import uuid as _uuid
                 collision_mask = (
                         clipped['UUID'].notna() & clipped['UUID'].isin(seen_uuids)
                 )
                 n_collisions = collision_mask.sum()
                 if n_collisions > 0:
-                    new_ids = [str(_uuid.uuid4()) for _ in range(n_collisions)]
+                    new_ids = [new_uuid(esri_style=True) for _ in range(n_collisions)]
                     clipped.loc[collision_mask, 'UUID'] = new_ids
                     logger.warning(
                         f"  {source_name}: regenerated {n_collisions} duplicate UUIDs "
