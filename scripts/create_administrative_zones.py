@@ -76,9 +76,13 @@ Changelog
 2026-05-08  border_segments/tolerance_zones/strict_zones now opt-in via --border-zones;
             fixed CRS handling for LV95 inputs (set_crs instead of to_crs);
             force 2D before FileGDB/GeoJSON/FlatGeobuf writes
+2026-05-16  Added processing_metadata table to GPKG (sha256, mtime, git_hash per input file)
 """
 
+import hashlib
 import os
+import sqlite3
+import subprocess
 import urllib.error
 import urllib.request
 import warnings
@@ -776,6 +780,58 @@ def _promote_to_multi(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return gdf
 
 
+def _file_fingerprint(path: Path) -> dict[str, str]:
+    """Return sha256, ISO-8601 mtime, and git hash (or 'untracked') for a file."""
+    mtime = dt.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds")
+    sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+    try:
+        result = subprocess.run(
+            ["git", "log", "-1", "--format=%H", "--", str(path)],
+            capture_output=True, text=True, timeout=5,
+        )
+        git_hash = result.stdout.strip() or "untracked"
+    except Exception:
+        git_hash = "unavailable"
+    return {"sha256": sha256, "mtime": mtime, "git_hash": git_hash}
+
+
+def _write_processing_metadata(gpkg_path: Path, input_files: dict[str, Path]) -> None:
+    """Write a processing_metadata table to the GPKG with provenance for each input file.
+
+    Columns: role, filename, path, sha256, mtime, git_hash, generated_at.
+    One row per input file plus one row for the script itself.
+    """
+    generated_at = dt.utcnow().isoformat(timespec="seconds") + "Z"
+    script_path = Path(__file__)
+
+    rows = []
+    for role, path in input_files.items():
+        fp = _file_fingerprint(path)
+        rows.append((role, path.name, str(path.resolve()), fp["sha256"], fp["mtime"], fp["git_hash"], generated_at))
+
+    script_fp = _file_fingerprint(script_path)
+    rows.append(("script", script_path.name, str(script_path.resolve()), script_fp["sha256"], script_fp["mtime"], script_fp["git_hash"], generated_at))
+
+    with sqlite3.connect(gpkg_path) as con:
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS processing_metadata (
+                role         TEXT NOT NULL,
+                filename     TEXT NOT NULL,
+                path         TEXT NOT NULL,
+                sha256       TEXT NOT NULL,
+                mtime        TEXT NOT NULL,
+                git_hash     TEXT,
+                generated_at TEXT NOT NULL
+            )
+        """)
+        con.execute("DELETE FROM processing_metadata")
+        con.executemany(
+            "INSERT INTO processing_metadata VALUES (?,?,?,?,?,?,?)", rows
+        )
+
+    logger.info(f"processing_metadata written: {len(rows)} rows → {gpkg_path.name}")
+
+
 def _write_layers(
     layers: dict[str, gpd.GeoDataFrame],
     output_path: Path,
@@ -1129,6 +1185,15 @@ def create_administrative_zones(
 
         click.echo(f"💾 Writing to {output_path} (formats: {', '.join(formats)})")
         _write_layers(layers, output_path, formats)
+
+        if "gpkg" in formats and output_path.exists():
+            _write_processing_metadata(output_path, {
+                "lots": lots_file,
+                "work_units": wu_file,
+                "mapsheets": mapsheets_file,
+                "sources": sources_file,
+                **({"qa_rand_gc": qa_rand_gc_file} if qa_rand_gc_file is not None else {}),
+            })
 
         # 5. Summary and validation
         click.echo(f"✅ Administrative zones created successfully!")
