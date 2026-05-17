@@ -74,6 +74,7 @@ Changelog
 2026-05-08  border_segments/tolerance_zones/strict_zones now opt-in via --border-zones;
             fixed CRS handling for LV95 inputs (set_crs instead of to_crs);
             force 2D before FileGDB/GeoJSON/FlatGeobuf writes
+2026-05-16  Added processing_metadata table to GPKG (sha256, mtime, git_hash per input file)
 
 
 XLSX file:/home/marco/DATA/Derivations/delivery/R17/Excels/GC_Sources_PA.xlsx
@@ -87,6 +88,7 @@ Layer list:
  * mapsheets
  * qa_rand_gc
  * qa_rand_gc_buffer_50m
+ * processing_metadata
 
 -- 'mapsheets_sources_only' --
 
@@ -94,8 +96,8 @@ Layer list:
 ┏━━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
 ┃ Source            ┃ Count ┃
 ┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
-│ RC1               │   145 │
-│ RC2               │    73 │
+│ RC1               │   149 │
+│ RC2               │    69 │
 │ BCK_2016          │     1 │
 │ 20300501_Saas.gdb │     1 │
 │ Total             │   220 │
@@ -103,4 +105,4 @@ Layer list:
 
 
 
-Generated on 2026-05-08 10:28:31
+Generated on 2026-05-16 15:24:55
