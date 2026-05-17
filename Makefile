@@ -288,6 +288,11 @@ administrative-zones:
 	@cp -f $(OUTPUT_DIR)administrative_zones.README $(GCOVER_DATA_DIR)adminstrative_zones.README
 	@echo "Don't forget to copy to mapserver-geocover/data directory!"
 
+##administrative-zones-metadata:  Show processing_metadata table of the administrative zones GPKG
+administrative-zones-metadata:
+	@sqlite3 -column -header $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG)  \
+		"SELECT role, filename, sha256, mtime, git_hash, generated_at FROM processing_metadata"
+
 
 ### Auxilliary data
 
