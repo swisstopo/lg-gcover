@@ -284,6 +284,7 @@ class S3Config(BaseModel):
     region: Optional[str] = Field(None, description="AWS region")
     public_prefix: Optional[str] = Field("", description="AWS key prefix for public")
 
+
     # Upload method configuration
     upload_method: Literal["auto", "direct", "presigned"] = Field(
         "auto",

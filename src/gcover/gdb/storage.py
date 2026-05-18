@@ -683,11 +683,52 @@ def create_s3_uploader_with_proxy(
 DEFAULT_METADATA_S3_KEY = "gdb-assets/metadata/gdb_assets.parquet"
 
 
-def fetch_metadata_parquet(s3_config, s3_key: str = DEFAULT_METADATA_S3_KEY) -> Path:
-    """Download the metadata Parquet from S3 to a temp file and return its path."""
+def _public_metadata_url(public_url: str, s3_config, s3_key: str) -> str:
+    """Build the public CF URL for *s3_key* using public_prefix from s3_config."""
+    prefix = (s3_config.public_prefix or "").strip("/")
+    filename = Path(s3_key).name
+    parts = [public_url.rstrip("/")]
+    if prefix:
+        parts.append(prefix)
+    parts.append(filename)
+    return "/".join(parts)
+
+
+def _download_url(url: str, dest: Path) -> None:
+    """Stream-download *url* to *dest*, raising RuntimeError on failure."""
+    try:
+        with requests.get(url, stream=True, timeout=60) as resp:
+            resp.raise_for_status()
+            with open(dest, "wb") as fh:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    fh.write(chunk)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to download from {url}: {exc}") from exc
+
+
+def fetch_metadata_parquet(
+    s3_config,
+    s3_key: str = DEFAULT_METADATA_S3_KEY,
+    public_url: Optional[str] = None,
+) -> Path:
+    """Download the metadata Parquet and return its local path.
+
+    When *public_url* is set and *s3_config.public_prefix* is configured:
+    - upload_method == "presigned": skip boto3, download directly from CF.
+    - otherwise: try S3 first; on failure warn and fall back to CF.
+    """
     import tempfile
 
     dest = Path(tempfile.mktemp(suffix=".parquet", prefix="gcover_meta_"))
+
+    use_url = public_url and s3_config.public_prefix
+    cf_url = _public_metadata_url(public_url, s3_config, s3_key) if use_url else None
+
+    if use_url and s3_config.upload_method == "presigned":
+        logger.info(f"upload_method=presigned — downloading metadata directly from {cf_url}")
+        _download_url(cf_url, dest)
+        return dest
+
     uploader = S3Uploader(
         bucket_name=s3_config.bucket,
         aws_profile=s3_config.profile,
@@ -698,11 +739,22 @@ def fetch_metadata_parquet(s3_config, s3_key: str = DEFAULT_METADATA_S3_KEY) -> 
         upload_method=s3_config.upload_method,
     )
     ok = uploader.download_file(s3_key, dest)
-    if not ok:
+    if ok:
+        logger.info(f"Fetched metadata parquet from S3 to {dest}")
+        return dest
+
+    if not cf_url:
         raise RuntimeError(
-            f"Failed to download metadata parquet from s3://{s3_config.bucket}/{s3_key}"
+            f"Failed to download metadata from s3://{s3_config.bucket}/{s3_key} "
+            f"and no public_url/public_prefix configured for fallback"
         )
-    logger.info(f"Fetched metadata parquet to {dest}")
+
+    logger.warning(
+        f"S3 download failed for s3://{s3_config.bucket}/{s3_key} — "
+        f"falling back to {cf_url}"
+    )
+    _download_url(cf_url, dest)
+    logger.info(f"Fetched metadata parquet via CF fallback to {dest}")
     return dest
 
 
