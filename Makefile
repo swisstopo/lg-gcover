@@ -164,6 +164,7 @@ $(MASTER_GDB)/timestamps: $(DELIVERY_DIR)RC1.gdb $(DELIVERY_DIR)RC2.gdb
 		--force-2d --output $(MASTER_GDB) \
 		--no-clip-to-swiss-border \
 		--enrich-mapsheet-links \
+		--exclude-metadata \
 		--schema-output $(FINAL_GDB); \
 	rc=$$?; \
 	if [ $$rc -eq 130 ]; then \

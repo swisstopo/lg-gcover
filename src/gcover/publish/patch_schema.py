@@ -155,6 +155,7 @@ def patch_schema_gdb(
     merged_gdb: Path,
     output_gdb: Path,
     log: Callable[[str], None] = print,
+    exclude_fields: set[str] | None = None,
 ) -> list[str]:
     """Clone schema_gdb, then replace its data with content from merged_gdb.
 
@@ -169,6 +170,10 @@ def patch_schema_gdb(
         Destination path.  Deleted and recreated if it already exists.
     log:
         Callable used for progress reporting (default: print).
+    exclude_fields:
+        Field names to drop from every spatial layer in the clone before
+        appending data.  Pass GEOCOVER_METADATA_FIELDS to mirror the
+        --exclude-metadata behaviour of the merge step.
 
     Returns
     -------
@@ -205,7 +210,7 @@ def patch_schema_gdb(
     log(f"  layers: {ds.GetLayerCount()},  domains: {len(ds.GetFieldDomainNames() or [])}")
     ds = None
 
-    # Step 1b: add extra fields absent from schema GDB
+    # Step 1b: add extra fields absent from schema GDB / drop excluded fields
     ds = ogr.Open(output_gdb, 1)
     for layer_name in SPATIAL_LAYERS:
         lyr = ds.GetLayerByName(layer_name)
@@ -217,6 +222,16 @@ def patch_schema_gdb(
             if fname not in existing:
                 lyr.CreateField(ogr.FieldDefn(fname, ftype))
                 log(f"  added field '{fname}' to {layer_name}")
+        if exclude_fields:
+            # Delete fields in reverse index order to keep indices stable
+            to_drop = [
+                i for i in range(defn.GetFieldCount())
+                if defn.GetFieldDefn(i).GetName() in exclude_fields
+            ]
+            for i in reversed(to_drop):
+                lyr.DeleteField(i)
+            if to_drop:
+                log(f"  dropped {len(to_drop)} metadata fields from {layer_name}")
     ds = None
 
     # Steps 2 & 3: patch spatial layers and tables

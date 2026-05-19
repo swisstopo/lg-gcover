@@ -24,8 +24,8 @@ from rich.table import Table
 from rich.text import Text
 
 from gcover.cli.main import _split_bbox
-from gcover.config import (DEFAULT_EXCLUDED_FIELDS, SDE_INSTANCES, AppConfig,
-                           load_config)
+from gcover.config import (DEFAULT_EXCLUDED_FIELDS, GEOCOVER_METADATA_FIELDS,
+                           SDE_INSTANCES, AppConfig, load_config)
 from gcover.publish.esri_classification_applicator import \
     ClassificationApplicator
 from gcover.publish.esri_classification_extractor import (
@@ -2203,7 +2203,7 @@ def merge(
         reference_source=reference_source,
         mapsheet_numbers=mapsheet_numbers,
         preserve_z=not force_2d,  # If force_2d, don't preserve Z
-        exclude_fields=DEFAULT_EXCLUDED_FIELDS if exclude_metadata else None,
+        exclude_fields=GEOCOVER_METADATA_FIELDS if exclude_metadata else None,
         use_convex_hull_masks=True,
         clip_to_swiss_border=clip_to_swiss_border,
         validate_geometries=validate_geometries,
@@ -2225,7 +2225,7 @@ def merge(
     console.print(f"\n[bold blue]🔀 GeoCover Source Merger[/bold blue]\n")
 
     if exclude_metadata:
-        console.print(f"[dim]Excluding metadata fields: {', '.join(DEFAULT_EXCLUDED_FIELDS)}[/dim]")
+        console.print(f"[dim]Excluding {len(GEOCOVER_METADATA_FIELDS)} metadata fields[/dim]")
 
     if verbose:
         console.print("[dim]Verbose mode enabled[/dim]")
@@ -2294,6 +2294,7 @@ def merge(
                 merged_gdb=output,
                 output_gdb=schema_output,
                 log=console.print,
+                exclude_fields=GEOCOVER_METADATA_FIELDS if exclude_metadata else None,
             )
             if errors:
                 console.print(f"[yellow]Schema patch completed with {len(errors)} error(s):[/yellow]")
