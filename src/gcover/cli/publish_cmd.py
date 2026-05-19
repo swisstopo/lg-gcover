@@ -2289,8 +2289,27 @@ def _display_merge_config(config: MergeConfig, dry_run: bool) -> None:
 
     if config.custom_sources_dir:
         if config.custom_sources_dir.exists():
-            gdb_count = len(list(config.custom_sources_dir.glob("*.gdb")))
-            table.add_row("Custom Sources", f"✓ {config.custom_sources_dir} ({gdb_count} GDBs)")
+            lines = [str(config.custom_sources_dir)]
+            try:
+                gdf = gpd.read_file(config.admin_zones_path, layer=config.mapsheets_layer)
+                if config.mapsheet_numbers:
+                    gdf = gdf[gdf[config.mapsheet_nbr_column].isin(config.mapsheet_numbers)]
+                custom_names = sorted(
+                    s for s in gdf[config.source_column].unique()
+                    if s not in ("RC1", "RC2")
+                )
+                for name in custom_names:
+                    p = config.custom_sources_dir / name
+                    if not p.suffix:
+                        p = config.custom_sources_dir / f"{name}.gdb"
+                    resolved = p.resolve()
+                    ok = "✓" if p.exists() else "✗"
+                    symlink_hint = f" [dim]→ {resolved.name}[/dim]" if p.is_symlink() else ""
+                    lines.append(f"  {ok} {p.name}{symlink_hint}")
+            except Exception:
+                gdb_count = len(list(config.custom_sources_dir.glob("*.gdb")))
+                lines.append(f"  ({gdb_count} GDBs)")
+            table.add_row("Custom Sources", "\n".join(lines))
         else:
             table.add_row("Custom Sources", f"✗ {config.custom_sources_dir}")
 
