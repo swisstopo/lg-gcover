@@ -30,7 +30,7 @@ DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/
 OUTPUT_DIR   ?= ${HOME}/DATA/Derivations/output/$(RELEASE)/
 STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/styles/2026-05-11/
 TRANSLATION_CSV := $(LAST_DATAMODEL_SOURCES)/geolcodes_translated.csv
-STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/R16/Excels/2026a_Update_stratiLINK.xlsx
+STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/Excels/_Update_stratiLINK.xlsx
 GCOVER_DATA_DIR :=  src/gcover/data/
 
 ASPECT_LAYERS := surfaces_filtered unco_deposits_filtered
