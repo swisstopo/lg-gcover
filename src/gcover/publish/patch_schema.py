@@ -77,7 +77,11 @@ def _truncate(ds: ogr.DataSource, name: str) -> int:
     lyr = ds.GetLayerByName(name)
     if lyr is None:
         return -1
+    # Skip geometry parsing — we only need FIDs, and the schema-clone source
+    # (RC2.gdb) may contain unclosed rings that OGR raises as RuntimeError.
+    lyr.SetIgnoredFields(["OGR_GEOMETRY"])
     fids = [f.GetFID() for f in lyr]
+    lyr.SetIgnoredFields([])
     lyr.ResetReading()
     for fid in fids:
         lyr.DeleteFeature(fid)
