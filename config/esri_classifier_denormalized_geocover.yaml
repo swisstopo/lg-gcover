@@ -856,5 +856,6 @@ layers:
           filter: KIND == 14334001
           identifier_field: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT
           identifier_mode: field
+          hexcolor_field: HEXCOLOR
 
 

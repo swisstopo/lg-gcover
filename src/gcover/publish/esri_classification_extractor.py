@@ -129,7 +129,8 @@ class ColorInfo:
         """Convert to hex color string."""
         return f"#{self.r:02x}{self.g:02x}{self.b:02x}"
 
-    def to_rgb_tuple(self) -> Tuple[int, int, int]:
+
+def to_rgb_tuple(self) -> Tuple[int, int, int]:
         """Convert to RGB tuple."""
         return (self.r, self.g, self.b)
 
