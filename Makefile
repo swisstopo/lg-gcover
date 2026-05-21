@@ -62,7 +62,7 @@ LAYERS := fossils exploit_polygons exploit_points linear_objects point_objects b
 TABLES_TO_IMPORT := GC_GEOL_MAPPING_UNIT GC_GEOL_MAPPING_UNIT_ATT GC_LITSTRAT_FORMATION_BANK GC_CHRONO \
                     GC_EX_GEO_PLG_EXP_UNIT_GC_GMU GC_EX_GEO_PNT_EXP_UNIT_GC_GMU \
                     GC_FOSS_SYSTEM_GC_SYSTEM \
-                    GC_UN_DEP_CHARACT_GC_CHARCAT GC_UN_DEP_COMPOSIT_GC_COMPOS GC_UN_DEP_MAT_TYPE_GC_LITHO
+                    GC_UN_DEP_CHARACT_GC_CHARCAT GC_UN_DEP_COMPOSIT_GC_COMPOS GC_UN_DEP_MAT_TYPE_GC_LITHO GC_UN_DEP_ADMIXTUR_GC_ADMIXT
 
 
 # ANSI color codes
@@ -183,11 +183,18 @@ merge-diagnostic:
 
 
 # 2. Add missing tables and Denormalize
+.PHONY: add-tables
+add-tables: $(MASTER_GDB)/timestamps
+		@echo "--- Importing missing tables via ogr2ogr ---"
+		@for table in $(TABLES_TO_IMPORT); do \
+			ogr2ogr -f "OpenFileGDB" -update -overwrite $(MASTER_GDB) $(FULL_GDB_PATH) $$table; \
+		done
+
 $(DENORMALIZED_PATH): $(MASTER_GDB)/timestamps
-	@echo "--- Importing missing tables via ogr2ogr ---"
-	@for table in $(TABLES_TO_IMPORT); do \
-		ogr2ogr -f "OpenFileGDB" -update -overwrite $(MASTER_GDB) $(FULL_GDB_PATH) $$table; \
-	done
+		@echo "--- Importing missing tables via ogr2ogr ---"
+		@for table in $(TABLES_TO_IMPORT); do \
+			ogr2ogr -f "OpenFileGDB" -update -overwrite $(MASTER_GDB) $(FULL_GDB_PATH) $$table; \
+		done
 
 	@echo "--- Running Denormalization loop ---"
 	@for layer in $(LAYERS); do \

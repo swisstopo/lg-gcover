@@ -147,6 +147,27 @@ DEFAULT_EXCLUDED_FIELDS = {
     "Shape_Area",
 }
 
+# Union of DEFAULT_EXCLUDED_FIELDS and the GeoCover-specific operational
+# metadata fields stripped by denormalize_geocover.py clean_metadata_columns().
+GEOCOVER_METADATA_FIELDS = DEFAULT_EXCLUDED_FIELDS | {
+    "INTEGRATION_OBJECT_UUID",
+    "OPERATOR",
+    "DATEOFCHANGE",
+    "DATEOFCREATION",
+    "ORIGINAL_ORIGIN",
+    "REASONFORCHANGE",
+    "REVISION_QUALITY",
+    "OBJECTORIGIN_MONTH",
+    "OBJECTORIGIN_YEAR",
+    "RC_ID_CREATION",
+    "RC_ID",
+    "WU_ID_CREATION",
+    "WU_ID",
+    "TREE_LEVEL",
+    "SHAPE_Area",   # uppercase variant used in GDB layers
+    "SHAPE_Length",
+}
+
 __all__ = [
     "AppConfig",
     "GlobalConfig",
@@ -159,6 +180,7 @@ __all__ = [
     "debug_config_loading",
     "EXCLUDED_TABLES",
     "DEFAULT_EXCLUDED_FIELDS",
+    "GEOCOVER_METADATA_FIELDS",
     "SDE_INSTANCES",
     "DEFAULT_VERSIONS",
     "DEFAULT_CHUNK_SIZE",
