@@ -615,6 +615,26 @@ class GeoCoverDenormalizer:
         self.coded_domains = extract_coded_domains(cd_gdb_path) # Need a genuine ESRI-GDB :-(
 
 
+    def _read_table(self, table_name: str) -> pd.DataFrame:
+        """Read a non-spatial table, falling back to name_1 for arcpy-copied GDBs.
+
+        arcpy.Copy renames junction tables (GC_EX_GEO_*, GC_UN_DEP_*, etc.) to
+        name_1 when the relationship class and its data table share the same name.
+        """
+        for candidate in (table_name, f"{table_name}_1"):
+            try:
+                df = gpd.read_file(self.gdb_path, layer=candidate)
+                if candidate != table_name:
+                    logger.warning(
+                        f"Read '{candidate}' instead of '{table_name}' (arcpy copy artifact)"
+                    )
+                return df
+            except Exception:
+                continue
+        raise ValueError(
+            f"Could not read table '{table_name}' (tried with and without _1 suffix)"
+        )
+
     def _read_layer_safe(
         self, layer_name: str, group: Optional[str] = "GC_ROCK_BODIES"
     ) -> gpd.GeoDataFrame:
@@ -661,7 +681,7 @@ class GeoCoverDenormalizer:
         # Read tables
         main_gdf = self._read_layer_safe(main_table)
         lookup_df = gpd.read_file(self.gdb_path, layer=lookup_table)
-        relationship_df = gpd.read_file(self.gdb_path, layer=relationship_table)
+        relationship_df = self._read_table(relationship_table)
 
         logger.info(f"Loaded {len(main_gdf)} features from {main_table}")
         logger.info(f"Loaded {len(lookup_df)} records from {lookup_table}")
@@ -1036,9 +1056,7 @@ class GeoCoverDenormalizer:
 
             try:
                 lookup_df = gpd.read_file(self.gdb_path, layer=config["lookup_table"])
-                relationship_df = gpd.read_file(
-                    self.gdb_path, layer=config["relationship_table"]
-                )
+                relationship_df = self._read_table(config["relationship_table"])
 
                 logger.debug(
                     f"{rel_name}: {len(lookup_df)} lookup records, {len(relationship_df)} relationships"

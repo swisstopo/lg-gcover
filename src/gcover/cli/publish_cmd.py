@@ -24,8 +24,8 @@ from rich.table import Table
 from rich.text import Text
 
 from gcover.cli.main import _split_bbox
-from gcover.config import (DEFAULT_EXCLUDED_FIELDS, SDE_INSTANCES, AppConfig,
-                           load_config)
+from gcover.config import (DEFAULT_EXCLUDED_FIELDS, GEOCOVER_METADATA_FIELDS,
+                           SDE_INSTANCES, AppConfig, load_config)
 from gcover.publish.esri_classification_applicator import \
     ClassificationApplicator
 from gcover.publish.esri_classification_extractor import (
@@ -2052,6 +2052,18 @@ def show_sample_data(layer_name: str, sample_gdf: gpd.GeoDataFrame):
     is_flag=True,
     help="Show what would be processed without executing",
 )
+@click.option(
+    "--schema-gdb",
+    type=click.Path(exists=True, path_type=Path),
+    help="Authoritative FileGDB to clone schema from (defaults to --rc2). "
+         "Enables schema-patching when --schema-output is set.",
+)
+@click.option(
+    "--schema-output",
+    type=click.Path(path_type=Path),
+    help="Path for the schema-patched output GDB (preserves ESRI domains & "
+         "relationship classes). Requires --output to be a .gdb file.",
+)
 def merge(
         ctx,
         rc1: Optional[Path],
@@ -2073,6 +2085,8 @@ def merge(
         validate_geometries: bool,
         exclude_metadata: bool,
         dry_run: bool,
+        schema_gdb: Optional[Path],
+        schema_output: Optional[Path],
 ):
     """
     Merge multiple FileGDB sources into a single publication GDB.
@@ -2189,7 +2203,7 @@ def merge(
         reference_source=reference_source,
         mapsheet_numbers=mapsheet_numbers,
         preserve_z=not force_2d,  # If force_2d, don't preserve Z
-        exclude_fields=DEFAULT_EXCLUDED_FIELDS if exclude_metadata else None,
+        exclude_fields=GEOCOVER_METADATA_FIELDS if exclude_metadata else None,
         use_convex_hull_masks=True,
         clip_to_swiss_border=clip_to_swiss_border,
         validate_geometries=validate_geometries,
@@ -2211,7 +2225,7 @@ def merge(
     console.print(f"\n[bold blue]🔀 GeoCover Source Merger[/bold blue]\n")
 
     if exclude_metadata:
-        console.print(f"[dim]Excluding metadata fields: {', '.join(DEFAULT_EXCLUDED_FIELDS)}[/dim]")
+        console.print(f"[dim]Excluding {len(GEOCOVER_METADATA_FIELDS)} metadata fields[/dim]")
 
     if verbose:
         console.print("[dim]Verbose mode enabled[/dim]")
@@ -2258,6 +2272,36 @@ def merge(
             import traceback
             console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise click.Abort()
+
+    # Optional schema-patch step: clone authoritative GDB schema and inject merged data
+    if schema_output is not None:
+        if output.suffix.lower() != ".gdb":
+            console.print("[yellow]--schema-output ignored: --output must be a .gdb file[/yellow]")
+        else:
+            effective_schema = schema_gdb or rc2
+            if effective_schema is None:
+                console.print("[red]--schema-output requires --schema-gdb or --rc2 to be set[/red]")
+                raise click.Abort()
+
+            console.print(f"\n[bold blue]Schema patch[/bold blue]")
+            console.print(f"  schema : {effective_schema}")
+            console.print(f"  merged : {output}")
+            console.print(f"  output : {schema_output}")
+
+            from gcover.publish.patch_schema import patch_schema_gdb
+            errors = patch_schema_gdb(
+                schema_gdb=effective_schema,
+                merged_gdb=output,
+                output_gdb=schema_output,
+                log=console.print,
+                exclude_fields=GEOCOVER_METADATA_FIELDS if exclude_metadata else None,
+            )
+            if errors:
+                console.print(f"[yellow]Schema patch completed with {len(errors)} error(s):[/yellow]")
+                for e in errors:
+                    console.print(f"  [yellow]• {e}[/yellow]")
+            else:
+                console.print("[bold green]Schema patch completed successfully.[/bold green]")
 
 
 def _display_merge_config(config: MergeConfig, dry_run: bool) -> None:
