@@ -41,6 +41,7 @@ ASPECT_LAYERS := $(strip $(ASPECT_LAYERS))
 
 # File Paths
 MASTER_GDB        ?= $(OUTPUT_DIR)merged_master.gdb
+FINAL_GDB         ?= $(OUTPUT_DIR)merged_final.gdb
 DENORMALIZED_GPKG := denormalized.gpkg
 DENORMALIZED_PATH := $(OUTPUT_DIR)$(DENORMALIZED_GPKG)
 CLASSIFIED_GPKG	  := denormalized_classified.gpkg
@@ -162,7 +163,10 @@ $(MASTER_GDB)/timestamps: $(DELIVERY_DIR)RC1.gdb $(DELIVERY_DIR)RC2.gdb
 		--custom-sources-dir $(DELIVERY_DIR) \
 		--force-2d --output $(MASTER_GDB) \
 		--no-clip-to-swiss-border \
-		--enrich-mapsheet-links; \
+		--enrich-mapsheet-links \
+		--exclude-metadata \
+		--schema-output $(FINAL_GDB) \
+		--strati-links $(STRATI_LINK_PATH); \
 	rc=$$?; \
 	if [ $$rc -eq 130 ]; then \
 		echo ""; \

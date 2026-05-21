@@ -2048,6 +2048,22 @@ def show_sample_data(layer_name: str, sample_gdf: gpd.GeoDataFrame):
     help="Exclude metadata fields (CREATED_USER, LAST_EDITED_DATE, GlobalID, etc.)",
 )
 @click.option(
+    "--schema-gdb",
+    type=click.Path(exists=True, path_type=Path),
+    help="Authoritative FileGDB to clone schema from for ESRI output (defaults to --rc2).",
+)
+@click.option(
+    "--schema-output",
+    type=click.Path(path_type=Path),
+    help="Path for the ESRI schema-patched output GDB (clone of --schema-gdb populated from --output).",
+)
+@click.option(
+    "--strati-links",
+    "strati_links_path",
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to _Update_stratiLINK.xlsx; injects strati_link into GC_BEDROCK of --schema-output.",
+)
+@click.option(
     "--dry-run",
     is_flag=True,
     help="Show what would be processed without executing",
@@ -2072,6 +2088,9 @@ def merge(
         clip_to_swiss_border: bool,
         validate_geometries: bool,
         exclude_metadata: bool,
+        schema_gdb: Optional[Path],
+        schema_output: Optional[Path],
+        strati_links_path: Optional[Path],
         dry_run: bool,
 ):
     """
@@ -2258,6 +2277,30 @@ def merge(
             import traceback
             console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise click.Abort()
+
+    # ── Schema-patch step (optional) ──────────────────────────────────────────
+    if schema_output is not None:
+        if output.suffix.lower() != ".gdb":
+            console.print("[yellow]--schema-output ignored: --output must be a .gdb file[/yellow]")
+        else:
+            effective_schema = schema_gdb or rc2
+            if effective_schema is None:
+                console.print("[red]--schema-output requires --schema-gdb or --rc2[/red]")
+                raise click.Abort()
+            from gcover.publish.patch_schema import patch_schema_gdb
+            console.print(f"\n[bold blue]Patching ESRI schema → {schema_output.name}[/bold blue]")
+            errors = patch_schema_gdb(
+                schema_gdb=effective_schema,
+                merged_gdb=output,
+                output_gdb=schema_output,
+                log=console.print,
+                exclude_fields=DEFAULT_EXCLUDED_FIELDS if exclude_metadata else None,
+                strati_links_path=strati_links_path,
+            )
+            if errors:
+                console.print(f"[yellow]Schema patch finished with {len(errors)} error(s)[/yellow]")
+            else:
+                console.print("[bold green]Schema patch complete.[/bold green]")
 
 
 def _display_merge_config(config: MergeConfig, dry_run: bool) -> None:
