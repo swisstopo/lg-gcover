@@ -165,7 +165,8 @@ $(MASTER_GDB)/timestamps: $(DELIVERY_DIR)RC1.gdb $(DELIVERY_DIR)RC2.gdb
 		--no-clip-to-swiss-border \
 		--enrich-mapsheet-links \
 		--exclude-metadata \
-		--schema-output $(FINAL_GDB); \
+		--schema-output $(FINAL_GDB) \
+		--strati-links $(STRATI_LINK_PATH); \
 	rc=$$?; \
 	if [ $$rc -eq 130 ]; then \
 		echo ""; \

@@ -2048,6 +2048,22 @@ def show_sample_data(layer_name: str, sample_gdf: gpd.GeoDataFrame):
     help="Exclude metadata fields (CREATED_USER, LAST_EDITED_DATE, GlobalID, etc.)",
 )
 @click.option(
+    "--schema-gdb",
+    type=click.Path(exists=True, path_type=Path),
+    help="Authoritative FileGDB to clone schema from for ESRI output (defaults to --rc2).",
+)
+@click.option(
+    "--schema-output",
+    type=click.Path(path_type=Path),
+    help="Path for the ESRI schema-patched output GDB (clone of --schema-gdb populated from --output).",
+)
+@click.option(
+    "--strati-links",
+    "strati_links_path",
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to _Update_stratiLINK.xlsx; injects strati_link into GC_BEDROCK of --schema-output.",
+)
+@click.option(
     "--dry-run",
     is_flag=True,
     help="Show what would be processed without executing",
@@ -2087,6 +2103,7 @@ def merge(
         dry_run: bool,
         schema_gdb: Optional[Path],
         schema_output: Optional[Path],
+        strati_links_path: Optional[Path],
 ):
     """
     Merge multiple FileGDB sources into a single publication GDB.
@@ -2295,6 +2312,7 @@ def merge(
                 output_gdb=schema_output,
                 log=console.print,
                 exclude_fields=GEOCOVER_METADATA_FIELDS if exclude_metadata else None,
+                strati_links_path=strati_links_path,
             )
             if errors:
                 console.print(f"[yellow]Schema patch completed with {len(errors)} error(s):[/yellow]")
