@@ -176,6 +176,9 @@ class ClassificationApplicationConfig:
     # available.  Use concat() with skip_empty=True to drop null parts:
     # e.g. {"label_de": "concat(kind_de, mpla_polarity_de, sep=', ', skip_empty=True)"}
     label_formulas: Optional[Dict[str, str]] = None
+    # Output field for the fill color extracted from the .lyrx symbol (#rrggbbaa).
+    # Only meaningful for layers with uniform solid-fill classes (e.g. bedrock).
+    hexcolor_field: Optional[str] = None
 
     def __post_init__(self):
         """Validate and initialize nested configurations"""
@@ -529,6 +532,7 @@ class BatchClassificationConfig:
                     lang_fields=class_dict.get("lang_fields"),
                     translations=class_dict.get("translations"),
                     label_formulas=class_dict.get("label_formulas"),
+                    hexcolor_field=class_dict.get("hexcolor_field"),
                 )
             )
 

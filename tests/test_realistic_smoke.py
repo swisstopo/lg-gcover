@@ -238,7 +238,7 @@ def test_config_loading_error_handling(runner):
         Path("config").mkdir()
         Path("config/gcover_config.yaml").write_text("invalid: yaml: content: [")
 
-        result = runner.invoke(cli, ["--env", "test", "gdb", "scan"])
+        result = runner.invoke(cli, ["--config", "config", "--env", "test", "gdb", "scan"])
 
         # Should fail gracefully, not crash
         assert result.exit_code != 0

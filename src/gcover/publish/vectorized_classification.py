@@ -181,18 +181,20 @@ def build_lookup_table(
     symbol_prefix: str,
     field_names: List[str],
     identifier_field: Optional[str] = None,
+    include_color: bool = False,
 ) -> pd.DataFrame:
     """
     Build lookup DataFrame from classification rules.
-    
+
     Args:
         classification: The LayerClassification with rules
         symbol_prefix: Prefix for symbol IDs
         field_names: List of classification field names
         identifier_field: Optional field name to use for symbol ID (e.g., for bedrock: GMU_CODE)
-        
+        include_color: If True, add _COLOR column with #rrggbbaa fill color from symbol
+
     Returns:
-        DataFrame with columns: [field1, field2, ..., _SYMBOL, _LABEL]
+        DataFrame with columns: [field1, field2, ..., _SYMBOL, _LABEL] plus _COLOR if include_color
     """
     rows = []
     
@@ -234,9 +236,16 @@ def build_lookup_table(
             
             symbol_id = f"{symbol_prefix}_{identifier_value}"
             
+            hex_color = None
+            if include_color:
+                color = getattr(getattr(class_obj, 'symbol_info', None), 'color', None)
+                if color is not None:
+                    hex_color = color.to_hex()
+
             row = {
                 '_SYMBOL': symbol_id,
                 '_LABEL': class_obj.label,
+                '_COLOR': hex_color,
             }
             
             for fname, fval in zip(field_names, field_values):
@@ -250,7 +259,10 @@ def build_lookup_table(
     
     if not rows:
         logger.warning(f"No visible classes found in classification")
-        return pd.DataFrame(columns=field_names + ['_SYMBOL', '_LABEL'])
+        cols = field_names + ['_SYMBOL', '_LABEL']
+        if include_color:
+            cols = cols + ['_COLOR']
+        return pd.DataFrame(columns=cols)
     
     return pd.DataFrame(rows)
 
@@ -399,10 +411,11 @@ class VectorizedClassificationApplicator:
         identifier_field: Optional[str] = None,
         treat_zero_as_null: bool = False,
         debug: bool = False,
+        color_field: Optional[str] = None,
     ):
         """
         Initialize the applicator.
-        
+
         Args:
             classification: LayerClassification with rules
             symbol_field: Output field for symbol IDs
@@ -412,10 +425,12 @@ class VectorizedClassificationApplicator:
             identifier_field: Field to use for symbol ID value (e.g., GMU_CODE for bedrock)
             treat_zero_as_null: Treat 0 as NULL for matching
             debug: Enable debug logging
+            color_field: If set, write #rrggbbaa fill color from the lyrx to this field
         """
         self.classification = classification
         self.symbol_field = symbol_field
         self.label_field = label_field
+        self.color_field = color_field
         self.symbol_prefix = symbol_prefix or self._sanitize_prefix(
             classification.layer_name or 'symbol'
         )
@@ -423,19 +438,20 @@ class VectorizedClassificationApplicator:
         self.identifier_field = identifier_field
         self.treat_zero_as_null = treat_zero_as_null
         self.debug = debug
-        
+
         # Extract classification field names
         self.classification_field_names = [f.name for f in classification.fields]
-        
+
         # Build reverse mapping (classification_field → gpkg_field)
         self.reverse_field_mapping = {v: k for k, v in self.field_mapping.items()}
-        
+
         # Build lookup table once
         self.lookup_df = build_lookup_table(
             classification,
             self.symbol_prefix,
             self.classification_field_names,
             identifier_field=self.identifier_field,
+            include_color=bool(color_field),
         )
         
         # Check for duplicate rules
@@ -625,13 +641,17 @@ class VectorizedClassificationApplicator:
         
         # Assign results back
         merged_indexed = merged.set_index('_orig_idx')
-        
+
         # Only assign where we got a match
         match_indices = merged_indexed.index[matched_mask.values]
         gdf.loc[match_indices, self.symbol_field] = merged_indexed.loc[match_indices, '_SYMBOL'].values
         if self.label_field:
             gdf.loc[match_indices, self.label_field] = merged_indexed.loc[match_indices, '_LABEL'].values
-        
+        if self.color_field and '_COLOR' in merged_indexed.columns:
+            if self.color_field not in gdf.columns:
+                gdf[self.color_field] = pd.Series(dtype='string', index=gdf.index)
+            gdf.loc[match_indices, self.color_field] = merged_indexed.loc[match_indices, '_COLOR'].values
+
         # Cleanup temporary columns
         gdf.drop(columns=join_cols, inplace=True)
         
@@ -724,7 +744,7 @@ def analyze_unclassified_features(
 
 def apply_batch_classifications_vectorized(
     gdf: gpd.GeoDataFrame,
-    classifications: List[Tuple[LayerClassification, Optional[str], Optional[str], Optional[Dict[str, str]], Optional[str]]],
+    classifications: List[Tuple[LayerClassification, Optional[str], Optional[str], Optional[Dict[str, str]], Optional[str], Optional[str]]],
     symbol_field: str = 'SYMBOL',
     label_field: Optional[str] = 'LABEL',
     treat_zero_as_null: bool = False,
@@ -734,19 +754,20 @@ def apply_batch_classifications_vectorized(
 ) -> Tuple[gpd.GeoDataFrame, LayerClassificationReport]:
     """
     Apply multiple classifications to a layer and generate final QA report.
-    
+
     This is the main entry point for batch classification.
-    
+
     Args:
         gdf: Input GeoDataFrame
-        classifications: List of (LayerClassification, filter_expr, symbol_prefix, field_mapping, identifier_field) tuples
+        classifications: List of (LayerClassification, filter_expr, symbol_prefix,
+            field_mapping, identifier_field, color_field) tuples
         symbol_field: Output symbol field name
         label_field: Output label field name (None to disable)
         treat_zero_as_null: Treat 0 as NULL for matching
         analysis_fields: Fields to analyze for unclassified patterns
         layer_name: Name for reporting
         debug: Enable debug output
-        
+
     Returns:
         Tuple of (classified GeoDataFrame, LayerClassificationReport)
     """
@@ -759,20 +780,23 @@ def apply_batch_classifications_vectorized(
     
     # Apply each classification in sequence
     for i, class_tuple in enumerate(classifications, 1):
-        # Unpack tuple - field_mapping and identifier_field are optional (4th and 5th elements)
+        # Unpack tuple - elements beyond index 3 are optional
         classification = class_tuple[0]
         filter_expr = class_tuple[1] if len(class_tuple) > 1 else None
         prefix = class_tuple[2] if len(class_tuple) > 2 else None
         field_mapping = class_tuple[3] if len(class_tuple) > 3 else None
         identifier_field = class_tuple[4] if len(class_tuple) > 4 else None
-        
+        color_field = class_tuple[5] if len(class_tuple) > 5 else None
+
         class_name = classification.layer_name or f'classification_{i}'
         console.print(f"\n  [{i}/{len(classifications)}] {class_name}")
         if field_mapping:
             console.print(f"      Field mapping: {field_mapping}")
         if identifier_field:
             console.print(f"      Identifier field: {identifier_field}")
-        
+        if color_field:
+            console.print(f"      Color field: {color_field}")
+
         applicator = VectorizedClassificationApplicator(
             classification=classification,
             symbol_field=symbol_field,
@@ -782,6 +806,7 @@ def apply_batch_classifications_vectorized(
             identifier_field=identifier_field,
             treat_zero_as_null=treat_zero_as_null,
             debug=debug,
+            color_field=color_field,
         )
         
         gdf, stats = applicator.apply(
@@ -993,7 +1018,8 @@ def apply_batch_from_config_vectorized(
                     filter_expr,
                     class_config.symbol_prefix,
                     class_config.fields,  # field_mapping: gpkg_field -> classification_field
-                    getattr(class_config, 'identifier_field', None),  # identifier_field for symbol ID
+                    getattr(class_config, 'identifier_field', None),
+                    getattr(class_config, 'hexcolor_field', None),
                 ))
                 
             except FileNotFoundError:
