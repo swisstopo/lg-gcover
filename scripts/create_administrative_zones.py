@@ -1,20 +1,90 @@
 #!/usr/bin/env python
 
 """
-Create administrative_zones.gpkg from 4 standardized source files (WU, lots, mapsheet and sources.xlsx).
+Create administrative zones from 4 standardized source files.
 
-Simplified script that handles the real data sources with their actual attributes.
+Inputs
+------
+- lots.geojson         — lot polygons with LOT_NR, Resp, Status
+- WU.json              — work-unit polygons with NAME (→ WU_NAME)
+- mapsheets.geojson    — 1:25 000 mapsheet polygons with MSH_* attributes
+                         (coordinates in EPSG:2056 / CH1903+ LV95)
+- GC_Sources_PA.xlsx   — per-mapsheet source assignments (BKP → SOURCE_RC)
+                         and document availability flags (BER, ERL)
 
-2025-09-05  Added `SOURCE_RC` sources for BKP (data for publication)
-2025-10-13  Added sources `SOURCE_QA`  for QA (before publication)
-2025-10-14  Added borders_100m layer (100m buffer around mapsheet borders)
-2026-01-28  Only warning if missing  `QA_SOURCE`
-2026-03-13  Adding BER and ERL, as well as complete links
-2026-03-15  Removed the `QA_SOURCE` completly
-2026-03-24  New WU.json export. Remomved sheet `Campodolcino`  (merged with `Val Bregaglia`). Using provisonal PA from R17
+Output formats (--format, repeatable)
+--------------------------------------
+gpkg        Multi-layer GeoPackage at the path given by --output (default).
+filegdb     ESRI FileGDB at the same base path with a .gdb extension.
+geojson     One GeoJSON file per layer in {output_stem}/ (EPSG:2056).
+parquet     One GeoParquet file per layer in {output_stem}/ (EPSG:2056).
+flatgeobuf  One FlatGeobuf file per layer in {output_stem}/ (EPSG:4326).
+
+All formats can be produced in a single run:
+  create-administrative-zones -f gpkg -f filegdb -f geojson -f parquet -f flatgeobuf --overwrite
+
+Output layers (always present)
+-------------------------------
+mapsheets_sources_only  Base mapsheets joined with SOURCE_RC, Version,
+                        and document links (ber_link, erl_link).
+mapsheets_with_sources  Same, further enriched with LOT_NR, WU_NAME (spatial
+                        join; values from multiple lots/WUs are pipe-separated).
+borders_50m             Single polygon: full mapped area minus a 50 m buffer
+                        around all internal mapsheet borders.  Used to identify
+                        features well away from any join line.
+lots                    Raw lot polygons.
+work_units              Raw work-unit polygons.
+mapsheets               Raw mapsheet polygons (no source join).
+
+Optional layers (--border-zones)
+---------------------------------
+Enabled with the --border-zones flag.  Requires classifying every shared edge
+between adjacent mapsheets, which adds a few seconds to the run.
+
+border_segments         Classified border lines between adjacent mapsheets:
+                          RC1-RC1  both neighbours from RC1 (tolerant)
+                          RC1-RC2  one RC1, one RC2 (tolerant)
+                          RC2-RC2  both from RC2 (strict)
+                          land     external perimeter of the mapped area (strict)
+tolerance_zones_50m     Single polygon: 50 m buffer around tolerant borders
+                        (RC1-RC1 and RC1-RC2).  QA errors intersecting this zone
+                        can be ignored.
+strict_zones_50m        Full mapped area minus tolerance_zones_50m.  Only QA
+                        errors inside this zone need investigation.
+
+Optional layers (--qa-rand-gc)
+--------------------------------
+qa_rand_gc              Raw QA_Rand_GC layer reprojected to EPSG:2056;
+                        all column names lowercased.
+qa_rand_gc_buffer_50m   Single polygon: full mapped area minus a 50 m buffer
+                        around active rand features (rand != '1').  Used to
+                        select QA issues well away from active Rand borders.
+
+Changelog
+---------
+2025-09-05  Added SOURCE_RC (BKP) per mapsheet for publication tracking
+2025-10-13  Added SOURCE_QA per mapsheet for pre-publication QA
+2025-10-14  Added borders_100m layer
+2026-01-28  Downgraded missing SOURCE_QA to warning only
+2026-03-13  Added BER/ERL flags and ber_link/erl_link URL columns
+2026-03-15  Removed SOURCE_QA column entirely
+2026-03-24  New WU.json format; removed Campodolcino sheet (merged into Val Bregaglia)
+2026-04-25  Added border_segments, tolerance_zones_Xm, strict_zones_Xm for QA border filtering
+2026-04-26  Improved docstring; added HTTP check for ber_link/erl_link URLs
+2026-05-05  Added GeoJSON, GeoParquet, FlatGeobuf output formats via --format
+2026-05-07  Added qa_rand_gc and qa_rand_gc_buffer_50m layers via --qa-rand-gc
+2026-05-08  border_segments/tolerance_zones/strict_zones now opt-in via --border-zones;
+            fixed CRS handling for LV95 inputs (set_crs instead of to_crs);
+            force 2D before FileGDB/GeoJSON/FlatGeobuf writes
+2026-05-16  Added processing_metadata table to GPKG (sha256, mtime, git_hash per input file)
 """
 
+import hashlib
 import os
+import sqlite3
+import subprocess
+import urllib.error
+import urllib.request
 import warnings
 from datetime import datetime as dt
 from importlib.resources import files
@@ -27,6 +97,7 @@ import pandas as pd
 from loguru import logger
 from rich.console import Console
 from rich.table import Table
+from shapely import STRtree, force_2d
 from shapely.ops import unary_union
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -39,13 +110,31 @@ BERICHT_LINK =      "https://data.geo.admin.ch/ch.swisstopo.geologie-geocover/be
 console = Console()
 
 
+def _check_pdf_urls(df: pd.DataFrame, url_cols: list[str], timeout: int = 5) -> None:
+    """Issue a HEAD request for every non-empty URL and warn on HTTP errors."""
+    for col in url_cols:
+        if col not in df.columns:
+            continue
+        urls = df[col].dropna()
+        urls = urls[urls != ""]
+        for url in urls:
+            try:
+                req = urllib.request.Request(url, method="HEAD")
+                with urllib.request.urlopen(req, timeout=timeout):
+                    pass
+            except urllib.error.HTTPError as exc:
+                logger.warning(f"PDF not found ({exc.code}): {url}")
+            except Exception as exc:
+                logger.warning(f"PDF unreachable ({exc}): {url}")
+
+
 def load_lots(lots_path: Path) -> gpd.GeoDataFrame:
     """Load lots from either shapefile or geojson."""
     logger.info(f"Loading lots from {lots_path}")
 
     try:
         lots_gdf = gpd.read_file(lots_path)
-        lots_gdf = lots_gdf.to_crs(DEFAULT_CRS)
+        lots_gdf = lots_gdf.set_crs(DEFAULT_CRS, allow_override=True)
 
         # Ensure we have the essential columns
         excluded = {"Id", "LOT_NR"}
@@ -78,7 +167,7 @@ def load_work_units(wu_path: Path) -> gpd.GeoDataFrame:
 
     try:
         wu_gdf = gpd.read_file(wu_path)
-        wu_gdf = wu_gdf.to_crs(DEFAULT_CRS)
+        wu_gdf = wu_gdf.set_crs(DEFAULT_CRS, allow_override=True)
 
         # Ensure we have the essential columns
         if "NAME" not in wu_gdf.columns:
@@ -115,8 +204,10 @@ def load_mapsheets(mapsheets_path: Path) -> gpd.GeoDataFrame:
     logger.info(f"Loading mapsheets from {mapsheets_path}")
 
     try:
-        mapsheets_gdf = gpd.read_file(mapsheets_path)
-        mapsheets_gdf = mapsheets_gdf.to_crs(DEFAULT_CRS)
+        # All source files use LV95 (EPSG:2056) coordinates regardless of any
+        # CRS declaration.  GeoJSON with Z triggers EPSG:4979 in geopandas which
+        # then corrupts coordinates on to_crs — always declare, never reproject.
+        mapsheets_gdf = gpd.read_file(mapsheets_path).set_crs(DEFAULT_CRS, allow_override=True)
 
         # Check for essential columns
         required_cols = ["MSH_MAP_NBR", "MSH_TOPO_NR"]
@@ -206,6 +297,7 @@ def load_sources(sources_path: Path) -> pd.DataFrame:
           axis = 1
         )
 
+        _check_pdf_urls(sources_clean, ["erl_link", "ber_link"])
 
         logger.info(
             f"Loaded {len(sources_clean)} source records with columns: {list(sources_clean.columns)}"
@@ -453,6 +545,147 @@ def border_mapsheet(
     return inner_area_gdf
 
 
+def classify_border_segments(
+    mapsheets_with_sources: gpd.GeoDataFrame,
+    buffer_distance: float = 100,
+) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
+    """Find adjacent mapsheet pairs, classify shared borders by RC type.
+
+    Returns (border_segments_gdf, tolerance_zones_gdf).
+    Tolerant borders (RC1-RC1, RC1-RC2) are buffered to form the tolerance zones.
+    Land border = external perimeter; classified strict (not buffered).
+    """
+    msh = mapsheets_with_sources.reset_index(drop=True)
+    geoms = list(msh.geometry)
+    tree = STRtree(geoms)
+
+    border_rows = []
+    seen_pairs: set[tuple[int, int]] = set()
+
+    for i, geom_i in enumerate(geoms):
+        candidates = tree.query(geom_i)
+        for j in candidates:
+            if j <= i:
+                continue
+            if (i, j) in seen_pairs:
+                continue
+            seen_pairs.add((i, j))
+
+            try:
+                shared = geom_i.intersection(geoms[j])
+            except Exception:
+                continue
+
+            if shared.is_empty:
+                continue
+            if shared.geom_type in ("Point", "MultiPoint"):
+                continue
+            if shared.geom_type == "GeometryCollection":
+                lines = [g for g in shared.geoms if "Line" in g.geom_type]
+                if not lines:
+                    continue
+                shared = unary_union(lines)
+            if "Line" not in shared.geom_type:
+                continue
+
+            left_rc = msh.iloc[i].get("SOURCE_RC") if "SOURCE_RC" in msh.columns else None
+            right_rc = msh.iloc[j].get("SOURCE_RC") if "SOURCE_RC" in msh.columns else None
+
+            left_rc_str = str(left_rc) if pd.notna(left_rc) else "unknown"
+            right_rc_str = str(right_rc) if pd.notna(right_rc) else "unknown"
+            pair_rcs = tuple(sorted([left_rc_str, right_rc_str]))
+
+            if pair_rcs == ("RC1", "RC1"):
+                border_type = "RC1-RC1"
+            elif pair_rcs == ("RC2", "RC2"):
+                border_type = "RC2-RC2"
+            elif set(pair_rcs) == {"RC1", "RC2"}:
+                border_type = "RC1-RC2"
+            else:
+                border_type = "-".join(pair_rcs)
+
+            border_rows.append({
+                "geometry": shared,
+                "border_type": border_type,
+                "left_msh": msh.iloc[i].get("MSH_MAP_NBR"),
+                "right_msh": msh.iloc[j].get("MSH_MAP_NBR"),
+                "left_rc": left_rc_str,
+                "right_rc": right_rc_str,
+            })
+
+    if border_rows:
+        border_segments_gdf = gpd.GeoDataFrame(border_rows, crs=msh.crs)
+    else:
+        border_segments_gdf = gpd.GeoDataFrame(
+            columns=["geometry", "border_type", "left_msh", "right_msh", "left_rc", "right_rc"],
+            crs=msh.crs,
+        )
+
+    # Land border = outer perimeter of the union of all mapsheets.
+    # Internal shared segments lie in the interior of the union and are absent here.
+    land_geom = unary_union(geoms).boundary
+    if not land_geom.is_empty:
+        land_row = gpd.GeoDataFrame([{
+            "geometry": land_geom,
+            "border_type": "land",
+            "left_msh": None,
+            "right_msh": None,
+            "left_rc": None,
+            "right_rc": None,
+        }], crs=msh.crs)
+        border_segments_gdf = pd.concat([border_segments_gdf, land_row], ignore_index=True)
+
+    # Tolerance zones: buffer RC1-RC1 and RC1-RC2 borders only
+    total_area = unary_union(geoms)
+    tolerant = border_segments_gdf[border_segments_gdf["border_type"].isin(["RC1-RC1", "RC1-RC2"])]
+    if not tolerant.empty:
+        tolerant_union = unary_union(tolerant.geometry.values)
+        tolerance_poly = tolerant_union.buffer(buffer_distance)
+        tolerance_zones_gdf = gpd.GeoDataFrame(
+            [{
+                "geometry": tolerance_poly,
+                "buffer_m": buffer_distance,
+                "border_types": "RC1-RC1,RC1-RC2",
+                "description": f"{buffer_distance}m tolerance zone around RC1 borders",
+            }],
+            crs=msh.crs,
+        )
+        strict_poly = total_area.difference(tolerance_poly)
+    else:
+        tolerance_zones_gdf = gpd.GeoDataFrame(
+            columns=["geometry", "buffer_m", "border_types", "description"],
+            crs=msh.crs,
+        )
+        strict_poly = total_area
+
+    strict_zones_gdf = gpd.GeoDataFrame(
+        [{
+            "geometry": strict_poly,
+            "buffer_m": buffer_distance,
+            "description": f"Mapped area minus {buffer_distance}m RC1 border tolerance zones",
+        }],
+        crs=msh.crs,
+    )
+
+    return border_segments_gdf, tolerance_zones_gdf, strict_zones_gdf
+
+
+def load_qa_rand_gc(gdb_path: Path) -> gpd.GeoDataFrame:
+    """Load QA_Rand_GC GDB; lowercase all column names (geometry kept as-is)."""
+    logger.info(f"Loading QA Rand GC from {gdb_path}")
+    layers = fiona.listlayers(str(gdb_path))
+    if not layers:
+        raise ValueError(f"No layers found in {gdb_path}")
+    layer_name = layers[0]
+    if len(layers) > 1:
+        logger.warning(f"Multiple layers in {gdb_path}, using first: {layer_name}")
+    gdf = gpd.read_file(gdb_path, layer=layer_name)
+    gdf = gdf.to_crs(DEFAULT_CRS)
+    gdf.columns = [c.lower() if c != "geometry" else c for c in gdf.columns]
+    logger.info(f"Loaded {len(gdf)} features, columns: {list(gdf.columns)}")
+    return gdf
+
+
 def clean_wu(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """
     Cleans the WU (Work Unit) GeoDataFrame by removing a predefined list of columns.
@@ -526,6 +759,140 @@ def clean_wu(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return gdf
 
 
+def _promote_to_multi(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Promote single geometries to Multi* and LinearRing to LineString.
+
+    FileGDB requires homogeneous geometry types with no LinearRing.
+    """
+    from shapely.geometry import LineString, MultiLineString, MultiPoint, MultiPolygon
+
+    _promote_map = {
+        "Polygon":    lambda g: MultiPolygon([g]),
+        "LineString": lambda g: MultiLineString([g]),
+        "LinearRing": lambda g: MultiLineString([LineString(g)]),
+        "Point":      lambda g: MultiPoint([g]),
+    }
+
+    gdf = gdf.copy()
+    gdf["geometry"] = gdf.geometry.apply(
+        lambda g: _promote_map[g.geom_type](g) if g is not None and g.geom_type in _promote_map else g
+    )
+    return gdf
+
+
+def _file_fingerprint(path: Path) -> dict[str, str]:
+    """Return sha256, ISO-8601 mtime, and git hash (or 'untracked') for a file."""
+    mtime = dt.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds")
+    sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+    try:
+        result = subprocess.run(
+            ["git", "log", "-1", "--format=%H", "--", str(path)],
+            capture_output=True, text=True, timeout=5,
+        )
+        git_hash = result.stdout.strip() or "untracked"
+    except Exception:
+        git_hash = "unavailable"
+    return {"sha256": sha256, "mtime": mtime, "git_hash": git_hash}
+
+
+def _write_processing_metadata(gpkg_path: Path, input_files: dict[str, Path]) -> None:
+    """Write a processing_metadata table to the GPKG with provenance for each input file.
+
+    Columns: role, filename, path, sha256, mtime, git_hash, generated_at.
+    One row per input file plus one row for the script itself.
+    """
+    generated_at = dt.utcnow().isoformat(timespec="seconds") + "Z"
+    script_path = Path(__file__)
+
+    rows = []
+    for role, path in input_files.items():
+        fp = _file_fingerprint(path)
+        rows.append((role, path.name, str(path.resolve()), fp["sha256"], fp["mtime"], fp["git_hash"], generated_at))
+
+    script_fp = _file_fingerprint(script_path)
+    rows.append(("script", script_path.name, str(script_path.resolve()), script_fp["sha256"], script_fp["mtime"], script_fp["git_hash"], generated_at))
+
+    with sqlite3.connect(gpkg_path) as con:
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS processing_metadata (
+                role         TEXT NOT NULL,
+                filename     TEXT NOT NULL,
+                path         TEXT NOT NULL,
+                sha256       TEXT NOT NULL,
+                mtime        TEXT NOT NULL,
+                git_hash     TEXT,
+                generated_at TEXT NOT NULL
+            )
+        """)
+        con.execute("DELETE FROM processing_metadata")
+        con.executemany(
+            "INSERT INTO processing_metadata VALUES (?,?,?,?,?,?,?)", rows
+        )
+
+    logger.info(f"processing_metadata written: {len(rows)} rows → {gpkg_path.name}")
+
+
+def _write_layers(
+    layers: dict[str, gpd.GeoDataFrame],
+    output_path: Path,
+    formats: tuple[str, ...],
+) -> None:
+    """Write all layers in each requested format."""
+    if "gpkg" in formats:
+        first = True
+        for name, gdf in layers.items():
+            mode = "w" if first else "a"
+            gdf.to_file(output_path, layer=name, driver="GPKG", mode=mode)
+            logger.info(f"✓ Written GPKG layer: {name} ({len(gdf)} features)")
+            first = False
+
+    if "filegdb" in formats:
+        import shutil
+        gdb_path = output_path.with_suffix(".gdb")
+        if gdb_path.exists():
+            shutil.rmtree(gdb_path)
+        first = True
+        for name, gdf in layers.items():
+            mode = "w" if first else "a"
+            gdf_out = _promote_to_multi(gdf).copy()
+            gdf_out.geometry = gpd.GeoSeries(force_2d(gdf_out.geometry.values), crs=gdf_out.crs)
+            try:
+                gdf_out.to_file(gdb_path, layer=name, driver="OpenFileGDB", mode=mode)
+                logger.info(f"✓ Written FileGDB layer: {name} ({len(gdf)} features)")
+            except Exception as e:
+                logger.error(f"✗ Failed FileGDB layer '{name}': {e}")
+                raise
+            first = False
+
+    web_formats = [f for f in ("geojson", "parquet", "flatgeobuf") if f in formats]
+    if web_formats:
+        layers_dir = output_path.parent / output_path.stem
+        layers_dir.mkdir(parents=True, exist_ok=True)
+        for name, gdf in layers.items():
+            # Strip Z — GeoJSON and FlatGeobuf don't support it; parquet is fine
+            # either way but consistent 2D avoids driver warnings.
+            gdf_2d = gdf.copy()
+            gdf_2d.geometry = gpd.GeoSeries(force_2d(gdf_2d.geometry.values), crs=gdf_2d.crs)
+            try:
+                if "geojson" in web_formats:
+                    out = layers_dir / f"{name}.geojson"
+                    gdf_2d.to_file(out, driver="GeoJSON")
+                    logger.info(f"✓ Written GeoJSON: {out}")
+                if "parquet" in web_formats:
+                    out = layers_dir / f"{name}.parquet"
+                    gdf_2d.to_parquet(out)
+                    logger.info(f"✓ Written GeoParquet: {out}")
+                if "flatgeobuf" in web_formats:
+                    out = layers_dir / f"{name}.fgb"
+                    gdf_web = gdf_2d.to_crs("EPSG:4326")
+                    gdf_web.to_file(out, driver="FlatGeobuf")
+                    logger.info(f"✓ Written FlatGeobuf (EPSG:4326): {out}")
+            except Exception as e:
+                logger.error(f"✗ Failed web layer '{name}': {e}")
+                raise
+
+
+
 @click.command(context_settings={"show_default": True})
 @click.option(
     "--output",
@@ -533,7 +900,17 @@ def clean_wu(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     "output_path",
     default=str(files("gcover.data").joinpath("administrative_zones.gpkg")),
     type=click.Path(path_type=Path),
-    help="Output GPKG file path",
+    help="Output base path (GPKG); layer files go into a sibling directory with the same stem",
+)
+@click.option(
+    "--format",
+    "-f",
+    "formats",
+    multiple=True,
+    type=click.Choice(["gpkg", "filegdb", "geojson", "parquet","flatgeobuf"], case_sensitive=False),
+    default=("gpkg",),
+    show_default=True,
+    help="Output format(s). Repeat to enable multiple: -f gpkg -f filegdb",
 )
 @click.option(
     "--lots-file",
@@ -563,6 +940,21 @@ def clean_wu(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     help="Path to sources Excel file",
     default=str(files("gcover.data").joinpath("GC_Sources_QA.xlsx")),
 )
+@click.option(
+    "--qa-rand-gc",
+    "qa_rand_gc_file",
+    required=False,
+    default=None,
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to QA_Rand_GC.gdb; adds raw layer and a 50 m buffer of rand<>1 features",
+)
+@click.option(
+    "--border-zones",
+    "border_zones",
+    is_flag=True,
+    default=False,
+    help="Also create border_segments, tolerance_zones and strict_zones layers (off by default).",
+)
 @click.option("--overwrite", is_flag=True, help="Overwrite existing output file")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 def create_administrative_zones(
@@ -571,6 +963,9 @@ def create_administrative_zones(
     wu_file: Path,
     mapsheets_file: Path,
     sources_file: Path,
+    formats: tuple[str, ...],
+    qa_rand_gc_file: Path | None,
+    border_zones: bool,
     overwrite: bool,
     verbose: bool,
 ):
@@ -595,23 +990,48 @@ def create_administrative_zones(
         logger.add(lambda msg: click.echo(msg, err=True), level="DEBUG")
 
     # Check if output exists
-
-    if output_path.exists() and not overwrite:
-        click.echo(f"❌ Output file exists: {output_path}")
-        click.echo("   Use --overwrite to replace it")
-        return
+    layers_dir = output_path.parent / output_path.stem
+    if not overwrite:
+        if "gpkg" in formats and output_path.exists():
+            click.echo(f"❌ Output file exists: {output_path}")
+            click.echo("   Use --overwrite to replace it")
+            return
+        if "filegdb" in formats and output_path.with_suffix(".gdb").exists():
+            click.echo(f"❌ Output FileGDB exists: {output_path.with_suffix('.gdb')}")
+            click.echo("   Use --overwrite to replace it")
+            return
+        if any(f in formats for f in ("geojson", "parquet")) and layers_dir.exists():
+            click.echo(f"❌ Output directory exists: {layers_dir}")
+            click.echo("   Use --overwrite to replace it")
+            return
 
     # Create output directory
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Remove existing file
-    if output_path.exists():
+    if "gpkg" in formats and output_path.exists():
         output_path.unlink()
         logger.info(f"Removed existing file: {output_path}")
 
     try:
         # 1. Load all source data
-        click.echo("📁 Loading source data...")
+        input_files = {
+            "lots":       lots_file,
+            "work units": wu_file,
+            "mapsheets":  mapsheets_file,
+            "sources":    sources_file,
+        }
+        if qa_rand_gc_file is not None:
+            input_files["qa rand gc"] = qa_rand_gc_file
+
+        table = Table(title="Input files", show_header=True, header_style="bold cyan")
+        table.add_column("Source", style="cyan", no_wrap=True)
+        table.add_column("Path")
+        table.add_column("Modified", style="green", no_wrap=True)
+        for label, path in input_files.items():
+            mtime = dt.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+            table.add_row(label, str(path.resolve()), mtime)
+        console.print(table)
 
         lots_gdf = load_lots(lots_file)
         wu_gdf = load_work_units(wu_file)
@@ -666,18 +1086,12 @@ def create_administrative_zones(
             mapsheets_with_lots, wu_gdf, ["WU_NAME", "WU_ID"], "mapsheets-work_units"
         )
 
-        # 4. Write to GPKG
-        click.echo(f"💾 Writing to {output_path}")
-
-        # Main layer: mapsheets with all attributes
-        # TODO: only source is OK?
-        mapsheets_with_sources.to_file(
-            output_path, layer="mapsheets_sources_only", driver="GPKG"
-        )
+        # 4. Aggregate mapsheets_complete
 
         # Define the grouping columns (mapsheet columns)
-        mapsheet_cols = [
-            "geometry",
+        # "geometry" is always kept — it is the per-mapsheet deduplication key.
+        # All other columns are optional: missing ones are silently dropped with a warning.
+        _wanted_mapsheet_cols = [
             "MSH_MAP_TITLE",
             "MSH_MAP_NBR",
             "MSH_MAP_SCALE",
@@ -690,16 +1104,20 @@ def create_administrative_zones(
             "MSH_MORE_INFO",
             "MSH_TOPO_NR",
             "SOURCE_RC",
-               "Version",
+            "Version",
         ]
 
-        missing_cols = sorted(set(mapsheet_cols) - set(sources_df.columns))
-
+        missing_cols = sorted(c for c in _wanted_mapsheet_cols if c not in mapsheets_complete.columns)
         if missing_cols:
-            click.secho("Error: The DataFrame is missing required columns:", fg="red", bold=True)
+            click.secho("Warning: grouping columns not found and will be skipped:", fg="yellow")
             for col in missing_cols:
                 click.secho(f"  • {col}", fg="yellow")
-            # raise click.Abort()
+
+        if "geometry" not in mapsheets_complete.columns:
+            raise ValueError("mapsheets_complete has no geometry column — cannot aggregate")
+
+        mapsheet_cols = ["geometry"] + [c for c in _wanted_mapsheet_cols if c in mapsheets_complete.columns]
+
         SOURCES_COLUMNS = ("SOURCE_RC",)
 
 
@@ -725,28 +1143,57 @@ def create_administrative_zones(
             gdf_aggregated, geometry="geometry", crs=mapsheets_gdf.crs
         )
 
-        mapsheets_complete.to_file(
-            output_path, layer="mapsheets_with_sources", driver="GPKG"
-        )
-        logger.info(
-            f"✓ Written layer: mapsheets_with_sources ({len(mapsheets_complete)} features)"
-        )
-        buffer_distance = 100
+        buffer_distance = 50
         border_gdf = border_mapsheet(mapsheets_gdf, buffer_distance=buffer_distance)
-        border_gdf.to_file(
-            output_path, layer=f"borders_{buffer_distance}m", driver="GPKG", mode="a"
-        )
 
-        # Individual zone layers
-        lots_gdf.to_file(output_path, layer="lots", driver="GPKG", mode="a")
-        logger.info(f"✓ Written layer: lots ({len(lots_gdf)} features)")
+        # 5. Collect all layers and write in requested format(s)
+        layers: dict[str, gpd.GeoDataFrame] = {
+            "mapsheets_sources_only": mapsheets_with_sources,
+            "mapsheets_with_sources": mapsheets_complete,
+            f"borders_{buffer_distance}m": border_gdf,
+            "lots": lots_gdf,
+            "work_units": wu_gdf,
+            "mapsheets": mapsheets_gdf,
+        }
 
-        wu_gdf.to_file(output_path, layer="work_units", driver="GPKG", mode="a")
-        logger.info(f"✓ Written layer: work_units ({len(wu_gdf)} features)")
+        if border_zones:
+            click.echo("🗺️  Classifying border segments...")
+            border_segments_gdf, tolerance_zones_gdf, strict_zones_gdf = classify_border_segments(
+                mapsheets_with_sources, buffer_distance=buffer_distance
+            )
+            layers["border_segments"] = border_segments_gdf
+            layers[f"tolerance_zones_{buffer_distance}m"] = tolerance_zones_gdf
+            layers[f"strict_zones_{buffer_distance}m"] = strict_zones_gdf
 
-        # Base mapsheets layer (for reference)
-        mapsheets_gdf.to_file(output_path, layer="mapsheets", driver="GPKG", mode="a")
-        logger.info(f"✓ Written layer: mapsheets ({len(mapsheets_gdf)} features)")
+        if qa_rand_gc_file is not None:
+            click.echo("📁 Loading QA_Rand_GC...")
+            qa_rand_gc_gdf = load_qa_rand_gc(qa_rand_gc_file)
+            layers["qa_rand_gc"] = qa_rand_gc_gdf
+
+            if "rand" not in qa_rand_gc_gdf.columns:
+                logger.warning("'rand' column not found in QA_Rand_GC; skipping buffer layer")
+            else:
+                rand_borders = qa_rand_gc_gdf[qa_rand_gc_gdf["rand"].astype(str) != "1"]
+                total_area = unary_union(mapsheets_gdf.geometry)
+                rand_buffer = unary_union(rand_borders.geometry).buffer(buffer_distance)
+                inner_area = total_area.difference(rand_buffer)
+                layers[f"qa_rand_gc_buffer_{buffer_distance}m"] = gpd.GeoDataFrame(
+                    [{"geometry": inner_area, "buffer_m": buffer_distance}],
+                    crs=qa_rand_gc_gdf.crs,
+                )
+                logger.info(f"Buffer layer: mapsheets minus {buffer_distance} m zone around {len(rand_borders)} active (rand != '1') features")
+
+        click.echo(f"💾 Writing to {output_path} (formats: {', '.join(formats)})")
+        _write_layers(layers, output_path, formats)
+
+        if "gpkg" in formats and output_path.exists():
+            _write_processing_metadata(output_path, {
+                "lots": lots_file,
+                "work_units": wu_file,
+                "mapsheets": mapsheets_file,
+                "sources": sources_file,
+                **({"qa_rand_gc": qa_rand_gc_file} if qa_rand_gc_file is not None else {}),
+            })
 
         # 5. Summary and validation
         click.echo(f"✅ Administrative zones created successfully!")
@@ -817,8 +1264,10 @@ def create_administrative_zones(
         # Write the docstring to a file
         now = dt.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        layers = fiona.listlayers(output_path)
-        layer_string = "\n * ".join(layers)
+        layer_string = "\n * ".join(layers.keys())
+        if "gpkg" in formats and output_path.exists():
+            gpkg_layers = fiona.listlayers(output_path)
+            layer_string = "\n * ".join(gpkg_layers)
         docstring = f"""{__doc__ or ""}\n\nXLSX file:{str(sources_file)}\n\nLayer list:\n * {layer_string}\n\n-- 'mapsheets_sources_only' --\n\n{validation_str}\n\n\nGenerated on {now}"""
         output_without_ext = output_path.with_suffix("")
         with open(output_without_ext.with_suffix(".README"), "w", encoding="utf-8") as f:

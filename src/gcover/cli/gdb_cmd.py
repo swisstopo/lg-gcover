@@ -3,7 +3,9 @@
 CLI for GDB Asset Management System
 """
 
+import json
 import sys
+import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -34,7 +36,14 @@ from gcover.gdb.assets import (
     remove_duplicate_assets,
 )
 from gcover.gdb.manager import GDBAssetManager
-from gcover.gdb.storage import MetadataDB, S3Uploader, TOTPGenerator
+from gcover.gdb.storage import (
+    DEFAULT_METADATA_S3_KEY,
+    MetadataDB,
+    S3Uploader,
+    TOTPGenerator,
+    fetch_metadata_parquet,
+    query_latest_assets_by_rc,
+)
 
 # Import utility functions
 from gcover.gdb.utils import (
@@ -949,6 +958,11 @@ def process(ctx, gdb_path, no_upload):
     help="Continue processing other assets if one fails",
 )
 @click.option("--no-upload", is_flag=True, help="Skip S3 upload")
+@click.option(
+    "--no-publish-metadata",
+    is_flag=True,
+    help="Skip publishing metadata Parquet to S3 after processing",
+)
 @click.pass_context
 def process_all(
     ctx,
@@ -960,6 +974,7 @@ def process_all(
     max_workers,
     continue_on_error,
     no_upload,
+    no_publish_metadata,
     yes,
 ):
     """Process all GDB assets found by filesystem scan"""
@@ -1213,6 +1228,26 @@ def process_all(
 
         if stats["failed"] > 0 and not continue_on_error:
             sys.exit(1)
+
+        # Auto-publish metadata parquet after processing
+        if not no_upload and not no_publish_metadata and stats["processed"] > 0:
+            import tempfile
+
+            metadata_s3_key = DEFAULT_METADATA_S3_KEY
+            rprint(f"\n[cyan]Publishing metadata to s3://{s3_config.bucket}/{metadata_s3_key}...[/cyan]")
+            try:
+                parquet_path = (
+                    Path(tempfile.mkdtemp(prefix="gcover_metadata_")) / "gdb_assets.parquet"
+                )
+                manager.metadata_db.export_to_parquet(parquet_path)
+                result = manager.s3_uploader.upload_file(parquet_path, metadata_s3_key, overwrite=True)
+                if result.success:
+                    rprint(f"[green]Metadata published to s3://{s3_config.bucket}/{metadata_s3_key}[/green]")
+                else:
+                    rprint(f"[red]Metadata upload failed (HTTP {result.status_code}): {result.error_message}[/red]")
+                parquet_path.unlink(missing_ok=True)
+            except Exception as e:
+                rprint(f"[red]Metadata publish failed: {e}[/red]")
 
     except Exception as e:
         rprint(f"[red]Process-all failed: {e}[/red]")
@@ -1498,35 +1533,43 @@ def stats(ctx, by_date, by_type, storage, db_path):
     is_flag=True,
     help="Also show if they form a release couple (created close together)",
 )
+@click.option(
+    "--metadata-s3-key",
+    default=DEFAULT_METADATA_S3_KEY,
+    show_default=True,
+    help="S3 key of the metadata Parquet (used when --db-path is not given)",
+)
 @db_path_option
 @click.pass_context
-def latest_by_rc(ctx, asset_type, days_back, show_couple, db_path):
+def latest_by_rc(ctx, asset_type, days_back, show_couple, metadata_s3_key, db_path):
     """Show the latest asset for each RC (RC1/RC2)"""
     gdb_config, global_config, environment, verbose = get_configs(ctx)
 
     s3_config = global_config.s3
 
-    db_path = get_db_path(gdb_config, db_path)
-
-
     try:
-        # Create manager instance (reusing existing logic)
-        s3_bucket = gdb_config.get_s3_bucket(global_config)
-        s3_profile = gdb_config.get_s3_profile(global_config)
-
-        manager = GDBAssetManager(
-            base_paths=gdb_config.base_paths,
-            s3_config=s3_config,  # TODO
-            # s3_bucket=s3_bucket,
-            db_path=db_path ,
-            temp_dir=gdb_config.temp_dir,
-            # aws_profile=s3_profile,
-        )
+        if db_path:
+            rprint(f"[blue]Using local metadata DB: {db_path}[/blue]")
+            manager = GDBAssetManager(
+                base_paths=gdb_config.base_paths,
+                s3_config=s3_config,
+                db_path=db_path,
+                temp_dir=gdb_config.temp_dir,
+            )
+            def _get_latest(atype):
+                return manager.get_latest_assets_by_rc(asset_type=atype, days_back=days_back)
+            def _get_couple(atype):
+                return manager.get_latest_release_couple(asset_type=atype)
+        else:
+            rprint(f"[cyan]Fetching metadata from s3://{s3_config.bucket}/{metadata_s3_key}...[/cyan]")
+            parquet_path = fetch_metadata_parquet(s3_config, metadata_s3_key, public_url=global_config.public_url)
+            def _get_latest(atype):
+                return query_latest_assets_by_rc(parquet_path, asset_type=atype)
+            def _get_couple(atype):
+                return None  # not supported from parquet
 
         # Get latest assets
-        latest_assets = manager.get_latest_assets_by_rc(
-            asset_type=asset_type, days_back=days_back
-        )
+        latest_assets = _get_latest(asset_type)
 
         if not latest_assets:
             asset_filter = f" for {asset_type}" if asset_type else ""
@@ -1566,7 +1609,7 @@ def latest_by_rc(ctx, asset_type, days_back, show_couple, db_path):
 
         # Show release couple information
         if show_couple and len(latest_assets) == 2:
-            couple = manager.get_latest_release_couple(asset_type=asset_type)
+            couple = _get_couple(asset_type)
             if couple:
                 rc1_date, rc2_date = couple
                 days_apart = abs((rc1_date - rc2_date).days)
@@ -1842,10 +1885,17 @@ def latest_verifications(ctx):
     is_flag=True,
     help="Overwrite existing files",
 )
+@click.option(
+    "--metadata-s3-key",
+    default=DEFAULT_METADATA_S3_KEY,
+    show_default=True,
+    help="S3 key of the metadata Parquet (used when --db-path is not given)",
+)
 @db_path_option
 @click.pass_context
 def download(
-    ctx, asset_type, output_dir, rc, max_days_apart, unzip, keep_zip, dry_run, overwrite, db_path,
+    ctx, asset_type, output_dir, rc, max_days_apart, unzip, keep_zip, dry_run, overwrite,
+    metadata_s3_key, db_path,
 ):
     """
     Download the latest asset couple (RC1+RC2) from S3.
@@ -1874,18 +1924,38 @@ def download(
     gdb_config, global_config, environment, verbose = get_configs(ctx)
     s3_config = global_config.s3
 
-    db_path = get_db_path(gdb_config, db_path)
-
     try:
         output_path = Path(output_dir)
 
-        # Create manager
-        manager = GDBAssetManager(
-            base_paths=gdb_config.base_paths,
-            s3_config=s3_config,
-            db_path=db_path,
-            temp_dir=gdb_config.temp_dir,
-        )
+        # Resolve metadata source and download helper
+        if db_path:
+            rprint(f"[blue]Using local metadata DB: {db_path}[/blue]")
+            manager = GDBAssetManager(
+                base_paths=gdb_config.base_paths,
+                s3_config=s3_config,
+                db_path=db_path,
+                temp_dir=gdb_config.temp_dir,
+            )
+            def _get_latest(atype):
+                return manager.get_latest_assets_by_rc(asset_type=atype)
+            def _do_download(s3_key, local_path):
+                return manager.download_asset(s3_key, local_path)
+        else:
+            rprint(f"[cyan]Fetching metadata from s3://{s3_config.bucket}/{metadata_s3_key}...[/cyan]")
+            parquet_path = fetch_metadata_parquet(s3_config, metadata_s3_key, public_url=global_config.public_url)
+            uploader = S3Uploader(
+                bucket_name=s3_config.bucket,
+                aws_profile=s3_config.profile,
+                lambda_endpoint=s3_config.lambda_endpoint,
+                totp_secret=s3_config.totp_secret,
+                totp_token=s3_config.totp_token,
+                proxy_config=s3_config.proxy,
+                upload_method=s3_config.upload_method,
+            )
+            def _get_latest(atype):
+                return query_latest_assets_by_rc(parquet_path, asset_type=atype)
+            def _do_download(s3_key, local_path):
+                return uploader.download_file(s3_key, local_path)
 
         # Expand asset type alias (e.g., "backup" -> ["backup_daily", "backup_weekly", "backup_monthly"])
         asset_types = expand_asset_type(asset_type)
@@ -1901,7 +1971,7 @@ def download(
         actual_type_used = {}  # Track which specific type was found for each RC
 
         for atype in asset_types:
-            latest = manager.get_latest_assets_by_rc(asset_type=atype)
+            latest = _get_latest(atype)
             for rc_name, data in latest.items():
                 # Keep the most recent for each RC
                 if rc_name not in all_latest or data["timestamp"] > all_latest[rc_name]["timestamp"]:
@@ -1979,7 +2049,34 @@ def download(
             )
             return
 
-        # Display download plan
+        # Build asset summary shared between human and JSON output
+        total_size = 0
+        assets_summary = []
+        for rc_name in ["RC1", "RC2"]:
+            if rc_name in downloadable:
+                data = downloadable[rc_name]
+                size = data.get("file_size", 0) or 0
+                total_size += size
+                assets_summary.append({
+                    "rc": rc_name,
+                    "type": actual_type_used.get(rc_name, data.get("asset_type", "?")),
+                    "timestamp": data["timestamp"].isoformat(),
+                    "s3_key": data["s3_key"],
+                    "filename": Path(data["s3_key"]).name,
+                    "size_bytes": size,
+                })
+
+        if ctx.obj.get("output") == "json":
+            click.echo(json.dumps({
+                "dry_run": dry_run,
+                "asset_type": asset_type,
+                "destination": str(output_path.absolute()),
+                "total_size_bytes": total_size,
+                "assets": assets_summary,
+            }, indent=2))
+            return
+
+        # Human output: Rich table
         title = f"Download Plan: {asset_type}"
         if is_alias:
             title += " (alias)"
@@ -1990,19 +2087,14 @@ def download(
         table.add_column("S3 Key", style="yellow", max_width=45)
         table.add_column("Size", justify="right", style="blue", width=12)
 
-        total_size = 0
-        for rc_name in ["RC1", "RC2"]:
-            if rc_name in downloadable:
-                data = downloadable[rc_name]
-                size = data.get("file_size", 0) or 0
-                total_size += size
-                table.add_row(
-                    rc_name,
-                    actual_type_used.get(rc_name, data.get("asset_type", "?")),
-                    data["timestamp"].strftime("%Y-%m-%d %H:%M"),
-                    Path(data["s3_key"]).name,
-                    format_size(size) if size else "Unknown",
-                )
+        for item in assets_summary:
+            table.add_row(
+                item["rc"],
+                item["type"],
+                item["timestamp"][:16].replace("T", " "),
+                item["filename"],
+                format_size(item["size_bytes"]) if item["size_bytes"] else "Unknown",
+            )
 
         console.print(table)
         rprint(f"\n[cyan]Total download size: {format_size(total_size)}[/cyan]")
@@ -2037,8 +2129,7 @@ def download(
             rprint(f"\n[cyan]Downloading {rc_name}: {filename}[/cyan]")
 
             try:
-                # Use the manager's download method
-                success = manager.download_asset(s3_key, local_path)
+                success = _do_download(s3_key, local_path)
 
                 if success:
                     successful += 1
@@ -2163,9 +2254,16 @@ def download(
 )
 @click.option("--dry-run", is_flag=True, help="Show what would be downloaded")
 @click.option("--overwrite", is_flag=True, help="Overwrite existing files")
+@click.option(
+    "--metadata-s3-key",
+    default=DEFAULT_METADATA_S3_KEY,
+    show_default=True,
+    help="S3 key of the metadata Parquet (used when --db-path is not given)",
+)
 @db_path_option
 @click.pass_context
-def download_couple(ctx, asset_type, output_dir, unzip, keep_zip, dry_run, overwrite, db_path):
+def download_couple(ctx, asset_type, output_dir, unzip, keep_zip, dry_run, overwrite,
+                    metadata_s3_key, db_path):
     """
     Download the latest valid RC1+RC2 couple for an asset type.
 
@@ -2194,6 +2292,7 @@ def download_couple(ctx, asset_type, output_dir, unzip, keep_zip, dry_run, overw
         keep_zip=keep_zip,
         dry_run=dry_run,
         overwrite=overwrite,
+        metadata_s3_key=metadata_s3_key,
         db_path=db_path,
     )
 
@@ -2431,6 +2530,75 @@ def verify_topology_files_exist(db_path: str) -> Dict[str, bool]:
         status[rc] = Path(data["path"]).exists()
 
     return status
+
+
+@gdb.command("publish-metadata")
+@click.option(
+    "--s3-key",
+    default="gdb-assets/metadata/gdb_assets.parquet",
+    show_default=True,
+    help="S3 key for the metadata Parquet file",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(file_okay=False),
+    default=None,
+    help="Local directory for the exported Parquet (default: system temp dir)",
+)
+@click.option("--no-upload", is_flag=True, help="Export Parquet locally without uploading to S3")
+@db_path_option
+@click.pass_context
+def publish_metadata(ctx, s3_key, output_dir, no_upload, db_path):
+    """Export metadata DB to Parquet and upload to S3."""
+    import tempfile
+
+    gdb_config, global_config, environment, verbose = get_configs(ctx)
+    s3_config = global_config.s3
+
+    metadata_db = get_metadata_db(ctx, db_path)
+
+    # Resolve output path
+    if output_dir:
+        parquet_path = Path(output_dir) / "gdb_assets.parquet"
+    else:
+        parquet_path = Path(tempfile.mkdtemp(prefix="gcover_metadata_")) / "gdb_assets.parquet"
+
+    rprint(f"[cyan]Exporting metadata to {parquet_path}...[/cyan]")
+    try:
+        metadata_db.export_to_parquet(parquet_path)
+    except Exception as e:
+        rprint(f"[red]Export failed: {e}[/red]")
+        sys.exit(1)
+
+    size_kb = parquet_path.stat().st_size / 1024
+    rprint(f"[green]Exported {size_kb:.1f} KB — {parquet_path}[/green]")
+
+    if no_upload:
+        return
+
+    rprint(f"[cyan]Uploading to s3://{s3_config.bucket}/{s3_key}...[/cyan]")
+    try:
+        uploader = S3Uploader(
+            bucket_name=s3_config.bucket,
+            aws_profile=s3_config.profile,
+            lambda_endpoint=s3_config.lambda_endpoint,
+            totp_secret=s3_config.totp_secret,
+            totp_token=s3_config.totp_token,
+            proxy_config=s3_config.proxy,
+            upload_method=s3_config.upload_method,
+        )
+        result = uploader.upload_file(parquet_path, s3_key, overwrite=True)
+    except Exception as e:
+        rprint(f"[red]Upload failed: {e}[/red]")
+        sys.exit(1)
+
+    if result.success:
+        rprint(f"[green]✅ Metadata published to s3://{s3_config.bucket}/{s3_key}[/green]")
+        if verbose:
+            rprint(f"[dim]Method: {result.method}[/dim]")
+    else:
+        rprint(f"[red]❌ Upload failed (HTTP {result.status_code}): {result.error_message}[/red]")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

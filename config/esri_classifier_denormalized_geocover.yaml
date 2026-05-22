@@ -34,7 +34,7 @@ layers:
           lang_fields:
             kind_desc: "kind_%lang%"
             aexp_status: "aexp_status_%lang%"
-            aexp_targ_mat_desc:
+            aexp_targ_mat_desc: "aexp_targ_mat_%lang%"
           label_formulas:
               label_de: "concat(kind_de, aexp_status_de,sep=', ', skip_empty=True) "
               label_fr: "concat(kind_fr, aexp_status_fr,sep=', ', skip_empty=True) "
@@ -94,6 +94,7 @@ layers:
         RUNC_ROCK_TYP: Int64
         DIP: Int64
         ABOR_FM_A: Int64
+        ABOR_FM_B: Int64
         MPLA_POLARITY: Int64
         TDEF_FOLD_TYP: Int64
         AEXP_STATUS: Int64
@@ -142,7 +143,7 @@ layers:
           # Only a few 100s features
           data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, map_symbol, dip, map_angle FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360 AND map_symbol ILIKE '%achsen%') AS subquery  USING UNIQUE gid USING SRID=2056"
           lang_fields:
-            kind_desc:
+            kind_desc: "kind_%lang%"
           label_formulas:
             label_de: "concat(kind_de, tdef_fold_typ_de, sep=', ', skip_empty=True) "
             label_fr: "concat(kind_fr, tdef_fold_typ_fr, sep=', ', skip_empty=True) "
@@ -248,6 +249,9 @@ layers:
             KIND: KIND
             ABOR_FM_A: ABOR_FM_A
           symbol_prefix: bohrung_fels_erreicht
+          # Use GMU_CODE as class ID
+          identifier_field: ABOR_FM_A
+          identifier_mode: field
 
         - style_file: styles/Point_Objects_Sondierung.lyrx
           index: 27
@@ -662,7 +666,7 @@ layers:
             metadata:
               wms_group_title: Unconsolidated
           data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}unco_deposits  USING UNIQUE gid USING SRID=2056"
-          # filter: RUNC_LITHO NOT IN (15101009, 15101015,15101019, 15101021, 15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101041,15101046, 15101047, 15101048, 15101049, 15101055, 15101058, 15101040)
+          filter: RUNC_LITHO NOT IN (15101009, 15101015,15101019, 15101021, 15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101041,15101046, 15101047, 15101048, 15101049, 15101055, 15101058, 15101040)
           lang_fields:
             runc_litstrat: "runc_litstrat_%lang%"
             runc_litho: "runc_litho_%lang%"
@@ -743,6 +747,8 @@ layers:
           maxscaledenom: 50000
           map_label: False
           mapfile_config:
+            classes_mode: frozen
+            symbol_scale: 8000
             metadata:
               wms_group_title: Unconsolidated
           symbol_prefix: unco_chrono_t
@@ -832,13 +838,14 @@ layers:
           # Constant alias names → language-specific columns
           lang_fields:
               gmu_code_desc: "gmu_%lang%"
+              gmu_desc: "gmu_%lang%"
               tecto_desc: "tecto_%lang%"
               litho_desc: "litho_combined_%lang%"
               chrono_desc: "chrono_combined_%lang%"
               correlation_desc: "correlation_%lang%"
               litstrat_formation_bank: "litstrat_formation_bank_%lang%"
           # These names stay stable for all clients regardless of LANGUAGE= param
-          include_items: "gmu_desc,tecto_desc,litho_desc,chrono_desc,correlation_desc,strati_link,erl_link,ber_link"
+          include_items: "gmu_desc,gmu_code_desc,tecto_desc,litho_desc,chrono_desc,correlation_desc,strati_link,erl_link,ber_link"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             GMU_CODE: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT

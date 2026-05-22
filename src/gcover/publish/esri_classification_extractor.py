@@ -1656,6 +1656,7 @@ def export_classifications_to_csv(
             # ENHANCED: Add full_symbol_layers info
             if class_obj.full_symbol_layers:
                 layers = class_obj.full_symbol_layers
+                
                 fill_layer_types = None
                 fill_types = []
                 if hasattr(layers, 'fills'):

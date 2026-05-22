@@ -5,6 +5,7 @@ import shutil
 import sys
 import tempfile
 import unicodedata
+import uuid as _uuid_mod
 import zipfile
 from dataclasses import asdict, dataclass, field
 from enum import Enum
@@ -21,11 +22,31 @@ console = Console()
 
 
 # =============================================================================
+# UUID HELPERS
+# =============================================================================
+
+def new_uuid(esri_style: bool = True) -> str:
+    """Generate a new random UUID.
+
+    Args:
+        esri_style: When True (default) return ESRI/FileGDB canonical format:
+                    ``{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`` (uppercase, braces).
+                    When False return the standard Python format:
+                    ``xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`` (lowercase, no braces).
+    """
+    uid = _uuid_mod.uuid4()
+    if esri_style:
+        return "{" + str(uid).upper() + "}"
+    return str(uid)
+
+
+
+# =============================================================================
 # LABEL SLUGIFICATION
 # =============================================================================
 
 
-def slugify_label(label: str, max_length: int = 50) -> str:
+def slugify_label(label: str, max_length: int = 80) -> str:
     """
     Convert label to a stable, URL-safe identifier.
 
@@ -285,6 +306,31 @@ def translate_esri_to_pandas(esri_expression):
 
     # Replace <> with !=
     expr = re.sub(r"<>", "!=", expr)
+
+    return expr
+
+
+def translate_esri_to_sql(esri_expression: str) -> str:
+    """
+    Translate an ESRI/Python-style filter expression to standard SQL.
+
+    Handles the operators that ESRI and pandas use but SQL does not:
+    - == → =
+    - != → <>
+    - lowercase and/or → AND/OR  (SQL is case-insensitive, but normalise anyway)
+    IN, NOT IN, IS NULL, IS NOT NULL, <, >, <=, >= are left unchanged.
+    """
+    expr = esri_expression
+
+    # == → = (but not != or <= or >=)
+    expr = re.sub(r"(?<![!<>])==", "=", expr)
+
+    # != → <>
+    expr = re.sub(r"!=", "<>", expr)
+
+    # normalise logical operators to uppercase
+    expr = re.sub(r"\band\b", "AND", expr, flags=re.IGNORECASE)
+    expr = re.sub(r"\bor\b", "OR", expr, flags=re.IGNORECASE)
 
     return expr
 

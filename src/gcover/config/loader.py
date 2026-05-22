@@ -5,6 +5,7 @@ Configuration loader supporting separate environment files and secret management
 
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,7 @@ from rich.console import Console
 
 from gcover.config.models import AppConfig
 
-console = Console()
+console = Console(stderr=True)
 
 
 class ConfigManager:
@@ -34,6 +35,17 @@ class ConfigManager:
         """Load configuration with separate environment files and secret management"""
         console.print(f"[blue]Environment: {environment}[/blue]")
         self.verbose = verbose
+
+        # Resolve config path once so both base config and env config search the same dir
+        if config_path is None:
+            config_path = self._find_base_config_file()
+        else:
+            config_path = config_path.expanduser()
+            if config_path.is_dir():
+                resolved = self._resolve_config_path(config_path)
+                if resolved is None:
+                    raise FileNotFoundError(f"No gcover_config.yaml or config.yaml found in: {config_path}")
+                config_path = resolved
 
         # 1. Load secrets first (from .env files and environment)
         if load_secrets and not self._secrets_loaded:
@@ -74,6 +86,12 @@ class ConfigManager:
 
             # Load .env files in priority order
             env_files = self._find_env_files(environment)
+
+            if self.verbose and sys.platform == "win32":
+                console.log(f"[cyan]Windows .env search paths ('{environment}'):[/cyan]")
+                for p in env_files:
+                    status = "✅" if p.exists() else "❌"
+                    console.log(f"  {status} {p}")
 
             for env_file in env_files:
                 if env_file.exists():
@@ -297,11 +315,19 @@ class ConfigManager:
         field_lower = field_name.lower()
         return any(keyword in field_lower for keyword in secret_keywords)
 
-    def _load_base_config(self, config_path: Path | None) -> dict:
-        """Load the base configuration file"""
-        if config_path is None:
-            config_path = self._find_base_config_file()
+    def _resolve_config_path(self, path: Path) -> Path | None:
+        """Resolve a file or directory path to an actual config file."""
+        if path.is_file():
+            return path
+        if path.is_dir():
+            for name in ("gcover_config.yaml", "config.yaml"):
+                candidate = path / name
+                if candidate.exists():
+                    return candidate
+        return None
 
+    def _load_base_config(self, config_path: Path) -> dict:
+        """Load the base configuration file"""
         if self.verbose:
             console.log(f"🔧 Loading base config: {config_path}")
 
@@ -328,6 +354,12 @@ class ConfigManager:
         # Try to find environment file in multiple locations
         env_paths = self._find_environment_config_paths(base_config_path, environment)
 
+        if self.verbose and sys.platform == "win32":
+            console.log(f"[cyan]Windows environment config search paths ('{environment}'):[/cyan]")
+            for p in env_paths:
+                status = "✅" if p.exists() else "❌"
+                console.log(f"  {status} {p}")
+
         for env_path in env_paths:
             if env_path.exists():
                 if self.verbose:
@@ -348,12 +380,29 @@ class ConfigManager:
 
     def _find_base_config_file(self) -> Path:
         """Find the base configuration file"""
+        env_config_path = os.environ.get("GCOVER_CONFIG_PATH")
+        if env_config_path:
+            p = Path(env_config_path).expanduser()
+            resolved = self._resolve_config_path(p)
+            if resolved is not None:
+                return resolved
+            raise FileNotFoundError(
+                f"GCOVER_CONFIG_PATH='{env_config_path}' but no config file found there"
+            )
+
         search_paths = [
             Path("config/gcover_config.yaml"),
             Path("config/config.yaml"),
+            Path("~/.config/gcover/gcover_config.yaml").expanduser(),
             Path("~/.config/gcover/config.yaml").expanduser(),
             Path("/etc/gcover/config.yaml"),
         ]
+
+        if self.verbose and sys.platform == "win32":
+            console.log("[cyan]Windows config search paths:[/cyan]")
+            for p in search_paths:
+                status = "✅" if p.exists() else "❌"
+                console.log(f"  {status} {p}")
 
         for path in search_paths:
             if path.exists():

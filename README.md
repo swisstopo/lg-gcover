@@ -204,19 +204,29 @@ gcover gdb process-all --max-workers 2              # Parallel processing (exper
 gcover gdb process-all --filter-type verification_topology --filter-rc RC2 --since 2025-02-01
 ```
 
+#### Upload assets metadata DB
+
+```bash
+gcover  gdb publish-metadata --output-dir exports --db-path data/windows/prod_gdb_metadata.duckdb 
+
+gcover  gdb publish-metadata --output-dir exports --no-upload  # Only create the parquet file
+
+```
 
 ##### Assets download
 
 Main download command with full control:
 
 ```bash
-gcover gdb download --type backup  # Download latest backup couple (RC1+RC2)
+gcover download --type backup --unzip --db-path data/windows/prod_gdb_metadata.duckdb   # Use custom local DB
+
+gcover gdb download --type backup  # Download latest backup couple (RC1+RC2) using the uploaded parquet file
 
 gcover gdb download --type verification_topology --rc RC1   # Download only RC1 topology verification  
 
 gcover gdb download --type increment --dry-run     # Dry run
 
-gcover gdb download --type backup -o /data/gdb --no-unzip    # Download without unzipping
+gcover gdb download --type backup -o /data/gdb --no-unzip    # Download without unzipping to output directory
 
 gcover gdb download --type backup --no-keep-zip     # Extract and remove zip files
 ```
@@ -1584,6 +1594,15 @@ gcover schema report schema.json --output documentation.html --template datamode
 
 # Create PlantUML diagram
 gcover schema diagram schema.json --output schema_diagram.puml --title "GeoCover Schema"
+
+# Show all coded values per domain                                                                                                                                                                                                                                                
+gcover schema diagram --max-domain-values 0 --output out.puml schema.json                                                                                                                                                                                                         
+                                                                                                                                                                                                                                                                                    
+# Show only 3 values per domain                                                                                                                                                                                                                                                 
+gcover schema diagram --max-domain-values 3 --output out.puml schema.json                                                                                                                                                                                                         
+                                                                                                                                                                                                                                                                                    
+# Hide domains entirely                                                                                                                                                                                                                                                           
+gcover schema diagram --no-domains --output out.puml schema.json
 
 # Generate multiple documentation formats
 gcover schema report schema.json --template full --format html --output docs.html

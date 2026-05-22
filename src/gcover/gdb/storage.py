@@ -310,20 +310,27 @@ class S3Uploader:
             logger.error(f"Error requesting presigned URL: {e}")
             return None
 
-    def _upload_with_presigned_url(self, file_path: Path, s3_key: str) -> UploadResult:
+    def _upload_with_presigned_url(
+        self, file_path: Path, s3_key: str, overwrite: bool = False
+    ) -> UploadResult:
         """
         Upload file using presigned URL with progress bar
 
         Args:
             file_path: Local file path
             s3_key: S3 object key
+            overwrite: If True, skip the exist-check so the Lambda issues a URL even
+                       when the object is already present (needed for mutable files
+                       like the metadata Parquet snapshot).
 
         Returns:
             UploadResult with status and details
         """
         try:
             file_size = file_path.stat().st_size
-            presigned_data = self._get_presigned_url(s3_key, file_size)
+            presigned_data = self._get_presigned_url(
+                s3_key, file_size, check_exists=not overwrite
+            )
 
             if not presigned_data:
                 return UploadResult(
@@ -562,13 +569,18 @@ class S3Uploader:
                 method="direct",
             )
 
-    def upload_file(self, file_path: Path, s3_key: str) -> UploadResult:
+    def upload_file(
+        self, file_path: Path, s3_key: str, overwrite: bool = False
+    ) -> UploadResult:
         """
         Upload file to S3 using configured method
 
         Args:
             file_path: Local file path
             s3_key: S3 object key
+            overwrite: If True, replace an existing object (skips the 409 exist-guard).
+                       Use for mutable files like metadata snapshots; leave False for
+                       immutable assets (GDB ZIPs) where accidental overwrite is a bug.
 
         Returns:
             UploadResult with status and details
@@ -576,7 +588,7 @@ class S3Uploader:
         logger.info(f"Uploading {file_path} to s3://{self.bucket_name}/{s3_key}")
 
         if self.use_presigned:
-            result = self._upload_with_presigned_url(file_path, s3_key)
+            result = self._upload_with_presigned_url(file_path, s3_key, overwrite=overwrite)
 
             # Fallback to direct upload if presigned fails and s3_client is available
             if not result.success and self.s3_client:
@@ -668,6 +680,144 @@ def create_s3_uploader_with_proxy(
     return S3Uploader(bucket_name=bucket_name, proxy_config=proxy_config, **kwargs)
 
 
+DEFAULT_METADATA_S3_KEY = "gdb-assets/metadata/gdb_assets.parquet"
+
+
+def _public_metadata_url(public_url: str, s3_config, s3_key: str) -> str:
+    """Build the public CF URL for *s3_key* using public_prefix from s3_config."""
+    prefix = (s3_config.public_prefix or "").strip("/")
+    filename = Path(s3_key).name
+    parts = [public_url.rstrip("/")]
+    if prefix:
+        parts.append(prefix)
+    parts.append(filename)
+    return "/".join(parts)
+
+
+def _download_url(url: str, dest: Path) -> None:
+    """Stream-download *url* to *dest*, raising RuntimeError on failure."""
+    try:
+        with requests.get(url, stream=True, timeout=60) as resp:
+            resp.raise_for_status()
+            with open(dest, "wb") as fh:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    fh.write(chunk)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to download from {url}: {exc}") from exc
+
+
+def fetch_metadata_parquet(
+    s3_config,
+    s3_key: str = DEFAULT_METADATA_S3_KEY,
+    public_url: Optional[str] = None,
+) -> Path:
+    """Download the metadata Parquet and return its local path.
+
+    When *public_url* is set and *s3_config.public_prefix* is configured:
+    - upload_method == "presigned": skip boto3, download directly from CF.
+    - otherwise: try S3 first; on failure warn and fall back to CF.
+    """
+    import tempfile
+
+    dest = Path(tempfile.mktemp(suffix=".parquet", prefix="gcover_meta_"))
+
+    use_url = public_url and s3_config.public_prefix
+    cf_url = _public_metadata_url(public_url, s3_config, s3_key) if use_url else None
+
+    if use_url and s3_config.upload_method == "presigned":
+        logger.info(f"upload_method=presigned — downloading metadata directly from {cf_url}")
+        _download_url(cf_url, dest)
+        return dest
+
+    uploader = S3Uploader(
+        bucket_name=s3_config.bucket,
+        aws_profile=s3_config.profile,
+        lambda_endpoint=s3_config.lambda_endpoint,
+        totp_secret=s3_config.totp_secret,
+        totp_token=s3_config.totp_token,
+        proxy_config=s3_config.proxy,
+        upload_method=s3_config.upload_method,
+    )
+    ok = uploader.download_file(s3_key, dest)
+    if ok:
+        logger.info(f"Fetched metadata parquet from S3 to {dest}")
+        return dest
+
+    if not cf_url:
+        raise RuntimeError(
+            f"Failed to download metadata from s3://{s3_config.bucket}/{s3_key} "
+            f"and no public_url/public_prefix configured for fallback"
+        )
+
+    logger.warning(
+        f"S3 download failed for s3://{s3_config.bucket}/{s3_key} — "
+        f"falling back to {cf_url}"
+    )
+    _download_url(cf_url, dest)
+    logger.info(f"Fetched metadata parquet via CF fallback to {dest}")
+    return dest
+
+
+def query_latest_assets_by_rc(
+    source: Union[str, Path],
+    asset_type: Optional[str] = None,
+    days_back: Optional[int] = 30,
+) -> Dict[str, Dict[str, Any]]:
+    """Query the latest asset per RC from a local DuckDB file or a Parquet file.
+
+    Mirrors GDBAssetManager.get_latest_assets_by_rc but works without a full manager.
+    """
+    from gcover.gdb.assets import ReleaseCandidate
+
+    source = Path(source)
+    is_parquet = source.suffix == ".parquet"
+
+    if is_parquet:
+        conn = duckdb.connect()
+        table_ref = f"read_parquet('{source}')"
+    else:
+        conn = duckdb.connect(str(source))
+        table_ref = "gdb_assets"
+
+    query = f"""
+        WITH ranked_assets AS (
+            SELECT *,
+                   CASE
+                       WHEN release_candidate = '{ReleaseCandidate.RC1.value}' THEN 'RC1'
+                       WHEN release_candidate = '{ReleaseCandidate.RC2.value}' THEN 'RC2'
+                       ELSE 'Unknown'
+                   END as rc_name,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY release_candidate
+                       ORDER BY timestamp DESC
+                   ) as rn
+            FROM {table_ref}
+            WHERE 1=1
+    """
+    if asset_type:
+        query += f" AND asset_type = '{asset_type}'"
+    if days_back is not None:
+        query += f" AND timestamp >= CURRENT_DATE - INTERVAL {days_back} DAYS"
+    query += """
+        )
+        SELECT rc_name, timestamp, path, asset_type, file_size, uploaded, s3_key
+        FROM ranked_assets
+        WHERE rn = 1 AND rc_name IN ('RC1', 'RC2')
+        ORDER BY rc_name
+    """
+
+    with conn:
+        results = conn.execute(query).fetchall()
+        columns = [desc[0] for desc in conn.description]
+
+    latest_assets = {}
+    for row in results:
+        data = dict(zip(columns, row, strict=False))
+        rc_name = data.pop("rc_name")
+        latest_assets[rc_name] = data
+    return latest_assets
+
+
 class MetadataDB:
     """Handle DuckDB metadata operations"""
 
@@ -729,3 +879,14 @@ class MetadataDB:
                 "SELECT COUNT(*) FROM gdb_assets WHERE path = ?", [str(path)]
             ).fetchone()
             return result[0] > 0
+
+    def export_to_parquet(self, output_path: Union[str, Path]) -> Path:
+        """Export gdb_assets table to a Parquet file."""
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with duckdb.connect(str(self.db_path)) as conn:
+            conn.execute(
+                f"COPY (SELECT * FROM gdb_assets ORDER BY id) TO '{output_path}' (FORMAT PARQUET)"
+            )
+        logger.info(f"Exported metadata to {output_path}")
+        return output_path

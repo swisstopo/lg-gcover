@@ -52,8 +52,8 @@ def schema_diff_to_dict(diff: SchemaDiff) -> Dict[str, Any]:
 
     # Enhanced metadata
     metadata = {
-        "old_schema_name": getattr(diff.old_schema, "name", "Unknown"),
-        "new_schema_name": getattr(diff.new_schema, "name", "Unknown"),
+        "old_schema_name": diff.old_schema.metadata.get("name", "Unknown"),
+        "new_schema_name": diff.new_schema.metadata.get("name", "Unknown"),
         "comparison_date": datetime.now().isoformat(),
     }
 

@@ -44,7 +44,7 @@ SKINPARAMS = [
     "skinparam linetype ortho",
     "skinparam backgroundcolor white",
     "skinparam defaultFontSize 12",
-    'skinparam defaultFontName "Sans-Serif"',
+    "skinparam defaultFontName SansSerif",
 ]
 
 """
@@ -140,9 +140,10 @@ def _get_legend(config):
         "}",
         "legend top left",
         " **Legend**",
-        "  <:key:> = Primary Key",  # 🔑
-        "  <:link:> = Foreign Key",  #  🔗
-        "  <:globe_with_meridians:> = Geometry Field",  # 🌐
+        "  <:key:> = Primary Key",
+        "  <:link:> = Foreign Key",
+        "  <:key:><:link:> = PK + FK (junction composite key)",
+        "  <:globe_with_meridians:> = Geometry Field",
         "|  Entitiy  |= Color   |",
         f"|= Tables |<{config['regular_table_color']}>  |",
         f"|= Feature Classes |<{config['spatial_table_color']}>  |",
@@ -163,6 +164,7 @@ def generate_plantuml_from_schema(
     show_relationships: bool = True,
     show_junction_tables: bool = True,
     max_fields_per_table: int = 20,
+    max_domain_values: int = 5,
     add_legend: bool = True,
     group_by_prefix: bool = True,
     prefix: str = None,
@@ -271,14 +273,14 @@ def generate_plantuml_from_schema(
         # Coded domains
         for domain_name, domain in schema.coded_domains.items():
             lines.extend(
-                generate_domain_uml(domain_name, domain, "coded", prefix, config)
+                generate_domain_uml(domain_name, domain, "coded", prefix, config, max_domain_values)
             )
             lines.append("")
 
         # Range domains
         for domain_name, domain in schema.range_domains.items():
             lines.extend(
-                generate_domain_uml(domain_name, domain, "range", prefix, config)
+                generate_domain_uml(domain_name, domain, "range", prefix, config, max_domain_values)
             )
             lines.append("")
 
@@ -312,7 +314,7 @@ def generate_plantuml_from_schema(
         if show_domains:
             lines.append("")
             lines.append("' Domain usage relationships")
-            lines.extend(generate_domain_relationships(schema, prefix, config))
+            lines.extend(generate_domain_relationships(schema))
 
     lines.append("")
     lines.append("@enduml")
@@ -487,11 +489,11 @@ def generate_domain_uml(
     domain_type: str,
     prefix: str,
     config: dict,
+    max_domain_values: int = 5,
 ) -> list[str]:
     """Generate PlantUML for a domain"""
     # TODO
-    safe_name = sanitize_name(domain_name)
-    safe_name = remove_prefixes(fc_name)
+    safe_name = remove_prefixes(sanitize_name(domain_name))
     display_name = safe_name
 
     # Handle case where domain might be None or invalid
@@ -505,10 +507,10 @@ def generate_domain_uml(
     if domain_type == "coded" and hasattr(domain, "coded_values"):
         lines.append("  --")
         # Show first few coded values
-        for i, cv in enumerate(domain.coded_values[:5]):
+        for i, cv in enumerate(domain.coded_values[:max_domain_values]):
             lines.append(f"  {cv.code} : {cv.name}")
-        if len(domain.coded_values) > 5:
-            lines.append(f"  ... ({len(domain.coded_values) - 5} more values)")
+        if len(domain.coded_values) > max_domain_values:
+            lines.append(f"  ... ({len(domain.coded_values) - max_domain_values} more values)")
     elif domain_type == "range" and hasattr(domain, "min_value"):
         lines.append(f"  Range: {domain.min_value} - {domain.max_value}")
 
@@ -678,19 +680,19 @@ def generate_junction_tables(
             # Add foreign keys as composite primary key
             if rel.origin_foreign_key:
                 lines.append(
-                    f"  + <b>🔑🔗 {rel.origin_foreign_key}</b> : UUID → {origin_clean}"
+                    f"  + {{field}} <:key:><:link:> <b>{rel.origin_foreign_key}</b> : UUID → {origin_clean}"
                 )
             else:
                 lines.append(
-                    f"  + <b>🔑🔗 {origin_clean}_ID</b> : UUID → {origin_clean}"
+                    f"  + {{field}} <:key:><:link:> <b>{origin_clean}_ID</b> : UUID → {origin_clean}"
                 )
 
             if rel.destination_foreign_key:
                 lines.append(
-                    f"  + <b>🔑🔗 {rel.destination_foreign_key}</b> : UUID → {dest_clean}"
+                    f"  + {{field}} <:key:><:link:> <b>{rel.destination_foreign_key}</b> : UUID → {dest_clean}"
                 )
             else:
-                lines.append(f"  + <b>🔑🔗 {dest_clean}_ID</b> : UUID → {dest_clean}")
+                lines.append(f"  + {{field}} <:key:><:link:> <b>{dest_clean}_ID</b> : UUID → {dest_clean}")
 
             # Add any additional fields that might be on the relationship
             if rel.is_attributed:

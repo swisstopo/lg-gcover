@@ -609,9 +609,6 @@ def main(
                 if layer_cfg:
                     processed_chunks = []
 
-                    # Track which indices we've processed if you need to keep "unmatched" rows later
-                    all_matched_indices = []
-
                     for cls_cfg in layer_cfg.classifications:
                         prefix = cls_cfg.symbol_prefix
 
@@ -630,11 +627,15 @@ def main(
                             
 
                     if processed_chunks:
-                        # Re-combine into a GeoDataFrame
-                        # Using gpd.GeoDataFrame constructor ensures spatial metadata is locked in
-                        final_gdf = gpd.GeoDataFrame(pd.concat(processed_chunks, ignore_index=True))
+                        matched_mask = pd.Series(False, index=gdf.index)
+                        for cls_cfg in layer_cfg.classifications:
+                            matched_mask |= gdf['map_symbol'].str.startswith(cls_cfg.symbol_prefix, na=False)
+                        unmatched = gdf[~matched_mask]
+                        if not unmatched.empty:
+                            console.print(f"  [yellow]⚠[/]  {len(unmatched)} unmatched rows kept as-is for [bold]{lyr}[/]")
+                            processed_chunks.append(unmatched)
 
-                        # Restore the original CRS if it was lost during concat
+                        final_gdf = gpd.GeoDataFrame(pd.concat(processed_chunks, ignore_index=True))
                         final_gdf.set_crs(gdf.crs, allow_override=True, inplace=True)
                         gdf = final_gdf
 

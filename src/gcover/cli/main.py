@@ -9,6 +9,7 @@ from pathlib import Path
 
 import click
 import dateparser
+import rich
 from loguru import logger
 from rich import print as rprint
 
@@ -79,7 +80,7 @@ def confirm_extended(prompt: str, default=True):
 @click.group(context_settings={"show_default": True})
 @click.version_option(version=__version__, prog_name="gcover")
 @click.option(
-    "--config", "-c", type=click.Path(exists=True), help="Configuration file path"
+    "--config", "-c", type=click.Path(exists=True), help="Config file or directory (overrides GCOVER_CONFIG_PATH)"
 )
 @click.option(
     "--env",
@@ -97,11 +98,19 @@ def confirm_extended(prompt: str, default=True):
     help="Custom log file path (default: auto-generated)",
 )
 @click.option("--log-info", is_flag=True, help="Show logging configuration and exit")
+@click.option(
+    "--output", "-f",
+    type=click.Choice(["human", "json"]),
+    default="human",
+    help="Output format",
+)
 @click.pass_context
-def cli(ctx, config, log_file, log_info, env, verbose):
+def cli(ctx, config, log_file, log_info, env, verbose, output):
     """gcover - Swiss GeoCover data processing toolkit"""
     ctx.ensure_object(dict)
-    # ctx.obj["has_arcpy"] = HAS_ARCPY
+
+    if output == "json":
+        rich.reconfigure(stderr=True)
 
     # Normalize environment name
     try:
@@ -111,17 +120,21 @@ def cli(ctx, config, log_file, log_info, env, verbose):
 
     try:
         # Load centralized configuration
-        app_config: AppConfig = load_config(environment=environment, verbose=verbose)
+        app_config: AppConfig = load_config(
+            config_path=Path(config) if config else None,
+            environment=environment,
+            verbose=verbose,
+        )
 
-        # ctx.obj["config_manager"] = config_manager
         ctx.obj["config_path"] = config
         ctx.obj["environment"] = environment
         ctx.obj["verbose"] = verbose
+        ctx.obj["output"] = output
 
         global_config = app_config.global_
 
-        # print(global_config.logging)
-        rprint(f"[cyan]Verbose: {verbose}[/cyan]")
+        if output != "json":
+            rprint(f"[cyan]Verbose: {verbose}[/cyan]")
 
         if verbose:
             rprint(f"[cyan]Environment: {environment}[/cyan]")
@@ -129,10 +142,9 @@ def cli(ctx, config, log_file, log_info, env, verbose):
             rprint(f"[cyan]Bucket name: {global_config.s3.bucket}[/cyan]")
             rprint(f"[cyan]Proxy: {global_config.proxy}[/cyan]")
             rprint(f"[cyan]Temp Dir: {global_config.temp_dir}[/cyan]")
-            # rprint(f"[cyan]Has arcpy: {HAS_ARCPY}[/cyan]")
 
         # Setup centralized logging FIRST (before any other operations)
-        setup_logging(verbose=verbose, log_file=log_file, environment=env)
+        setup_logging(verbose=verbose, log_file=log_file, environment=env, json_mode=(output == "json"))
 
         # Show logging info and exit if requested
         if log_info:

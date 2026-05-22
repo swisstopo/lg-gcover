@@ -9,6 +9,8 @@ import shutil
 from gcover.cli.main import cli
 
 
+
+
 @pytest.fixture
 def isolated_config_env(tmp_path):
     """
@@ -18,9 +20,9 @@ def isolated_config_env(tmp_path):
     """
     # Read original config files
     original_config = Path("config/gcover_config.yaml").read_text(encoding="utf-8")
-    original_test_config = Path("config/environments/test.yaml").read_text(
-        encoding="utf-8"
-    )
+    test_dir = Path(__file__).parent
+    repo_root = test_dir.parent
+    original_test_config = (repo_root / "config" / "environments" / "test.yaml").read_text(encoding="utf-8")
 
     # Modify test config to use dummy paths (no real GDB scanning)
     modified_test_config = original_test_config.replace(
@@ -75,10 +77,12 @@ output_formats = ["csv", "json"]
 
 
 @pytest.mark.parametrize("lyrx_file", lyrx_files)
-def test_publish_export_classification_with_test_env(runner, lyrx_file):
+def test_publish_export_classification_with_test_env(runner, lyrx_file, isolated_config_env):
     """Test gdb scan command with test environment for each .lyrx file."""
     result = runner.invoke(
-        cli, ["--env", "test", "publish", "extract-classification", str(lyrx_file)]
+        cli,
+        ["--env", "test", "publish", "extract-classification", str(lyrx_file)],
+        env={"GCOVER_CONFIG_PATH": str(isolated_config_env / "config")}
     )
 
     # Command should succeed
@@ -90,7 +94,7 @@ def test_publish_export_classification_with_test_env(runner, lyrx_file):
 
 
 @pytest.mark.parametrize("output_format", output_formats)
-def test_publish_export_classification_format_with_test_env(runner, output_format):
+def test_publish_export_classification_format_with_test_env(runner, output_format, isolated_config_env):
     """Test gdb scan command with test environment for each .lyrx file."""
     lyrx_path = "tests/data/styles/Linear_Objects.lyrx"
     result = runner.invoke(
@@ -104,6 +108,7 @@ def test_publish_export_classification_format_with_test_env(runner, output_forma
             output_format,
             lyrx_path,
         ],
+        env={"GCOVER_CONFIG_PATH": str(isolated_config_env / "config")}
     )
 
     # Command should succeed

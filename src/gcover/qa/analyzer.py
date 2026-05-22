@@ -14,6 +14,8 @@ import geopandas as gpd
 import pandas as pd
 from loguru import logger
 
+from gcover.qa.styles import write_layer_styles
+
 # Suppress shapely warnings for cleaner output
 warnings.filterwarnings("ignore", category=UserWarning, module="shapely")
 
@@ -37,6 +39,8 @@ def custom_warning_handler(message, category, filename, lineno, file=None, line=
 
 
 warnings.showwarning = custom_warning_handler
+
+_RAND_BUFFER_LAYER = "qa_rand_gc_buffer_50m"
 
 
 class QAAnalyzer:
@@ -117,6 +121,19 @@ class QAAnalyzer:
 
             if not self.zones_data:
                 raise ValueError("No administrative zones could be loaded")
+
+            # Optional rand-buffer zone — present only when create-administrative-zones
+            # was run with --qa-rand-gc.
+
+            try:
+                gdf = gpd.read_file(self.zones_file, layer=_RAND_BUFFER_LAYER)
+                if not gdf.empty:
+                    self.zones_data["rand_buffer"] = gdf
+                    logger.info(f"Loaded rand_buffer from layer '{_RAND_BUFFER_LAYER}'")
+                else:
+                    logger.warning(f"Layer '{_RAND_BUFFER_LAYER}' is empty")
+            except Exception:
+                logger.debug(f"Layer '{_RAND_BUFFER_LAYER}' not in zones file — rand-buffer filtering unavailable")
 
         except Exception as e:
             raise ValueError(f"Error loading administrative zones: {e}")
@@ -264,13 +281,31 @@ class QAAnalyzer:
         }
         return zone_name_mapping.get(zone_type)
 
+    def _filter_by_rand_buffer(
+        self,
+        gdf: gpd.GeoDataFrame,
+        predicate: str,
+    ) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
+        """Spatially filter issues against the rand-buffer zone.
+
+        Returns (kept, rejected). predicate must be 'intersects' or 'within'.
+        """
+        rand_union = self.zones_data["rand_buffer"].to_crs(gdf.crs).geometry.unary_union
+        if predicate == "within":
+            mask = gdf.geometry.within(rand_union)
+        else:
+            mask = gdf.geometry.intersects(rand_union)
+        return gdf[mask].copy(), gdf[~mask].copy()
+
     def extract_relevant_issues(
         self,
         rc1_gdb: Path,
         rc2_gdb: Path,
         output_path: Path,
         output_format: str = "gpkg",
-        deduplicate_cross_zone: bool = True,  # NEW parameter
+        deduplicate_cross_zone: bool = True,
+        rand_buffer_predicate: str = "intersects",
+        include_source_layers: bool = True,
     ) -> Dict[str, int]:
         """
         Extract only relevant QA issues based on mapsheet source mapping.
@@ -279,12 +314,22 @@ class QAAnalyzer:
         - RC1 issues for mapsheets with BKP='RC1'
         - RC2 issues for mapsheets with BKP='RC2'
 
+        When the zones file contains a `qa_rand_gc_buffer_50m` layer and
+        rand_buffer_predicate is not 'none', a second spatial filter is applied:
+        only issues that intersect (or lie within, depending on the predicate) the
+        rand-buffer zone are kept.  Rejected issues are written to a sibling
+        `rejected/` directory for inspection.
+
         Args:
             rc1_gdb: Path to RC1 QA FileGDB
             rc2_gdb: Path to RC2 QA FileGDB
             output_path: Output path (without extension)
             output_format: 'gpkg' or 'filegdb'
             deduplicate_cross_zone: Whether to deduplicate features crossing multiple zones
+            rand_buffer_predicate: 'intersects', 'within', or 'none'
+            include_source_layers: When True, write the zone layers used
+                (mapsheets_sources_only, and qa_rand_gc_buffer_50m if active)
+                into the output file for provenance.
 
         Returns:
             Dictionary with extraction statistics
@@ -333,6 +378,7 @@ class QAAnalyzer:
             "total_issues": 0,
             "rc1_issues": 0,
             "rc2_issues": 0,
+            "rand_buffer_dropped": 0,
             "before_dedup": 0,
             "after_dedup": 0,
         }  # NEW stats
@@ -438,7 +484,62 @@ class QAAnalyzer:
             return stats
 
         # ========================================================================
-        # NEW: Save RC1 issues separately
+        # Rand-buffer filter — keep only issues inside the qa_rand_gc_buffer zone
+        # ========================================================================
+        if rand_buffer_predicate != "none" and "rand_buffer" in self.zones_data:
+            rejected_data: Dict[str, gpd.GeoDataFrame] = {}
+            filtered_all: Dict[str, gpd.GeoDataFrame] = {}
+            for layer_key, gdf in all_filtered_data.items():
+                kept, rejected = self._filter_by_rand_buffer(gdf, rand_buffer_predicate)
+                filtered_all[layer_key] = kept
+                if not rejected.empty:
+                    rejected_data[layer_key] = rejected
+                n_dropped = len(rejected)
+                stats["rand_buffer_dropped"] += n_dropped
+                logger.info(
+                    f"Rand-buffer ({rand_buffer_predicate}) {layer_key}: "
+                    f"{len(gdf)} → {len(kept)} kept, {n_dropped} rejected"
+                )
+            all_filtered_data = filtered_all
+            stats["total_issues"] -= stats["rand_buffer_dropped"]
+            # Rebuild per-RC dicts so the separate RC writes use the filtered data
+            rc1_filtered_data = {
+                k[: -len("_RC1")]: v for k, v in filtered_all.items() if k.endswith("_RC1")
+            }
+            rc2_filtered_data = {
+                k[: -len("_RC2")]: v for k, v in filtered_all.items() if k.endswith("_RC2")
+            }
+            # Write rejected issues for inspection
+            if rejected_data:
+                rejected_path = output_path.parent / "rejected" / output_path.name
+                rejected_path.parent.mkdir(parents=True, exist_ok=True)
+                self._write_spatial_output(rejected_data, rejected_path, output_format)
+                logger.info(
+                    f"Wrote {stats['rand_buffer_dropped']} rejected issues to {rejected_path}"
+                )
+        elif rand_buffer_predicate != "none":
+            raise ValueError(
+                "rand_buffer_predicate is set but 'qa_rand_gc_buffer_50m' layer was not "
+                "found in the zones file — regenerate it with --qa-rand-gc or pass --rand-border-filter none"
+            )
+
+        # Count IssueType breakdown — total and per RC — after all filters
+        def _count_issue_types(data: Dict[str, gpd.GeoDataFrame]) -> Dict[str, int]:
+            counts: Dict[str, int] = {}
+            for gdf in data.values():
+                if "IssueType" in gdf.columns:
+                    for val, cnt in gdf["IssueType"].value_counts().items():
+                        counts[val] = counts.get(val, 0) + int(cnt)
+            return counts
+
+        stats["issue_type_counts"] = _count_issue_types(all_filtered_data)
+        stats["rc1_issue_type_counts"] = _count_issue_types(rc1_filtered_data)
+        stats["rc2_issue_type_counts"] = _count_issue_types(rc2_filtered_data)
+        stats["rc1_issues"] = sum(stats["rc1_issue_type_counts"].values())
+        stats["rc2_issues"] = sum(stats["rc2_issue_type_counts"].values())
+
+        # ========================================================================
+        # Save RC1 issues separately
         # ========================================================================
         if rc1_filtered_data:
             rc1_output_path = output_path.parent.parent / "RC1" / output_path.name
@@ -470,8 +571,14 @@ class QAAnalyzer:
             if layer_gdfs:
                 combined_layers[layer_type] = pd.concat(layer_gdfs, ignore_index=True)
 
+        # Optionally append the zone layers used so the output is self-documenting
+        if include_source_layers:
+            combined_layers["mapsheets_sources_only"] = self.zones_data["mapsheets"]
+            if rand_buffer_predicate != "none" and "rand_buffer" in self.zones_data:
+                combined_layers[_RAND_BUFFER_LAYER] = self.zones_data["rand_buffer"]
+            logger.info("Including source zone layers in output for provenance")
+
         # Write output
-        # TODO cleanup temp_merged_RC_combined.gpkg
         output_path.parent.mkdir(parents=True, exist_ok=True)
         self._write_spatial_output(combined_layers, output_path, output_format)
 
@@ -1208,6 +1315,9 @@ class QAAnalyzer:
                 logger.error(f"Failed to write layer '{layer_name}': {e}")
 
         logger.success(f"Spatial data written to {output_file}")
+
+        if output_format == "gpkg":
+            write_layer_styles(output_file)
 
     def write_aggregated_stats(
         self,

@@ -1,22 +1,94 @@
 
-Create administrative_zones.gpkg from 4 standardized source files (WU, lots, mapsheet and sources.xlsx).
+Create administrative zones from 4 standardized source files.
 
-Simplified script that handles the real data sources with their actual attributes.
+Inputs
+------
+- lots.geojson         — lot polygons with LOT_NR, Resp, Status
+- WU.json              — work-unit polygons with NAME (→ WU_NAME)
+- mapsheets.geojson    — 1:25 000 mapsheet polygons with MSH_* attributes
+                         (coordinates in EPSG:2056 / CH1903+ LV95)
+- GC_Sources_PA.xlsx   — per-mapsheet source assignments (BKP → SOURCE_RC)
+                         and document availability flags (BER, ERL)
 
-2025-09-05  Added `SOURCE_RC` sources for BKP (data for publication)
-2025-10-13  Added sources `SOURCE_QA`  for QA (before publication)
-2025-10-14  Added borders_100m layer (100m buffer around mapsheet borders)
-2026-01-28  Only warning if missing  `QA_SOURCE`
-2026-03-13  Adding BER and ERL, as well as complete links
+Output formats (--format, repeatable)
+--------------------------------------
+gpkg        Multi-layer GeoPackage at the path given by --output (default).
+filegdb     ESRI FileGDB at the same base path with a .gdb extension.
+geojson     One GeoJSON file per layer in {output_stem}/ (EPSG:2056).
+parquet     One GeoParquet file per layer in {output_stem}/ (EPSG:2056).
+flatgeobuf  One FlatGeobuf file per layer in {output_stem}/ (EPSG:4326).
 
-XLSX file:/home/marco/DATA/Derivations/delivery/R16/Excels/GC_Sources_PA.xlsx
+All formats can be produced in a single run:
+  create-administrative-zones -f gpkg -f filegdb -f geojson -f parquet -f flatgeobuf --overwrite
+
+Output layers (always present)
+-------------------------------
+mapsheets_sources_only  Base mapsheets joined with SOURCE_RC, Version,
+                        and document links (ber_link, erl_link).
+mapsheets_with_sources  Same, further enriched with LOT_NR, WU_NAME (spatial
+                        join; values from multiple lots/WUs are pipe-separated).
+borders_50m             Single polygon: full mapped area minus a 50 m buffer
+                        around all internal mapsheet borders.  Used to identify
+                        features well away from any join line.
+lots                    Raw lot polygons.
+work_units              Raw work-unit polygons.
+mapsheets               Raw mapsheet polygons (no source join).
+
+Optional layers (--border-zones)
+---------------------------------
+Enabled with the --border-zones flag.  Requires classifying every shared edge
+between adjacent mapsheets, which adds a few seconds to the run.
+
+border_segments         Classified border lines between adjacent mapsheets:
+                          RC1-RC1  both neighbours from RC1 (tolerant)
+                          RC1-RC2  one RC1, one RC2 (tolerant)
+                          RC2-RC2  both from RC2 (strict)
+                          land     external perimeter of the mapped area (strict)
+tolerance_zones_50m     Single polygon: 50 m buffer around tolerant borders
+                        (RC1-RC1 and RC1-RC2).  QA errors intersecting this zone
+                        can be ignored.
+strict_zones_50m        Full mapped area minus tolerance_zones_50m.  Only QA
+                        errors inside this zone need investigation.
+
+Optional layers (--qa-rand-gc)
+--------------------------------
+qa_rand_gc              Raw QA_Rand_GC layer reprojected to EPSG:2056;
+                        all column names lowercased.
+qa_rand_gc_buffer_50m   Single polygon: full mapped area minus a 50 m buffer
+                        around active rand features (rand != '1').  Used to
+                        select QA issues well away from active Rand borders.
+
+Changelog
+---------
+2025-09-05  Added SOURCE_RC (BKP) per mapsheet for publication tracking
+2025-10-13  Added SOURCE_QA per mapsheet for pre-publication QA
+2025-10-14  Added borders_100m layer
+2026-01-28  Downgraded missing SOURCE_QA to warning only
+2026-03-13  Added BER/ERL flags and ber_link/erl_link URL columns
+2026-03-15  Removed SOURCE_QA column entirely
+2026-03-24  New WU.json format; removed Campodolcino sheet (merged into Val Bregaglia)
+2026-04-25  Added border_segments, tolerance_zones_Xm, strict_zones_Xm for QA border filtering
+2026-04-26  Improved docstring; added HTTP check for ber_link/erl_link URLs
+2026-05-05  Added GeoJSON, GeoParquet, FlatGeobuf output formats via --format
+2026-05-07  Added qa_rand_gc and qa_rand_gc_buffer_50m layers via --qa-rand-gc
+2026-05-08  border_segments/tolerance_zones/strict_zones now opt-in via --border-zones;
+            fixed CRS handling for LV95 inputs (set_crs instead of to_crs);
+            force 2D before FileGDB/GeoJSON/FlatGeobuf writes
+2026-05-16  Added processing_metadata table to GPKG (sha256, mtime, git_hash per input file)
+
+
+XLSX file:/home/marco/DATA/Derivations/delivery/R17/Excels/GC_Sources_PA.xlsx
+
 Layer list:
  * mapsheets_sources_only
  * mapsheets_with_sources
- * borders_100m
+ * borders_50m
  * lots
  * work_units
  * mapsheets
+ * qa_rand_gc
+ * qa_rand_gc_buffer_50m
+ * processing_metadata
 
 -- 'mapsheets_sources_only' --
 
@@ -24,13 +96,13 @@ Layer list:
 ┏━━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
 ┃ Source            ┃ Count ┃
 ┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
-│ RC1               │   161 │
-│ RC2               │    56 │
+│ RC1               │   149 │
+│ RC2               │    69 │
 │ BCK_2016          │     1 │
 │ 20300501_Saas.gdb │     1 │
-│ Total             │   219 │
+│ Total             │   220 │
 └───────────────────┴───────┘
 
 
 
-Generated on 2026-03-19 18:04:22
+Generated on 2026-05-16 15:24:55

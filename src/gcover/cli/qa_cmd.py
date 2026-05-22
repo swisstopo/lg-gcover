@@ -1690,9 +1690,29 @@ def _auto_discover_rc_gdbs(base_dir: Path) -> tuple[Optional[Path], Optional[Pat
     help="Filter issues by mapsheet source (RC1/RC2). Disable to extract all issues.",
 )
 @click.option(
+    "--rand-border-filter",
+    "rand_border_filter",
+    type=click.Choice(["intersects", "within", "none"], case_sensitive=False),
+    default="intersects",
+    show_default=True,
+    help=(
+        "Spatial predicate for rand-border zone filtering against qa_rand_gc_buffer_50m. "
+        "'intersects' keeps issues that touch the zone at all; 'within' keeps only issues "
+        "fully inside it; 'none' disables the filter. Silently skipped when the layer is "
+        "absent from the zones file."
+    ),
+)
+@click.option(
     "--use-arcmap",
     is_flag=True,
     help="Use ESRI ArcMap FileGDB format",
+)
+@click.option(
+    "--include-source-layers/--no-source-layers",
+    "include_source_layers",
+    default=True,
+    show_default=True,
+    help="Write the zone layers used (mapsheets_sources_only, qa_rand_gc_buffer_50m) into the output file for provenance.",
 )
 @click.option(
     "--yes", is_flag=True, help="Automatically confirm prompts (for scripting)"
@@ -1706,6 +1726,8 @@ def extract(
     output: Path,
     output_format: str,
     filter_by_source: bool,
+    rand_border_filter: str,
+    include_source_layers: bool,
     yes: bool,
     asset_type: str,
     use_arcmap: bool,
@@ -1804,6 +1826,8 @@ def extract(
                 rc2_gdb=rc2_gdb,
                 output_path=issue_output,
                 output_format=output_format.lower(),
+                rand_buffer_predicate=rand_border_filter,
+                include_source_layers=include_source_layers,
             )
         else:
             logger.warning("Extracting all issues (no source filtering)")
@@ -1811,20 +1835,28 @@ def extract(
                 rc1_gdb, rc2_gdb, issue_output, output_format.lower()
             )
 
-        # Summary
+        # Summary — based on RC_combined output only
+        it = stats.get("issue_type_counts", {})
+        errors = it.get("Error", 0)
+        warnings = it.get("Warning", 0)
+        rc1_errors = stats.get("rc1_issue_type_counts", {}).get("Error", 0)
+        rc2_errors = stats.get("rc2_issue_type_counts", {}).get("Error", 0)
+        rejected_path = issue_output.parent / "rejected" / issue_output.name
+
         click.echo("✅ Extraction complete!")
-        click.echo(f"   📊 {stats['total_issues']:,} total issues extracted")
-        click.echo(f"   🔵 {stats['rc1_issues']:,} RC1 issues")
-        click.echo(f"   🟢 {stats['rc2_issues']:,} RC2 issues")
+        click.echo(f"   📊 {stats['total_issues']:,} total issues")
+        click.echo(f"      ❌ {errors:,} Errors  (RC1: {rc1_errors:,}, RC2: {rc2_errors:,})")
+        click.echo(f"      ⚠️  {warnings:,} Warnings")
+        click.echo(f"   🚫 {stats.get('rand_buffer_dropped', 0):,} discarded by rand-border filter")
         click.echo(f"   📁 Output: {output_file}")
         click.echo(
             f"   🔧 Format: {output_format.upper()} ({'analysis' if output_format.lower() == 'gpkg' else 'ESRI tools'})"
         )
-
         if filter_by_source:
             click.echo("   🎯 Source filtering: enabled (mapsheet-specific)")
         else:
             click.echo("   🎯 Source filtering: disabled (all issues)")
+        click.echo(f"   🗺️  Rand-border filter: {rand_border_filter}")
 
     except Exception as e:
         logger.error(f"Extraction failed: {e}")

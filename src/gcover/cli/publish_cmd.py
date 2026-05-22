@@ -24,15 +24,16 @@ from rich.table import Table
 from rich.text import Text
 
 from gcover.cli.main import _split_bbox
-from gcover.config import (DEFAULT_EXCLUDED_FIELDS, SDE_INSTANCES, AppConfig,
-                           load_config)
+from gcover.config import (DEFAULT_EXCLUDED_FIELDS, GEOCOVER_METADATA_FIELDS,
+                           SDE_INSTANCES, AppConfig, load_config)
 from gcover.publish.esri_classification_applicator import \
     ClassificationApplicator
 from gcover.publish.esri_classification_extractor import (
     ClassificationJSONEncoder, explore_layer_structure,
     export_classifications_to_csv, extract_lyrx_complete, to_serializable_dict)
 from gcover.publish.generator import MapServerGenerator
-from gcover.publish.merge_sources import (GDBMerger, MergeConfig,
+from gcover.publish.merge_sources import (GDBMerger, GDBTransformer,
+                                          MergeConfig, TransformConfig,
                                           create_merge_config)
 from gcover.publish.qgis_generator import QGISGenerator
 from gcover.publish.style_config import (BatchClassificationConfig,
@@ -1056,6 +1057,7 @@ def mapserver(
     identifier_fields = {}
     lang_fields_dict = {}
     translations_dict = {}
+    filter_dict = {}
 
 
     env = ctx.obj.get('environment')
@@ -1172,6 +1174,7 @@ def mapserver(
                     mapfile_configs[key]  = class_config.mapfile_config
                     translations_dict[key] = class_config.translations
                     lang_fields_dict[key] = class_config.lang_fields
+                    filter_dict[key] = class_config.filter
                     if class_config.symbol_prefix:
                         prefix_map[key] = class_config.symbol_prefix
                     if class_config.mapfile_group:
@@ -1330,6 +1333,7 @@ def mapserver(
 
             translations = translations_dict.get(layer_name)
             lang_fields = lang_fields_dict.get(layer_name)
+            data_filter = filter_dict.get(layer_name)
 
 
             # 2. Robust include_items logic
@@ -1390,6 +1394,7 @@ def mapserver(
                 staging_mode=staging_mode,
                 lang_fields=lang_fields,
                 translations=translations,
+                data_filter=data_filter,
             )
 
 
@@ -2047,6 +2052,18 @@ def show_sample_data(layer_name: str, sample_gdf: gpd.GeoDataFrame):
     is_flag=True,
     help="Show what would be processed without executing",
 )
+@click.option(
+    "--schema-gdb",
+    type=click.Path(exists=True, path_type=Path),
+    help="Authoritative FileGDB to clone schema from (defaults to --rc2). "
+         "Enables schema-patching when --schema-output is set.",
+)
+@click.option(
+    "--schema-output",
+    type=click.Path(path_type=Path),
+    help="Path for the schema-patched output GDB (preserves ESRI domains & "
+         "relationship classes). Requires --output to be a .gdb file.",
+)
 def merge(
         ctx,
         rc1: Optional[Path],
@@ -2068,6 +2085,8 @@ def merge(
         validate_geometries: bool,
         exclude_metadata: bool,
         dry_run: bool,
+        schema_gdb: Optional[Path],
+        schema_output: Optional[Path],
 ):
     """
     Merge multiple FileGDB sources into a single publication GDB.
@@ -2184,7 +2203,7 @@ def merge(
         reference_source=reference_source,
         mapsheet_numbers=mapsheet_numbers,
         preserve_z=not force_2d,  # If force_2d, don't preserve Z
-        exclude_fields=DEFAULT_EXCLUDED_FIELDS if exclude_metadata else None,
+        exclude_fields=GEOCOVER_METADATA_FIELDS if exclude_metadata else None,
         use_convex_hull_masks=True,
         clip_to_swiss_border=clip_to_swiss_border,
         validate_geometries=validate_geometries,
@@ -2206,7 +2225,7 @@ def merge(
     console.print(f"\n[bold blue]🔀 GeoCover Source Merger[/bold blue]\n")
 
     if exclude_metadata:
-        console.print(f"[dim]Excluding metadata fields: {', '.join(DEFAULT_EXCLUDED_FIELDS)}[/dim]")
+        console.print(f"[dim]Excluding {len(GEOCOVER_METADATA_FIELDS)} metadata fields[/dim]")
 
     if verbose:
         console.print("[dim]Verbose mode enabled[/dim]")
@@ -2223,7 +2242,7 @@ def merge(
     # Confirm before processing
     if not click.confirm("\nProceed with merge?"):
         console.print("Merge cancelled.")
-        return
+        raise SystemExit(130)
 
     # Execute merge - try arcpy first if available
     try:
@@ -2254,6 +2273,36 @@ def merge(
             console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise click.Abort()
 
+    # Optional schema-patch step: clone authoritative GDB schema and inject merged data
+    if schema_output is not None:
+        if output.suffix.lower() != ".gdb":
+            console.print("[yellow]--schema-output ignored: --output must be a .gdb file[/yellow]")
+        else:
+            effective_schema = schema_gdb or rc2
+            if effective_schema is None:
+                console.print("[red]--schema-output requires --schema-gdb or --rc2 to be set[/red]")
+                raise click.Abort()
+
+            console.print(f"\n[bold blue]Schema patch[/bold blue]")
+            console.print(f"  schema : {effective_schema}")
+            console.print(f"  merged : {output}")
+            console.print(f"  output : {schema_output}")
+
+            from gcover.publish.patch_schema import patch_schema_gdb
+            errors = patch_schema_gdb(
+                schema_gdb=effective_schema,
+                merged_gdb=output,
+                output_gdb=schema_output,
+                log=console.print,
+                exclude_fields=GEOCOVER_METADATA_FIELDS if exclude_metadata else None,
+            )
+            if errors:
+                console.print(f"[yellow]Schema patch completed with {len(errors)} error(s):[/yellow]")
+                for e in errors:
+                    console.print(f"  [yellow]• {e}[/yellow]")
+            else:
+                console.print("[bold green]Schema patch completed successfully.[/bold green]")
+
 
 def _display_merge_config(config: MergeConfig, dry_run: bool) -> None:
     """Display merge configuration summary."""
@@ -2270,20 +2319,41 @@ def _display_merge_config(config: MergeConfig, dry_run: bool) -> None:
     # Sources
     if config.rc1_path:
         status = "✓" if config.rc1_path.exists() else "✗"
-        table.add_row("RC1 Source", f"{status} {config.rc1_path}")
+        symlink_hint = f" [dim]({config.rc1_path.resolve().name})[/dim]" if config.rc1_path.is_symlink() else ""
+        table.add_row("RC1 Source", f"{status} {config.rc1_path}{symlink_hint}")
     else:
         table.add_row("RC1 Source", "[dim]Not specified[/dim]")
 
     if config.rc2_path:
         status = "✓" if config.rc2_path.exists() else "✗"
-        table.add_row("RC2 Source", f"{status} {config.rc2_path}")
+        symlink_hint = f" [dim]({config.rc2_path.resolve().name})[/dim]" if config.rc2_path.is_symlink() else ""
+        table.add_row("RC2 Source", f"{status} {config.rc2_path}{symlink_hint}")
     else:
         table.add_row("RC2 Source", "[dim]Not specified[/dim]")
 
     if config.custom_sources_dir:
         if config.custom_sources_dir.exists():
-            gdb_count = len(list(config.custom_sources_dir.glob("*.gdb")))
-            table.add_row("Custom Sources", f"✓ {config.custom_sources_dir} ({gdb_count} GDBs)")
+            lines = [str(config.custom_sources_dir)]
+            try:
+                gdf = gpd.read_file(config.admin_zones_path, layer=config.mapsheets_layer)
+                if config.mapsheet_numbers:
+                    gdf = gdf[gdf[config.mapsheet_nbr_column].isin(config.mapsheet_numbers)]
+                custom_names = sorted(
+                    s for s in gdf[config.source_column].unique()
+                    if s not in ("RC1", "RC2")
+                )
+                for name in custom_names:
+                    p = config.custom_sources_dir / name
+                    if not p.suffix:
+                        p = config.custom_sources_dir / f"{name}.gdb"
+                    resolved = p.resolve()
+                    ok = "✓" if p.exists() else "✗"
+                    symlink_hint = f" [dim]→ {resolved.name}[/dim]" if p.is_symlink() else ""
+                    lines.append(f"  {ok} {p.name}{symlink_hint}")
+            except Exception:
+                gdb_count = len(list(config.custom_sources_dir.glob("*.gdb")))
+                lines.append(f"  ({gdb_count} GDBs)")
+            table.add_row("Custom Sources", "\n".join(lines))
         else:
             table.add_row("Custom Sources", f"✗ {config.custom_sources_dir}")
 
@@ -2374,6 +2444,165 @@ def _preview_merge(config: MergeConfig) -> None:
 
     except Exception as e:
         console.print(f"[red]Error loading preview: {e}[/red]")
+
+
+@publish_commands.command()
+@click.pass_context
+@click.argument("input_gdb", metavar="INPUT_GDB", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    required=True,
+    help="Output path (.gdb for FileGDB, .gpkg for GeoPackage)",
+)
+@click.option(
+    "--format",
+    "-f",
+    "output_format",
+    type=click.Choice(["auto", "gdb", "gpkg"]),
+    default="auto",
+    help="Output format (auto=detect from extension)",
+)
+@click.option(
+    "--layers",
+    "-l",
+    multiple=True,
+    help="Specific spatial layers to transform (default: all layers in the input GDB)",
+)
+@click.option(
+    "--force-2d",
+    is_flag=True,
+    help="Force 2D geometries (drop Z coordinates)",
+)
+@click.option(
+    "--exclude-metadata",
+    is_flag=True,
+    help="Exclude metadata fields (CREATED_USER, LAST_EDITED_DATE, GlobalID, etc.)",
+)
+@click.option(
+    "--skip-tables",
+    is_flag=True,
+    help="Skip copying non-spatial reference tables",
+)
+@click.option(
+    "--validate-geometries/--no-validate-geometries",
+    default=True,
+    help="Validate and fix geometries",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="List layers that would be processed without executing",
+)
+def transform(
+    ctx,
+    input_gdb: Path,
+    output: Path,
+    output_format: str,
+    layers: tuple,
+    force_2d: bool,
+    exclude_metadata: bool,
+    skip_tables: bool,
+    validate_geometries: bool,
+    dry_run: bool,
+):
+    """
+    Normalize a single FileGDB to the custom publication format.
+
+    Applies the same geometry normalization pipeline as `merge`
+    (type normalization, 2D/3D handling, field exclusion, validation)
+    to a single input GDB — no mapsheet assignments needed.
+
+    \b
+    Examples:
+      # Convert a FileGDB to GeoPackage with 2D geometries
+      gcover publish transform input.gdb --output output.gpkg --force-2d
+
+      # Transform to FileGDB, excluding metadata fields
+      gcover publish transform input.gdb --output output.gdb --exclude-metadata
+
+      # Process specific layers only
+      gcover publish transform input.gdb --output output.gpkg \\
+        -l GC_BEDROCK -l GC_SURFACES
+
+      # Dry run to preview layers
+      gcover publish transform input.gdb --output output.gpkg --dry-run
+    """
+    verbose = ctx.obj.get("verbose", False)
+
+    # Resolve output format / extension
+    if output_format == "auto":
+        ext = output.suffix.lower()
+        if ext == ".gpkg":
+            output_format = "gpkg"
+        elif ext == ".gdb":
+            output_format = "gdb"
+        else:
+            console.print(f"[yellow]Unknown extension '{ext}', defaulting to GPKG[/yellow]")
+            output = output.with_suffix(".gpkg")
+            output_format = "gpkg"
+    elif output_format == "gpkg" and output.suffix.lower() != ".gpkg":
+        output = output.with_suffix(".gpkg")
+    elif output_format == "gdb" and output.suffix.lower() != ".gdb":
+        output = output.with_suffix(".gdb")
+
+    config = TransformConfig(
+        input_path=input_gdb,
+        output_path=output,
+        preserve_z=not force_2d,
+        validate_geometries=validate_geometries,
+        exclude_fields=DEFAULT_EXCLUDED_FIELDS if exclude_metadata else None,
+        spatial_layers=list(layers) if layers else None,
+        skip_tables=skip_tables,
+    )
+
+    console.print(f"\n[bold blue]🔄 GeoCover GDB Transform[/bold blue]\n")
+
+    if dry_run:
+        import fiona
+        console.print(f"[dim]Input:  {input_gdb}[/dim]")
+        console.print(f"[dim]Output: {output}[/dim]")
+        try:
+            all_layers = fiona.listlayers(input_gdb)
+            console.print(f"\n[bold]Layers in {input_gdb.name}:[/bold]")
+            for name in all_layers:
+                try:
+                    with fiona.open(input_gdb, layer=name) as src:
+                        geom_type = src.schema.get("geometry", "none")
+                        is_spatial = geom_type and geom_type.lower() != "none"
+                        tag = "[cyan]spatial[/cyan]" if is_spatial else "[dim]table[/dim]"
+                        n = len(src)
+                    console.print(f"  {tag}  {name} ({n:,} features)")
+                except Exception as e:
+                    console.print(f"  [yellow]?[/yellow]  {name} (error: {e})")
+        except Exception as e:
+            console.print(f"[red]Error reading {input_gdb}: {e}[/red]")
+            raise click.Abort()
+        console.print("\n[yellow]Dry run completed. Remove --dry-run to execute.[/yellow]")
+        return
+
+    if not click.confirm("\nProceed with transform?"):
+        console.print("Transform cancelled.")
+        return
+
+    try:
+        transformer = GDBTransformer(config, verbose=verbose)
+        stats = transformer.transform()
+
+        if stats.errors:
+            console.print(
+                f"\n[yellow]⚠ Transform completed with {len(stats.errors)} error(s)[/yellow]"
+            )
+        else:
+            console.print("\n[bold green]🎉 Transform completed successfully![/bold green]")
+
+    except Exception as e:
+        console.print(f"[red]Transform failed: {e}[/red]")
+        if verbose:
+            import traceback
+            console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise click.Abort()
 
 
 @publish_commands.command()
