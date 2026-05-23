@@ -311,8 +311,17 @@ administrative-zones-metadata:
 ## geocover-aux: Create auxiliary grid sur surfaces/unco deposits
 
 $(GEOCOVER_AUX_PATH):
-	python scripts/surfaces_auxilliary_points.py --copy-polygons -i $(CLASSIFIED_PATH) -l surfaces -s 80 -b 25 --output $(GEOCOVER_AUX_PATH)
-	python scripts/surfaces_auxilliary_points.py --copy-polygons -i $(CLASSIFIED_PATH) -l unco_deposits -s 80 -b 25 --output $(GEOCOVER_AUX_PATH)
+	python scripts/surfaces_auxilliary_points.py --copy-polygons \
+		-i $(CLASSIFIED_PATH) -l surfaces \
+		-s 80 -b 18 \
+		--symbol-size 12 --min-symbol-size 4 \
+		--output $(GEOCOVER_AUX_PATH)
+	python scripts/surfaces_auxilliary_points.py --no-copy-polygons \
+		-i $(CLASSIFIED_PATH) -l unco_deposits \
+		-s 80 -b 18 \
+		--symbol-size 12 --min-symbol-size 4 \
+		--no-detect-overlaps \
+		--output $(GEOCOVER_AUX_PATH)
 
 geocover-aux: $(GEOCOVER_AUX_PATH)
 

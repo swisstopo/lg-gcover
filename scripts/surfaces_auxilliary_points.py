@@ -12,6 +12,16 @@ Improvements over v1:
     saved as a separate GPKG layer (<layer>_overlaps).
   • Per-class MapServer STYLE OFFSET stored as ms_offset_x / ms_offset_y
     columns so MapServer can offset symbols to avoid piling up in overlap zones.
+  • Per-feature ms_symbol_size: scales the nominal SIZE down for features
+    smaller than the symbol's ground footprint, so symbols never overspill.
+
+Glyph metrics (GeoFonts1.ttf, ink-bbox centering, 96 dpi, SYMBOLSCALEDENOM 12500):
+  char 60 – sackungsgebiet (V)        4.75 × 5.09 px   safe radius 11.5 m
+  char 65 – rutschgebiet  (arc `)`)   9.06 × 4.46 px   safe radius 16.7 m  ← widest
+  char 67 – solifluktion  (flat arc)  6.49 × 1.62 px   safe radius 11.1 m
+  char 68 – hakenwurf     (hook)      5.92 × 3.40 px   safe radius 11.3 m
+  Recommended buffer: 18 m  (1.3 m margin above worst-case rutschgebiet radius)
+  Overlap offset: rutschgebiet +7 px east (half-widths sum = 4.53 + 2.38 = 6.91 px)
 """
 
 import math
@@ -43,20 +53,30 @@ SYMBOLS_BY_LAYER = {
     ],
 }
 
-# Per-class pixel offsets for MapServer STYLE OFFSET.
-# Classes that commonly overlap are arranged so their symbols do not pile up.
-# Adjust the pixel values to match your mapfile scale / symbol size.
-#
-# Layout for "surfaces" layer (2 × 2 grid, 16-px pitch):
-#   sackungsgebiet   (0,  0)   rutschgebiet   (16,  0)
-#   solifluktion     (0, 16)   hakenwurf      (16, 16)
+# Per-class safe symbol radius in ground metres (ink-bbox centering, 96 dpi,
+# SYMBOLSCALEDENOM 12500, SIZE 12).  Used to scale ms_symbol_size for features
+# smaller than the symbol footprint.
+SYMBOL_SAFE_RADIUS_M: dict[str, float] = {
+    "surfaces_gins_sackungsgebiet":          11.5,
+    "surfaces_gins_rutschgebiet":            16.7,   # widest glyph – drives buffer choice
+    "surfaces_gins_gebiet_mit_solifluktion": 11.1,
+    "surfaces_gins_gebiet_mit_hakenwurf":    11.3,
+    "unco_litho_rutschmasse":                12.0,   # estimated, no glyph analysis yet
+    "unco_litho_zerruettete_sackungsmasse":  12.0,
+}
+
+# Per-class pixel offsets for MapServer STYLE OFFSET (screen pixels, not rotated
+# with ANGLE).  Only rutschgebiet (wide arc, 9.06 px) and sackungsgebiet (V,
+# 4.75 px) overlap significantly (535 pairs).  Minimum clearance offset:
+#   half-width rutschgebiet (4.53 px) + half-width sackungsgebiet (2.38 px) = 6.91 → 7 px
+# solifluktion and hakenwurf have so few overlaps that no offset is needed.
 CLASS_OFFSETS: dict[str, tuple[int, int]] = {
-    "surfaces_gins_sackungsgebiet":          (0,  0),
-    "surfaces_gins_rutschgebiet":            (16, 0),
-    "surfaces_gins_gebiet_mit_solifluktion": (0, 16),
-    "surfaces_gins_gebiet_mit_hakenwurf":    (16, 16),
-    "unco_litho_rutschmasse":                (0,  0),
-    "unco_litho_zerruettete_sackungsmasse":  (16, 0),
+    "surfaces_gins_sackungsgebiet":          (0, 0),
+    "surfaces_gins_rutschgebiet":            (7, 0),   # shift east by 7 px to clear V symbol
+    "surfaces_gins_gebiet_mit_solifluktion": (0, 0),
+    "surfaces_gins_gebiet_mit_hakenwurf":    (0, 0),
+    "unco_litho_rutschmasse":                (0, 0),
+    "unco_litho_zerruettete_sackungsmasse":  (7, 0),
 }
 
 
@@ -120,6 +140,40 @@ def _points_for_feature(
     # Tier 4 – guaranteed fallback: a single representative point
     rep = geom.representative_point()
     return [rep], "centroid"
+
+
+# ---------------------------------------------------------------------------
+# Symbol size scaling
+# ---------------------------------------------------------------------------
+
+def _symbol_size_for_feature(
+    geom,
+    map_symbol: str,
+    nominal_size: int,
+    min_size: int,
+) -> float:
+    """Compute a scaled-down MapServer SIZE for features smaller than the symbol.
+
+    Strategy
+    --------
+    Approximate the feature's "effective radius" as the radius of a circle with
+    the same 2-D area (i.e. r = sqrt(area / π)).  This is a proxy for the
+    largest inscribed circle radius and is fast to compute.
+
+    Compare against the per-class safe symbol radius (ground metres at the
+    reference scale/dpi, from SYMBOL_SAFE_RADIUS_M).  If the feature is
+    smaller, scale the SIZE proportionally, clamped to min_size.
+
+    Returns
+    -------
+    float – the SIZE value to store as ms_symbol_size.  Equal to nominal_size
+    for features large enough that the symbol fits comfortably.
+    """
+    safe_r_m = SYMBOL_SAFE_RADIUS_M.get(map_symbol, max(SYMBOL_SAFE_RADIUS_M.values()))
+    area_2d  = geom.area          # shapely .area ignores Z, so this is the 2-D area
+    r_feature = math.sqrt(area_2d / math.pi)           # equivalent-circle radius
+    scale     = min(1.0, r_feature / safe_r_m)
+    return max(float(min_size), round(nominal_size * scale, 1))
 
 
 # ---------------------------------------------------------------------------
@@ -236,8 +290,9 @@ def _detect_overlaps(
               help="Output GPKG filename.")
 @click.option("--spacing", "-s", default=80.0,
               help="Hex grid spacing in metres (default 80).")
-@click.option("--buffer", "-b", default=40.0,
-              help="Inset distance from polygon edge in metres (default 40).")
+@click.option("--buffer", "-b", default=18.0,
+              help="Inset distance from polygon edge in metres (default 18, "
+                   "derived from worst-case symbol safe radius of 16.7 m for rutschgebiet).")
 @click.option("--copy-polygons/--no-copy-polygons", "-d", is_flag=True,
               default=True, help="Copy the filtered polygons into the output GPKG.")
 @click.option("--detect-overlaps/--no-detect-overlaps", default=True,
@@ -245,10 +300,16 @@ def _detect_overlaps(
 @click.option("--class-offsets/--no-class-offsets", default=True,
               help="Add ms_offset_x/ms_offset_y columns for MapServer STYLE OFFSET.")
 @click.option("--min-overlap-area", default=100.0, show_default=True,
-              help="Minimum intersection area in m² to count as a real overlap (default 100).")
+              help="Minimum intersection area in m² to count as a real overlap.")
+@click.option("--symbol-size", default=12, show_default=True,
+              help="Nominal MapServer SIZE (pixels at SYMBOLSCALEDENOM). "
+                   "Used as the upper bound for ms_symbol_size.")
+@click.option("--min-symbol-size", default=4, show_default=True,
+              help="Minimum ms_symbol_size in pixels (below this the symbol is unreadable).")
 def generate_grid(
     input, layer, output, spacing, buffer, copy_polygons,
     detect_overlaps: bool, class_offsets: bool, min_overlap_area: float,
+    symbol_size: int, min_symbol_size: int,
 ):
     """Generate a hexagonal MultiPoint grid for geologic surface features.
 
@@ -300,8 +361,11 @@ def generate_grid(
 
             new_row = row.copy()
             new_row.geometry = MultiPoint(pts)
-            new_row["pt_count"]  = len(pts)
-            new_row["pt_method"] = method
+            new_row["pt_count"]    = len(pts)
+            new_row["pt_method"]   = method
+            new_row["ms_symbol_size"] = _symbol_size_for_feature(
+                geom, row["map_symbol"], symbol_size, min_symbol_size
+            )
 
             if class_offsets:
                 ox, oy = CLASS_OFFSETS.get(row["map_symbol"], (0, 0))
@@ -331,18 +395,25 @@ def generate_grid(
 
         # Points per class
         tbl = Table(title="Points per class")
-        tbl.add_column("Symbol",    style="cyan")
-        tbl.add_column("Features",  justify="right")
-        tbl.add_column("Points",    justify="right", style="magenta")
-        tbl.add_column("Avg pts",   justify="right")
+        tbl.add_column("Symbol",       style="cyan")
+        tbl.add_column("Features",     justify="right")
+        tbl.add_column("Points",       justify="right", style="magenta")
+        tbl.add_column("Avg pts",      justify="right")
+        tbl.add_column("Full size",    justify="right")
+        tbl.add_column("Scaled down",  justify="right", style="yellow")
+        tbl.add_column("Min size",     justify="right")
         for sym in target_symbols:
             sub = out_gdf[out_gdf["map_symbol"] == sym]
             if sub.empty:
                 continue
-            n_feat  = len(sub)
-            n_pts   = int(sub["pt_count"].sum())
-            avg_pts = f"{n_pts / n_feat:.1f}" if n_feat else "—"
-            tbl.add_row(sym, str(n_feat), str(n_pts), avg_pts)
+            n_feat      = len(sub)
+            n_pts       = int(sub["pt_count"].sum())
+            avg_pts     = f"{n_pts / n_feat:.1f}" if n_feat else "—"
+            n_full      = (sub["ms_symbol_size"] == symbol_size).sum()
+            n_scaled    = (sub["ms_symbol_size"] < symbol_size).sum()
+            min_sz      = f"{sub['ms_symbol_size'].min():.1f}"
+            tbl.add_row(sym, str(n_feat), str(n_pts), avg_pts,
+                        str(n_full), str(n_scaled), min_sz)
         rprint(tbl)
 
         # Fallback method breakdown
