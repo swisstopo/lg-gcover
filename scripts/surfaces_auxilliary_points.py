@@ -10,10 +10,13 @@ Improvements over v1:
       4. representative_point() (pt_method='centroid')  ← always succeeds
   • Overlap detection: areas where different class features share space are
     saved as a separate GPKG layer (<layer>_overlaps).
-  • Per-class MapServer STYLE OFFSET stored as ms_offset_x / ms_offset_y
+  • Per-class MapServer STYLE OFFSET stored as offset_x / offset_y
     columns so MapServer can offset symbols to avoid piling up in overlap zones.
-  • Per-feature ms_symbol_size: scales the nominal SIZE down for features
+  • Per-feature sym_size: scales the nominal SIZE down for features
     smaller than the symbol's ground footprint, so symbols never overspill.
+  NOTE: columns intentionally avoid the ms_ prefix — MapServer intercepts
+  [ms_*] attribute bindings as its own internal namespace, silently ignoring
+  the data column.
 
 Glyph metrics (GeoFonts1.ttf, ink-bbox centering, 96 dpi, SYMBOLSCALEDENOM 12500):
   char 60 – sackungsgebiet (V)        4.75 × 5.09 px   safe radius 11.5 m
@@ -54,7 +57,7 @@ SYMBOLS_BY_LAYER = {
 }
 
 # Per-class safe symbol radius in ground metres (ink-bbox centering, 96 dpi,
-# SYMBOLSCALEDENOM 12500, SIZE 12).  Used to scale ms_symbol_size for features
+# SYMBOLSCALEDENOM 12500, SIZE 12).  Used to scale sym_size for features
 # smaller than the symbol footprint.
 SYMBOL_SAFE_RADIUS_M: dict[str, float] = {
     "surfaces_gins_sackungsgebiet":          11.5,
@@ -168,7 +171,7 @@ def _symbol_size_for_feature(
 
     Returns
     -------
-    float – the SIZE value to store as ms_symbol_size.  Equal to nominal_size
+    float – the SIZE value to store as sym_size.  Equal to nominal_size
     for features large enough that the symbol fits comfortably.
     """
     safe_r_m = SYMBOL_SAFE_RADIUS_M.get(map_symbol, max(SYMBOL_SAFE_RADIUS_M.values()))
@@ -300,14 +303,14 @@ def _detect_overlaps(
 @click.option("--detect-overlaps/--no-detect-overlaps", default=True,
               help="Detect class overlaps and save as a separate layer (default on).")
 @click.option("--class-offsets/--no-class-offsets", default=True,
-              help="Add ms_offset_x/ms_offset_y columns for MapServer STYLE OFFSET.")
+              help="Add offset_x/offset_y columns for MapServer STYLE OFFSET.")
 @click.option("--min-overlap-area", default=100.0, show_default=True,
               help="Minimum intersection area in m² to count as a real overlap.")
 @click.option("--symbol-size", default=12, show_default=True,
               help="Nominal MapServer SIZE (pixels at SYMBOLSCALEDENOM). "
-                   "Used as the upper bound for ms_symbol_size.")
+                   "Used as the upper bound for sym_size.")
 @click.option("--min-symbol-size", default=4, show_default=True,
-              help="Minimum ms_symbol_size in pixels (below this the symbol is unreadable).")
+              help="Minimum sym_size in pixels (below this the symbol is unreadable).")
 def generate_grid(
     input, layer, output, spacing, buffer, copy_polygons,
     detect_overlaps: bool, class_offsets: bool, min_overlap_area: float,
@@ -365,14 +368,14 @@ def generate_grid(
             new_row.geometry = MultiPoint(pts)
             new_row["pt_count"]    = len(pts)
             new_row["pt_method"]   = method
-            new_row["ms_symbol_size"] = _symbol_size_for_feature(
+            new_row["sym_size"] = _symbol_size_for_feature(
                 geom, row["map_symbol"], symbol_size, min_symbol_size
             )
 
             if class_offsets:
                 ox, oy = CLASS_OFFSETS.get(row["map_symbol"], (0, 0))
-                new_row["ms_offset_x"] = ox
-                new_row["ms_offset_y"] = oy
+                new_row["offset_x"] = ox
+                new_row["offset_y"] = oy
 
             results.append(new_row)
             progress.update(task, advance=1)
@@ -411,9 +414,9 @@ def generate_grid(
             n_feat      = len(sub)
             n_pts       = int(sub["pt_count"].sum())
             avg_pts     = f"{n_pts / n_feat:.1f}" if n_feat else "—"
-            n_full      = (sub["ms_symbol_size"] == symbol_size).sum()
-            n_scaled    = (sub["ms_symbol_size"] < symbol_size).sum()
-            min_sz      = f"{sub['ms_symbol_size'].min():.1f}"
+            n_full      = (sub["sym_size"] == symbol_size).sum()
+            n_scaled    = (sub["sym_size"] < symbol_size).sum()
+            min_sz      = f"{sub['sym_size'].min():.1f}"
             tbl.add_row(sym, str(n_feat), str(n_pts), avg_pts,
                         str(n_full), str(n_scaled), min_sz)
         rprint(tbl)
