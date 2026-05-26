@@ -61,22 +61,24 @@ SYMBOL_SAFE_RADIUS_M: dict[str, float] = {
     "surfaces_gins_rutschgebiet":            16.7,   # widest glyph – drives buffer choice
     "surfaces_gins_gebiet_mit_solifluktion": 11.1,
     "surfaces_gins_gebiet_mit_hakenwurf":    11.3,
-    "unco_litho_rutschmasse":                12.0,   # estimated, no glyph analysis yet
-    "unco_litho_zerruettete_sackungsmasse":  12.0,
+    "unco_litho_rutschmasse":                16.7,   # geofonts1_65 – same glyph as rutschgebiet
+    "unco_litho_zerruettete_sackungsmasse":  11.5,   # geofonts1_60 – same glyph as sackungsgebiet
 }
 
 # Per-class pixel offsets for MapServer STYLE OFFSET (screen pixels, not rotated
-# with ANGLE).  Only rutschgebiet (wide arc, 9.06 px) and sackungsgebiet (V,
-# 4.75 px) overlap significantly (535 pairs).  Minimum clearance offset:
+# with ANGLE).
+# surfaces layer: only rutschgebiet (wide arc, 9.06 px) and sackungsgebiet (V,
+#   4.75 px) overlap significantly (535 pairs).  Minimum clearance offset:
 #   half-width rutschgebiet (4.53 px) + half-width sackungsgebiet (2.38 px) = 6.91 → 7 px
-# solifluktion and hakenwurf have so few overlaps that no offset is needed.
+#   solifluktion and hakenwurf have ≤14 overlapping pairs → no offset needed.
+# unco_deposits layer: no significant class overlaps → all offsets (0, 0).
 CLASS_OFFSETS: dict[str, tuple[int, int]] = {
     "surfaces_gins_sackungsgebiet":          (0, 0),
     "surfaces_gins_rutschgebiet":            (7, 0),   # shift east by 7 px to clear V symbol
     "surfaces_gins_gebiet_mit_solifluktion": (0, 0),
     "surfaces_gins_gebiet_mit_hakenwurf":    (0, 0),
-    "unco_litho_rutschmasse":                (0, 0),
-    "unco_litho_zerruettete_sackungsmasse":  (7, 0),
+    "unco_litho_rutschmasse":                (0, 0),   # no class overlaps in unco layer
+    "unco_litho_zerruettete_sackungsmasse":  (0, 0),
 }
 
 
