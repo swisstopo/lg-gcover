@@ -761,11 +761,17 @@ def apply_batch_from_config(
 
         # Apply each classification
         for i, class_config in enumerate(layer_config.classifications, 1):
+            if not class_config.active:
+                console.print(
+                    f"\n  [{i}/{len(layer_config.classifications)}] --- {class_config.style_file.name} --- [yellow]SKIPPED (active: False)[/yellow]"
+                )
+                continue
+
             console.print(
                 f"\n  [{i}/{len(layer_config.classifications)}] --- {class_config.style_file.name} ---"
             )
             console.print(f"    Identifier mode: {class_config.get_identifier_mode().value}")
-            
+
             try:
                 # Load classification from style file
                 classifications = extract_lyrx_complete(

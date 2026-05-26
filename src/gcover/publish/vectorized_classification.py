@@ -965,6 +965,12 @@ def apply_batch_from_config_vectorized(
         classifications_to_apply = []
         
         for class_config in layer_config.classifications:
+            if not class_config.active:
+                console.print(
+                    f"\n  --- {class_config.style_file.name} --- [yellow]SKIPPED (active: False)[/yellow]"
+                )
+                continue
+
             try:
                 # Load classification from style file
                 classifications = extract_lyrx_complete(class_config.style_file, display=False)
