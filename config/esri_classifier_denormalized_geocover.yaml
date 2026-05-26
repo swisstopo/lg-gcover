@@ -456,6 +456,7 @@ layers:
           symbol_prefix: linear_objects
 
         - style_file: styles/Linear Objects_GeolKontur.lyrx
+          active: False
           index: 52
           classification_name: Linear Objects_GeolKontur
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}geolkontur
