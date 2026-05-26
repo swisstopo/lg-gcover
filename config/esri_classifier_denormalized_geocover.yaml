@@ -849,13 +849,13 @@ layers:
           include_items: "gmu_desc,gmu_code_desc,tecto_desc,litho_desc,chrono_desc,correlation_desc,strati_link,erl_link,ber_link"
           fields:
             # Map GPKG field to classification field (can be complex paths)
-            GMU_CODE: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT
+            GMU_CODE: GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT
           label_formulas:
               label_de: gmu_de
               label_fr: gmu_fr
           symbol_prefix: bedrock
           filter: KIND == 14334001
-          identifier_field: TOPGIS_GC.GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT
+          identifier_field: GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT
           identifier_mode: field
           hexcolor_field: HEXCOLOR
 
