@@ -371,7 +371,7 @@ aspect-simple-%: geocover-aux
 
 #### --- GMM MODEL --- ###
 
-## geocover-aux: Create auxiliary grid sur surfaces/unco deposits
+
 aspect-gmm-%: geocover-aux
 	@echo "Deleting auxiliary points (GMM) for $*..."
 	-ogrinfo $(GEOCOVER_AUX_PATH) -sql "DROP TABLE $*_aux_points_aspect" -dialect OGRSQL > /dev/null 2>&1 || true
