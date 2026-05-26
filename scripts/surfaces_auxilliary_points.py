@@ -18,13 +18,25 @@ Improvements over v1:
   [ms_*] attribute bindings as its own internal namespace, silently ignoring
   the data column.
 
-Glyph metrics (GeoFonts1.ttf, ink-bbox centering, 96 dpi, SYMBOLSCALEDENOM 12500):
-  char 60 – sackungsgebiet (V)        4.75 × 5.09 px   safe radius 11.5 m
-  char 65 – rutschgebiet  (arc `)`)   9.06 × 4.46 px   safe radius 16.7 m  ← widest
-  char 67 – solifluktion  (flat arc)  6.49 × 1.62 px   safe radius 11.1 m
-  char 68 – hakenwurf     (hook)      5.92 × 3.40 px   safe radius 11.3 m
+Glyph metrics (GeoFonts1.ttf, ink-bbox, 96 dpi, SYMBOLSCALEDENOM 12500, SIZE 12):
+  char 60 – sackungsgebiet (V)        4.75 × 5.09 px   advance ≈ 4.75 px   safe radius 11.5 m
+  char 65 – rutschgebiet  (arc/crescent) 9.06 × 4.46 px advance ≈ 9.06 px  safe radius 16.7 m  ← widest
+  char 67 – solifluktion  (flat arc)  6.49 × 1.62 px   advance ≈ 6.49 px   safe radius 11.1 m
+  char 68 – hakenwurf     (hook)      5.92 × 3.40 px   advance ≈ 5.92 px   safe radius 11.3 m
   Recommended buffer: 18 m  (1.3 m margin above worst-case rutschgebiet radius)
-  Overlap offset: rutschgebiet +7 px east (half-widths sum = 4.53 + 2.38 = 6.91 px)
+
+Centering (MapServer anchors TrueType symbols at left bearing x=0, not advance-width centre):
+  All glyphs need offset_x = −round(advance / 2) to centre over the feature point.
+  char 60 sackungsgebiet:  offset_x = −2  (advance/2 = 2.38)
+  char 65 rutschgebiet:    offset_x = −5  (advance/2 = 4.53)
+  char 67 solifluktion:    offset_x = −3  (advance/2 = 3.24)
+  char 68 hakenwurf:       offset_x = −3  (advance/2 = 2.96)
+
+Overlap push for rutschgebiet (only features inside a real overlap zone):
+  When centred at F, both rutschgebiet and sackungsgebiet would pile up.
+  Push rutschgebiet eastward so their edges clear: Δx = half-widths sum = 4.53+2.38 = 6.91 px.
+  Rutschgebiet anchor must land at F + (7 − 4.53) ≈ F + 2.47 → OFFSET +3.
+  OVERLAP_PUSH_X = +8 so that centering(−5) + push(+8) = net +3.
 """
 
 import math
@@ -68,20 +80,31 @@ SYMBOL_SAFE_RADIUS_M: dict[str, float] = {
     "unco_litho_zerruettete_sackungsmasse":  11.5,   # geofonts1_60 – same glyph as sackungsgebiet
 }
 
-# Per-class pixel offsets for MapServer STYLE OFFSET (screen pixels, not rotated
-# with ANGLE).
-# surfaces layer: only rutschgebiet (wide arc, 9.06 px) and sackungsgebiet (V,
-#   4.75 px) overlap significantly (535 pairs).  Minimum clearance offset:
-#   half-width rutschgebiet (4.53 px) + half-width sackungsgebiet (2.38 px) = 6.91 → 7 px
-#   solifluktion and hakenwurf have ≤14 overlapping pairs → no offset needed.
-# unco_deposits layer: no significant class overlaps → all offsets (0, 0).
-CLASS_OFFSETS: dict[str, tuple[int, int]] = {
-    "surfaces_gins_sackungsgebiet":          (0, 0),
-    "surfaces_gins_rutschgebiet":            (7, 0),   # shift east by 7 px to clear V symbol
-    "surfaces_gins_gebiet_mit_solifluktion": (0, 0),
-    "surfaces_gins_gebiet_mit_hakenwurf":    (0, 0),
-    "unco_litho_rutschmasse":                (0, 0),   # no class overlaps in unco layer
-    "unco_litho_zerruettete_sackungsmasse":  (0, 0),
+# Centering correction (offset_x only).
+# MapServer anchors TrueType symbols at their left bearing (x=0), NOT at the
+# advance-width centre, so all glyphs appear shifted right relative to the
+# feature point.  Apply offset_x = −round(advance_px / 2) to every feature.
+# Values derived from GeoFonts1.ttf at SIZE=12, SYMBOLSCALEDENOM=12500, 96 dpi.
+CENTERING_OFFSET: dict[str, int] = {
+    "surfaces_gins_sackungsgebiet":          -2,   # char 60, advance ≈ 4.75 px → ½ ≈ 2.38
+    "surfaces_gins_rutschgebiet":            -5,   # char 65, advance ≈ 9.06 px → ½ ≈ 4.53
+    "surfaces_gins_gebiet_mit_solifluktion": -3,   # char 67, advance ≈ 6.49 px → ½ ≈ 3.24
+    "surfaces_gins_gebiet_mit_hakenwurf":    -3,   # char 68, advance ≈ 5.92 px → ½ ≈ 2.96
+    "unco_litho_rutschmasse":                -5,   # geofonts1_65 – same glyph as rutschgebiet
+    "unco_litho_zerruettete_sackungsmasse":  -2,   # geofonts1_60 – same glyph as sackungsgebiet
+}
+
+# Extra east-push added on top of CENTERING_OFFSET for features that fall inside
+# a real overlap zone (only for classes whose symbols pile up with another class).
+# For rutschgebiet/rutschmasse (arc, 9.06 px wide) overlapping sackungsgebiet
+# (V, 4.75 px wide):
+#   Required separation from feature point (F) = half-widths sum = 4.53 + 2.38 = 6.91 px
+#   Rutschgebiet anchor at F + push must satisfy: anchor + 4.53 = F + 7
+#   → anchor offset = F + 2.47 → net offset_x = +3
+#   Since centering already contributes −5: push = 3 − (−5) = +8
+OVERLAP_PUSH_X: dict[str, int] = {
+    "surfaces_gins_rutschgebiet": 8,   # centering(−5) + push(+8) = net +3 → centre at F+7.53
+    "unco_litho_rutschmasse":     8,   # same glyph, same logic
 }
 
 
@@ -349,8 +372,27 @@ def generate_grid(
     rprint(f"  {len(filtered_gdf)} features selected across {filtered_gdf['map_symbol'].nunique()} classes.")
 
     # ── Overlap detection (before grid generation) ────────────────────────
+    overlaps_gdf = None
     if detect_overlaps:
         overlaps_gdf = _detect_overlaps(gdf, target_symbols, min_area_m2=min_overlap_area)
+
+    # Collect UUIDs that need the extra overlap east-push (only classes in OVERLAP_PUSH_X).
+    # A UUID is "in an overlap zone" if it appears on either side of a real overlap pair
+    # and its *own* symbol is one of the push-eligible classes.
+    # NOTE: _detect_overlaps sorts symbol_a/symbol_b alphabetically but does NOT
+    # reorder UUID_a/UUID_b to match — so we look up the symbol from the source data.
+    overlap_uuids: set[str] = set()
+    if class_offsets and overlaps_gdf is not None:
+        pushable = set(OVERLAP_PUSH_X.keys())
+        uuid_to_sym: dict = dict(zip(filtered_gdf["uuid"], filtered_gdf["map_symbol"]))
+        for _, pair in overlaps_gdf.iterrows():
+            for uid in [pair["UUID_a"], pair["UUID_b"]]:
+                if uuid_to_sym.get(uid) in pushable:
+                    overlap_uuids.add(uid)
+        if overlap_uuids:
+            rprint(
+                f"[blue]  {len(overlap_uuids)} feature(s) will receive overlap east-push[/blue]"
+            )
 
     # ── Grid generation ───────────────────────────────────────────────────
     method_counts: dict[str, int] = {"grid": 0, "grid_half": 0, "grid_none": 0, "centroid": 0}
@@ -373,9 +415,15 @@ def generate_grid(
             )
 
             if class_offsets:
-                ox, oy = CLASS_OFFSETS.get(row["map_symbol"], (0, 0))
+                sym  = row["map_symbol"]
+                uuid = row.get("uuid", None)
+                # Base centering correction (always applied — centres glyph over feature point)
+                ox = CENTERING_OFFSET.get(sym, 0)
+                # Extra east-push for features in real overlap zones with push-eligible class
+                if uuid in overlap_uuids and sym in OVERLAP_PUSH_X:
+                    ox += OVERLAP_PUSH_X[sym]
                 new_row["offset_x"] = ox
-                new_row["offset_y"] = oy
+                new_row["offset_y"] = 0
 
             results.append(new_row)
             progress.update(task, advance=1)
