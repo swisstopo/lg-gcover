@@ -229,6 +229,8 @@ layers:
             tolerance: 10
             symbol_adjustments:
               point_size_multiplier: 1.5
+              outline_color: [0, 89, 255]
+              outline_width: 1
             metadata:
               wms_group_title: Point Objects
           # data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"

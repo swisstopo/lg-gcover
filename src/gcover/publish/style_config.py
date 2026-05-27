@@ -54,6 +54,9 @@ class SymbolAdjustments:
     line_width_multiplier: float = 1.0
     dash_pattern_override: Optional[List[float]] = None  # e.g., [5, 10]
     transparency_override: Optional[int] = None  # 0-100
+    # Outline for geometric point markers (circle/square/…); ignored for font glyphs.
+    outline_color: Optional[List[int]] = None   # [R, G, B]
+    outline_width: float = 1.0                  # border thickness in pixels
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
