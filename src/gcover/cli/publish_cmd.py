@@ -1201,6 +1201,11 @@ def mapserver(
             gpkg_layer = layer_config.gpkg_layer
             connection_ref = layer_config.connection_ref
             for class_config in layer_config.classifications:
+                if not class_config.active:
+                    console.print(
+                        f"  [yellow]⏭ SKIPPED (active: False):[/yellow] {class_config.style_file.name}"
+                    )
+                    continue
                 if class_config.style_file not in style_files:
                     params = (
                         class_config.style_file,
