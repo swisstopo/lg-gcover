@@ -111,6 +111,7 @@ layers:
           maxscaledenom: 50000
           mapfile_config:
             tolerance: 10
+            symbol_scale: 12500
             symbol_adjustments:
               point_size_multiplier: 1.5
             metadata:
@@ -150,6 +151,7 @@ layers:
           map_label: False
           mapfile_config:
             rotation_field: map_angle
+            symbol_scale: 12500
             symbol_adjustments:
               point_size_multiplier: 1.5
             metadata:
@@ -171,12 +173,13 @@ layers:
           mapfile_config:
             rotation_field: map_angle
             tolerance: 10
+            symbol_scale: 12500
             symbol_adjustments:
               point_size_multiplier: 1.5
             metadata:
               wms_group_title: Point Objects
           active: True
-          data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, ltyp_name, map_symbol, map_angle FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360) AS subquery  USING UNIQUE gid USING SRID=2056"
+          data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, ltyp_name, map_symbol, (map_angle::int - 90) as map_angle FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects) AS subquery USING UNIQUE gid USING SRID=2056"
           include_items: "kind_desc"
           lang_fields:
             kind_desc: "kind_%lang%"
@@ -197,6 +200,7 @@ layers:
           map_label: True  # Use the .lyrx defined, if exists
           mapfile_config:
             rotation_field: map_angle
+            symbol_scale: 12500
             tolerance: 10
             symbol_adjustments:
               point_size_multiplier: 1.5
@@ -274,6 +278,7 @@ layers:
           active: True
           map_label: False
           mapfile_config:
+            symbol_scale: 12500
             metadata:
               wms_group_title: Point Objects
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
@@ -294,6 +299,7 @@ layers:
           active: True
           map_label: False
           mapfile_config:
+            symbol_scale: 12500
             metadata:
               wms_group_title: Point Objects
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
@@ -319,6 +325,7 @@ layers:
           active: True
           map_label: False
           mapfile_config:
+            symbol_scale: 12500
             symbol_adjustments:
               point_size_multiplier: 1.5
             metadata:
@@ -350,6 +357,7 @@ layers:
           maxscaledenom: 50000
           map_label: False
           mapfile_config:
+            symbol_scale: 12500
             symbol_adjustments:
               point_size_multiplier: 1.5
             metadata:
