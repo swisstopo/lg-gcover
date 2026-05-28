@@ -106,6 +106,7 @@ layers:
           index: 20
           classification_name: Point_Mpla_Planar_Structures
           active: True
+          treat_zero_as_null: false  # DIP=0 is meaningful (horizontal); don't collapse it to NULL
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}planar_struct
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
           maxscaledenom: 50000
@@ -118,8 +119,8 @@ layers:
               wms_group_title: Point Objects
             rotation_field: map_angle
           filter: KIND IN (13801001,13801002, 13801004, 13801003, 13801005, 13801006)
-          # Convert angles.. but keep the name TODO
-          data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, map_symbol, map_angle FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360) AS subquery  USING UNIQUE gid USING SRID=2056"
+          # dip=0 features have NULL map_angle (no strike direction); include them alongside the normal filter
+          data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, map_symbol, map_angle FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE (map_angle >=0 AND map_angle <=360) OR dip = 0) AS subquery  USING UNIQUE gid USING SRID=2056"
           include_items: "kind_desc,dip,map_angle,mpla_polarity_desc,mpla_phase_desc,mpla_ob_dip_slo,mpla_phase_ref"
           lang_fields:
             kind_desc: "kind_%lang%"

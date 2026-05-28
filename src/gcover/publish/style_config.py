@@ -182,6 +182,7 @@ class ClassificationApplicationConfig:
     # Output field for the fill color extracted from the .lyrx symbol (#rrggbbaa).
     # Only meaningful for layers with uniform solid-fill classes (e.g. bedrock).
     hexcolor_field: Optional[str] = None
+    treat_zero_as_null: Optional[bool] = None  # None = inherit global setting
 
     def __post_init__(self):
         """Validate and initialize nested configurations"""
@@ -536,6 +537,7 @@ class BatchClassificationConfig:
                     translations=class_dict.get("translations"),
                     label_formulas=class_dict.get("label_formulas"),
                     hexcolor_field=class_dict.get("hexcolor_field"),
+                    treat_zero_as_null=class_dict.get("treat_zero_as_null"),
                 )
             )
 
@@ -818,7 +820,11 @@ def apply_batch_from_config(
                     symbol_prefix=class_config.symbol_prefix,
                     field_mapping=class_config.fields,
                     field_types=field_types,
-                    treat_zero_as_null=config.treat_zero_as_null,
+                    treat_zero_as_null=(
+                        class_config.treat_zero_as_null
+                        if class_config.treat_zero_as_null is not None
+                        else config.treat_zero_as_null
+                    ),
                     debug=debug,
                 )
 
