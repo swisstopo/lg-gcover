@@ -42,6 +42,7 @@ layers:
           mapfile_config:
             symbol_scale: 20000
           # TODO: no filter
+          maxscaledenom: 52000
           symbol_prefix: geomat_pnt
           fields:
             KIND: KIND
@@ -77,6 +78,7 @@ layers:
             KIND: KIND
             LFOS_DIVISION: LFOS_DIVISION
             LFOS_STATUS: LFOS_STATUS
+          maxscaledenom: 52000
           symbol_prefix: fossil
 
     - gpkg_layer: point_objects
@@ -106,19 +108,21 @@ layers:
           index: 20
           classification_name: Point_Mpla_Planar_Structures
           active: True
+          treat_zero_as_null: false  # DIP=0 is meaningful (horizontal); don't collapse it to NULL
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}planar_struct
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
-          maxscaledenom: 50000
+          maxscaledenom: 52000
           mapfile_config:
             tolerance: 10
+            symbol_scale: 12500
             symbol_adjustments:
               point_size_multiplier: 1.5
             metadata:
               wms_group_title: Point Objects
             rotation_field: map_angle
           filter: KIND IN (13801001,13801002, 13801004, 13801003, 13801005, 13801006)
-          # Convert angles.. but keep the name TODO
-          data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, map_symbol, map_angle FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360) AS subquery  USING UNIQUE gid USING SRID=2056"
+          # dip=0 features have NULL map_angle (no strike direction); include them alongside the normal filter
+          data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, map_symbol, map_angle FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE (map_angle >=0 AND map_angle <=360) OR dip = 0) AS subquery  USING UNIQUE gid USING SRID=2056"
           include_items: "kind_desc,dip,map_angle,mpla_polarity_desc,mpla_phase_desc,mpla_ob_dip_slo,mpla_phase_ref"
           lang_fields:
             kind_desc: "kind_%lang%"
@@ -150,11 +154,12 @@ layers:
           map_label: False
           mapfile_config:
             rotation_field: map_angle
+            symbol_scale: 12500
             symbol_adjustments:
               point_size_multiplier: 1.5
             metadata:
               wms_group_title: Point Objects
-          maxscaledenom: 50000
+          maxscaledenom: 52000
           filter: KIND=14601006
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -166,17 +171,18 @@ layers:
           classification_name: Point Objects_Orient
           mapfile_name: pnt_orient
           mapfile_group: point_features
-          maxscaledenom: 50000
+          maxscaledenom: 52000
           map_label: True  # Use the .lyrx defined, if exists
           mapfile_config:
             rotation_field: map_angle
             tolerance: 10
+            symbol_scale: 12500
             symbol_adjustments:
               point_size_multiplier: 1.5
             metadata:
               wms_group_title: Point Objects
           active: True
-          data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, ltyp_name, map_symbol, map_angle FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360) AS subquery  USING UNIQUE gid USING SRID=2056"
+          data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, ltyp_name, map_symbol, (map_angle::int - 90) as map_angle FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects) AS subquery USING UNIQUE gid USING SRID=2056"
           include_items: "kind_desc"
           lang_fields:
             kind_desc: "kind_%lang%"
@@ -193,10 +199,11 @@ layers:
           classification_name: Point_Objects
           mapfile_name: pnt_objects
           mapfile_group: point_features
-          maxscaledenom: 50000
+          maxscaledenom: 52000
           map_label: True  # Use the .lyrx defined, if exists
           mapfile_config:
             rotation_field: map_angle
+            symbol_scale: 12500
             tolerance: 10
             symbol_adjustments:
               point_size_multiplier: 1.5
@@ -220,7 +227,7 @@ layers:
           classification_name: Point_Objects_Bohrung_Fels_erreicht
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}bohrung_fels_erreicht
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
-          maxscaledenom: 50000
+          maxscaledenom: 52000
           include_items: "label,kind,abor_depth_bedr,abor_fm_a,abor_fm_b,abor_depth_tot,abor_depth_fm_a,abor_depth_fm_b"
           active: True
           map_label: abor_depth_tot
@@ -229,6 +236,8 @@ layers:
             tolerance: 10
             symbol_adjustments:
               point_size_multiplier: 1.5
+              outline_color: [0, 89, 255]
+              outline_width: 1
             metadata:
               wms_group_title: Point Objects
           # data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
@@ -258,7 +267,7 @@ layers:
           classification_name: Point_Objects_Sondierung
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}sondierung
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
-          maxscaledenom: 50000
+          maxscaledenom: 52000
           include_items: "kind_desc,abor_depth_bedr,abor_fm_a_desc,abor_fm_b_desc,abor_main_tar_desc,abor_targ_mat_desc,abor_depth_bedr,abor_depth_tot"
           lang_fields:
             kind_desc: "kind_%lang%"
@@ -272,6 +281,7 @@ layers:
           active: True
           map_label: False
           mapfile_config:
+            symbol_scale: 12500
             metadata:
               wms_group_title: Point Objects
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
@@ -287,11 +297,12 @@ layers:
           classification_name: Point_Objects_Bohrung_Fels_nicht_erreicht
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}bohrung_fels_nicht_erreicht
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
-          maxscaledenom: 50000
+          maxscaledenom: 52000
           include_items: "kind_desc,abor_depth_bedr,abor_fm_a_desc,abor_fm_b_desc,abor_main_tar_desc,abor_targ_mat_desc,abor_depth_bedr,abor_depth_tot"
           active: True
           map_label: False
           mapfile_config:
+            symbol_scale: 12500
             metadata:
               wms_group_title: Point Objects
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
@@ -313,10 +324,11 @@ layers:
           classification_name: Point Objects_Quelle
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}quelle
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
-          maxscaledenom: 50000
+          maxscaledenom: 52000
           active: True
           map_label: False
           mapfile_config:
+            symbol_scale: 12500
             symbol_adjustments:
               point_size_multiplier: 1.5
             metadata:
@@ -345,9 +357,10 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}erratiker
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
-          maxscaledenom: 50000
+          maxscaledenom: 52000
           map_label: False
           mapfile_config:
+            symbol_scale: 12500
             symbol_adjustments:
               point_size_multiplier: 1.5
             metadata:
@@ -420,7 +433,7 @@ layers:
           fields:
             KIND: KIND
             GGLA_GLAC_TYP: GGLA_GLAC_TYP
-          maxscaledenom: 50000
+          maxscaledenom: 52000
           symbol_prefix: moraenenwall
 
 
@@ -452,7 +465,7 @@ layers:
           filter: KIND IN (10201002,10201007,10201006,10201001,10201005,10201004,10201003,10701001,10701002,10901002,10901001,11101001,11101003,11101002,11301007,11301003,11301002,11301006,11301005,11301008,11301009,11301004,11701003,11701002,11701001,11701004,12201001,12201002,12301001,12301004,12301006,12301002,12301007,12301005,12301003,12401001,12601002,12601001,13001001,13301001,13901001,14001001,14701001)
           fields:
               KIND: KIND
-          maxscaledenom: 50000
+          maxscaledenom: 52000
           symbol_prefix: linear_objects
 
         - style_file: styles/Linear Objects_GeolKontur.lyrx
@@ -472,7 +485,7 @@ layers:
           fields:
               KIND: KIND
               LGEO_STATUS: LGEO_STATUS
-          maxscaledenom: 50000
+          maxscaledenom: 52000
           symbol_prefix: geolkontur
 
         - style_file: styles/Linear Objects_Gesteinhorizont.lyrx
@@ -499,6 +512,7 @@ layers:
           fields:
               KIND: KIND
               LPRO_LITHO: LPRO_LITHO
+          maxscaledenom: 52000
           symbol_prefix: gesteinhorizont
           filter: KIND = 13101001
         - style_file: styles/Linear Objects_Hilfs_Karto.lyrx
@@ -513,7 +527,7 @@ layers:
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects  USING UNIQUE gid USING SRID=2056"
           fields:
               KIND: KIND
-          maxscaledenom: 50000
+          maxscaledenom: 52000
           symbol_prefix: hilfs_karto
           filter: KIND IN (15601001, 15601002)
 
@@ -543,6 +557,7 @@ layers:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
             TTEC_STATUS: TTEC_STATUS
+          maxscaledenom: 310000
           symbol_prefix: linear_bruch
           filter: KIND IN (14901002,14901004,14901005,14901006,14901007,14901008) # definitionExpression
         - style_file: styles/Linear Objects_Ueberschiebung.lyrx
@@ -576,6 +591,7 @@ layers:
             KIND: KIND
             TTEC_LIM_TYP: TTEC_LIM_TYP
             TTEC_STATUS: TTEC_STATUS
+          maxscaledenom: 310000
           symbol_prefix: linear_ueberschiebung
 
     - gpkg_layer: exploit_polygons
@@ -616,7 +632,7 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}surfaces
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}surfaces
-          maxscaledenom: 50000
+          maxscaledenom: 110000
           mapfile_config:
             classes_mode: frozen
             symbol_scale: 12000
@@ -658,7 +674,7 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}bachschutt
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}unconsolidated
-          maxscaledenom: 50000
+          maxscaledenom: 210000
           map_label: False
           include_items: "runc_litho,runc_litstrat,runc_chrono,erl_link,ber_link"
           mapfile_config:
@@ -686,7 +702,7 @@ layers:
         - style_file: styles/Unco Deposits_Litho__20000.lyrx
           index: 91
           classification_name: Unco Deposits_Litho_<20000
-          maxscaledenom: 50000
+          maxscaledenom: 210000
           active: True
           mapfile_name:  ${GCOVER_LAYERNAME_PREFIX}unco_litho
           symbol_prefix:  ${GCOVER_LAYERNAME_PREFIX}unco_litho
@@ -716,7 +732,7 @@ layers:
           symbol_prefix: unco_chrono_moraene
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}unco_chrono_moraene
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}unconsolidated
-          maxscaledenom: 50000
+          maxscaledenom: 210000
           map_label: False
           include_items: "runc_litstrat,runc_litho,runc_glac_typ,runc_chrono,runc_structur,runc_morpholo,erl_link,ber_link"
           lang_fields:
@@ -745,7 +761,7 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}unco_chrono_t
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}unconsolidated
-          maxscaledenom: 50000
+          maxscaledenom: 210000
           map_label: False
           mapfile_config:
             classes_mode: frozen
@@ -779,7 +795,7 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}unco_chrono_b
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}unconsolidated
           include_items: "runc_chrono,runc_litho,runc_litstrat,runc_structur,runc_morpholo,erl_link,ber_link"
-          maxscaledenom: 50000
+          maxscaledenom: 210000
           map_label: False
           mapfile_config:
             classes_mode: frozen
@@ -853,6 +869,7 @@ layers:
           label_formulas:
               label_de: gmu_de
               label_fr: gmu_fr
+          maxscaledenom: 510000
           symbol_prefix: bedrock
           filter: KIND == 14334001
           identifier_field: GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT
