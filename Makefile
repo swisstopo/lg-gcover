@@ -135,6 +135,7 @@ help:
 .PHONY: help download administrative-zones all merge merge-diagnostic \
         denormalize classify translate pipeline-check checksum \
         geometry-check line-topology-check polygon-topology-check coverage-check \
+        domain-check domain-check-rc domain-check-final domain-check-custom \
         geocover-aux aspect aspect-simple aspect-gmm combine-aspect inject-aux-aspect \
         mapfiles \
         install-dev format lint test smoke doc check \
@@ -277,6 +278,42 @@ coverage-check:
 		--top-n 500 \
 		--counts $(OUTPUT_DIR)feature_counts.xlsx  \
 		--output-gpkg $(OUTPUT_DIR)unclassified.gpkg
+
+## domain-check-rc: Check RC1 and RC2 against their own coded domains
+domain-check-rc:
+	@echo "--- Checking RC2.gdb (self) ---"
+	@python scripts/check_domain_compliance.py $(DELIVERY_DIR)RC2.gdb \
+		--report $(OUTPUT_DIR)domain_check_rc2.txt
+	@echo "--- Checking RC1.gdb (self) ---"
+	@python scripts/check_domain_compliance.py $(DELIVERY_DIR)RC1.gdb \
+		--report $(OUTPUT_DIR)domain_check_rc1.txt
+
+## domain-check-final: Check merged_final.gdb against RC2 coded domains
+domain-check-final:
+	$(call check_file,FINAL_GDB,$(FINAL_GDB))
+	@python scripts/check_domain_compliance.py $(FINAL_GDB) \
+		--reference $(DELIVERY_DIR)RC2.gdb \
+		--report $(OUTPUT_DIR)domain_check_final.txt
+
+## domain-check-custom: Check each custom delivery GDB against RC2 coded domains
+#  Custom sources are discovered from the mapsheets_sources_only layer (SOURCE_RC != RC1/RC2).
+#  Both "Name.gdb" and bare "Name" directory conventions are handled.
+domain-check-custom:
+	@python -c "\
+from pathlib import Path; import geopandas as gpd; \
+d = Path('$(DELIVERY_DIR)'); \
+gdf = gpd.read_file('src/gcover/data/administrative_zones.gpkg', layer='mapsheets_sources_only'); \
+srcs = sorted(set(gdf['SOURCE_RC'].dropna()) - {'RC1', 'RC2'}); \
+[print(next((str(c) for c in (d/s, d/(s+'.gdb')) if (c/'timestamps').exists()), '')) for s in srcs]" \
+	| grep -v '^$$' | while read gdb; do \
+		echo "--- $$(basename $$gdb) vs RC2.gdb ---"; \
+		python scripts/check_domain_compliance.py "$$gdb" \
+			--reference $(DELIVERY_DIR)RC2.gdb \
+			--report $(OUTPUT_DIR)domain_check_$$(basename $$gdb).txt || true; \
+	done
+
+## domain-check: Run all domain compliance checks (RC1, RC2, merged_final, custom sources)
+domain-check: domain-check-rc domain-check-final domain-check-custom
 
 
 ### Administratives zones

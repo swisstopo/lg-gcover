@@ -69,8 +69,8 @@ _DROP_PREFIXES: tuple[str, ...] = ("T_1_",)
 # Fields present in merged GDB but absent from the authoritative schema GDB.
 _EXTRA_FIELDS: list[tuple[str, int]] = [
     ("_MERGE_SOURCE", ogr.OFTString),
-    ("erl_link",      ogr.OFTString),
-    ("ber_link",      ogr.OFTString),
+    ("ERL_LINK",      ogr.OFTString),
+    ("BER_LINK",      ogr.OFTString),
 ]
 
 
