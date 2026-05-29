@@ -45,6 +45,13 @@ from shapely import STRtree
 from gcover.core.geometry import (load_gpkg_with_validation,
                                   validate_and_repair_geometries)
 
+try:
+    from osgeo import ogr as _ogr
+    _HAS_OGR = True
+except ImportError:
+    _ogr = None
+    _HAS_OGR = False
+
 console = Console(stderr=True)
 
 has_pyarrow = False
@@ -650,6 +657,7 @@ class MergeStats:
     features_per_source: Dict[str, int] = field(default_factory=dict)
     mapsheets_processed: int = 0
     clip_stats: Dict[str, Dict] = field(default_factory=dict)
+    domain_cleanup: Dict[str, Dict[str, int]] = field(default_factory=dict)
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
 
@@ -1249,6 +1257,10 @@ class GDBMerger:
                 progress.advance(layers_task)
 
 
+        # Domain cleanup
+        console.print("\n[bold chartreuse2]===== Domain cleanup... =====[/bold chartreuse2]")
+        merged_layers = self._cleanup_domain_violations(merged_layers)
+
         # Save merged spatial layers
         console.print("\n[bold chartreuse2]===== Saving merged spatial layers... =====[/bold chartreuse2]")
         self._save_merged_layers(merged_layers)
@@ -1653,6 +1665,102 @@ class GDBMerger:
                     logger.warning(f"Could not save table {table_name}: {e}")
                     self.stats.warnings.append(f"Table {table_name} not copied: {e}")
     
+    def _cleanup_domain_violations(
+        self,
+        merged_layers: Dict[str, gpd.GeoDataFrame],
+    ) -> Dict[str, gpd.GeoDataFrame]:
+        """Null out field values that are absent from their coded domain.
+
+        Uses RC2 (preferred) or RC1 as the authoritative domain source.
+        Tallied in self.stats.domain_cleanup.
+        """
+        if not _HAS_OGR:
+            logger.warning("osgeo.ogr unavailable; skipping domain cleanup")
+            return merged_layers
+
+        auth_source = next(
+            (self.sources[k] for k in ("RC2", "RC1") if k in self.sources), None
+        )
+        if auth_source is None:
+            logger.warning("No RC1/RC2 source; skipping domain cleanup")
+            return merged_layers
+
+        ds = _ogr.Open(str(auth_source.path), 0)
+        if ds is None:
+            logger.warning(f"Cannot open {auth_source.path}; skipping domain cleanup")
+            return merged_layers
+
+        try:
+            # Build domain_name → frozenset of valid code strings
+            domain_sets: Dict[str, frozenset] = {}
+            for dname in (ds.GetFieldDomainNames() or []):
+                dom = ds.GetFieldDomain(dname)
+                if dom is None or dom.GetDomainType() != _ogr.OFDT_CODED:
+                    continue
+                domain_sets[dname] = frozenset(str(k) for k in dom.GetEnumeration())
+
+            logger.info(
+                f"Loaded {len(domain_sets)} coded domain(s) from {auth_source.name}"
+            )
+
+            for layer_name, gdf in merged_layers.items():
+                actual_layer = layer_name.split("/")[-1]
+                lyr = ds.GetLayerByName(actual_layer)
+                if lyr is None:
+                    continue
+
+                defn = lyr.GetLayerDefn()
+                fixes: list = []  # list of (bool_mask, col_name)
+
+                for i in range(defn.GetFieldCount()):
+                    fld = defn.GetFieldDefn(i)
+                    dname = fld.GetDomainName()
+                    if not dname or dname not in domain_sets:
+                        continue
+                    col = fld.GetNameRef()
+                    if col not in gdf.columns:
+                        continue
+
+                    valid_str = domain_sets[dname]
+                    ftype = fld.GetType()
+                    non_null = gdf[col].notna()
+
+                    if ftype in (_ogr.OFTInteger, _ogr.OFTInteger64):
+                        try:
+                            valid: frozenset = frozenset(int(c) for c in valid_str)
+                        except ValueError:
+                            valid = valid_str
+                        bogus = non_null & ~gdf[col].isin(valid)
+                    elif ftype == _ogr.OFTReal:
+                        try:
+                            valid = frozenset(float(c) for c in valid_str)
+                        except ValueError:
+                            valid = valid_str
+                        bogus = non_null & ~gdf[col].isin(valid)
+                    else:
+                        bogus = non_null & ~gdf[col].astype(str).isin(valid_str)
+
+                    if bogus.any():
+                        fixes.append((bogus, col))
+
+                if fixes:
+                    gdf = gdf.copy()
+                    layer_fixups: Dict[str, int] = {}
+                    for bogus_mask, col in fixes:
+                        n = int(bogus_mask.sum())
+                        gdf.loc[bogus_mask, col] = None
+                        layer_fixups[col] = n
+                        console.print(
+                            f"  [yellow]⚠[/yellow] {actual_layer}.{col}: {n} bogus → NULL"
+                        )
+                    self.stats.domain_cleanup[actual_layer] = layer_fixups
+                    merged_layers[layer_name] = gdf
+
+        finally:
+            ds = None
+
+        return merged_layers
+
     def _display_results(self, elapsed_time: float = 0) -> None:
         """Display merge results summary."""
         
@@ -1691,7 +1799,25 @@ class GDBMerger:
             for layer, count in sorted(self.stats.features_per_layer.items()):
                 layer_short = layer.split("/")[-1]
                 console.print(f"  • {layer_short}: {count:,}")
-        
+
+        if self.stats.domain_cleanup:
+            total_nulled = sum(
+                sum(f.values()) for f in self.stats.domain_cleanup.values()
+            )
+            cleanup_table = Table(
+                title=f"Domain Cleanup — {total_nulled:,} bogus value(s) → NULL",
+                show_header=True,
+            )
+            cleanup_table.add_column("Layer", style="cyan")
+            cleanup_table.add_column("Field", style="yellow")
+            cleanup_table.add_column("Nulled", justify="right", style="red")
+            for layer, fields in sorted(self.stats.domain_cleanup.items()):
+                for field_name, count in sorted(fields.items(), key=lambda x: -x[1]):
+                    cleanup_table.add_row(layer, field_name, f"{count:,}")
+            console.print(cleanup_table)
+        else:
+            console.print("\n[green]✓ Domain check: all values within coded domains[/green]")
+
         if self.stats.warnings:
             console.print("\n[yellow]⚠ Warnings:[/yellow]")
             for warning in self.stats.warnings:
