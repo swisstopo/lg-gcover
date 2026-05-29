@@ -1323,14 +1323,16 @@ class GDBMerger:
         # Both arrays have the same length; entry k means:
         #   rep_pts[feat_idx[k]] is within mapsheets[mapsheet_idx[k]]
 
-        # ── 3. Assign links ─────────────────────────────────────────────────
+        # ── 3. Assign links — write to UPPERCASE output columns ─────────────
+        # Source mapsheet columns are lowercase (erl_link/ber_link); output
+        # GDB uses ESRI uppercase convention (ERL_LINK/BER_LINK).
         if self.config.split_by_mapsheet:
             # 1:1 — take first match only (features were already split)
             for col in link_cols:
                 vals = np.full(len(gdf), None, dtype=object)
                 _, first = np.unique(feat_idx, return_index=True)
                 vals[feat_idx[first]] = self._enrichment_links[col][mapsheet_idx[first]]
-                gdf[col] = vals
+                gdf[col.upper()] = vals
         else:
             # 1:N — use full geometry + intersects so features crossing
             # mapsheet boundaries collect links from all touched mapsheets.
@@ -1349,7 +1351,12 @@ class GDBMerger:
                 for fi, links in bucket.items():
                     seen = dict.fromkeys(links)  # deduplicate, preserve order
                     vals[fi] = "|".join(seen) if seen else None
-                gdf[col] = vals
+                gdf[col.upper()] = vals
+
+        # Drop any lowercase stubs left by _split_layer_by_mapsheets sjoin
+        lowercase_to_drop = [col for col in link_cols if col != col.upper() and col in gdf.columns]
+        if lowercase_to_drop:
+            gdf = gdf.drop(columns=lowercase_to_drop)
 
         # ── 4. Report ────────────────────────────────────────────────────────
         table = Table(title=f"Link statistics for layer: {actual_layer}")
@@ -1360,15 +1367,16 @@ class GDBMerger:
         table.add_column("Multi‑mapsheet", style="magenta")
 
         for col in link_cols:
-            n_matched = gdf[col].notna().sum()
+            out_col = col.upper()
+            n_matched = gdf[out_col].notna().sum()
 
             if not self.config.split_by_mapsheet:
-                n_multi = gdf[col].str.contains("|", regex=False).sum()
+                n_multi = gdf[out_col].str.contains("|", regex=False).sum()
             else:
                 n_multi = 0
 
             table.add_row(
-                col,
+                out_col,
                 f"{n_matched:,}",
                 f"{len(gdf):,}",
                 f"{n_multi:,}" if n_multi else "-"
