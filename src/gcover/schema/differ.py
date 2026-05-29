@@ -759,6 +759,56 @@ class SchemaDiff:
                                 )
                 report.append("")
 
-            # Rest of the sections remain similar but could also be enhanced...
+            # Feature classes
+            if self.feature_class_changes:
+                report.append("Feature Class Changes:")
+                for change in self.feature_class_changes:
+                    report.append(
+                        f"  - {change.table_name}: {change.change_type.value}"
+                    )
+                    if change.property_changes:
+                        for prop, (old, new) in change.property_changes.items():
+                            report.append(f"      {prop}: {old!r} -> {new!r}")
+                    if change.field_changes:
+                        for fc in change.field_changes:
+                            sigil = {"added": "+", "removed": "-", "modified": "~"}[
+                                fc.change_type.value
+                            ]
+                            report.append(f"      {sigil} field {fc.field_name}")
+                            for prop, (old, new) in fc.property_changes.items():
+                                report.append(f"          {prop}: {old!r} -> {new!r}")
+                report.append("")
+
+            # Tables
+            if self.table_changes:
+                report.append("Table Changes:")
+                for change in self.table_changes:
+                    report.append(
+                        f"  - {change.table_name}: {change.change_type.value}"
+                    )
+                    if change.property_changes:
+                        for prop, (old, new) in change.property_changes.items():
+                            report.append(f"      {prop}: {old!r} -> {new!r}")
+                    if change.field_changes:
+                        for fc in change.field_changes:
+                            sigil = {"added": "+", "removed": "-", "modified": "~"}[
+                                fc.change_type.value
+                            ]
+                            report.append(f"      {sigil} field {fc.field_name}")
+                            for prop, (old, new) in fc.property_changes.items():
+                                report.append(f"          {prop}: {old!r} -> {new!r}")
+                report.append("")
+
+            # Relationships
+            if self.relationship_changes:
+                report.append("Relationship Changes:")
+                for change in self.relationship_changes:
+                    report.append(
+                        f"  - {change.relationship_name}: {change.change_type.value}"
+                    )
+                    if change.property_changes:
+                        for prop, (old, new) in change.property_changes.items():
+                            report.append(f"      {prop}: {old!r} -> {new!r}")
+                report.append("")
 
         return "\n".join(report)
