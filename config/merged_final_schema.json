@@ -30878,194 +30878,6 @@
     }
   },
   "feature_classes": {
-    "GC_MAPSHEET": {
-      "name": "GC_MAPSHEET",
-      "geometry_type": "esriGeometryPolygon",
-      "spatial_reference": "{\n  \"$schema\": \"https://proj.org/schemas/v0.7/projjson.schema.json\",\n  \"type\": \"CompoundCRS\",\n  \"name\": \"CH1903+ / LV95 + LHN95 height\",\n  \"components\": [\n    {\n      \"type\": \"ProjectedCRS\",\n      \"name\": \"CH1903+ / LV95\",\n      \"base_crs\": {\n        \"type\": \"GeographicCRS\",\n        \"name\": \"CH1903+\",\n        \"datum\": {\n          \"type\": \"GeodeticReferenceFrame\",\n          \"name\": \"CH1903+\",\n          \"ellipsoid\": {\n            \"name\": \"Bessel 1841\",\n            \"semi_major_axis\": 6377397.155,\n            \"inverse_flattening\": 299.1528128\n          }\n        },\n        \"coordinate_system\": {\n          \"subtype\": \"ellipsoidal\",\n          \"axis\": [\n            {\n              \"name\": \"Geodetic latitude\",\n              \"abbreviation\": \"Lat\",\n              \"direction\": \"north\",\n              \"unit\": \"degree\"\n            },\n            {\n              \"name\": \"Geodetic longitude\",\n              \"abbreviation\": \"Lon\",\n              \"direction\": \"east\",\n              \"unit\": \"degree\"\n            }\n          ]\n        },\n        \"id\": {\n          \"authority\": \"EPSG\",\n          \"code\": 4150\n        }\n      },\n      \"conversion\": {\n        \"name\": \"Swiss Oblique Mercator 1995\",\n        \"method\": {\n          \"name\": \"Hotine Oblique Mercator (variant B)\",\n          \"id\": {\n            \"authority\": \"EPSG\",\n            \"code\": 9815\n          }\n        },\n        \"parameters\": [\n          {\n            \"name\": \"Latitude of projection centre\",\n            \"value\": 46.9524055555556,\n            \"unit\": \"degree\",\n            \"id\": {\n              \"authority\": \"EPSG\",\n              \"code\": 8811\n            }\n          },\n          {\n            \"name\": \"Longitude of projection centre\",\n            \"value\": 7.43958333333333,\n            \"unit\": \"degree\",\n            \"id\": {\n              \"authority\": \"EPSG\",\n              \"code\": 8812\n            }\n          },\n          {\n            \"name\": \"Azimuth at projection centre\",\n            \"value\": 90,\n            \"unit\": \"degree\",\n            \"id\": {\n              \"authority\": \"EPSG\",\n              \"code\": 8813\n            }\n          },\n          {\n            \"name\": \"Angle from Rectified to Skew Grid\",\n            \"value\": 90,\n            \"unit\": \"degree\",\n            \"id\": {\n              \"authority\": \"EPSG\",\n              \"code\": 8814\n            }\n          },\n          {\n            \"name\": \"Scale factor at projection centre\",\n            \"value\": 1,\n            \"unit\": \"unity\",\n            \"id\": {\n              \"authority\": \"EPSG\",\n              \"code\": 8815\n            }\n          },\n          {\n            \"name\": \"Easting at projection centre\",\n            \"value\": 2600000,\n            \"unit\": \"metre\",\n            \"id\": {\n              \"authority\": \"EPSG\",\n              \"code\": 8816\n            }\n          },\n          {\n            \"name\": \"Northing at projection centre\",\n            \"value\": 1200000,\n            \"unit\": \"metre\",\n            \"id\": {\n              \"authority\": \"EPSG\",\n              \"code\": 8817\n            }\n          }\n        ]\n      },\n      \"coordinate_system\": {\n        \"subtype\": \"Cartesian\",\n        \"axis\": [\n          {\n            \"name\": \"Easting\",\n            \"abbreviation\": \"E\",\n            \"direction\": \"east\",\n            \"unit\": \"metre\"\n          },\n          {\n            \"name\": \"Northing\",\n            \"abbreviation\": \"N\",\n            \"direction\": \"north\",\n            \"unit\": \"metre\"\n          }\n        ]\n      },\n      \"id\": {\n        \"authority\": \"EPSG\",\n        \"code\": 2056\n      }\n    },\n    {\n      \"type\": \"VerticalCRS\",\n      \"name\": \"LHN95 height\",\n      \"datum\": {\n        \"type\": \"VerticalReferenceFrame\",\n        \"name\": \"Landeshohennetz 1995\"\n      },\n      \"coordinate_system\": {\n        \"subtype\": \"vertical\",\n        \"axis\": [\n          {\n            \"name\": \"Gravity-related height\",\n            \"abbreviation\": \"H\",\n            \"direction\": \"up\",\n            \"unit\": \"metre\"\n          }\n        ]\n      },\n      \"id\": {\n        \"authority\": \"EPSG\",\n        \"code\": 5729\n      }\n    }\n  ]\n}",
-      "has_z": true,
-      "has_m": 0,
-      "fields": [
-        {
-          "name": "UUID",
-          "type": "esriFieldTypeString",
-          "nullable": 1
-        },
-        {
-          "name": "OPERATOR",
-          "type": "esriFieldTypeString",
-          "length": 50,
-          "nullable": 1
-        },
-        {
-          "name": "DATEOFCREATION",
-          "type": "esriFieldTypeDate",
-          "nullable": 1
-        },
-        {
-          "name": "DATEOFCHANGE",
-          "type": "esriFieldTypeDate",
-          "nullable": 1
-        },
-        {
-          "name": "CREATION_YEAR",
-          "type": "esriFieldTypeInteger",
-          "nullable": 1,
-          "domain": "GC_YEAR_RD"
-        },
-        {
-          "name": "CREATION_MONTH",
-          "type": "esriFieldTypeInteger",
-          "nullable": 1,
-          "domain": "GC_MONTH_CD"
-        },
-        {
-          "name": "REVISION_YEAR",
-          "type": "esriFieldTypeInteger",
-          "nullable": 1,
-          "domain": "GC_YEAR_RD"
-        },
-        {
-          "name": "REVISION_MONTH",
-          "type": "esriFieldTypeInteger",
-          "nullable": 1,
-          "domain": "GC_MONTH_CD"
-        },
-        {
-          "name": "REASONFORCHANGE",
-          "type": "esriFieldTypeInteger",
-          "nullable": 1,
-          "domain": "GC_REASON_FOR_CHANGE_CD"
-        },
-        {
-          "name": "OBJECTORIGIN",
-          "type": "esriFieldTypeInteger",
-          "nullable": 1,
-          "domain": "GC_ORIGIN_CD"
-        },
-        {
-          "name": "OBJECTORIGIN_YEAR",
-          "type": "esriFieldTypeInteger",
-          "nullable": 1,
-          "domain": "GC_YEAR_RD"
-        },
-        {
-          "name": "OBJECTORIGIN_MONTH",
-          "type": "esriFieldTypeInteger",
-          "nullable": 1,
-          "domain": "GC_MONTH_CD"
-        },
-        {
-          "name": "RC_ID",
-          "type": "esriFieldTypeInteger",
-          "nullable": 1
-        },
-        {
-          "name": "WU_ID",
-          "type": "esriFieldTypeInteger",
-          "nullable": 1
-        },
-        {
-          "name": "RC_ID_CREATION",
-          "type": "esriFieldTypeInteger",
-          "nullable": 1
-        },
-        {
-          "name": "WU_ID_CREATION",
-          "type": "esriFieldTypeInteger",
-          "nullable": 1
-        },
-        {
-          "name": "REVISION_QUALITY",
-          "type": "esriFieldTypeString",
-          "length": 15,
-          "nullable": 1
-        },
-        {
-          "name": "ORIGINAL_ORIGIN",
-          "type": "esriFieldTypeInteger",
-          "nullable": 1,
-          "domain": "GC_ORIGIN_CD"
-        },
-        {
-          "name": "INTEGRATION_OBJECT_UUID",
-          "type": "esriFieldTypeString",
-          "nullable": 1
-        },
-        {
-          "name": "MSH_MAP_TITLE",
-          "type": "esriFieldTypeString",
-          "length": 255,
-          "nullable": 1
-        },
-        {
-          "name": "MSH_MAP_NBR",
-          "type": "esriFieldTypeInteger",
-          "nullable": 1
-        },
-        {
-          "name": "MSH_MAP_SCALE",
-          "type": "esriFieldTypeString",
-          "length": 255,
-          "nullable": 1
-        },
-        {
-          "name": "MSH_BASIS_TOPO",
-          "type": "esriFieldTypeString",
-          "length": 255,
-          "nullable": 1
-        },
-        {
-          "name": "MSH_AUTHOR",
-          "type": "esriFieldTypeString",
-          "length": 255,
-          "nullable": 1
-        },
-        {
-          "name": "MSH_OWNER",
-          "type": "esriFieldTypeString",
-          "length": 255,
-          "nullable": 1
-        },
-        {
-          "name": "MSH_MAPPING_PERIOD",
-          "type": "esriFieldTypeString",
-          "length": 255,
-          "nullable": 1
-        },
-        {
-          "name": "MSH_PUBL_YEAR",
-          "type": "esriFieldTypeInteger",
-          "nullable": 1
-        },
-        {
-          "name": "MSH_BASIS_VECT",
-          "type": "esriFieldTypeString",
-          "length": 255,
-          "nullable": 1
-        },
-        {
-          "name": "MSH_MORE_INFO",
-          "type": "esriFieldTypeString",
-          "length": 255,
-          "nullable": 1
-        },
-        {
-          "name": "MSH_TOPO_NR",
-          "type": "esriFieldTypeInteger",
-          "nullable": 1
-        },
-        {
-          "name": "SHAPE_Length",
-          "type": "esriFieldTypeDouble",
-          "nullable": 1
-        },
-        {
-          "name": "SHAPE_Area",
-          "type": "esriFieldTypeDouble",
-          "nullable": 1
-        }
-      ]
-    },
     "GC_EXPLOIT_GEOMAT_PLG": {
       "name": "GC_EXPLOIT_GEOMAT_PLG",
       "geometry_type": "esriGeometryPolygon",
@@ -32250,6 +32062,65 @@
         },
         {
           "name": "ber_link",
+          "type": "esriFieldTypeString",
+          "nullable": 1
+        }
+      ]
+    },
+    "GC_MAPSHEET": {
+      "name": "GC_MAPSHEET",
+      "geometry_type": "esriGeometryPolygon",
+      "spatial_reference": "{\n  \"$schema\": \"https://proj.org/schemas/v0.7/projjson.schema.json\",\n  \"type\": \"ProjectedCRS\",\n  \"name\": \"CH1903+ / LV95\",\n  \"base_crs\": {\n    \"type\": \"GeographicCRS\",\n    \"name\": \"CH1903+\",\n    \"datum\": {\n      \"type\": \"GeodeticReferenceFrame\",\n      \"name\": \"CH1903+\",\n      \"ellipsoid\": {\n        \"name\": \"Bessel 1841\",\n        \"semi_major_axis\": 6377397.155,\n        \"inverse_flattening\": 299.1528128\n      }\n    },\n    \"coordinate_system\": {\n      \"subtype\": \"ellipsoidal\",\n      \"axis\": [\n        {\n          \"name\": \"Geodetic latitude\",\n          \"abbreviation\": \"Lat\",\n          \"direction\": \"north\",\n          \"unit\": \"degree\"\n        },\n        {\n          \"name\": \"Geodetic longitude\",\n          \"abbreviation\": \"Lon\",\n          \"direction\": \"east\",\n          \"unit\": \"degree\"\n        }\n      ]\n    },\n    \"id\": {\n      \"authority\": \"EPSG\",\n      \"code\": 4150\n    }\n  },\n  \"conversion\": {\n    \"name\": \"Swiss Oblique Mercator 1995\",\n    \"method\": {\n      \"name\": \"Hotine Oblique Mercator (variant B)\",\n      \"id\": {\n        \"authority\": \"EPSG\",\n        \"code\": 9815\n      }\n    },\n    \"parameters\": [\n      {\n        \"name\": \"Latitude of projection centre\",\n        \"value\": 46.9524055555556,\n        \"unit\": \"degree\",\n        \"id\": {\n          \"authority\": \"EPSG\",\n          \"code\": 8811\n        }\n      },\n      {\n        \"name\": \"Longitude of projection centre\",\n        \"value\": 7.43958333333333,\n        \"unit\": \"degree\",\n        \"id\": {\n          \"authority\": \"EPSG\",\n          \"code\": 8812\n        }\n      },\n      {\n        \"name\": \"Azimuth at projection centre\",\n        \"value\": 90,\n        \"unit\": \"degree\",\n        \"id\": {\n          \"authority\": \"EPSG\",\n          \"code\": 8813\n        }\n      },\n      {\n        \"name\": \"Angle from Rectified to Skew Grid\",\n        \"value\": 90,\n        \"unit\": \"degree\",\n        \"id\": {\n          \"authority\": \"EPSG\",\n          \"code\": 8814\n        }\n      },\n      {\n        \"name\": \"Scale factor at projection centre\",\n        \"value\": 1,\n        \"unit\": \"unity\",\n        \"id\": {\n          \"authority\": \"EPSG\",\n          \"code\": 8815\n        }\n      },\n      {\n        \"name\": \"Easting at projection centre\",\n        \"value\": 2600000,\n        \"unit\": \"metre\",\n        \"id\": {\n          \"authority\": \"EPSG\",\n          \"code\": 8816\n        }\n      },\n      {\n        \"name\": \"Northing at projection centre\",\n        \"value\": 1200000,\n        \"unit\": \"metre\",\n        \"id\": {\n          \"authority\": \"EPSG\",\n          \"code\": 8817\n        }\n      }\n    ]\n  },\n  \"coordinate_system\": {\n    \"subtype\": \"Cartesian\",\n    \"axis\": [\n      {\n        \"name\": \"Easting\",\n        \"abbreviation\": \"E\",\n        \"direction\": \"east\",\n        \"unit\": \"metre\"\n      },\n      {\n        \"name\": \"Northing\",\n        \"abbreviation\": \"N\",\n        \"direction\": \"north\",\n        \"unit\": \"metre\"\n      }\n    ]\n  },\n  \"scope\": \"Cadastre, engineering survey, topographic mapping (large and medium scale).\",\n  \"area\": \"Liechtenstein; Switzerland.\",\n  \"bbox\": {\n    \"south_latitude\": 45.81,\n    \"west_longitude\": 5.95,\n    \"north_latitude\": 47.81,\n    \"east_longitude\": 10.5\n  },\n  \"id\": {\n    \"authority\": \"EPSG\",\n    \"code\": 2056\n  }\n}",
+      "has_z": 0,
+      "has_m": 0,
+      "fields": [
+        {
+          "name": "MSH_MAP_TITLE",
+          "type": "esriFieldTypeString",
+          "nullable": 1
+        },
+        {
+          "name": "MSH_MAP_NBR",
+          "type": "esriFieldTypeInteger",
+          "nullable": 1
+        },
+        {
+          "name": "MSH_TOPO_NR",
+          "type": "esriFieldTypeInteger",
+          "nullable": 1
+        },
+        {
+          "name": "MSH_REV",
+          "type": "esriFieldTypeString",
+          "nullable": 1
+        },
+        {
+          "name": "SOURCE_RC",
+          "type": "esriFieldTypeString",
+          "nullable": 1
+        },
+        {
+          "name": "VERSION",
+          "type": "esriFieldTypeString",
+          "nullable": 1
+        },
+        {
+          "name": "BER",
+          "type": "esriFieldTypeString",
+          "nullable": 1
+        },
+        {
+          "name": "ERL",
+          "type": "esriFieldTypeString",
+          "nullable": 1
+        },
+        {
+          "name": "BER_LINK",
+          "type": "esriFieldTypeString",
+          "nullable": 1
+        },
+        {
+          "name": "ERL_LINK",
           "type": "esriFieldTypeString",
           "nullable": 1
         }
@@ -34052,6 +33923,6 @@
     "source": "FileGDB",
     "gdb_path": "/home/marco/DATA/Derivations/output/R17/merged_final.gdb",
     "extraction_method": "direct_gdal_parsing",
-    "exported_at": "2026-05-29T19:27:33.200156"
+    "exported_at": "2026-06-01T14:24:16.931090"
   }
 }

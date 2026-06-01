@@ -176,11 +176,17 @@ $(MASTER_GDB)/timestamps: $(DELIVERY_DIR)RC1.gdb $(DELIVERY_DIR)RC2.gdb
 		exit 1; \
 	fi; \
 	exit $$rc
+	@echo "--- Copying GC_MAPSHEET from administrative_zones ---"
+	@ogr2ogr -f "OpenFileGDB" -update -overwrite -dim XY $(MASTER_GDB) \
+		$(GCOVER_DATA_DIR)$(ADMIN_ZONES_GPKG) \
+		-dialect SQLite \
+		-sql "SELECT geom, MSH_MAP_TITLE, MSH_MAP_NBR, MSH_TOPO_NR, MSH_REV, SOURCE_RC, Version AS VERSION, BER, ERL, ber_link AS BER_LINK, erl_link AS ERL_LINK FROM mapsheets_sources_only" \
+		-nln GC_MAPSHEET
 
 ## merge-diagnostic: Merge diagnostic
 merge-diagnostic:
 	@echo "--- Running Diagnosis ---"
-	python scripts/diagnose_merge.py $(DELIVERY_DIR)RC1.gdb $(DELIVERY_DIR)RC2.gdb src/gcover/data/administrative_zones.gpkg
+	python scripts/diagnose_merge.py $(DELIVERY_DIR)RC1.gdb $(DELIVERY_DIR)RC2.gdb $(GCOVER_DATA_DIR)$(ADMIN_ZONES_GPKG)
 
 
 
