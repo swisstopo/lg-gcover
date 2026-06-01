@@ -1827,6 +1827,12 @@ class MapServerGenerator:
                     lines.append("      COLOR 128 128 128")
             else:
                 lines.append("      COLOR 128 128 128")
+
+            # Outline only for geometric markers (circle / square / …), not font glyphs
+            if symbol_adjustments and symbol_adjustments.outline_color:
+                r, g, b = symbol_adjustments.outline_color
+                lines.append(f"      OUTLINECOLOR {r} {g} {b}")
+                lines.append(f"      WIDTH {symbol_adjustments.outline_width:.1f}")
         else:
             lines.append('      SYMBOL "circle"')
             lines.append("      SIZE 8")

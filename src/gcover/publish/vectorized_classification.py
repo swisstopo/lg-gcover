@@ -787,6 +787,8 @@ def apply_batch_classifications_vectorized(
         field_mapping = class_tuple[3] if len(class_tuple) > 3 else None
         identifier_field = class_tuple[4] if len(class_tuple) > 4 else None
         color_field = class_tuple[5] if len(class_tuple) > 5 else None
+        per_class_treat_zero = class_tuple[6] if len(class_tuple) > 6 else None
+        effective_treat_zero = per_class_treat_zero if per_class_treat_zero is not None else treat_zero_as_null
 
         class_name = classification.layer_name or f'classification_{i}'
         console.print(f"\n  [{i}/{len(classifications)}] {class_name}")
@@ -804,7 +806,7 @@ def apply_batch_classifications_vectorized(
             symbol_prefix=prefix,
             field_mapping=field_mapping,
             identifier_field=identifier_field,
-            treat_zero_as_null=treat_zero_as_null,
+            treat_zero_as_null=effective_treat_zero,
             debug=debug,
             color_field=color_field,
         )
@@ -1026,6 +1028,7 @@ def apply_batch_from_config_vectorized(
                     class_config.fields,  # field_mapping: gpkg_field -> classification_field
                     getattr(class_config, 'identifier_field', None),
                     getattr(class_config, 'hexcolor_field', None),
+                    getattr(class_config, 'treat_zero_as_null', None),  # None = use global
                 ))
                 
             except FileNotFoundError:
