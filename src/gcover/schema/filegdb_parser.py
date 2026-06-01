@@ -664,12 +664,15 @@ class FileGDBParser:
                         except:
                             pass  # Use default if method fails
 
+                    domain_name = field_defn.GetDomainName() or None
+
                     field = Field(
                         name=field_name,
                         type=self._ogr_field_type_to_esri(field_type),
                         length=width if width > 0 else None,
                         precision=precision if precision > 0 else None,
                         nullable=nullable,
+                        domain=domain_name,
                     )
 
                     fields.append(field)
