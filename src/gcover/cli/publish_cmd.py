@@ -2313,6 +2313,7 @@ def merge(
                 log=console.print,
                 exclude_fields=GEOCOVER_METADATA_FIELDS if exclude_metadata else None,
                 strati_links_path=strati_links_path,
+                admin_zones_path=admin_zones,
             )
             if errors:
                 console.print(f"[yellow]Schema patch completed with {len(errors)} error(s):[/yellow]")

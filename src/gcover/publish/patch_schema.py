@@ -222,6 +222,7 @@ def patch_schema_gdb(
     log: Callable[[str], None] = print,
     exclude_fields: set[str] | None = None,
     strati_links_path: Path | None = None,
+    admin_zones_path: Path | None = None,
 ) -> list[str]:
     """Clone schema_gdb, then replace its data with content from merged_gdb.
 
@@ -245,6 +246,11 @@ def patch_schema_gdb(
         injected into GC_BEDROCK after the append step via a two-hop join
         through GC_GEOL_MAPPING_UNIT_ATT.  When None, the field is omitted
         and a warning is logged.
+    admin_zones_path:
+        Path to ``administrative_zones.gpkg``.  When provided, GC_MAPSHEET is
+        replaced with the ``mapsheets_sources_only`` layer (fields uppercased,
+        Z dimension dropped).  When None, GC_MAPSHEET is kept from the schema
+        clone (RC2 data).
 
     Returns
     -------
@@ -328,6 +334,38 @@ def patch_schema_gdb(
         ds = ogr.Open(output_gdb_str, 1)
         _inject_strati_link(ds, strati_links_path, log)
         ds = None
+
+    # Step 5: replace GC_MAPSHEET with mapsheets_sources_only (uppercased fields, 2D)
+    if admin_zones_path is not None:
+        log("\n--- GC_MAPSHEET ---")
+        ds = ogr.Open(output_gdb_str, 1)
+        for i in range(ds.GetLayerCount()):
+            if ds.GetLayerByIndex(i).GetName() == "GC_MAPSHEET":
+                ds.DeleteLayer(i)
+                break
+        ds = None
+
+        _sql = (
+            "SELECT geom, MSH_MAP_TITLE, MSH_MAP_NBR, MSH_TOPO_NR, MSH_REV, SOURCE_RC, "
+            "Version AS VERSION, BER, ERL, ber_link AS BER_LINK, erl_link AS ERL_LINK "
+            "FROM mapsheets_sources_only"
+        )
+        gdal.VectorTranslate(
+            output_gdb_str,
+            str(admin_zones_path),
+            options=gdal.VectorTranslateOptions(
+                SQLStatement=_sql,
+                SQLDialect="SQLite",
+                layerName="GC_MAPSHEET",
+                accessMode="update",
+                geometryType="POLYGON",
+            ),
+        )
+        ds = ogr.Open(output_gdb_str, 0)
+        lyr = ds.GetLayerByName("GC_MAPSHEET")
+        n = lyr.GetFeatureCount() if lyr else -1
+        ds = None
+        log(f"  GC_MAPSHEET: {n:,} features")
 
     ds = ogr.Open(output_gdb_str, 0)
     log(f"\nDone → {output_gdb_str}")

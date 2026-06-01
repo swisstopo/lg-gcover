@@ -718,6 +718,70 @@ def diagram(json_file, output, title, no_fields, no_relationships, no_domains, m
 
 
 @schema.command()
+@click.argument("gdb_path", type=click.Path(exists=True))
+@click.option(
+    "--output", "-o",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Destination JSON file (default: <gdb_stem>_schema.json next to the GDB).",
+)
+@click.option(
+    "--prefix", default="GC_",
+    help="Only include layers/tables whose name starts with this prefix (default: GC_).",
+)
+def snapshot(gdb_path, output, prefix):
+    """Extract a FileGDB schema snapshot to JSON (no arcpy required).
+
+    The snapshot captures layer names (exact case), field names + types +
+    domain bindings, coded/range domain names, and relationship class names.
+    Commit the output file as a contract; use 'schema diff' to validate future
+    deliveries against it.
+
+    Example
+    -------
+      gcover schema snapshot merged_final.gdb -o config/merged_final_schema.json
+      gcover schema snapshot merged_final.gdb --prefix GC_
+    """
+    from gcover.schema.filegdb_parser import FileGDBParser
+    from gcover.schema.serializer import save_esri_schema_to_file
+
+    gdb = Path(gdb_path)
+    out = output or gdb.parent / f"{gdb.stem}_schema.json"
+
+    console.print(f"[bold]Snapshot:[/] {gdb}")
+    console.print(f"[bold]Output  :[/] {out}")
+
+    try:
+        parser = FileGDBParser(str(gdb))
+        parser.open()
+        schema = parser.parse_to_esri_schema(target_prefix=prefix)
+        parser.close()
+    except Exception as exc:
+        console.print(f"[red]✗ Failed to parse GDB: {exc}[/red]")
+        raise click.Abort()
+
+    n_fc  = len(schema.feature_classes)
+    n_tbl = len(schema.tables)
+    n_cd  = len(schema.coded_domains)
+    n_rd  = len(schema.range_domains)
+    n_rel = len(schema.relationships)
+
+    console.print(
+        f"  [green]✓[/] {n_fc} feature class(es), {n_tbl} table(s), "
+        f"{n_cd} coded domain(s), {n_rd} range domain(s), {n_rel} relationship(s)"
+    )
+
+    try:
+        save_esri_schema_to_file(schema=schema, filepath=str(out), indent=2,
+                                 ensure_ascii=False, add_timestamp=True)
+    except Exception as exc:
+        console.print(f"[red]✗ Failed to write {out}: {exc}[/red]")
+        raise click.Abort()
+
+    console.print(f"[bold green]✓ Snapshot written → {out}[/bold green]")
+
+
+@schema.command()
 @click.argument("old_schema", type=click.Path(exists=True))
 @click.argument("new_schema", type=click.Path(exists=True))
 @click.option("--old-schema-version", type=str, help="Old schema version (name, date)", default=None)
