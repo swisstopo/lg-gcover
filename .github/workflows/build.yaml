@@ -125,7 +125,7 @@ jobs:
         fetch-depth: 0
 
     - name: Install miniconda
-      uses: conda-incubator/setup-miniconda@v3.3.0
+      uses: conda-incubator/setup-miniconda@v4.0.1
       with:
           python-version: ${{ env.PYTHON_VERSION }}
           auto-update-conda: true
