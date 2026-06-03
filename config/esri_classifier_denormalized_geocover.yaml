@@ -705,7 +705,7 @@ layers:
           maxscaledenom: 210000
           active: True
           mapfile_name:  ${GCOVER_LAYERNAME_PREFIX}unco_litho
-          symbol_prefix:  ${GCOVER_LAYERNAME_PREFIX}unco_litho
+          symbol_prefix: unco_litho
           mapfile_group: unconsolidated
           data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}unco_deposits  USING UNIQUE gid USING SRID=2056"
           lang_fields:
