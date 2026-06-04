@@ -1,12 +1,21 @@
-# Overridable: just RELEASE=R18 all
-RELEASE := "R17"
-BRANCH  := `git rev-parse --abbrev-ref HEAD`
-HOME    := env_var("HOME")
+# .env.local is loaded automatically if present (gitignored).
+# Only two values typically change between release cycles:
+#   RELEASE=R18
+#   STYLES_DATE=2026-11-10
+set dotenv-load
+set dotenv-filename := ".env.windows"
 
-# Directory paths (just's / operator is OS-aware; UNC roots work as-is)
-DELIVERY_DIR    := HOME / "DATA/Derivations/delivery" / RELEASE
-OUTPUT_DIR      := HOME / "DATA/Derivations/output"   / RELEASE
-STYLES_DIR      := DELIVERY_DIR / "styles/2026-05-26"
+# Overridable via .env.windows or command line: just RELEASE=R18 all
+RELEASE     := env_var_or_default("RELEASE",     "R17")
+STYLES_DATE := env_var_or_default("STYLES_DATE", "2026-05-26")
+BRANCH      := `git rev-parse --abbrev-ref HEAD`
+HOME        := env_var("HOME")
+
+# Directory paths — overridable from .env.windows; computed from HOME+RELEASE as fallback.
+# UNC example:  DELIVERY_DIR=\\server\share\delivery\R17
+DELIVERY_DIR    := env_var_or_default("DELIVERY_DIR", HOME / "DATA/Derivations/delivery" / RELEASE)
+OUTPUT_DIR      := env_var_or_default("OUTPUT_DIR",   HOME / "DATA/Derivations/output"   / RELEASE)
+STYLES_DIR      := env_var_or_default("STYLES_DIR",   DELIVERY_DIR / "styles" / STYLES_DATE)
 GCOVER_DATA_DIR := "src/gcover/data"
 
 # Latest datamodel source directory — picks the newest date-stamped folder
@@ -46,6 +55,55 @@ set windows-shell := ["powershell.exe", "-NoProfile", "-Command"]
 default:
     @just --list
     @just vars
+
+# Scaffold ~/.config/gcover/ and write a .env.windows template (safe: never overwrites)
+[script('python')]
+setup:
+    import shutil, textwrap
+    from pathlib import Path
+
+    W = 10
+    def status(label, path, created):
+        tag = "[created]" if created else "[exists] "
+        print(f"  {tag}  {label:<{W}}  {path}")
+
+    # --- ~/.config/gcover/ ---
+    cfg = Path.home() / ".config" / "gcover"
+    (cfg / "environments").mkdir(parents=True, exist_ok=True)
+
+    src = Path("config/gcover_config.yaml")
+    dst = cfg / "gcover_config.yaml"
+    if not dst.exists() and src.exists():
+        shutil.copy2(src, dst)
+        status("config", dst, created=True)
+    else:
+        status("config", dst, created=False)
+
+    env_dir = cfg / "environments"
+    status("env dir", env_dir, created=False)
+    print(f"  [note]    {'env files':<{W}}  add production.yaml / development.yaml manually (gitignored)")
+
+    # --- .env.windows template ---
+    env_local = Path(".env.windows")
+    if not env_local.exists():
+        env_local.write_text(textwrap.dedent("""\
+            # Local overrides — NOT committed to git.
+            # Edit RELEASE + STYLES_DATE at the start of each release cycle.
+            # Uncomment and set DELIVERY_DIR / OUTPUT_DIR only if the UNC roots differ from the default.
+
+            RELEASE=R17
+            STYLES_DATE=2026-05-26
+
+            # DELIVERY_DIR=\\\\server\\share\\delivery\\R17
+            # OUTPUT_DIR=\\\\server\\share\\output\\R17
+            # STYLES_DIR=\\\\server\\share\\delivery\\R17\\styles\\2026-05-26
+        """))
+        status(".env.windows", env_local.resolve(), created=True)
+    else:
+        status(".env.windows", env_local.resolve(), created=False)
+
+    print()
+    print("  Run 'just vars' to verify all paths resolve correctly.")
 
 # Print key variables and whether their paths exist on disk
 [script('python')]
