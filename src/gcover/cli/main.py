@@ -104,10 +104,19 @@ def confirm_extended(prompt: str, default=True):
     default="human",
     help="Output format",
 )
+@click.option(
+    "--quiet", "-q",
+    is_flag=True,
+    default=False,
+    help="Suppress all diagnostic output; implies --output json behaviour (use with --format json/text on subcommands).",
+)
 @click.pass_context
-def cli(ctx, config, log_file, log_info, env, verbose, output):
+def cli(ctx, config, log_file, log_info, env, verbose, output, quiet):
     """gcover - Swiss GeoCover data processing toolkit"""
     ctx.ensure_object(dict)
+
+    if quiet:
+        output = "json"  # redirect Rich to stderr, skip console logging sink
 
     if output == "json":
         rich.reconfigure(stderr=True)
@@ -130,10 +139,11 @@ def cli(ctx, config, log_file, log_info, env, verbose, output):
         ctx.obj["environment"] = environment
         ctx.obj["verbose"] = verbose
         ctx.obj["output"] = output
+        ctx.obj["quiet"] = quiet
 
         global_config = app_config.global_
 
-        if output != "json":
+        if not quiet and output != "json":
             rprint(f"[cyan]Verbose: {verbose}[/cyan]")
 
         if verbose:
