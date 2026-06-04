@@ -9,14 +9,23 @@ on:
       - "v*.*.*"
   pull_request:
     branches: [ master, develop ]
+
 env:
   CONDA_ENV: GCOVER_TEST
   PYTHON_VERSION: "3.11"
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false   # let both OS jobs finish so we see all failures at once
+      matrix:
+        include:
+          - os: ubuntu-latest
+            conda_cache: /usr/share/miniconda3
+          - os: windows-latest
+            conda_cache: C:\Miniconda3
 
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout repository
@@ -33,62 +42,62 @@ jobs:
           channel-priority: true
           activate-environment: ${{ env.CONDA_ENV }}
 
-
       - name: Cache conda environment
         uses: actions/cache@v5
         with:
           path: |
-            /usr/share/miniconda3/envs/${{ env.CONDA_ENV }}
-            /usr/share/miniconda3/pkgs
+            ${{ matrix.conda_cache }}/envs/${{ env.CONDA_ENV }}
+            ${{ matrix.conda_cache }}/pkgs
           key: conda-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/pyproject.toml', '**/conda-recipe/meta.yaml') }}
           restore-keys: |
             conda-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
 
-      - name: Install build tools
+      - name: Install dependencies
         shell: bash -el {0}
         run: |
           conda install -y \
-          duckdb \
-          pip \
-          gdal \
-          geopandas \
-          shapely \
-          pandas \
-          click \
-          rich \
-          pydantic \
-          pyyaml \
-          structlog \
-          python-dotenv \
-          pytest \
-          pytest-cov \
-          black \
-          ruff \
-          conda-build \
-          pip \
-          setuptools \
-          setuptools-scm \
-          build
+            duckdb \
+            pip \
+            gdal \
+            geopandas \
+            shapely \
+            pandas \
+            click \
+            rich \
+            pydantic \
+            pyyaml \
+            structlog \
+            python-dotenv \
+            pytest \
+            pytest-cov \
+            black \
+            ruff \
+            just \
+            conda-build \
+            setuptools \
+            setuptools-scm \
+            build
           conda list
 
-      - name: Install test dependencies
+      - name: Install package (editable)
         shell: bash -l {0}
-        run: |
-          pip install -e ".[dev,docs,cloud,viz]"
+        run: pip install -e ".[dev,docs,cloud,viz]"
+
+      - name: Setup gcover config
+        shell: bash -l {0}
+        run: just setup
 
       - name: Check installation
         shell: bash -l {0}
         run: |
-          # Verify key imports work
           python -c "import geopandas; print(f'GeoPandas: {geopandas.__version__}')"
           python -c "from osgeo import gdal; print(f'GDAL: {gdal.__version__}')"
           python -c "import gcover; print(f'GCover: {gcover.__version__}')"
-
-
+          gcover info
 
       #- name: Run ruff linter
-      #  run: |
-      #    ruff check src/ --output-format=github
+      #  shell: bash -l {0}
+      #  run: ruff check src/ --output-format=github
 
       - name: Debug CLI commands
         shell: bash -l {0}
@@ -100,42 +109,42 @@ jobs:
         shell: bash -l {0}
         if: false  # Disabled
         run: |
-          GCOVER_ENVIRONMENT=test  pytest tests/test_parse_since.py -v
+          GCOVER_ENVIRONMENT=test pytest tests/test_parse_since.py -v
 
       - name: Run smoke tests
         shell: bash -l {0}
         if: false  # Disabled
         run: |
-          # Load .env.test into environment
           export $(grep -v '^#' .env.test | xargs)
           GCOVER_ENVIRONMENT=test pytest tests/test_imports.py tests/test_cli_smoke.py -v --no-cov
 
       - name: Run all tests
         shell: bash -l {0}
         run: |
-          GCOVER_ENVIRONMENT=test  pytest tests/ -v --tb=short
+          GCOVER_ENVIRONMENT=test pytest tests/ -v --tb=short
+
   build:
     runs-on: ubuntu-latest
-    needs: test
+    needs: test   # waits for both matrix legs to pass
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
-      with:
-        fetch-depth: 0
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-    - name: Install miniconda
-      uses: conda-incubator/setup-miniconda@v4.0.1
-      with:
+      - name: Install miniconda
+        uses: conda-incubator/setup-miniconda@v4.0.1
+        with:
           python-version: ${{ env.PYTHON_VERSION }}
           auto-update-conda: true
           channels: conda-forge,defaults
           channel-priority: true
           activate-environment: ${{ env.CONDA_ENV }}
 
-    - name: Cache conda environment
-      uses: actions/cache@v5
-      with:
+      - name: Cache conda environment
+        uses: actions/cache@v5
+        with:
           path: |
             /usr/share/miniconda3/envs/${{ env.CONDA_ENV }}
             /usr/share/miniconda3/pkgs
@@ -143,9 +152,9 @@ jobs:
           restore-keys: |
             conda-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
 
-    - name: Check conda installation
-      shell: bash -el {0}
-      run: |
+      - name: Check conda installation
+        shell: bash -el {0}
+        run: |
           conda info
           conda list
           python --version
@@ -153,57 +162,52 @@ jobs:
           echo "Python path: $(which python)"
           echo "Conda env: $CONDA_DEFAULT_ENV"
 
-    - name: Install build tools
-      shell: bash -el {0}
-      run: |
-        # conda-build must live in the base env so `conda build` is a valid subcommand
-        conda install -n base -y conda-build
-        conda install -y pip setuptools setuptools-scm build gdal
+      - name: Install build tools
+        shell: bash -el {0}
+        run: |
+          # conda-build must live in the base env so `conda build` is a valid subcommand
+          conda install -n base -y conda-build
+          conda install -y pip setuptools setuptools-scm build gdal
 
-    - name: Get version from SCM
-      shell: bash -el {0}
-      id: get_version
-      run: |
-        echo "version=$(python -m setuptools_scm)" >> "$GITHUB_OUTPUT"
+      - name: Get version from SCM
+        shell: bash -el {0}
+        id: get_version
+        run: |
+          echo "version=$(python -m setuptools_scm)" >> "$GITHUB_OUTPUT"
 
-    - name: Display version
-      shell: bash -el {0}
-      run: |
-        echo "Detected version: ${{ steps.get_version.outputs.version }}"
+      - name: Display version
+        shell: bash -el {0}
+        run: |
+          echo "Detected version: ${{ steps.get_version.outputs.version }}"
 
-    - name: Conda build with dynamic version
-      shell: bash -el {0}
-      id: conda_build
-      env:
-        SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.get_version.outputs.version }}
-      run: |
-        conda build conda-recipe
-        # Resolve the output path after the build so the file actually exists
-        CONDA_OUTPUT=$(conda build conda-recipe --output)
-        CONDA_BLD_DIR=$(dirname "$CONDA_OUTPUT")
-        echo "conda_build_path=$CONDA_BLD_DIR" >> "$GITHUB_OUTPUT"
-        echo "conda_output_file=$CONDA_OUTPUT" >> "$GITHUB_OUTPUT"
-        echo "Conda build directory: $CONDA_BLD_DIR"
-        echo "Conda output file: $CONDA_OUTPUT"
+      - name: Conda build with dynamic version
+        shell: bash -el {0}
+        id: conda_build
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.get_version.outputs.version }}
+        run: |
+          conda build conda-recipe
+          CONDA_OUTPUT=$(conda build conda-recipe --output)
+          CONDA_BLD_DIR=$(dirname "$CONDA_OUTPUT")
+          echo "conda_build_path=$CONDA_BLD_DIR" >> "$GITHUB_OUTPUT"
+          echo "conda_output_file=$CONDA_OUTPUT" >> "$GITHUB_OUTPUT"
+          echo "Conda build directory: $CONDA_BLD_DIR"
+          echo "Conda output file: $CONDA_OUTPUT"
 
-    - name: Upload Conda build artifacts
-      uses: actions/upload-artifact@v7.0.0
-      with:
+      - name: Upload Conda build artifacts
+        uses: actions/upload-artifact@v7.0.0
+        with:
           name: conda-artifacts
           path: ${{ steps.conda_build.outputs.conda_build_path }}
           if-no-files-found: warn
 
-    - name: Build Python wheel
-      shell: bash -el {0}
-      run: |
-              python -m build
+      - name: Build Python wheel
+        shell: bash -el {0}
+        run: python -m build
 
-    - name: Upload built artifacts
-      uses: actions/upload-artifact@v7.0.0
-      with:
-              name: dist-artifacts
-              path: dist/
-              if-no-files-found: error
-
-
-
+      - name: Upload built artifacts
+        uses: actions/upload-artifact@v7.0.0
+        with:
+          name: dist-artifacts
+          path: dist/
+          if-no-files-found: error
