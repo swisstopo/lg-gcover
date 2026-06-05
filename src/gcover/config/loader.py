@@ -33,7 +33,8 @@ class ConfigManager:
         verbose: bool = False,
     ) -> AppConfig:
         """Load configuration with separate environment files and secret management"""
-        console.print(f"[blue]Environment: {environment}[/blue]")
+        if verbose:
+            console.print(f"[blue]Environment: {environment}[/blue]")
         self.verbose = verbose
 
         # Resolve config path once so both base config and env config search the same dir

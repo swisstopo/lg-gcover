@@ -1561,7 +1561,7 @@ def latest_by_rc(ctx, asset_type, days_back, show_couple, metadata_s3_key, db_pa
             def _get_couple(atype):
                 return manager.get_latest_release_couple(asset_type=atype)
         else:
-            rprint(f"[cyan]Fetching metadata from s3://{s3_config.bucket}/{metadata_s3_key}...[/cyan]")
+            _log(f"[cyan]Fetching metadata from s3://{s3_config.bucket}/{metadata_s3_key}...[/cyan]")
             parquet_path = fetch_metadata_parquet(s3_config, metadata_s3_key, public_url=global_config.public_url)
             def _get_latest(atype):
                 return query_latest_assets_by_rc(parquet_path, asset_type=atype)
@@ -1891,11 +1891,19 @@ def latest_verifications(ctx):
     show_default=True,
     help="S3 key of the metadata Parquet (used when --db-path is not given)",
 )
+@click.option(
+    "--format",
+    "format_",
+    type=click.Choice(["table", "json", "text"]),
+    default="table",
+    show_default=True,
+    help="Output format. json/text print asset info and exit without downloading.",
+)
 @db_path_option
 @click.pass_context
 def download(
     ctx, asset_type, output_dir, rc, max_days_apart, unzip, keep_zip, dry_run, overwrite,
-    metadata_s3_key, db_path,
+    metadata_s3_key, db_path, format_="table",
 ):
     """
     Download the latest asset couple (RC1+RC2) from S3.
@@ -1923,13 +1931,18 @@ def download(
     """
     gdb_config, global_config, environment, verbose = get_configs(ctx)
     s3_config = global_config.s3
+    ctx.obj["output"] = format_
+
+    # _log is a no-op when quiet so diagnostic rprints don't reach the terminal.
+    quiet = ctx.obj.get("quiet") or format_ in ("json", "text")
+    _log = (lambda *a, **kw: None) if quiet else rprint
 
     try:
         output_path = Path(output_dir)
 
         # Resolve metadata source and download helper
         if db_path:
-            rprint(f"[blue]Using local metadata DB: {db_path}[/blue]")
+            _log(f"[blue]Using local metadata DB: {db_path}[/blue]")
             manager = GDBAssetManager(
                 base_paths=gdb_config.base_paths,
                 s3_config=s3_config,
@@ -1941,7 +1954,7 @@ def download(
             def _do_download(s3_key, local_path):
                 return manager.download_asset(s3_key, local_path)
         else:
-            rprint(f"[cyan]Fetching metadata from s3://{s3_config.bucket}/{metadata_s3_key}...[/cyan]")
+            _log(f"[cyan]Fetching metadata from s3://{s3_config.bucket}/{metadata_s3_key}...[/cyan]")
             parquet_path = fetch_metadata_parquet(s3_config, metadata_s3_key, public_url=global_config.public_url)
             uploader = S3Uploader(
                 bucket_name=s3_config.bucket,
@@ -1962,7 +1975,7 @@ def download(
         is_alias = len(asset_types) > 1
 
         if is_alias:
-            rprint(
+            _log(
                 f"[cyan]Searching for latest among: {', '.join(asset_types)}[/cyan]"
             )
 
@@ -1989,7 +2002,7 @@ def download(
         if is_alias:
             for rc_name in ["RC1", "RC2"]:
                 if rc_name in actual_type_used:
-                    rprint(
+                    _log(
                         f"[dim]  {rc_name}: Found {actual_type_used[rc_name]}[/dim]"
                     )
 
@@ -2028,7 +2041,7 @@ def download(
                 time_desc = (
                     f"{hours_diff:.1f} hours" if days_diff == 0 else f"{days_diff} days"
                 )
-                rprint(f"[green]✓ Valid release couple ({time_desc} apart)[/green]")
+                _log(f"[green]✓ Valid release couple ({time_desc} apart)[/green]")
 
         # Check which assets have S3 keys and are uploaded
         downloadable = {}
@@ -2066,14 +2079,17 @@ def download(
                     "size_bytes": size,
                 })
 
-        if ctx.obj.get("output") == "json":
-            click.echo(json.dumps({
-                "dry_run": dry_run,
-                "asset_type": asset_type,
-                "destination": str(output_path.absolute()),
-                "total_size_bytes": total_size,
-                "assets": assets_summary,
-            }, indent=2))
+        if format_ in ("json", "text"):
+            if format_ == "json":
+                click.echo(json.dumps({
+                    "asset_type": asset_type,
+                    "destination": str(output_path.absolute()),
+                    "total_size_bytes": total_size,
+                    "assets": assets_summary,
+                }, indent=2))
+            else:  # text: one filename per line, easy to capture in a script
+                for item in assets_summary:
+                    click.echo(item["filename"])
             return
 
         # Human output: Rich table
@@ -2260,10 +2276,18 @@ def download(
     show_default=True,
     help="S3 key of the metadata Parquet (used when --db-path is not given)",
 )
+@click.option(
+    "--format",
+    "format_",
+    type=click.Choice(["table", "json", "text"]),
+    default="table",
+    show_default=True,
+    help="Output format. json/text print asset info and exit without downloading.",
+)
 @db_path_option
 @click.pass_context
 def download_couple(ctx, asset_type, output_dir, unzip, keep_zip, dry_run, overwrite,
-                    metadata_s3_key, db_path):
+                    metadata_s3_key, db_path, format_="table"):
     """
     Download the latest valid RC1+RC2 couple for an asset type.
 
@@ -2294,6 +2318,7 @@ def download_couple(ctx, asset_type, output_dir, unzip, keep_zip, dry_run, overw
         overwrite=overwrite,
         metadata_s3_key=metadata_s3_key,
         db_path=db_path,
+        format_=format_,
     )
 
 

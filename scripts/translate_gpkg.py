@@ -156,14 +156,24 @@ def _map_pipe_codes(val, lang_series: pd.Series) -> "str | None":
         return PIPE_SEP.join(deduped)
 
 def load_translations(path: Path, langs: list[str]) -> pd.DataFrame:
-    """Load translations CSV, keep only requested language columns.
+    """Load translations from a CSV or Excel file, keep only requested language columns.
 
     Rows whose first column cannot be coerced to integer are silently dropped
     (count is reported to the caller via a module-level side-channel so that
     the CLI can display it with Rich).
     """
-    # Read first column as str so we can coerce cleanly
-    df = pd.read_csv(path, dtype=str)
+    if path.suffix.lower() in (".xlsx", ".xls"):
+        df = pd.read_excel(path, dtype=str)
+        # xlsx has GeolCode (string GUID) first, GeolCodeInt second — promote GeolCodeInt
+        if "GeolCodeInt" in df.columns and df.columns[0] != "GeolCodeInt":
+            df = df[["GeolCodeInt"] + [c for c in df.columns if c != "GeolCodeInt"]]
+        # merge sibling _extra.xlsx if present (adds codes missing from the main file)
+        extra_path = path.with_stem(path.stem + "_extra")
+        if extra_path.exists():
+            extra = pd.read_excel(extra_path, dtype=str)
+            df = pd.concat([df, extra], ignore_index=True)
+    else:
+        df = pd.read_csv(path, dtype=str)
     code_col = df.columns[0]  # whatever it's named (GeolCodeInt, GeolCode, …)
 
     before = len(df)

@@ -57,13 +57,9 @@ console = Console(stderr=True)
 has_pyarrow = False
 try:
     import pyarrow
-    console.print("PyArrow version:", pyarrow.__version__)
     has_pyarrow = True
 except ImportError:
     console.print("[red]PyArrow not installed[/red]")
-
-
-console.print("[yellow]Suppressing some OGR warning (unclosed rings, only CCW, etc.)[/yellow]")
 # Suppress pandas fragmentation warnings
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 os.environ['OGR_GEOMETRY_ACCEPT_UNCLOSED_RING'] = 'NO'

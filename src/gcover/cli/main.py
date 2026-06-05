@@ -104,10 +104,19 @@ def confirm_extended(prompt: str, default=True):
     default="human",
     help="Output format",
 )
+@click.option(
+    "--quiet", "-q",
+    is_flag=True,
+    default=False,
+    help="Suppress all diagnostic output; implies --output json behaviour (use with --format json/text on subcommands).",
+)
 @click.pass_context
-def cli(ctx, config, log_file, log_info, env, verbose, output):
+def cli(ctx, config, log_file, log_info, env, verbose, output, quiet):
     """gcover - Swiss GeoCover data processing toolkit"""
     ctx.ensure_object(dict)
+
+    if quiet:
+        output = "json"  # redirect Rich to stderr, skip console logging sink
 
     if output == "json":
         rich.reconfigure(stderr=True)
@@ -130,10 +139,11 @@ def cli(ctx, config, log_file, log_info, env, verbose, output):
         ctx.obj["environment"] = environment
         ctx.obj["verbose"] = verbose
         ctx.obj["output"] = output
+        ctx.obj["quiet"] = quiet
 
         global_config = app_config.global_
 
-        if output != "json":
+        if not quiet and output != "json":
             rprint(f"[cyan]Verbose: {verbose}[/cyan]")
 
         if verbose:
@@ -262,44 +272,17 @@ def tail_logs(lines):
 
 # Import des sous-commandes si disponibles
 
-try:
-    from gcover.cli.schema_cmd import schema
+def _add_command(import_fn, name):
+    try:
+        cli.add_command(import_fn())
+    except ImportError as e:
+        click.echo(f"Module `{name}` not available: {e}", err=True)
 
-    cli.add_command(schema)
-except ImportError as e:
-    click.echo(f"Module `schema` not available: {e}")
-
-
-try:
-    from gcover.cli.gdb_cmd import gdb
-
-    cli.add_command(gdb)
-except ImportError as e:
-    click.echo(f"Module `gdb` not available: {e}")
-
-
-try:
-    from gcover.cli.qa_cmd import qa_commands
-
-    cli.add_command(qa_commands)
-except ImportError as e:
-    click.echo(f"Module `qa` not available: {e}")
-
-
-try:
-    from gcover.cli.publish_cmd import publish_commands
-
-    cli.add_command(publish_commands)
-except ImportError:
-    pass
-
-
-try:
-    from gcover.cli.sde_cmd import sde_commands
-
-    cli.add_command(sde_commands)
-except ImportError:
-    click.echo("Module `sde` not available")
+_add_command(lambda: __import__("gcover.cli.schema_cmd",  fromlist=["schema"]).schema,          "schema")
+_add_command(lambda: __import__("gcover.cli.gdb_cmd",     fromlist=["gdb"]).gdb,                "gdb")
+_add_command(lambda: __import__("gcover.cli.qa_cmd",      fromlist=["qa_commands"]).qa_commands, "qa")
+_add_command(lambda: __import__("gcover.cli.publish_cmd", fromlist=["publish_commands"]).publish_commands, "publish")
+_add_command(lambda: __import__("gcover.cli.sde_cmd",     fromlist=["sde_commands"]).sde_commands, "sde")
 
 
 def main() -> None:
