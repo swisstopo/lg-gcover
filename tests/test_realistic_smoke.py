@@ -26,7 +26,7 @@ def isolated_config_env(tmp_path):
 
     # Modify test config to use dummy paths (no real GDB scanning)
     modified_test_config = original_test_config.replace(
-        "tests/data/examples", str(tmp_path / "dummy_data")
+        "tests/data/examples", (tmp_path / "dummy_data").as_posix()
     )
 
     # Create directory structure in tmp_path
