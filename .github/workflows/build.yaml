@@ -58,14 +58,14 @@ jobs:
           restore-keys: |
             conda-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
 
-      - name: Install mamba
+      - name: Install libmamba solver
         shell: bash -el {0}
-        run: conda install -n base -y -c conda-forge mamba
+        run: conda install -n base -y conda-libmamba-solver
 
       - name: Install dependencies
         shell: bash -el {0}
         run: |
-          mamba install -y \
+          conda install -y --solver=libmamba \
             duckdb \
             pip \
             gdal \
