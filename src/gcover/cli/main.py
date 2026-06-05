@@ -86,7 +86,8 @@ def confirm_extended(prompt: str, default=True):
     "--env",
     "-e",
     type=click.Choice(env_map.keys()),
-    default="development",
+    default="production",
+    envvar="GCOVER_ENVIRONMENT",
     help="Environment (dev/prod)",
 )
 @click.option(
