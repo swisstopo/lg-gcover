@@ -93,7 +93,7 @@ jobs:
           python -c "import geopandas; print(f'GeoPandas: {geopandas.__version__}')"
           python -c "from osgeo import gdal; print(f'GDAL: {gdal.__version__}')"
           python -c "import gcover; print(f'GCover: {gcover.__version__}')"
-          gcover info
+          GCOVER_ENVIRONMENT=test gcover info
 
       #- name: Run ruff linter
       #  shell: bash -l {0}

@@ -33,11 +33,7 @@ CONFIG_PATH       := "config/esri_classifier_denormalized_geocover.yaml"
 MAPSERVER_OUTPUT  := "mapserver_" + BRANCH
 
 LAYERS := "fossils exploit_polygons exploit_points linear_objects point_objects bedrock surfaces unco_deposits"
-TABLES_TO_IMPORT := "GC_GEOL_MAPPING_UNIT GC_GEOL_MAPPING_UNIT_ATT GC_LITSTRAT_FORMATION_BANK GC_CHRONO \
-                     GC_EX_GEO_PLG_EXP_UNIT_GC_GMU GC_EX_GEO_PNT_EXP_UNIT_GC_GMU \
-                     GC_FOSS_SYSTEM_GC_SYSTEM \
-                     GC_UN_DEP_CHARACT_GC_CHARCAT GC_UN_DEP_COMPOSIT_GC_COMPOS \
-                     GC_UN_DEP_MAT_TYPE_GC_LITHO GC_UN_DEP_ADMIXTUR_GC_ADMIXT"
+TABLES_TO_IMPORT := "GC_GEOL_MAPPING_UNIT GC_GEOL_MAPPING_UNIT_ATT GC_LITSTRAT_FORMATION_BANK GC_CHRONO GC_EX_GEO_PLG_EXP_UNIT_GC_GMU GC_EX_GEO_PNT_EXP_UNIT_GC_GMU GC_FOSS_SYSTEM_GC_SYSTEM GC_UN_DEP_CHARACT_GC_CHARCAT GC_UN_DEP_COMPOSIT_GC_COMPOS GC_UN_DEP_MAT_TYPE_GC_LITHO GC_UN_DEP_ADMIXTUR_GC_ADMIXT"
 
 set shell         := ["bash", "-uc"]
 set windows-shell := ["powershell.exe", "-NoProfile", "-Command"]
