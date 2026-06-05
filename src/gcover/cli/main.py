@@ -189,37 +189,37 @@ def info() -> None:
     try:
         from gcover import schema
 
-        modules.append("✓ schema (Schema management)")
+        modules.append("ok schema (Schema management)")
     except ImportError:
-        modules.append("✗ schema (not available)")
+        modules.append("-- schema (not available)")
 
     try:
         from gcover import qa
 
-        modules.append("✓ qa (Quality assurance)")
+        modules.append("ok qa (Quality assurance)")
     except ImportError:
-        modules.append("✗ qa (not available)")
+        modules.append("-- qa (not available)")
 
     try:
         from gcover import gdb
 
-        modules.append("✓ gdb (GDB management)")
+        modules.append("ok gdb (GDB management)")
     except ImportError:
-        modules.append("✗ gdb (not available)")
+        modules.append("-- gdb (not available)")
 
     try:
         from gcover import sde
 
-        modules.append("✓ sde (SDE management)")
+        modules.append("ok sde (SDE management)")
     except ImportError:
-        modules.append("✗ sde (not available)")
+        modules.append("-- sde (not available)")
 
     try:
         from gcover import publish
 
-        modules.append("✓ publish (publication management)")
+        modules.append("ok publish (publication management)")
     except ImportError:
-        modules.append("✗ publish (not available)")
+        modules.append("-- publish (not available)")
 
     for module in modules:
         click.echo(f"  {module}")
