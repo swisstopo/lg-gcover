@@ -18,16 +18,8 @@ OUTPUT_DIR      := env_var_or_default("OUTPUT_DIR",   HOME / "DATA/Derivations/o
 STYLES_DIR      := env_var_or_default("STYLES_DIR",   DELIVERY_DIR / "styles" / STYLES_DATE)
 GCOVER_DATA_DIR := "src/gcover/data"
 
-# Latest datamodel source directory — picks the newest date-stamped folder
-# V2 is self-contained in Python: path-joined just variables don't expand inside backticks.
-# Override DATAMODEL_CLONE on the command line if needed: just DATAMODEL_CLONE=/other/path translate
-DATAMODEL_CLONE        := HOME / "code/github.com/lg-geology-data-model"
-DATAMODEL_SOURCES      := DATAMODEL_CLONE / "sources"
-V2                     := `python -c "import os,re; home=os.environ.get('HOME') or os.path.expanduser('~'); d=os.path.join(home,'code','github.com','lg-geology-data-model','sources'); print(sorted(e for e in os.listdir(d) if re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}',e))[-1])"`
-LAST_DATAMODEL_SOURCES := DATAMODEL_SOURCES / V2
-
 # File paths
-TRANSLATION_CSV   := LAST_DATAMODEL_SOURCES / "geolcodes_translated.csv"
+TRANSLATION_CSV   := DELIVERY_DIR / "Excels/_GeolCodeText_Trad.xlsx"
 STRATI_LINK_PATH  := DELIVERY_DIR / "Excels/_Update_stratiLINK.xlsx"
 MASTER_GDB        := OUTPUT_DIR / "merged_master.gdb"
 FINAL_GDB         := OUTPUT_DIR / "merged_final.gdb"
@@ -136,7 +128,6 @@ vars:
     header("Release / branch")
     row("RELEASE",          "{{RELEASE}}")
     row("BRANCH",           "{{BRANCH}}")
-    row("V2 (sources date)","{{V2}}")
     header("Input paths")
     row("DELIVERY_DIR",     "{{DELIVERY_DIR}}")
     row("FULL_GDB_PATH",    "{{FULL_GDB_PATH}}")
