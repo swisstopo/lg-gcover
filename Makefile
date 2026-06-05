@@ -3,33 +3,15 @@
 
 
 
-DATAMODEL_CLONE=${HOME}/code/github.com/lg-geology-data-model/
-DATAMODEL_SOURCES=$(DATAMODEL_CLONE)/sources/
-
 BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
-LAST_SCHEMA_RELEASE=$(shell python -c "import yaml; print(yaml.safe_load(open('${DATAMODEL_CLONE}release.yaml'))['model']['revision'])")
 LATEST_TAG := $(shell git describe --tags --match "v*" --abbrev=0)
-
-
-# regex: 4 digits, dash, 2 digits, dash, 2 digits
-DATE_PATTERN := ^[0-9]{4}-[0-9]{2}-[0-9]{2}$$
-
-# 1. ls -1: List files
-# 2. grep -E: Filter only those matching the date pattern
-# 3. sort: Put them in chronological order
-# 4. tail -n 2: Get the last two
-LAST_TWO := $(shell ls -1 $(DATAMODEL_SOURCES) | grep -E '$(DATE_PATTERN)' | sort | tail -n 2)
-
-V1 ?= $(word 1, $(LAST_TWO))
-V2 ?= $(word 2, $(LAST_TWO))
-LAST_DATAMODEL_SOURCES = $(DATAMODEL_SOURCES)$(V2)
 
 # --- Variables ---
 RELEASE      := R17
 DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/
 OUTPUT_DIR   ?= ${HOME}/DATA/Derivations/output/$(RELEASE)/
 STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/styles/2026-05-26/
-TRANSLATION_CSV := $(LAST_DATAMODEL_SOURCES)/geolcodes_translated.csv
+TRANSLATION_CSV := $(DELIVERY_DIR)Excels/_GeolCodeText_Trad.xlsx
 STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/Excels/_Update_stratiLINK.xlsx
 GCOVER_DATA_DIR :=  src/gcover/data/
 
@@ -119,10 +101,6 @@ help:
 	$(call check_file,TRANSLATED_PATH,$(TRANSLATED_PATH))
 	$(call check_file,GEOCOVER_AUX_PATH,$(GEOCOVER_AUX_PATH))
 	$(call check_file,CONFIG_PATH,$(CONFIG_PATH))
-
-	@echo ""
-	@echo "  LAST_SCHEMA_RELEASE=$(LAST_SCHEMA_RELEASE)"
-	@echo "  Last source $(V2)"
 
 	@echo ""
 	@echo "$(YELLOW)Mapserver$(RESET)"
