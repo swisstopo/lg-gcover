@@ -114,8 +114,8 @@ def test_publish_export_classification_format_with_test_env(runner, output_forma
     # Command should succeed
     assert result.exit_code == 0, f"Command failed with output: {result.output}"
 
-    # Check for expected patterns in output
-    output = result.output
+    # Check for expected patterns in output (normalise path separators for Windows)
+    output = result.output.replace("\\", "/")
     assert lyrx_path.replace(".lyrx", f".classifications.{output_format}") in output
 
 
