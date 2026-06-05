@@ -27,6 +27,7 @@ LAST_DATAMODEL_SOURCES = $(DATAMODEL_SOURCES)$(V2)
 # --- Variables ---
 RELEASE      := R17
 DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/
+SOURCES_DIR  := $(DELIVERY_DIR)Sources/
 OUTPUT_DIR   ?= ${HOME}/DATA/Derivations/output/$(RELEASE)/
 STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/styles/2026-05-26/
 TRANSLATION_CSV := $(LAST_DATAMODEL_SOURCES)/geolcodes_translated.csv
@@ -48,7 +49,7 @@ CLASSIFIED_GPKG	  := denormalized_classified.gpkg
 CLASSIFIED_PATH   := $(OUTPUT_DIR)$(CLASSIFIED_GPKG)
 TRANSLATED_GPKG   := denormalized_classified_translated.gpkg
 TRANSLATED_PATH   := $(OUTPUT_DIR)$(TRANSLATED_GPKG)
-FULL_GDB_PATH     := $(DELIVERY_DIR)RC1.gdb     # TODO Val Bregaglia missing GMU_ATT in RC2. RC1 OK
+FULL_GDB_PATH     := $(SOURCES_DIR)RC1.gdb     # TODO Val Bregaglia missing GMU_ATT in RC2. RC1 OK
 GEOCOVER_AUX_PATH := $(OUTPUT_DIR)geocover_aux.gpkg
 ADMIN_ZONES_GPKG  := administrative_zones.gpkg
 MAPSERVER_OUTPUT      ?= mapserver_$(BRANCH)
@@ -103,7 +104,7 @@ help:
 	@echo ""
 	@echo "$(YELLOW)Input$(RESET)"
 	@echo "  $(BOLD)RELEASE  $(RED)$(RELEASE)$(RESET)"
-	@echo "  Delivery GDBs:        $(DELIVERY_DIR)"
+	@echo "  Delivery GDBs:        $(SOURCES_DIR)"
 	$(call check_file,STYLES_DIR,$(STYLES_DIR))
 	$(call check_file,TRANSLATION_CSV,$(TRANSLATION_CSV))
 	$(call check_file,STRATI_LINK_PATH,$(STRATI_LINK_PATH))
@@ -157,12 +158,12 @@ all: merge $(CLASSIFIED_PATH) $(TRANSLATED_PATH)
 merge: $(MASTER_GDB)/timestamps
 
 # 1. Merge sources and run diagnosis
-$(MASTER_GDB)/timestamps: $(DELIVERY_DIR)RC1.gdb $(DELIVERY_DIR)RC2.gdb
+$(MASTER_GDB)/timestamps: $(SOURCES_DIR)RC1.gdb $(SOURCES_DIR)RC2.gdb
 	@echo "--- Merging Sources ---"
 	@gcover publish merge \
-		--rc1 $(DELIVERY_DIR)RC1.gdb \
-		--rc2 $(DELIVERY_DIR)RC2.gdb \
-		--custom-sources-dir $(DELIVERY_DIR) \
+		--rc1 $(SOURCES_DIR)RC1.gdb \
+		--rc2 $(SOURCES_DIR)RC2.gdb \
+		--custom-sources-dir $(SOURCES_DIR) \
 		--force-2d --output $(MASTER_GDB) \
 		--no-clip-to-swiss-border \
 		--enrich-mapsheet-links \
@@ -186,7 +187,7 @@ $(MASTER_GDB)/timestamps: $(DELIVERY_DIR)RC1.gdb $(DELIVERY_DIR)RC2.gdb
 ## merge-diagnostic: Merge diagnostic
 merge-diagnostic:
 	@echo "--- Running Diagnosis ---"
-	python scripts/diagnose_merge.py $(DELIVERY_DIR)RC1.gdb $(DELIVERY_DIR)RC2.gdb $(GCOVER_DATA_DIR)$(ADMIN_ZONES_GPKG)
+	python scripts/diagnose_merge.py $(SOURCES_DIR)RC1.gdb $(SOURCES_DIR)RC2.gdb $(GCOVER_DATA_DIR)$(ADMIN_ZONES_GPKG)
 
 
 
@@ -289,17 +290,17 @@ coverage-check:
 ## domain-check-rc: Check RC1 and RC2 against their own coded domains
 domain-check-rc:
 	@echo "--- Checking RC2.gdb (self) ---"
-	@python scripts/check_domain_compliance.py $(DELIVERY_DIR)RC2.gdb \
+	@python scripts/check_domain_compliance.py $(SOURCES_DIR)RC2.gdb \
 		--report $(OUTPUT_DIR)domain_check_rc2.txt
 	@echo "--- Checking RC1.gdb (self) ---"
-	@python scripts/check_domain_compliance.py $(DELIVERY_DIR)RC1.gdb \
+	@python scripts/check_domain_compliance.py $(SOURCES_DIR)RC1.gdb \
 		--report $(OUTPUT_DIR)domain_check_rc1.txt
 
 ## domain-check-final: Check merged_final.gdb against RC2 coded domains
 domain-check-final:
 	$(call check_file,FINAL_GDB,$(FINAL_GDB))
 	@python scripts/check_domain_compliance.py $(FINAL_GDB) \
-		--reference $(DELIVERY_DIR)RC2.gdb \
+		--reference $(SOURCES_DIR)RC2.gdb \
 		--report $(OUTPUT_DIR)domain_check_final.txt
 
 ## domain-check-custom: Check each custom delivery GDB against RC2 coded domains
@@ -308,14 +309,14 @@ domain-check-final:
 domain-check-custom:
 	@python -c "\
 from pathlib import Path; import geopandas as gpd; \
-d = Path('$(DELIVERY_DIR)'); \
+d = Path('$(SOURCES_DIR)'); \
 gdf = gpd.read_file('src/gcover/data/administrative_zones.gpkg', layer='mapsheets_sources_only'); \
 srcs = sorted(set(gdf['SOURCE_RC'].dropna()) - {'RC1', 'RC2'}); \
 [print(next((str(c) for c in (d/s, d/(s+'.gdb')) if (c/'timestamps').exists()), '')) for s in srcs]" \
 	| grep -v '^$$' | while read gdb; do \
 		echo "--- $$(basename $$gdb) vs RC2.gdb ---"; \
 		python scripts/check_domain_compliance.py "$$gdb" \
-			--reference $(DELIVERY_DIR)RC2.gdb \
+			--reference $(SOURCES_DIR)RC2.gdb \
 			--report $(OUTPUT_DIR)domain_check_$$(basename $$gdb).txt || true; \
 	done
 
@@ -326,17 +327,17 @@ domain-check: domain-check-rc domain-check-final domain-check-custom
 ## domain-check-rc: Check RC1 and RC2 against their own coded domains
 domain-check-rc:
 	@echo "--- Checking RC2.gdb (self) ---"
-	@python scripts/check_domain_compliance.py $(DELIVERY_DIR)RC2.gdb \
+	@python scripts/check_domain_compliance.py $(SOURCES_DIR)RC2.gdb \
 		--report $(OUTPUT_DIR)domain_check_rc2.txt
 	@echo "--- Checking RC1.gdb (self) ---"
-	@python scripts/check_domain_compliance.py $(DELIVERY_DIR)RC1.gdb \
+	@python scripts/check_domain_compliance.py $(SOURCES_DIR)RC1.gdb \
 		--report $(OUTPUT_DIR)domain_check_rc1.txt
 
 ## domain-check-final: Check merged_final.gdb against RC2 coded domains
 domain-check-final:
 	$(call check_file,FINAL_GDB,$(FINAL_GDB))
 	@python scripts/check_domain_compliance.py $(FINAL_GDB) \
-		--reference $(DELIVERY_DIR)RC2.gdb \
+		--reference $(SOURCES_DIR)RC2.gdb \
 		--report $(OUTPUT_DIR)domain_check_final.txt
 
 ## domain-check-custom: Check each custom delivery GDB against RC2 coded domains
@@ -345,14 +346,14 @@ domain-check-final:
 domain-check-custom:
 	@python -c "\
 from pathlib import Path; import geopandas as gpd; \
-d = Path('$(DELIVERY_DIR)'); \
+d = Path('$(SOURCES_DIR)'); \
 gdf = gpd.read_file('src/gcover/data/administrative_zones.gpkg', layer='mapsheets_sources_only'); \
 srcs = sorted(set(gdf['SOURCE_RC'].dropna()) - {'RC1', 'RC2'}); \
 [print(next((str(c) for c in (d/s, d/(s+'.gdb')) if (c/'timestamps').exists()), '')) for s in srcs]" \
 	| grep -v '^$$' | while read gdb; do \
 		echo "--- $$(basename $$gdb) vs RC2.gdb ---"; \
 		python scripts/check_domain_compliance.py "$$gdb" \
-			--reference $(DELIVERY_DIR)RC2.gdb \
+			--reference $(SOURCES_DIR)RC2.gdb \
 			--report $(OUTPUT_DIR)domain_check_$$(basename $$gdb).txt || true; \
 	done
 
