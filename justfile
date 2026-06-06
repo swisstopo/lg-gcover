@@ -3,19 +3,26 @@
 #   RELEASE=R18
 #   STYLES_DATE=2026-11-10
 set dotenv-load
-set dotenv-filename := ".env.windows"
+# Copy .env.windows (Windows) or .env.prod (Linux) to .env.local before first run.
+set dotenv-filename := ".env.local"
 
 # Overridable via .env.windows or command line: just RELEASE=R18 all
 RELEASE     := env_var_or_default("RELEASE",     "R17")
 STYLES_DATE := env_var_or_default("STYLES_DATE", "2026-05-26")
 BRANCH      := `git rev-parse --abbrev-ref HEAD`
-HOME        := env_var("HOME")
+HOME := replace(env_var_or_default("HOME", env_var_or_default("USERPROFILE", "")), "\\", "/")
+
+
+
 
 # Directory paths — overridable from .env.windows; computed from HOME+RELEASE as fallback.
 # UNC example:  DELIVERY_DIR=\\server\share\delivery\R17
-DELIVERY_DIR    := env_var_or_default("DELIVERY_DIR", HOME / "DATA/Derivations/delivery" / RELEASE)
+DELIVERY_DIR := env_var_or_default(
+  "DELIVERY_DIR",
+  HOME + "/DATA/Derivations/delivery/" + RELEASE
+)
 OUTPUT_DIR      := env_var_or_default("OUTPUT_DIR",   HOME / "DATA/Derivations/output"   / RELEASE)
-STYLES_DIR      := env_var_or_default("STYLES_DIR",   DELIVERY_DIR / "styles" / STYLES_DATE)
+STYLES_DIR      := env_var_or_default("STYLES_DIR",   DELIVERY_DIR / "Styles" / STYLES_DATE)
 GCOVER_DATA_DIR := "src/gcover/data"
 
 # File paths
@@ -23,7 +30,7 @@ TRANSLATION_CSV   := DELIVERY_DIR / "Excels/_GeolCodeText_Trad.xlsx"
 STRATI_LINK_PATH  := DELIVERY_DIR / "Excels/_Update_stratiLINK.xlsx"
 MASTER_GDB        := OUTPUT_DIR / "merged_master.gdb"
 FINAL_GDB         := OUTPUT_DIR / "merged_final.gdb"
-FULL_GDB_PATH     := DELIVERY_DIR / "RC1.gdb"
+FULL_GDB_PATH     := DELIVERY_DIR /  "Sources/RC1.gdb"
 DENORMALIZED_PATH := OUTPUT_DIR / "denormalized.gpkg"
 CLASSIFIED_PATH   := OUTPUT_DIR / "denormalized_classified.gpkg"
 TRANSLATED_PATH   := OUTPUT_DIR / "denormalized_classified_translated.gpkg"
@@ -47,7 +54,7 @@ default:
 # Scaffold ~/.config/gcover/ and write a .env.windows template (safe: never overwrites)
 [script('python')]
 setup:
-    import shutil, textwrap
+    import sys, shutil, textwrap
     from pathlib import Path
 
     W = 10
@@ -71,24 +78,42 @@ setup:
     status("env dir", env_dir, created=False)
     print(f"  [note]    {'env files':<{W}}  add production.yaml / development.yaml manually (gitignored)")
 
-    # --- .env.windows template ---
-    env_local = Path(".env.windows")
+    # --- .env.local from platform template ---
+    template = Path(".env.windows" if sys.platform == "win32" else ".env.prod")
+    env_local = Path(".env.local")
     if not env_local.exists():
-        env_local.write_text(textwrap.dedent("""\
-            # Local overrides — NOT committed to git.
-            # Edit RELEASE + STYLES_DATE at the start of each release cycle.
-            # Uncomment and set DELIVERY_DIR / OUTPUT_DIR only if the UNC roots differ from the default.
+        if template.exists():
+            shutil.copy2(template, env_local)
+            status(".env.local", env_local.resolve(), created=True)
+        else:
+            env_local.write_text(textwrap.dedent("""\
+                # Local overrides — NOT committed to git.
+                # Edit RELEASE + STYLES_DATE at the start of each release cycle.
 
-            RELEASE=R17
-            STYLES_DATE=2026-05-26
+                RELEASE=R17
+                STYLES_DATE=2026-05-26
 
-            # DELIVERY_DIR=\\\\server\\share\\delivery\\R17
-            # OUTPUT_DIR=\\\\server\\share\\output\\R17
-            # STYLES_DIR=\\\\server\\share\\delivery\\R17\\styles\\2026-05-26
-        """))
-        status(".env.windows", env_local.resolve(), created=True)
+                # Linux:   DELIVERY_DIR=/mnt/data/delivery/R17
+                # Windows: DELIVERY_DIR=//server/share/delivery/R17
+                # DELIVERY_DIR=
+
+                # Linux:   OUTPUT_DIR=/mnt/data/output/R17
+                # Windows: OUTPUT_DIR=//server/share/output/R17
+                # OUTPUT_DIR=
+
+                # Linux:   STYLES_DIR=/mnt/data/delivery/R17/Styles/2026-05-26
+                # Windows: STYLES_DIR=//server/share/delivery/R17/Styles/2026-05-26
+                # STYLES_DIR=
+
+                GCOVER_POSTGIS_HOST=localhost
+                GCOVER_POSTGIS_PORT=5432
+                GCOVER_POSTGIS_DB=db
+                GCOVER_POSTGIS_USER=user
+                GCOVER_POSTGIS_PASSWORD=changeme
+            """))
+            status(".env.local", env_local.resolve(), created=True)
     else:
-        status(".env.windows", env_local.resolve(), created=False)
+        status(".env.local", env_local.resolve(), created=False)
 
     print()
     print("  Run 'just vars' to verify all paths resolve correctly.")
@@ -173,9 +198,9 @@ administrative-zones:
 merge:
     @echo "--- Merging sources ---"
     gcover publish merge \
-        --rc1                "{{DELIVERY_DIR}}/RC1.gdb" \
-        --rc2                "{{DELIVERY_DIR}}/RC2.gdb" \
-        --custom-sources-dir "{{DELIVERY_DIR}}" \
+        --rc1                "{{DELIVERY_DIR}}/Sources/RC1.gdb" \
+        --rc2                "{{DELIVERY_DIR}}/Sources/RC2.gdb" \
+        --custom-sources-dir "{{DELIVERY_DIR}}/Sources" \
         --force-2d \
         --output             "{{MASTER_GDB}}" \
         --no-clip-to-swiss-border \
