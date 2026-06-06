@@ -641,7 +641,7 @@ def main():
 
         import os
         import json
-        from transform_esri_json import transform_esri_json
+        from gcover.schema.transformer import transform_esri_json
 
         # Example usage:
         if os.name == "nt":
