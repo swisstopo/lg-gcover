@@ -40,6 +40,12 @@ PA_EXCEL_PATH         ?= $(DELIVERY_DIR)Excels/GC_Sources_PA.xlsx
 PA_ZONES_PATH         := $(patsubst %.xlsx,%_zones.gpkg,$(PA_EXCEL_PATH))
 QA_RAND_PATH          ?= $(DELIVERY_DIR)rand_qa_gc.geojson
 CONFIG_PATH           ?= config/esri_classifier_denormalized_geocover.yaml
+MERGE_LOG             := $(OUTPUT_DIR)merge.log
+
+# Pass VERBOSE=1 to keep loguru on the terminal and enable debug output.
+# Default: loguru is written to MERGE_LOG only; Rich output stays in the terminal.
+VERBOSE               ?= 0
+_GCOVER_FLAGS         := --log-file $(MERGE_LOG) $(if $(filter 1,$(VERBOSE)),--verbose,)
 
 # Layers for denormalization
 LAYERS := fossils exploit_polygons exploit_points linear_objects point_objects bedrock surfaces unco_deposits
@@ -138,8 +144,11 @@ merge: $(MASTER_GDB)/timestamps
 
 # 1. Merge sources and run diagnosis
 $(MASTER_GDB)/timestamps: $(SOURCES_DIR)RC1.gdb $(SOURCES_DIR)RC2.gdb $(PA_EXCEL_PATH)
-	@echo "--- Merging Sources ---"
-	@gcover publish merge \
+	@_T_START=$$(date +%s); \
+	\
+	echo "--- [1/2] Merging Sources ---"; \
+	_T1=$$(date +%s); \
+	gcover $(_GCOVER_FLAGS) publish merge \
 		--rc1 $(SOURCES_DIR)RC1.gdb \
 		--rc2 $(SOURCES_DIR)RC2.gdb \
 		--custom-sources-dir $(SOURCES_DIR) \
@@ -151,18 +160,27 @@ $(MASTER_GDB)/timestamps: $(SOURCES_DIR)RC1.gdb $(SOURCES_DIR)RC2.gdb $(PA_EXCEL
 		--schema-output $(FINAL_GDB) \
 		--strati-links $(STRATI_LINK_PATH); \
 	rc=$$?; \
+	_T2=$$(date +%s); \
+	echo "  ↳ merge+schema: $$((_T2 - _T1))s"; \
 	if [ $$rc -eq 130 ]; then \
 		echo ""; \
 		echo "Merge cancelled — build stopped. Run 'make merge' to retry."; \
 		exit 1; \
 	fi; \
-	exit $$rc
-	@echo "--- Copying GC_MAPSHEET from $(PA_ZONES_PATH) ---"
-	@ogr2ogr -f "OpenFileGDB" -update -overwrite -dim XY $(MASTER_GDB) \
+	[ $$rc -ne 0 ] && exit $$rc; \
+	\
+	echo "--- [2/2] Copying GC_MAPSHEET from $(PA_ZONES_PATH) ---"; \
+	_T3=$$(date +%s); \
+	ogr2ogr -f "OpenFileGDB" -update -overwrite -dim XY $(MASTER_GDB) \
 		$(PA_ZONES_PATH) \
 		-dialect SQLite \
 		-sql "SELECT geom, MSH_MAP_TITLE, MSH_MAP_NBR, MSH_TOPO_NR, MSH_REV, SOURCE_RC, Version AS VERSION, BER, ERL, ber_link AS BER_LINK, erl_link AS ERL_LINK FROM mapsheets_sources_only" \
-		-nln GC_MAPSHEET
+		-nln GC_MAPSHEET; \
+	_T4=$$(date +%s); \
+	echo "  ↳ ogr2ogr GC_MAPSHEET: $$((_T4 - _T3))s"; \
+	\
+	echo ""; \
+	echo "  Total merge: $$((_T4 - _T_START))s"
 
 ## merge-diagnostic: Merge diagnostic
 merge-diagnostic:
