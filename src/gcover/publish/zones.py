@@ -83,11 +83,28 @@ def join_mapsheets_sources(
     return joined
 
 
+def _gdb_date(gdb_path: Path) -> str | None:
+    """Return YYYY-MM-DD parsed from the real GDB directory name (YYYYMMDD_…).
+
+    Resolves symlinks so RC2.gdb → 20260518_0330_….gdb gives '2026-05-18'.
+    Returns None if the path is absent or the name doesn't start with 8 digits.
+    """
+    if gdb_path is None or not gdb_path.exists():
+        return None
+    real_name = gdb_path.resolve().name
+    digits = real_name[:8]
+    if len(digits) == 8 and digits.isdigit():
+        return f"{digits[:4]}-{digits[4:6]}-{digits[6:]}"
+    return None
+
+
 def write_sources_overview_png(
     mapsheets_gdf: gpd.GeoDataFrame,
     output_path: Path,
     source_column: str = "SOURCE_RC",
     title: str | None = None,
+    sources_path: Path | None = None,
+    source_dates: dict[str, str] | None = None,
 ) -> None:
     """Write a choropleth PNG of mapsheets coloured by source assignment.
 
@@ -101,11 +118,18 @@ def write_sources_overview_png(
         return
 
     title = title or f"Source assignments ({source_column})"
-    sources = sorted(str(s) for s in mapsheets_gdf[source_column].dropna().unique())
+
+    subtitle = None
+    if sources_path is not None and sources_path.exists():
+        from datetime import datetime
+        mtime = datetime.fromtimestamp(sources_path.stat().st_mtime)
+        subtitle = f"{sources_path.name}  ·  {mtime:%Y-%m-%d %H:%M}"
+
+    src_values = sorted(str(s) for s in mapsheets_gdf[source_column].dropna().unique())
 
     fig, ax = plt.subplots(figsize=(14, 10))
 
-    for src in sources:
+    for src in src_values:
         subset = mapsheets_gdf[mapsheets_gdf[source_column] == src]
         subset.plot(ax=ax, color=_SOURCE_COLOURS.get(src, _FALLBACK_COLOUR),
                     edgecolor="white", linewidth=0.3)
@@ -113,14 +137,22 @@ def write_sources_overview_png(
     unassigned = mapsheets_gdf[mapsheets_gdf[source_column].isna()]
     if not unassigned.empty:
         unassigned.plot(ax=ax, color=_FALLBACK_COLOUR, edgecolor="white", linewidth=0.3)
-        sources = sources + ["(unassigned)"]
+        src_values = src_values + ["(unassigned)"]
+
+    def _legend_label(s: str) -> str:
+        if source_dates and s in source_dates:
+            return f"{s}  ({source_dates[s]})"
+        return s
 
     patches = [
-        mpatches.Patch(color=_SOURCE_COLOURS.get(s, _FALLBACK_COLOUR), label=s)
-        for s in sources
+        mpatches.Patch(color=_SOURCE_COLOURS.get(s, _FALLBACK_COLOUR), label=_legend_label(s))
+        for s in src_values
     ]
     ax.legend(handles=patches, loc="lower right", fontsize=9)
     ax.set_title(title, fontsize=13, pad=10)
+    if subtitle:
+        ax.annotate(subtitle, xy=(0.5, -0.02), xycoords="axes fraction",
+                    ha="center", va="top", fontsize=8, color="#666666")
     ax.set_axis_off()
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
