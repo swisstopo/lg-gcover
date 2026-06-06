@@ -77,7 +77,7 @@ Changelog
 2026-05-16  Added processing_metadata table to GPKG (sha256, mtime, git_hash per input file)
 
 
-XLSX file:/home/marco/DATA/Derivations/delivery/R17/Excels/GC_Sources_PA.xlsx
+XLSX file:/home/marco/code/github.com/lg-gcover/src/gcover/data/GC_Sources_QA.xlsx
 
 Layer list:
  * mapsheets_sources_only
@@ -86,8 +86,6 @@ Layer list:
  * lots
  * work_units
  * mapsheets
- * qa_rand_gc
- * qa_rand_gc_buffer_50m
  * processing_metadata
 
 -- 'mapsheets_sources_only' --
@@ -96,8 +94,8 @@ Layer list:
 ┏━━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
 ┃ Source            ┃ Count ┃
 ┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
-│ RC1               │   149 │
-│ RC2               │    69 │
+│ RC1               │   172 │
+│ RC2               │    46 │
 │ BCK_2016          │     1 │
 │ 20300501_Saas.gdb │     1 │
 │ Total             │   220 │
@@ -105,4 +103,4 @@ Layer list:
 
 
 
-Generated on 2026-05-16 15:24:55
+Generated on 2026-06-06 12:30:13

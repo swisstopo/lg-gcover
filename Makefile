@@ -328,7 +328,6 @@ administrative-zones:
        --output $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) \
        --format gpkg --format geojson --format filegdb --format parquet --format flatgeobuf \
        --overwrite
-	@cp -f $(PA_EXCEL_PATH)   $(GCOVER_DATA_DIR)GC_Sources_PA.xlsx
 	@cp -f $(OUTPUT_DIR)$(ADMIN_ZONES_GPKG) $(GCOVER_DATA_DIR)$(ADMIN_ZONES_GPKG)
 	@cp -f $(OUTPUT_DIR)administrative_zones.README $(GCOVER_DATA_DIR)adminstrative_zones.README
 	@echo "Don't forget to copy to mapserver-geocover/data directory!"

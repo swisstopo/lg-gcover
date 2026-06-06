@@ -913,7 +913,7 @@ def create_administrative_zones(
             lots_file=Path("data/lots.geojson"),
             wu_file=Path("data/WU.geojson"),
             mapsheets_file=Path("data/mapsheets.geojson"),
-            sources_file=Path("data/GC_Sources_PA.xlsx"),
+            sources_file=Path("DELIVERY_DIR/Excels/GC_Sources_PA.xlsx"),
             formats=("gpkg",),
             qa_rand_gc_file=None,
             border_zones=False,

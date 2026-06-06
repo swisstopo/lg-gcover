@@ -39,10 +39,8 @@ def cell_str(v: Any) -> str:
 
 
 @click.command()
-@click.argument("new_file", type=click.Path(exists=True, path_type=Path),
-                default="src/gcover/data/GC_Sources_PA.xlsx")
-@click.argument("old_file", type=click.Path(exists=True, path_type=Path),
-                default="src/gcover/data/GC_Sources_PA.previous.xlsx")
+@click.argument("new_file", type=click.Path(exists=True, path_type=Path))
+@click.argument("old_file", type=click.Path(exists=True, path_type=Path))
 @click.option("--key-col", default=0, show_default=True,
               help="Column index (0-based) used as row identifier.")
 @click.option("--no-unchanged", is_flag=True, default=False,

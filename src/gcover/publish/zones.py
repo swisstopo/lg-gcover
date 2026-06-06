@@ -48,10 +48,37 @@ def join_mapsheets_sources(
     keep = ["MSH_MAP_NBR"] + [c for c in _SOURCE_COLS if c in sources_df.columns]
     joined = mapsheets.merge(sources_df[keep], on="MSH_MAP_NBR", how="left")
 
+    # Fallback: geometry rows still unmatched after the primary join get a second
+    # chance via MSH_TOPO_NR (geometry) ↔ MSH_MAP_NBR (XLSX).  This covers sheets
+    # that received a new publication number in the XLSX but whose geometry export
+    # still carries the old topo number as MSH_MAP_NBR.
+    unmatched_mask = joined["SOURCE_RC"].isna() if "SOURCE_RC" in joined.columns else joined.index.isin([])
+    if unmatched_mask.any() and "MSH_TOPO_NR" in mapsheets.columns:
+        topo_keep = ["MSH_TOPO_NR"] + [c for c in _SOURCE_COLS if c in sources_df.columns]
+        topo_lookup = sources_df[topo_keep].dropna(subset=["MSH_TOPO_NR"])
+        # Join geometry.MSH_TOPO_NR ↔ XLSX.MSH_TOPO_NR; don't overwrite already-resolved rows
+        fallback = mapsheets.loc[unmatched_mask, ["MSH_MAP_NBR", "MSH_TOPO_NR"]].merge(
+            topo_lookup, on="MSH_TOPO_NR", how="left"
+        ).set_index(mapsheets.index[unmatched_mask])
+        src_cols = [c for c in _SOURCE_COLS if c in fallback.columns]
+        if fallback["SOURCE_RC"].notna().any():
+            resolved = fallback.loc[fallback["SOURCE_RC"].notna()]
+            for nbr, topo, title in zip(
+                resolved["MSH_MAP_NBR"],
+                fallback.loc[resolved.index, "MSH_TOPO_NR"],
+                mapsheets.loc[resolved.index, "MSH_MAP_TITLE"],
+            ):
+                logger.warning(
+                    f"join_mapsheets_sources: {title} matched via MSH_TOPO_NR={topo} "
+                    f"(geometry MSH_MAP_NBR={nbr}) — update mapsheets.geojson export"
+                )
+            joined.loc[unmatched_mask, src_cols] = fallback[src_cols]
+
     assigned = joined["SOURCE_RC"].notna().sum() if "SOURCE_RC" in joined.columns else 0
+    still_unmatched = joined["SOURCE_RC"].isna().sum() if "SOURCE_RC" in joined.columns else 0
     logger.info(
         f"join_mapsheets_sources: {len(mapsheets)} mapsheets, "
-        f"{assigned} with SOURCE_RC, from {sources_xlsx.name}"
+        f"{assigned} with SOURCE_RC, {still_unmatched} unmatched, from {sources_xlsx.name}"
     )
     return joined
 
