@@ -792,7 +792,7 @@ def main():
     import os
     from datetime import datetime
 
-    from transform_esri_json import transform_esri_json
+    from gcover.schema.transformer import transform_esri_json
 
     now = datetime.today().strftime("%B %Y")
 

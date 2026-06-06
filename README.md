@@ -80,6 +80,12 @@ pip install -e .[full]
 pip install -e .[standalone,dev,docs,viz]
 ```
 
+### For running scripts in `scripts/`:
+```bash
+# Extra deps used by standalone scripts (rasterio, scikit-learn, SQLAlchemy)
+pip install -e .[scripts]
+```
+
 
 ## Usage
 
