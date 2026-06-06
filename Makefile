@@ -11,7 +11,7 @@ RELEASE      := R17
 DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/
 SOURCES_DIR  := $(DELIVERY_DIR)Sources/
 OUTPUT_DIR   ?= ${HOME}/DATA/Derivations/output/$(RELEASE)/
-STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/styles/2026-05-26/
+STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/Styles/2026-05-26/
 TRANSLATION_CSV := $(DELIVERY_DIR)Excels/_GeolCodeText_Trad.xlsx
 STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/Excels/_Update_stratiLINK.xlsx
 GCOVER_DATA_DIR :=  src/gcover/data/
@@ -37,6 +37,7 @@ ADMIN_ZONES_GPKG  := administrative_zones.gpkg
 MAPSERVER_OUTPUT      ?= mapserver_$(BRANCH)
 DEM_ASPECT_PATH       ?= $(DELIVERY_DIR)swissALTI3DRegio_aspect_50m.tif
 PA_EXCEL_PATH         ?= $(DELIVERY_DIR)Excels/GC_Sources_PA.xlsx
+PA_ZONES_PATH         := $(patsubst %.xlsx,%_zones.gpkg,$(PA_EXCEL_PATH))
 QA_RAND_PATH          ?= $(DELIVERY_DIR)rand_qa_gc.geojson
 CONFIG_PATH           ?= config/esri_classifier_denormalized_geocover.yaml
 
@@ -136,12 +137,13 @@ all: merge $(CLASSIFIED_PATH) $(TRANSLATED_PATH)
 merge: $(MASTER_GDB)/timestamps
 
 # 1. Merge sources and run diagnosis
-$(MASTER_GDB)/timestamps: $(SOURCES_DIR)RC1.gdb $(SOURCES_DIR)RC2.gdb
+$(MASTER_GDB)/timestamps: $(SOURCES_DIR)RC1.gdb $(SOURCES_DIR)RC2.gdb $(PA_EXCEL_PATH)
 	@echo "--- Merging Sources ---"
 	@gcover publish merge \
 		--rc1 $(SOURCES_DIR)RC1.gdb \
 		--rc2 $(SOURCES_DIR)RC2.gdb \
 		--custom-sources-dir $(SOURCES_DIR) \
+		--sources $(PA_EXCEL_PATH) \
 		--force-2d --output $(MASTER_GDB) \
 		--no-clip-to-swiss-border \
 		--enrich-mapsheet-links \
@@ -155,9 +157,9 @@ $(MASTER_GDB)/timestamps: $(SOURCES_DIR)RC1.gdb $(SOURCES_DIR)RC2.gdb
 		exit 1; \
 	fi; \
 	exit $$rc
-	@echo "--- Copying GC_MAPSHEET from administrative_zones ---"
+	@echo "--- Copying GC_MAPSHEET from $(PA_ZONES_PATH) ---"
 	@ogr2ogr -f "OpenFileGDB" -update -overwrite -dim XY $(MASTER_GDB) \
-		$(GCOVER_DATA_DIR)$(ADMIN_ZONES_GPKG) \
+		$(PA_ZONES_PATH) \
 		-dialect SQLite \
 		-sql "SELECT geom, MSH_MAP_TITLE, MSH_MAP_NBR, MSH_TOPO_NR, MSH_REV, SOURCE_RC, Version AS VERSION, BER, ERL, ber_link AS BER_LINK, erl_link AS ERL_LINK FROM mapsheets_sources_only" \
 		-nln GC_MAPSHEET
@@ -300,40 +302,6 @@ srcs = sorted(set(gdf['SOURCE_RC'].dropna()) - {'RC1', 'RC2'}); \
 
 ## domain-check: Run all domain compliance checks (RC1, RC2, merged_final, custom sources)
 domain-check: domain-check-rc domain-check-final domain-check-custom
-
-
-## domain-check-rc: Check RC1 and RC2 against their own coded domains
-domain-check-rc:
-	@echo "--- Checking RC2.gdb (self) ---"
-	@python scripts/check_domain_compliance.py $(SOURCES_DIR)RC2.gdb \
-		--report $(OUTPUT_DIR)domain_check_rc2.txt
-	@echo "--- Checking RC1.gdb (self) ---"
-	@python scripts/check_domain_compliance.py $(SOURCES_DIR)RC1.gdb \
-		--report $(OUTPUT_DIR)domain_check_rc1.txt
-
-## domain-check-final: Check merged_final.gdb against RC2 coded domains
-domain-check-final:
-	$(call check_file,FINAL_GDB,$(FINAL_GDB))
-	@python scripts/check_domain_compliance.py $(FINAL_GDB) \
-		--reference $(SOURCES_DIR)RC2.gdb \
-		--report $(OUTPUT_DIR)domain_check_final.txt
-
-## domain-check-custom: Check each custom delivery GDB against RC2 coded domains
-#  Custom sources are discovered from the mapsheets_sources_only layer (SOURCE_RC != RC1/RC2).
-#  Both "Name.gdb" and bare "Name" directory conventions are handled.
-domain-check-custom:
-	@python -c "\
-from pathlib import Path; import geopandas as gpd; \
-d = Path('$(SOURCES_DIR)'); \
-gdf = gpd.read_file('src/gcover/data/administrative_zones.gpkg', layer='mapsheets_sources_only'); \
-srcs = sorted(set(gdf['SOURCE_RC'].dropna()) - {'RC1', 'RC2'}); \
-[print(next((str(c) for c in (d/s, d/(s+'.gdb')) if (c/'timestamps').exists()), '')) for s in srcs]" \
-	| grep -v '^$$' | while read gdb; do \
-		echo "--- $$(basename $$gdb) vs RC2.gdb ---"; \
-		python scripts/check_domain_compliance.py "$$gdb" \
-			--reference $(SOURCES_DIR)RC2.gdb \
-			--report $(OUTPUT_DIR)domain_check_$$(basename $$gdb).txt || true; \
-	done
 
 ## domain-check: Run all domain compliance checks (RC1, RC2, merged_final, custom sources)
 domain-check: domain-check-rc domain-check-final domain-check-custom

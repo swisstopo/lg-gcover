@@ -2513,13 +2513,23 @@ def _display_merge_config(config: MergeConfig, dry_run: bool) -> None:
         if config.custom_sources_dir.exists():
             lines = [str(config.custom_sources_dir)]
             try:
-                gdf = gpd.read_file(config.admin_zones_path, layer=config.mapsheets_layer)
-                if config.mapsheet_numbers:
-                    gdf = gdf[gdf[config.mapsheet_nbr_column].isin(config.mapsheet_numbers)]
-                custom_names = sorted(
-                    s for s in gdf[config.source_column].unique()
-                    if s not in ("RC1", "RC2")
-                )
+                # When sources_path is set the pre-joined layer doesn't exist yet;
+                # read the geometry-only "mapsheets" layer and get SOURCE_RC from the XLSX.
+                if config.sources_path and config.sources_path.exists():
+                    from gcover.publish.administrative_zones import load_sources
+                    src_df = load_sources(config.sources_path)
+                    custom_names = sorted(
+                        s for s in src_df[config.source_column].unique()
+                        if s not in ("RC1", "RC2")
+                    )
+                else:
+                    gdf = gpd.read_file(config.admin_zones_path, layer=config.mapsheets_layer)
+                    if config.mapsheet_numbers:
+                        gdf = gdf[gdf[config.mapsheet_nbr_column].isin(config.mapsheet_numbers)]
+                    custom_names = sorted(
+                        s for s in gdf[config.source_column].unique()
+                        if s not in ("RC1", "RC2")
+                    )
                 for name in custom_names:
                     p = config.custom_sources_dir / name
                     if not p.suffix:
@@ -2535,10 +2545,75 @@ def _display_merge_config(config: MergeConfig, dry_run: bool) -> None:
         else:
             table.add_row("Custom Sources", f"✗ {config.custom_sources_dir}")
 
-    # Admin zones
-    table.add_row("Admin Zones", str(config.admin_zones_path))
-    table.add_row("Mapsheets Layer", config.mapsheets_layer)
+    # Admin zones (static geometry)
+    az_status = "✓" if config.admin_zones_path and config.admin_zones_path.exists() else "✗"
+    table.add_row("Admin Zones", f"{az_status} {config.admin_zones_path}")
+
+    # Source assignments — either from XLSX (dynamic) or pre-joined layer (legacy)
+    if config.sources_path:
+        sp_status = "✓" if config.sources_path.exists() else "✗"
+        table.add_row("GC Sources PA", f"{sp_status} {config.sources_path}")
+        table.add_row("Mapsheets Layer", "[dim]joined at runtime (mapsheets ⊕ GC_Sources_PA)[/dim]")
+    else:
+        table.add_row("Mapsheets Layer", f"{config.mapsheets_layer} [dim](pre-joined)[/dim]")
+
     table.add_row("Source Column", config.source_column)
+
+    # Mapsheet ↔ source assignment sanity check
+    if config.admin_zones_path and config.admin_zones_path.exists():
+        try:
+            nbr_col = config.mapsheet_nbr_column
+            src_col = config.source_column
+            filter_set = set(config.mapsheet_numbers) if config.mapsheet_numbers else None
+
+            if config.sources_path and config.sources_path.exists():
+                from gcover.publish.administrative_zones import load_sources
+
+                msh_gdf = gpd.read_file(config.admin_zones_path, layer="mapsheets")
+                msh_nbrs = set(msh_gdf[nbr_col].dropna())
+                if filter_set:
+                    msh_nbrs &= filter_set
+
+                src_df = load_sources(config.sources_path)
+                if filter_set:
+                    src_df = src_df[src_df[nbr_col].isin(filter_set)]
+                src_nbrs = set(src_df[nbr_col].dropna())
+
+                not_in_xlsx = sorted(msh_nbrs - src_nbrs)
+                not_in_geom = sorted(src_nbrs - msh_nbrs)
+                matched = src_df[src_df[nbr_col].isin(msh_nbrs)]
+                no_source = sorted(matched.loc[matched[src_col].isna() | (matched[src_col] == ""), nbr_col].tolist())
+
+                lines = []
+                if not not_in_xlsx and not not_in_geom and not no_source:
+                    lines.append(f"[green]✓[/green] {len(msh_nbrs)} mapsheets · all matched · all sources set")
+                else:
+                    n_ok = len(msh_nbrs) - len(not_in_xlsx) - len(no_source)
+                    lines.append(f"[red]✗[/red] {len(msh_nbrs)} mapsheets · {n_ok} OK")
+                    if not_in_xlsx:
+                        lines.append(f"  [red]Not in XLSX ({len(not_in_xlsx)}):[/red] {', '.join(str(n) for n in not_in_xlsx)}")
+                    if not_in_geom:
+                        lines.append(f"  [yellow]Only in XLSX ({len(not_in_geom)}):[/yellow] {', '.join(str(n) for n in not_in_geom)}")
+                    if no_source:
+                        lines.append(f"  [yellow]No {src_col} ({len(no_source)}):[/yellow] {', '.join(str(n) for n in no_source)}")
+
+            else:
+                msh_gdf = gpd.read_file(config.admin_zones_path, layer=config.mapsheets_layer)
+                if filter_set:
+                    msh_gdf = msh_gdf[msh_gdf[nbr_col].isin(filter_set)]
+                total = len(msh_gdf)
+                null_nbrs = sorted(msh_gdf.loc[msh_gdf[src_col].isna(), nbr_col].tolist())
+                if null_nbrs:
+                    lines = [
+                        f"[red]✗[/red] {total - len(null_nbrs)}/{total} sources set",
+                        f"  [yellow]No {src_col} ({len(null_nbrs)}):[/yellow] {', '.join(str(n) for n in null_nbrs)}",
+                    ]
+                else:
+                    lines = [f"[green]✓[/green] {total}/{total} sources set"]
+
+            table.add_row("Mapsheets Check", "\n".join(lines))
+        except Exception as exc:
+            table.add_row("Mapsheets Check", f"[yellow]⚠ check failed: {exc}[/yellow]")
 
     # Filtering
     if config.mapsheet_numbers:
