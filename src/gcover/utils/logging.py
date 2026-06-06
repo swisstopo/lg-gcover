@@ -67,8 +67,11 @@ class GCoverLogger:
         # Remove default loguru handler
         logger.remove()
 
-        # In JSON mode skip the console sink so stdout stays clean for machine output
-        if not json_mode:
+        # In JSON mode skip the console sink so stdout stays clean for machine output.
+        # Also skip it when an explicit log file is given and we're not in verbose mode —
+        # the file captures everything; the terminal shows only Rich output (tables/progress).
+        console_log = not json_mode and (not log_file or verbose)
+        if console_log:
             self._setup_console_logging(log_level, verbose, logging_config["console"])
 
         # Setup file logging
