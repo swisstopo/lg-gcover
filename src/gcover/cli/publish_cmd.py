@@ -1059,6 +1059,7 @@ def build_zones(
         write_sources_overview_png(
             joined, png_path,
             title=f"Source assignments — {sources_file.stem}",
+            sources_path=sources_file,
         )
         console.print(f"  [green]✓[/green] Overview PNG: {png_path}")
     except Exception as exc:
@@ -2427,7 +2428,7 @@ def merge(
 
     # Write by-products alongside the XLSX when --sources was provided
     if sources is not None:
-        from gcover.publish.zones import join_mapsheets_sources, write_sources_overview_png
+        from gcover.publish.zones import join_mapsheets_sources, write_sources_overview_png, _gdb_date
 
         zones_out = sources.parent / f"{sources.stem}_zones.gpkg"
         png_out = sources.parent / f"{sources.stem}_overview.png"
@@ -2441,9 +2442,15 @@ def merge(
             console.print(f"  [yellow]⚠ Zones GPKG skipped: {exc}[/yellow]")
 
         try:
+            source_dates = {k: v for k, v in {
+                "RC1": _gdb_date(config.rc1_path),
+                "RC2": _gdb_date(config.rc2_path),
+            }.items() if v is not None}
             write_sources_overview_png(
                 joined, png_out,
                 title=f"Source assignments — {sources.stem}",
+                sources_path=sources,
+                source_dates=source_dates or None,
             )
             console.print(f"  [green]✓[/green] Overview PNG: {png_out}")
         except Exception as exc:
