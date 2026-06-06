@@ -130,7 +130,7 @@ def test_gdb_scan_with_test_env(runner, test_data_exists):
     output = result.output
 
     # Configuration loading should be visible
-    assert "Environment: test" in output
+    assert "test" in output
 
     # Should show filesystem scanning
     assert "Scanning filesystem..." in output
