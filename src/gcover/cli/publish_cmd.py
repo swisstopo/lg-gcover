@@ -2053,16 +2053,6 @@ def show_sample_data(layer_name: str, sample_gdf: gpd.GeoDataFrame):
     help="Exclude metadata fields (CREATED_USER, LAST_EDITED_DATE, GlobalID, etc.)",
 )
 @click.option(
-    "--schema-gdb",
-    type=click.Path(exists=True, path_type=Path),
-    help="Authoritative FileGDB to clone schema from for ESRI output (defaults to --rc2).",
-)
-@click.option(
-    "--schema-output",
-    type=click.Path(path_type=Path),
-    help="Path for the ESRI schema-patched output GDB (clone of --schema-gdb populated from --output).",
-)
-@click.option(
     "--strati-links",
     "strati_links_path",
     type=click.Path(exists=True, path_type=Path),
