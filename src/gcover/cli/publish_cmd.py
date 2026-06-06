@@ -941,6 +941,130 @@ def list_mapsheets(ctx, admin_zones: Optional[Path]):
         raise click.Abort()
 
 
+@publish_commands.command(name="build-zones")
+@click.pass_context
+@click.option(
+    "--sources",
+    "sources_file",
+    required=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to GC_Sources_PA.xlsx (the project-state source-assignment file).",
+)
+@click.option(
+    "--output", "-o",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output GPKG (default: {sources_stem}_zones.gpkg alongside the XLSX).",
+)
+@click.option(
+    "--lots-file",
+    type=click.Path(exists=True, path_type=Path),
+    default=None,
+    help="Lots GeoJSON (default: bundled gcover/data/lots.geojson).",
+)
+@click.option(
+    "--wu-file",
+    type=click.Path(exists=True, path_type=Path),
+    default=None,
+    help="Work-units JSON (default: bundled gcover/data/WU.json).",
+)
+@click.option(
+    "--mapsheets-file",
+    type=click.Path(exists=True, path_type=Path),
+    default=None,
+    help="Mapsheets GeoJSON (default: bundled gcover/data/mapsheets.geojson).",
+)
+@click.option(
+    "--border-zones",
+    is_flag=True,
+    default=False,
+    help="Also generate border_segments / tolerance_zones / strict_zones layers.",
+)
+@click.option(
+    "--qa-rand-gc",
+    "qa_rand_gc_file",
+    type=click.Path(exists=True, path_type=Path),
+    default=None,
+    help="QA_Rand_GC.gdb: adds qa_rand_gc and qa_rand_gc_buffer_50m layers.",
+)
+@click.option(
+    "--format", "-f",
+    "formats",
+    multiple=True,
+    type=click.Choice(["gpkg", "filegdb", "geojson", "parquet", "flatgeobuf"]),
+    default=("gpkg",),
+    show_default=True,
+    help="Output format(s); repeat to enable multiple: -f gpkg -f geojson.",
+)
+@click.option("--overwrite", is_flag=True, help="Overwrite existing output.")
+def build_zones(
+    ctx,
+    sources_file: Path,
+    output: Optional[Path],
+    lots_file: Optional[Path],
+    wu_file: Optional[Path],
+    mapsheets_file: Optional[Path],
+    border_zones: bool,
+    qa_rand_gc_file: Optional[Path],
+    formats: tuple,
+    overwrite: bool,
+):
+    """Build a zones GPKG from GC_Sources_PA.xlsx, written alongside the XLSX.
+
+    Wraps scripts/create_administrative_zones.py — all zone-building logic
+    lives there, unchanged.  Output defaults to {sources_stem}_zones.gpkg
+    in the same directory as --sources.
+
+    \b
+    Examples:
+      gcover publish build-zones --sources DELIVERY_DIR/GC_Sources_PA.xlsx
+      gcover publish build-zones --sources ... --border-zones --overwrite
+      gcover publish build-zones --sources ... --qa-rand-gc QA_Rand_GC.gdb
+    """
+    from gcover.publish.administrative_zones import create_administrative_zones as _build_zones
+
+    if output is None:
+        output = sources_file.parent / f"{sources_file.stem}_zones.gpkg"
+
+    # Resolve geometry inputs, falling back to bundled data
+    effective_lots = lots_file or Path(str(files("gcover.data").joinpath("lots.geojson")))
+    effective_wu = wu_file or Path(str(files("gcover.data").joinpath("WU.json")))
+    effective_mapsheets = mapsheets_file or Path(
+        str(files("gcover.data").joinpath("mapsheets.geojson"))
+    )
+
+    console.print(f"\n[bold blue]Building zones GPKG[/bold blue]")
+    console.print(f"  sources  : {sources_file}")
+    console.print(f"  output   : {output}")
+
+    _build_zones(
+        output_path=output,
+        lots_file=effective_lots,
+        wu_file=effective_wu,
+        mapsheets_file=effective_mapsheets,
+        sources_file=sources_file,
+        formats=formats,
+        qa_rand_gc_file=qa_rand_gc_file,
+        border_zones=border_zones,
+        overwrite=overwrite,
+        verbose=ctx.obj.get("verbose", False),
+    )
+
+    # Write overview PNG alongside the GPKG
+    from gcover.publish.zones import join_mapsheets_sources, write_sources_overview_png
+
+    try:
+        joined = join_mapsheets_sources(output, sources_file)
+        png_path = output.with_suffix(".png")
+        write_sources_overview_png(
+            joined, png_path,
+            title=f"Source assignments — {sources_file.stem}",
+        )
+        console.print(f"  [green]✓[/green] Overview PNG: {png_path}")
+    except Exception as exc:
+        console.print(f"  [yellow]⚠ Overview PNG skipped: {exc}[/yellow]")
+
+
 @publish_commands.command()
 @click.pass_context
 @click.option(
@@ -1993,6 +2117,17 @@ def show_sample_data(layer_name: str, sample_gdf: gpd.GeoDataFrame):
     help="Output format (auto=detect from extension, gdb=FileGDB, gpkg=GeoPackage)",
 )
 @click.option(
+    "--sources",
+    type=click.Path(exists=True, path_type=Path),
+    default=None,
+    help=(
+        "Path to GC_Sources_PA.xlsx. When provided, source assignments are "
+        "joined at runtime from the XLSX instead of from the pre-built "
+        "--admin-zones layer. By-products (*_zones.gpkg, *.png) are written "
+        "alongside the XLSX."
+    ),
+)
+@click.option(
     "--source-column",
     "-s",
     type=click.Choice(["SOURCE_RC", "SOURCE_QA"]),
@@ -2002,7 +2137,7 @@ def show_sample_data(layer_name: str, sample_gdf: gpd.GeoDataFrame):
 @click.option(
     "--mapsheets-layer",
     default="mapsheets_sources_only",
-    help="Layer name in admin_zones containing mapsheet boundaries",
+    help="Layer name in admin_zones containing mapsheet boundaries (used when --sources is not set)",
 )
 @click.option(
     "--mapsheets",
@@ -2081,6 +2216,7 @@ def merge(
         rc2: Optional[Path],
         custom_sources_dir: Optional[Path],
         admin_zones: Path,
+        sources: Optional[Path],
         output: Path,
         output_format: str,
         source_column: str,
@@ -2203,18 +2339,22 @@ def merge(
             console.print(f"[red]Error: Invalid mapsheet format '{mapsheets}'. Use comma-separated numbers.[/red]")
             raise click.Abort()
 
+    if sources:
+        console.print(f"[dim]Sources XLSX: {sources}[/dim]")
+
     # Build configuration
     config = MergeConfig(
         rc1_path=rc1,
         rc2_path=rc2,
         custom_sources_dir=custom_sources_dir,
         admin_zones_path=admin_zones,
+        sources_path=sources,
         mapsheets_layer=mapsheets_layer,
         source_column=source_column,
         output_path=output,
         reference_source=reference_source,
         mapsheet_numbers=mapsheet_numbers,
-        preserve_z=not force_2d,  # If force_2d, don't preserve Z
+        preserve_z=not force_2d,
         exclude_fields=GEOCOVER_METADATA_FIELDS if exclude_metadata else None,
         use_convex_hull_masks=True,
         clip_to_swiss_border=clip_to_swiss_border,
@@ -2284,6 +2424,30 @@ def merge(
             import traceback
             console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise click.Abort()
+
+    # Write by-products alongside the XLSX when --sources was provided
+    if sources is not None:
+        from gcover.publish.zones import join_mapsheets_sources, write_sources_overview_png
+
+        zones_out = sources.parent / f"{sources.stem}_zones.gpkg"
+        png_out = sources.parent / f"{sources.stem}_overview.png"
+
+        console.print(f"\n[dim]Writing source-assignment by-products...[/dim]")
+        try:
+            joined = join_mapsheets_sources(admin_zones, sources)
+            joined.to_file(zones_out, layer="mapsheets_sources_only", driver="GPKG")
+            console.print(f"  [green]✓[/green] Zones GPKG: {zones_out}")
+        except Exception as exc:
+            console.print(f"  [yellow]⚠ Zones GPKG skipped: {exc}[/yellow]")
+
+        try:
+            write_sources_overview_png(
+                joined, png_out,
+                title=f"Source assignments — {sources.stem}",
+            )
+            console.print(f"  [green]✓[/green] Overview PNG: {png_out}")
+        except Exception as exc:
+            console.print(f"  [yellow]⚠ Overview PNG skipped: {exc}[/yellow]")
 
     # Optional schema-patch step: clone authoritative GDB schema and inject merged data
     if schema_output is not None:

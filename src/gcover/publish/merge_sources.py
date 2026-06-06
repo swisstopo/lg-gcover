@@ -555,7 +555,8 @@ class MergeConfig:
     
     # Mapsheet configuration
     admin_zones_path: Path = None
-    mapsheets_layer: str = "mapsheets_sources_only"
+    sources_path: Optional[Path] = None      # GC_Sources_PA.xlsx; joined at runtime when set
+    mapsheets_layer: str = "mapsheets_sources_only"  # used only when sources_path is None
     source_column: str = "SOURCE_RC"  # or "SOURCE_QA"
     mapsheet_nbr_column: str = "MSH_MAP_NBR"
     
@@ -779,17 +780,35 @@ class GDBMerger:
         return actual_name in self._layer_cache[gdb_path]
 
     def _load_mapsheets(self) -> gpd.GeoDataFrame:
-        """Load mapsheets with source assignments."""
-        
-        logger.info(f"Loading mapsheets from {self.config.admin_zones_path}")
-        logger.debug(f"  Layer: {self.config.mapsheets_layer}")
-        logger.debug(f"  Source column: {self.config.source_column}")
-        
-        gdf = gpd.read_file(
-            self.config.admin_zones_path,
-            layer=self.config.mapsheets_layer
-        )
-        
+        """Load mapsheets with source assignments.
+
+        When ``config.sources_path`` is set the geometry-only ``mapsheets``
+        layer is read from the GPKG and joined at runtime with the XLSX, so
+        the result always reflects the current GC_Sources_PA state.
+
+        Otherwise falls back to the pre-joined ``mapsheets_sources_only``
+        layer (backward-compatible path).
+        """
+        if self.config.sources_path:
+            from gcover.publish.zones import join_mapsheets_sources
+            logger.info(
+                f"Loading mapsheets (geometry-only) + joining sources from "
+                f"{self.config.sources_path.name}"
+            )
+            gdf = join_mapsheets_sources(
+                self.config.admin_zones_path,
+                self.config.sources_path,
+            )
+        else:
+            logger.info(
+                f"Loading pre-joined mapsheets from {self.config.admin_zones_path} "
+                f"(layer: {self.config.mapsheets_layer})"
+            )
+            gdf = gpd.read_file(
+                self.config.admin_zones_path,
+                layer=self.config.mapsheets_layer,
+            )
+
         logger.debug(f"  Loaded {len(gdf)} total mapsheets")
         
         # Verify required columns
