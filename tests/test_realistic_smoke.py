@@ -26,7 +26,7 @@ def isolated_config_env(tmp_path):
 
     # Modify test config to use dummy paths (no real GDB scanning)
     modified_test_config = original_test_config.replace(
-        "tests/data/examples", str(tmp_path / "dummy_data")
+        "tests/data/examples", (tmp_path / "dummy_data").as_posix()
     )
 
     # Create directory structure in tmp_path
@@ -114,8 +114,8 @@ def test_publish_export_classification_format_with_test_env(runner, output_forma
     # Command should succeed
     assert result.exit_code == 0, f"Command failed with output: {result.output}"
 
-    # Check for expected patterns in output
-    output = result.output
+    # Check for expected patterns in output (normalise path separators for Windows)
+    output = result.output.replace("\\", "/")
     assert lyrx_path.replace(".lyrx", f".classifications.{output_format}") in output
 
 

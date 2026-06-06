@@ -31,7 +31,7 @@ def project_root():
 def pytest_configure(config):
     """Force test environment for all pytest runs"""
     os.environ["GCOVER_ENVIRONMENT"] = "test"
-    print("🧪 FORCED: GCOVER_ENVIRONMENT=test for pytest")
+    print("FORCED: GCOVER_ENVIRONMENT=test for pytest")
     config.addinivalue_line(
         "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
     )
