@@ -195,6 +195,13 @@ def load_translations(path: Path, langs: list[str]) -> pd.DataFrame:
 
     # Rename to target suffix names  e.g. "DE" → "de"
     df = df.rename(columns={v: k for k, v in lang_cols.items()})
+    dupes = df.duplicated(subset="GeolCodeInt", keep=False).sum()
+    if dupes:
+        console.print(
+            f"  [yellow]⚠[/]  Dropping [bold]{dupes // 2}[/] duplicate GeolCodeInt row(s) "
+            f"— keeping last (extra file overrides main)"
+        )
+        df = df.drop_duplicates(subset="GeolCodeInt", keep="last")
     return df.set_index("GeolCodeInt")
 
 
