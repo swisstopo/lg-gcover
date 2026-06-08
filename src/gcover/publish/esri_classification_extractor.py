@@ -163,7 +163,8 @@ class SymbolInfo:
 
 def truncate_label(label: str, max_length: int = 140) -> str:
     """
-    Truncate label at first comma or max_length, whichever comes first.
+    Truncate label at first semicolon (ESRI grouped-class separator), then at first
+    comma, then at max_length, whichever comes first.
 
     Args:
         label: Original label
@@ -174,6 +175,15 @@ def truncate_label(label: str, max_length: int = 140) -> str:
     """
     if not label:
         return ""
+
+    # ESRI joins multiple value-group descriptions with "; ".
+    # Keep only the first segment so labels like
+    # "Ttec Bruch, gesichert; Ttec Bruch, gesichert; 14901004" become
+    # "Ttec Bruch, gesichert".
+    semicolon_pos = label.find(";")
+    if semicolon_pos > 0:
+        logger.debug(f"truncate_label: stripping at ';' in {label!r}")
+        label = label[:semicolon_pos].strip()
 
     if len(label) <= max_length:
         return label
@@ -1192,7 +1202,7 @@ class ESRIClassificationExtractorEnhanced(ESRIClassificationExtractor):
             
             if identifier_mode == IdentifierMode.LABEL or (identifier_mode == IdentifierMode.FIELD and identifier_value is None):
                 # LABEL mode: Use slugified label (default)
-                base_slug = slugify_label(label)
+                base_slug = slugify_label(truncate_label(label))
                 used_slugs = self._get_layer_slugs(layer_path)
                 identifier_value = make_unique_slug(base_slug, used_slugs)
                 used_slugs.add(identifier_value)
