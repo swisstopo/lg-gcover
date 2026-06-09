@@ -3,6 +3,7 @@ name: Nuitka Windows Build
 on:
   workflow_dispatch:
   push:
+    branches: [ feature_nuitka_build ]
     tags:
       - "v*.*.*"
 
