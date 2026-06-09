@@ -1,4 +1,4 @@
-name: Nuitka Windows Build
+name: Windows Standalone Build
 
 on:
   workflow_dispatch:
@@ -8,12 +8,12 @@ on:
       - "v*.*.*"
 
 env:
-  CONDA_ENV: GCOVER_NUITKA
+  CONDA_ENV: GCOVER_WIN
   PYTHON_VERSION: "3.11"
   PYTHONUTF8: "1"
 
 jobs:
-  nuitka-windows:
+  pyinstaller-windows:
     runs-on: windows-latest
 
     steps:
@@ -39,9 +39,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: C:\Miniconda\envs\${{ env.CONDA_ENV }}
-          key: nuitka-conda-win-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/pyproject.toml') }}
+          key: pyinst-conda-win-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/pyproject.toml') }}
           restore-keys: |
-            nuitka-conda-win-${{ env.PYTHON_VERSION }}-
+            pyinst-conda-win-${{ env.PYTHON_VERSION }}-
 
       - name: Install libmamba solver
         shell: bash -el {0}
@@ -56,15 +56,9 @@ jobs:
             fiona pyogrio boto3 openpyxl dateparser \
             setuptools setuptools-scm
 
-      - name: Cache Nuitka downloads (depends.exe etc.)
-        uses: actions/cache@v5
-        with:
-          path: ~\AppData\Local\Nuitka\Nuitka\Cache
-          key: nuitka-dl-cache-win-${{ env.PYTHON_VERSION }}
-
-      - name: Install Nuitka
+      - name: Install PyInstaller
         shell: bash -el {0}
-        run: pip install nuitka ordered-set zstandard
+        run: pip install pyinstaller pyinstaller-hooks-contrib
 
       - name: Install gcover package
         shell: bash -el {0}
@@ -112,43 +106,30 @@ jobs:
               f.write(f"proj_data={proj_data}\n")
           PY
 
-      - name: Compile with Nuitka
+      - name: Build with PyInstaller
         shell: bash -el {0}
         run: |
-          python -m nuitka \
-            --standalone \
-            --assume-yes-for-downloads \
-            --nofollow-imports \
-            --follow-import-to=gcover \
-            --include-package=gcover \
-            --include-package-data=gcover \
-            --include-package=fiona \
-            --include-package=pyogrio \
-            --include-package=osgeo \
-            --include-package=duckdb \
-            --include-package=click \
-            --include-package=rich \
-            --include-package=pydantic \
-            --include-package=structlog \
-            --include-package=loguru \
-            --include-package=yaml \
-            --include-package=dotenv \
-            --include-package=boto3 \
-            --include-package=botocore \
-            --include-data-dir="${{ steps.datadirs.outputs.gdal_data }}=gdal-data" \
-            --include-data-dir="${{ steps.datadirs.outputs.proj_data }}=proj-data" \
-            --output-dir=nuitka_output \
-            --output-filename=gcover.exe \
-            --windows-console-mode=attach \
-            --jobs=4 \
-            --lto=no \
+          pyinstaller \
+            --name=gcover \
+            --onedir \
+            --collect-all=gcover \
+            --collect-all=fiona \
+            --collect-all=pyogrio \
+            --hidden-import=osgeo.gdal \
+            --hidden-import=osgeo.ogr \
+            --hidden-import=osgeo.osr \
+            --hidden-import=osgeo.gdal_array \
+            --hidden-import=duckdb \
+            --hidden-import=shapely \
+            --add-data "${{ steps.datadirs.outputs.gdal_data }};gdal-data" \
+            --add-data "${{ steps.datadirs.outputs.proj_data }};proj-data" \
             _gcover_main.py
 
       - name: Package distribution folder
         shell: powershell
         run: |
           $version = "${{ steps.version.outputs.version }}"
-          Compress-Archive -Path nuitka_output\gcover.dist -DestinationPath "gcover-windows-$version.zip"
+          Compress-Archive -Path dist\gcover -DestinationPath "gcover-windows-$version.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7.0.0
