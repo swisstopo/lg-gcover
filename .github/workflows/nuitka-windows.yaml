@@ -56,6 +56,12 @@ jobs:
             fiona pyogrio boto3 openpyxl dateparser \
             setuptools setuptools-scm
 
+      - name: Cache Nuitka downloads (depends.exe etc.)
+        uses: actions/cache@v5
+        with:
+          path: ~\AppData\Local\Nuitka\Nuitka\Cache
+          key: nuitka-dl-cache-win-${{ env.PYTHON_VERSION }}
+
       - name: Install Nuitka
         shell: bash -el {0}
         run: pip install nuitka ordered-set zstandard
@@ -112,7 +118,8 @@ jobs:
           python -m nuitka \
             --standalone \
             --assume-yes-for-downloads \
-            --follow-imports \
+            --nofollow-imports \
+            --follow-import-to=gcover \
             --include-package=gcover \
             --include-package-data=gcover \
             --include-package=fiona \
@@ -133,6 +140,8 @@ jobs:
             --output-dir=nuitka_output \
             --output-filename=gcover.exe \
             --windows-console-mode=attach \
+            --jobs=4 \
+            --lto=no \
             _gcover_main.py
 
       - name: Package distribution folder
