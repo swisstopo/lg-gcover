@@ -112,6 +112,8 @@ jobs:
           pyinstaller \
             --name=gcover \
             --onedir \
+            --exclude-module=tkinter \
+            --exclude-module=_tkinter \
             --collect-all=gcover \
             --collect-all=fiona \
             --collect-all=pyogrio \
