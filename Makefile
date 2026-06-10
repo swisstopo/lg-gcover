@@ -29,8 +29,10 @@ DENORMALIZED_GPKG := denormalized.gpkg
 DENORMALIZED_PATH := $(OUTPUT_DIR)$(DENORMALIZED_GPKG)
 CLASSIFIED_GPKG	  := denormalized_classified.gpkg
 CLASSIFIED_PATH   := $(OUTPUT_DIR)$(CLASSIFIED_GPKG)
-TRANSLATED_GPKG   := denormalized_classified_translated.gpkg
+#TRANSLATED_GPKG   := denormalized_classified_translated.gpkg
+TRANSLATED_GPKG   := swissgecover2d.gpkg
 TRANSLATED_PATH   := $(OUTPUT_DIR)$(TRANSLATED_GPKG)
+TRANSLATED_README := $(TRANSLATED_PATH:.gpkg=.README)
 FULL_GDB_PATH     := $(SOURCES_DIR)RC1.gdb     # TODO Val Bregaglia missing GMU_ATT in RC2. RC1 OK
 GEOCOVER_AUX_PATH := $(OUTPUT_DIR)geocover_aux.gpkg
 ADMIN_ZONES_GPKG  := administrative_zones.gpkg
@@ -215,6 +217,14 @@ $(TRANSLATED_PATH): $(CLASSIFIED_PATH)
 		--strati-links $(STRATI_LINK_PATH) \
 		--config $(CONFIG_PATH)  \
 		--lowercase-columns --output $(TRANSLATED_PATH)  --langs de,fr  $(CLASSIFIED_PATH)
+	@RC1_SRC=$$(basename "$$(readlink -f $(SOURCES_DIR)RC1.gdb 2>/dev/null)" 2>/dev/null || echo "N/A"); \
+	RC2_SRC=$$(basename "$$(readlink -f $(SOURCES_DIR)RC2.gdb 2>/dev/null)" 2>/dev/null || echo "N/A"); \
+	RC1_DATE=$$(echo "$$RC1_SRC" | sed 's/\(.\{4\}\)\(.\{2\}\)\(.\{2\}\).*/\1-\2-\3/'); \
+	RC2_DATE=$$(echo "$$RC2_SRC" | sed 's/\(.\{4\}\)\(.\{2\}\)\(.\{2\}\).*/\1-\2-\3/'); \
+	printf "date_operation: %s\nrc1_source:     %s\nrc1_date:       %s\nrc2_source:     %s\nrc2_date:       %s\nlg_gcover_tag:  %s\n" \
+		"$$(date +%Y-%m-%d)" "$$RC1_SRC" "$$RC1_DATE" "$$RC2_SRC" "$$RC2_DATE" "$(LATEST_TAG)" \
+		> $(TRANSLATED_README)
+	@echo "Written README to $(TRANSLATED_README)"
 
 $(CLASSIFIED_PATH): $(DENORMALIZED_PATH)
 	@echo "--- Applying Style Configuration to $(DENORMALIZED_PATH)---"
@@ -228,7 +238,7 @@ denormalize: $(DENORMALIZED_PATH)
 classify: $(CLASSIFIED_PATH)
 
 ## translate: Add human-readable values for geolcodes
-translate: $(TRANSLATED_PATH)
+translate: $(TRANSLATED_PATH) checksum
 
 ## checksum: Compute SHA256 checksum of the translated GPKG
 .PHONY: checksum

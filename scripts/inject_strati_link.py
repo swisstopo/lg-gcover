@@ -11,7 +11,7 @@ from pathlib import Path
 import fiona
 from osgeo import ogr
 
-TRANSLATED_GPKG = Path.home() / "DATA/Derivations/output/R17/denormalized_classified_translated.gpkg"
+TRANSLATED_GPKG = Path.home() / "DATA/Derivations/output/R17/swissgecover2d.gpkg"
 FINAL_GDB       = Path.home() / "DATA/Derivations/output/R17/merged_final.gdb"
 LAYER           = "GC_BEDROCK"
 GPKG_UUID       = "uuid"
