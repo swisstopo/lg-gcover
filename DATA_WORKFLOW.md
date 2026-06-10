@@ -135,7 +135,7 @@ python scripts/translate_gpkg.py \
   --strati-links <STRATI_LINK_XLSX> \
   --lowercase-columns \
   --langs de,fr \
-  --output swissgecover2d.gpkg \
+  --output swissgeocover2d.gpkg \
   denormalized_classified.gpkg
 ```
 
@@ -148,7 +148,7 @@ This stage also **normalises all column names to lowercase** (`--lowercase-colum
 - **UPPERCASE** fields → original attributes coming directly from the source FileGDB (e.g. `UUID`, `GEOLCODE`, `KIND`)
 - **lowercase** fields → derived, added, or transformed columns introduced during denormalization, classification, or translation (e.g. `symbol`, `label`, `gmu_code`, `tecto`)
 
-**Output:** `swissgecover2d.gpkg` — the final artefact, ready for PostGIS import.
+**Output:** `swissgeocover2d.gpkg` — the final artefact, ready for PostGIS import.
 
 ---
 
@@ -163,7 +163,7 @@ This stage also **normalises all column names to lowercase** (`--lowercase-colum
 | `master_R16.gdb` | Stage 1 | Spatially merged, mapsheet-clipped GDB |
 | `denormalized.gpkg` | Stage 2 | Flat layers with coded domains resolved |
 | `denormalized_classified.gpkg` | Stage 3 | + `SYMBOL` / `LABEL` classification columns |
-| `swissgecover2d.gpkg` | Stage 4 | + DE/FR labels, strati links → **PostGIS input** |
+| `swissgeocover2d.gpkg` | Stage 4 | + DE/FR labels, strati links → **PostGIS input** |
 
 ---
 
