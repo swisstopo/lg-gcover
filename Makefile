@@ -128,7 +128,8 @@ help:
         geocover-aux aspect aspect-simple aspect-gmm combine-aspect inject-aux-aspect \
         mapfiles \
         install-dev format lint test smoke doc check \
-        clean-denormalize clean-translate clean-classify clean-master clean-all
+        clean-denormalize clean-translate clean-classify clean-master clean-all \
+        swissgeocover2d clean-swissgeocover2d
 
 ### Geocover data
 
@@ -239,6 +240,9 @@ classify: $(CLASSIFIED_PATH)
 
 ## translate: Add human-readable values for geolcodes
 translate: $(TRANSLATED_PATH) checksum
+
+## swissgeocover2d: final GPKG for KOGIS
+swissgeocover2d: translate
 
 ## checksum: Compute SHA256 checksum of the translated GPKG
 .PHONY: checksum
@@ -475,6 +479,10 @@ clean-denormalize: clean-classify clean-translate
 ## clean-translate: Clean translated artefacts
 clean-translate:
 	rm -rf $(TRANSLATED_PATH)
+
+## clean-swissgeocover2d: Remove swissgeocover2d.gpkg and all sidecar files (.README, .sha256, …)
+clean-swissgeocover2d:
+	rm -f $(TRANSLATED_PATH) $(TRANSLATED_PATH).*
 
 ## clean-classify: Clean classified artefacts
 clean-classify: clean-translate
