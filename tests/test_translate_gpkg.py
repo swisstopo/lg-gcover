@@ -864,3 +864,240 @@ class TestCli:
         assert all(c == c.lower() for c in non_geom), (
             f"Expected all lowercase columns, found: {[c for c in non_geom if c != c.lower()]}"
         )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# add_spec_fields
+# ═══════════════════════════════════════════════════════════════════════════
+
+from gcover.utils.spec_fields import add_spec_fields
+
+
+def _spec_gdf(layer: str, rows: list[dict]) -> gpd.GeoDataFrame:
+    """Build a minimal GeoDataFrame suitable for add_spec_fields."""
+    return gpd.GeoDataFrame(rows, geometry=[Point(0, 0)] * len(rows), crs="EPSG:2056")
+
+
+class TestAddSpecFields:
+
+    # ── unsupported layers pass through unchanged ─────────────────────────
+
+    def test_unsupported_layer_returns_unchanged(self):
+        gdf = _spec_gdf("bedrock", [{"kind": 99999, "gmu_de": "Granite"}])
+        result = add_spec_fields(gdf, "bedrock")
+        assert "spec_de" not in result.columns
+        assert "spec_fr" not in result.columns
+
+    def test_unco_deposits_not_processed(self):
+        gdf = _spec_gdf("unco_deposits", [{"kind": 11111}])
+        result = add_spec_fields(gdf, "unco_deposits")
+        assert "spec_de" not in result.columns
+
+    # ── spec_de and spec_fr columns are always added for supported layers ──
+
+    def test_columns_added_for_linear_objects(self):
+        gdf = _spec_gdf("linear_objects", [{"kind": 99999}])
+        result = add_spec_fields(gdf, "linear_objects")
+        assert "spec_de" in result.columns
+        assert "spec_fr" in result.columns
+
+    def test_columns_added_for_fossils(self):
+        gdf = _spec_gdf("fossils", [{"kind": 12901001, "system_desc": "Ammonites", "lfos_division_de": "Tierreste", "lfos_division_fr": "Restes animaux"}])
+        result = add_spec_fields(gdf, "fossils")
+        assert "spec_de" in result.columns
+        assert "spec_fr" in result.columns
+
+    # ── NULL for unknown kinds ─────────────────────────────────────────────
+
+    def test_unknown_kind_gives_null(self):
+        gdf = _spec_gdf("linear_objects", [{"kind": 99999}])
+        result = add_spec_fields(gdf, "linear_objects")
+        assert result.iloc[0]["spec_de"] is None
+        assert result.iloc[0]["spec_fr"] is None
+
+    # ── linear_objects ─────────────────────────────────────────────────────
+
+    def test_linear_tectonic_line(self):
+        gdf = _spec_gdf("linear_objects", [{
+            "kind": 14901004,
+            "ttec_status_de": "sicher",
+            "ttec_status_fr": "certain",
+        }])
+        result = add_spec_fields(gdf, "linear_objects")
+        assert result.iloc[0]["spec_de"] == "sicher"
+        assert result.iloc[0]["spec_fr"] == "certain"
+
+    def test_linear_moraine(self):
+        gdf = _spec_gdf("linear_objects", [{
+            "kind": 11301001,
+            "ggla_morai_mo_de": "Endmoräne",
+            "ggla_morai_mo_fr": "moraine frontale",
+            "ggla_glac_typ_de": "Talgletscher",
+            "ggla_glac_typ_fr": "glacier de vallée",
+        }])
+        result = add_spec_fields(gdf, "linear_objects")
+        assert result.iloc[0]["spec_de"] == "Endmoräne, Talgletscher"
+        assert result.iloc[0]["spec_fr"] == "moraine frontale, glacier de vallée"
+
+    def test_linear_status_prefix(self):
+        gdf = _spec_gdf("linear_objects", [{
+            "kind": 10701001,
+            "aexp_status_de": "aktiv",
+            "aexp_status_fr": "actif",
+        }])
+        result = add_spec_fields(gdf, "linear_objects")
+        assert result.iloc[0]["spec_de"] == "Status: aktiv"
+        assert result.iloc[0]["spec_fr"] == "Status: actif"
+
+    def test_linear_isohypse_altitude(self):
+        gdf = _spec_gdf("linear_objects", [{
+            "kind": 13901001,
+            "pcob_altitude": 1234.0,
+        }])
+        result = add_spec_fields(gdf, "linear_objects")
+        assert result.iloc[0]["spec_de"] == "Altitude (m): 1234"
+        assert result.iloc[0]["spec_fr"] == "Altitude (m): 1234"
+
+    def test_linear_isohypse_sentinel_altitude(self):
+        gdf = _spec_gdf("linear_objects", [{"kind": 13901001, "pcob_altitude": 999999.0}])
+        result = add_spec_fields(gdf, "linear_objects")
+        assert result.iloc[0]["spec_de"] is None
+
+    # ── point_objects ──────────────────────────────────────────────────────
+
+    def test_point_spring(self):
+        gdf = _spec_gdf("point_objects", [{
+            "kind": 12501001,
+            "hsur_type_de": "Karstquelle",
+            "hsur_type_fr": "source karstique",
+            "hsur_status_de": None,
+            "hsur_status_fr": None,
+            "hsur_flow_con_de": None,
+            "hsur_flow_con_fr": None,
+        }])
+        result = add_spec_fields(gdf, "point_objects")
+        assert result.iloc[0]["spec_de"] == "Karstquelle"
+        assert result.iloc[0]["spec_fr"] == "source karstique"
+
+    def test_point_erratic_block(self):
+        gdf = _spec_gdf("point_objects", [{
+            "kind": 14401001,
+            "runc_rock_typ_de": "Granit",
+            "runc_rock_typ_fr": "Granite",
+            "runc_rock_spe_de": None,
+            "runc_rock_spe_fr": None,
+            "runc_status_de": "in situ",
+            "runc_status_fr": "en place",
+        }])
+        result = add_spec_fields(gdf, "point_objects")
+        assert result.iloc[0]["spec_de"] == "Granit, in situ"
+        assert result.iloc[0]["spec_fr"] == "Granite, en place"
+
+    def test_point_structural_null_spec(self):
+        """Structural measurement kinds produce NULL spec."""
+        gdf = _spec_gdf("point_objects", [{"kind": 13801002}])
+        result = add_spec_fields(gdf, "point_objects")
+        assert result.iloc[0]["spec_de"] is None
+
+    # ── surfaces ───────────────────────────────────────────────────────────
+
+    def test_surface_tectonised_zone(self):
+        gdf = _spec_gdf("surfaces", [{
+            "kind": 14801002,
+            "tdef_type_de": "Kataklasit",
+            "tdef_type_fr": "cataclastite",
+        }])
+        result = add_spec_fields(gdf, "surfaces")
+        assert result.iloc[0]["spec_de"] == "Type: Kataklasit"
+        assert result.iloc[0]["spec_fr"] == "Type: cataclastite"
+
+    def test_surface_unknown_kind_null(self):
+        gdf = _spec_gdf("surfaces", [{"kind": 10101999}])
+        result = add_spec_fields(gdf, "surfaces")
+        assert result.iloc[0]["spec_de"] is None
+
+    # ── fossils ────────────────────────────────────────────────────────────
+
+    def test_fossil_join(self):
+        gdf = _spec_gdf("fossils", [{
+            "kind": 12901001,
+            "system_desc": "Ammonites sp.",
+            "lfos_division_de": "Tierreste",
+            "lfos_division_fr": "Restes animaux",
+        }])
+        result = add_spec_fields(gdf, "fossils")
+        assert result.iloc[0]["spec_de"] == "Ammonites sp., Tierreste"
+        assert result.iloc[0]["spec_fr"] == "Ammonites sp., Restes animaux"
+
+    def test_fossil_no_division(self):
+        gdf = _spec_gdf("fossils", [{
+            "kind": 12901001,
+            "system_desc": "Ammonites sp.",
+            "lfos_division_de": None,
+            "lfos_division_fr": None,
+        }])
+        result = add_spec_fields(gdf, "fossils")
+        assert result.iloc[0]["spec_de"] == "Ammonites sp."
+
+    # ── exploit_points ─────────────────────────────────────────────────────
+
+    def test_exploit_point_status(self):
+        gdf = _spec_gdf("exploit_points", [{
+            "kind": 10601001,
+            "aexp_status_de": "stillgelegt",
+            "aexp_status_fr": "abandonné",
+        }])
+        result = add_spec_fields(gdf, "exploit_points")
+        assert result.iloc[0]["spec_de"] == "Status: stillgelegt"
+        assert result.iloc[0]["spec_fr"] == "Status: abandonné"
+
+    def test_exploit_point_null_kind(self):
+        gdf = _spec_gdf("exploit_points", [{"kind": 10601004}])
+        result = add_spec_fields(gdf, "exploit_points")
+        assert result.iloc[0]["spec_de"] is None
+
+    # ── sentinel / no-data filtering ──────────────────────────────────────
+
+    def test_not_applicable_filtered(self):
+        gdf = _spec_gdf("linear_objects", [{
+            "kind": 14901004,
+            "ttec_status_de": "not applicable",
+            "ttec_status_fr": "not applicable",
+        }])
+        result = add_spec_fields(gdf, "linear_objects")
+        assert result.iloc[0]["spec_de"] is None
+
+    def test_unbekannt_filtered(self):
+        gdf = _spec_gdf("surfaces", [{
+            "kind": 15801001,
+            "gins_main_mov_de": "unbekannt",
+            "gins_main_mov_fr": "unbekannt",
+        }])
+        result = add_spec_fields(gdf, "surfaces")
+        assert result.iloc[0]["spec_de"] is None
+
+    def test_join_skips_none_parts(self):
+        """join_parts must drop None entries; result is the surviving parts only."""
+        gdf = _spec_gdf("linear_objects", [{
+            "kind": 11301001,
+            "ggla_morai_mo_de": "Endmoräne",
+            "ggla_morai_mo_fr": "moraine frontale",
+            "ggla_glac_typ_de": None,
+            "ggla_glac_typ_fr": None,
+        }])
+        result = add_spec_fields(gdf, "linear_objects")
+        assert result.iloc[0]["spec_de"] == "Endmoräne"
+        assert ", " not in result.iloc[0]["spec_de"]
+
+    # ── input GDF is not mutated ───────────────────────────────────────────
+
+    def test_original_gdf_not_mutated(self):
+        gdf = _spec_gdf("fossils", [{
+            "kind": 12901001,
+            "system_desc": "x",
+            "lfos_division_de": "y",
+            "lfos_division_fr": "z",
+        }])
+        cols_before = list(gdf.columns)
+        add_spec_fields(gdf, "fossils")
+        assert list(gdf.columns) == cols_before
