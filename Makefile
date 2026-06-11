@@ -30,7 +30,7 @@ DENORMALIZED_PATH := $(OUTPUT_DIR)$(DENORMALIZED_GPKG)
 CLASSIFIED_GPKG	  := denormalized_classified.gpkg
 CLASSIFIED_PATH   := $(OUTPUT_DIR)$(CLASSIFIED_GPKG)
 #TRANSLATED_GPKG   := denormalized_classified_translated.gpkg
-TRANSLATED_GPKG   := swissgecover2d.gpkg
+TRANSLATED_GPKG   := swissgeocover2d.gpkg
 TRANSLATED_PATH   := $(OUTPUT_DIR)$(TRANSLATED_GPKG)
 TRANSLATED_README := $(TRANSLATED_PATH:.gpkg=.README)
 FULL_GDB_PATH     := $(SOURCES_DIR)RC1.gdb     # TODO Val Bregaglia missing GMU_ATT in RC2. RC1 OK
