@@ -42,6 +42,10 @@ from rich.progress import (BarColumn, Progress, SpinnerColumn,
                            TaskProgressColumn, TextColumn)
 from rich.table import Table
 
+# Allow running as a standalone script outside an installed environment
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from gcover.utils.spec_fields import add_spec_fields  # noqa: E402
+
 console = Console()
 
 GEOLCODE_MIN = 999_995
@@ -86,7 +90,7 @@ ATTRIBUTES_TO_IGNORE = [
 
 TRANSLATED_SUFFIXES = ("_desc", "_fr", "_de", "_it", "_en")
 
-FIXED_FIRST_COLUMNS = ["gid", "kind", "kind_de", "kind_fr", "kind_it", "kind_en", "uuid","label", "map_symbol", "label_de", "label_fr"]
+FIXED_FIRST_COLUMNS = ["gid", "kind", "kind_de", "kind_fr", "kind_it", "kind_en", "spec_de", "spec_fr", "uuid", "label", "map_symbol", "label_de", "label_fr"]
 
 PIPE_SEP = " | "
 
@@ -619,6 +623,8 @@ def main(
             gdf, stats = enrich_layer(
                 gdf, translations, available_langs, min_coverage, lyr
             )
+
+            gdf = add_spec_fields(gdf, lyr)
 
             # ── Apply label formulas from config ─────────────────────────────
             if batch_config:
