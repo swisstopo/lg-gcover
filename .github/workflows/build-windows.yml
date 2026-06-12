@@ -1,0 +1,149 @@
+name: Windows Standalone Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ feature_nuitka_build ]
+    tags:
+      - "v*.*.*"
+
+env:
+  CONDA_ENV: GCOVER_WIN
+  PYTHON_VERSION: "3.11"
+  PYTHONUTF8: "1"
+
+jobs:
+  pyinstaller-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Disable Windows Defender real-time scanning
+        shell: powershell
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
+
+      - name: Install miniconda
+        uses: conda-incubator/setup-miniconda@v4.0.1
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          auto-update-conda: true
+          channels: conda-forge,defaults
+          channel-priority: true
+          activate-environment: ${{ env.CONDA_ENV }}
+
+      - name: Cache conda environment
+        uses: actions/cache@v5
+        with:
+          path: C:\Miniconda\envs\${{ env.CONDA_ENV }}
+          key: pyinst-conda-win-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/pyproject.toml') }}
+          restore-keys: |
+            pyinst-conda-win-${{ env.PYTHON_VERSION }}-
+
+      - name: Install libmamba solver
+        shell: bash -el {0}
+        run: conda install -n base -y conda-libmamba-solver
+
+      - name: Install GIS + runtime dependencies
+        shell: bash -el {0}
+        run: |
+          conda install -y --solver=libmamba \
+            duckdb pip gdal geopandas shapely pandas \
+            click rich pydantic pyyaml structlog python-dotenv loguru \
+            fiona pyogrio boto3 openpyxl dateparser \
+            setuptools setuptools-scm
+
+      - name: Install PyInstaller
+        shell: bash -el {0}
+        run: pip install pyinstaller pyinstaller-hooks-contrib
+
+      - name: Install gcover package
+        shell: bash -el {0}
+        run: pip install -e ".[dev,cloud]" --no-deps
+
+      - name: Get version from SCM
+        shell: bash -el {0}
+        id: version
+        run: echo "version=$(python -m setuptools_scm)" >> "$GITHUB_OUTPUT"
+
+      - name: Write entrypoint script
+        shell: bash -el {0}
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          Path("_gcover_main.py").write_text(
+              "from gcover.cli.main import cli\nif __name__ == '__main__':\n    cli()\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Resolve GDAL / PROJ data directories
+        shell: bash -el {0}
+        id: datadirs
+        run: |
+          python - <<'PY'
+          import os, sys
+          from pathlib import Path
+
+          prefix = Path(sys.prefix)
+          gdal_data = os.environ.get("GDAL_DATA") or str(prefix / "Library" / "share" / "gdal")
+          proj_data = str(prefix / "Library" / "share" / "proj")
+
+          try:
+              from pyproj import datadir
+              proj_data = datadir.get_data_dir()
+          except Exception:
+              pass
+
+          print(f"gdal_data: {gdal_data}")
+          print(f"proj_data: {proj_data}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"gdal_data={gdal_data}\n")
+              f.write(f"proj_data={proj_data}\n")
+          PY
+
+      - name: Build with PyInstaller
+        shell: bash -el {0}
+        run: |
+          pyinstaller \
+            --name=gcover \
+            --onedir \
+            --exclude-module=tkinter \
+            --exclude-module=_tkinter \
+            --collect-all=gcover \
+            --collect-all=fiona \
+            --collect-all=pyogrio \
+            --hidden-import=osgeo.gdal \
+            --hidden-import=osgeo.ogr \
+            --hidden-import=osgeo.osr \
+            --hidden-import=osgeo.gdal_array \
+            --hidden-import=duckdb \
+            --hidden-import=shapely \
+            --add-data "${{ steps.datadirs.outputs.gdal_data }};gdal-data" \
+            --add-data "${{ steps.datadirs.outputs.proj_data }};proj-data" \
+            _gcover_main.py
+
+      - name: Package distribution folder
+        shell: powershell
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          Compress-Archive -Path dist\gcover -DestinationPath "gcover-windows-$version.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7.0.0
+        with:
+          name: gcover-windows-${{ steps.version.outputs.version }}
+          path: gcover-windows-*.zip
+          if-no-files-found: error
+
+      - name: Attach to GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2.5.0
+        with:
+          files: gcover-windows-*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
