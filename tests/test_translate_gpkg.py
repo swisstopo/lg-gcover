@@ -1059,6 +1059,7 @@ class TestAddSpecFields:
     # ── sentinel / no-data filtering ──────────────────────────────────────
 
     def test_not_applicable_filtered(self):
+        """'not applicable' is always suppressed, even as a direct value."""
         gdf = _spec_gdf("linear_objects", [{
             "kind": 14901004,
             "ttec_status_de": "not applicable",
@@ -1067,14 +1068,46 @@ class TestAddSpecFields:
         result = add_spec_fields(gdf, "linear_objects")
         assert result.iloc[0]["spec_de"] is None
 
-    def test_unbekannt_filtered(self):
+    def test_unbekannt_kept_as_direct_value(self):
+        """'unbekannt' is kept when it is the sole value behind a Status: prefix."""
         gdf = _spec_gdf("surfaces", [{
             "kind": 15801001,
             "gins_main_mov_de": "unbekannt",
-            "gins_main_mov_fr": "unbekannt",
+            "gins_main_mov_fr": "inconnu",
         }])
         result = add_spec_fields(gdf, "surfaces")
+        assert result.iloc[0]["spec_de"] == "unbekannt"
+        assert result.iloc[0]["spec_fr"] == "inconnu"
+
+    def test_unbekannt_stripped_from_join(self):
+        """'unbekannt'/'inconnu' are stripped when they appear inside a joined string."""
+        gdf = _spec_gdf("point_objects", [{
+            "kind": 12501001,
+            "hsur_type_de": "unbekannt",
+            "hsur_type_fr": "inconnu",
+            "hsur_status_de": "gefasst",
+            "hsur_status_fr": "captée",
+            "hsur_flow_con_de": None,
+            "hsur_flow_con_fr": None,
+        }])
+        result = add_spec_fields(gdf, "point_objects")
+        assert result.iloc[0]["spec_de"] == "gefasst"
+        assert result.iloc[0]["spec_fr"] == "captée"
+
+    def test_all_join_parts_unbekannt_gives_null(self):
+        """If every join part is 'unbekannt'/'inconnu', the result is None."""
+        gdf = _spec_gdf("point_objects", [{
+            "kind": 12501001,
+            "hsur_type_de": "unbekannt",
+            "hsur_type_fr": "inconnu",
+            "hsur_status_de": "unbekannt",
+            "hsur_status_fr": "inconnu",
+            "hsur_flow_con_de": "unbekannt",
+            "hsur_flow_con_fr": "inconnu",
+        }])
+        result = add_spec_fields(gdf, "point_objects")
         assert result.iloc[0]["spec_de"] is None
+        assert result.iloc[0]["spec_fr"] is None
 
     def test_join_skips_none_parts(self):
         """join_parts must drop None entries; result is the surviving parts only."""
