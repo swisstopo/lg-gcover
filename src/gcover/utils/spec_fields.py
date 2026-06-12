@@ -13,23 +13,36 @@ from __future__ import annotations
 import geopandas as gpd
 import pandas as pd
 
-_NA: frozenset = frozenset({"not applicable", "unbekannt", "N/A", ""})
+# Hard no-data: always suppressed (even as a standalone Status/Type value)
+_NA: frozenset = frozenset({"not applicable", "N/A", ""})
+
+# Extended set used only inside _join: also strips "unknown" sentinels that
+# are noise in composite strings but acceptable as bare Status:/Type: values.
+_NA_JOIN: frozenset = _NA | {"unbekannt", "inconnu"}
 
 # Static label prefix strings keyed by language suffix
 _DEPTH_BEDR_LABEL = {"_de": "Tiefe Fels", "_fr": "Profondeur du roc"}
 
 
 def _val(v) -> str | None:
-    """Return v as a displayable string, or None for no-data sentinels."""
+    """Return v as a displayable string, or None for hard no-data sentinels."""
     if v is None or (isinstance(v, float) and pd.isna(v)):
         return None
     s = str(v).strip()
     return None if s in _NA else s or None
 
 
+def _val_join(v) -> str | None:
+    """Like _val but also strips 'unknown' sentinels (unbekannt / inconnu)."""
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return None
+    s = str(v).strip()
+    return None if s in _NA_JOIN else s or None
+
+
 def _join(*parts) -> str | None:
-    """Comma-join non-empty display values; return None if nothing survives."""
-    items = [p for p in (_val(p) for p in parts) if p]
+    """Comma-join parts, filtering hard no-data and 'unknown' sentinels."""
+    items = [s for p in parts if (s := _val_join(p))]
     return ", ".join(items) if items else None
 
 
