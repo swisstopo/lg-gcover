@@ -128,51 +128,27 @@ def cli(ctx, config, log_file, log_info, env, verbose, output, quiet):
     except KeyError:
         raise click.BadParameter(f"Unsupported environment: {env}")
 
-    try:
-        # Load centralized configuration
-        app_config: AppConfig = load_config(
-            config_path=Path(config) if config else None,
-            environment=environment,
-            verbose=verbose,
-        )
+    ctx.obj["config_path"] = config
+    ctx.obj["environment"] = environment
+    ctx.obj["verbose"] = verbose
+    ctx.obj["output"] = output
+    ctx.obj["quiet"] = quiet
 
-        ctx.obj["config_path"] = config
-        ctx.obj["environment"] = environment
-        ctx.obj["verbose"] = verbose
-        ctx.obj["output"] = output
-        ctx.obj["quiet"] = quiet
+    if not quiet and output != "json":
+        rprint(f"[cyan]Verbose: {verbose}[/cyan]")
 
-        global_config = app_config.global_
+    if verbose:
+        rprint(f"[cyan]Environment: {environment}[/cyan]")
 
-        if not quiet and output != "json":
-            rprint(f"[cyan]Verbose: {verbose}[/cyan]")
+    # Setup centralized logging (does not require app config)
+    setup_logging(verbose=verbose, log_file=log_file, environment=env, json_mode=(output == "json"))
 
-        if verbose:
-            rprint(f"[cyan]Environment: {environment}[/cyan]")
-            rprint(f"[cyan]Log Level: {global_config.log_level}[/cyan]")
-            rprint(f"[cyan]Bucket name: {global_config.s3.bucket}[/cyan]")
-            rprint(f"[cyan]Proxy: {global_config.proxy}[/cyan]")
-            rprint(f"[cyan]Temp Dir: {global_config.temp_dir}[/cyan]")
+    if log_info:
+        gcover_logger.show_log_info()
+        ctx.exit()
 
-        # Setup centralized logging FIRST (before any other operations)
-        setup_logging(verbose=verbose, log_file=log_file, environment=env, json_mode=(output == "json"))
-
-        # Show logging info and exit if requested
-        if log_info:
-            gcover_logger.show_log_info()
-            ctx.exit()
-
-        # Log the startup
-        logger.info(f"GCover CLI started (environment: {env})")
-        logger.debug(f"Configuration: config={config}, verbose={verbose}")
-
-    except Exception as e:
-        rprint(f"[red]Configuration error: {e}[/red]")
-        if verbose:
-            import traceback
-
-            rprint(f"[red]{traceback.format_exc()}[/red]")
-        sys.exit(1)
+    logger.info(f"GCover CLI started (environment: {env})")
+    logger.debug(f"Configuration: config={config}, verbose={verbose}")
 
 
 @cli.command()
@@ -269,6 +245,17 @@ def tail_logs(lines):
 
     except Exception as e:
         click.echo(f"❌ Error reading log file: {e}")
+
+
+def get_app_config(ctx) -> AppConfig:
+    """Lazily load and cache AppConfig in the Click context."""
+    if "app_config" not in ctx.obj:
+        ctx.obj["app_config"] = load_config(
+            config_path=Path(ctx.obj["config_path"]) if ctx.obj.get("config_path") else None,
+            environment=ctx.obj["environment"],
+            verbose=ctx.obj.get("verbose", False),
+        )
+    return ctx.obj["app_config"]
 
 
 # Import des sous-commandes si disponibles
