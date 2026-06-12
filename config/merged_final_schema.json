@@ -30931,12 +30931,12 @@
           "nullable": 1
         },
         {
-          "name": "erl_link",
+          "name": "ERL_LINK",
           "type": "esriFieldTypeString",
           "nullable": 1
         },
         {
-          "name": "ber_link",
+          "name": "BER_LINK",
           "type": "esriFieldTypeString",
           "nullable": 1
         }
@@ -31207,12 +31207,12 @@
           "nullable": 1
         },
         {
-          "name": "erl_link",
+          "name": "ERL_LINK",
           "type": "esriFieldTypeString",
           "nullable": 1
         },
         {
-          "name": "ber_link",
+          "name": "BER_LINK",
           "type": "esriFieldTypeString",
           "nullable": 1
         }
@@ -31607,12 +31607,12 @@
           "nullable": 1
         },
         {
-          "name": "erl_link",
+          "name": "ERL_LINK",
           "type": "esriFieldTypeString",
           "nullable": 1
         },
         {
-          "name": "ber_link",
+          "name": "BER_LINK",
           "type": "esriFieldTypeString",
           "nullable": 1
         }
@@ -31689,12 +31689,12 @@
           "nullable": 1
         },
         {
-          "name": "erl_link",
+          "name": "ERL_LINK",
           "type": "esriFieldTypeString",
           "nullable": 1
         },
         {
-          "name": "ber_link",
+          "name": "BER_LINK",
           "type": "esriFieldTypeString",
           "nullable": 1
         }
@@ -31764,12 +31764,12 @@
           "nullable": 1
         },
         {
-          "name": "erl_link",
+          "name": "ERL_LINK",
           "type": "esriFieldTypeString",
           "nullable": 1
         },
         {
-          "name": "ber_link",
+          "name": "BER_LINK",
           "type": "esriFieldTypeString",
           "nullable": 1
         }
@@ -31894,12 +31894,12 @@
           "nullable": 1
         },
         {
-          "name": "erl_link",
+          "name": "ERL_LINK",
           "type": "esriFieldTypeString",
           "nullable": 1
         },
         {
-          "name": "ber_link",
+          "name": "BER_LINK",
           "type": "esriFieldTypeString",
           "nullable": 1
         }
@@ -31969,12 +31969,12 @@
           "nullable": 1
         },
         {
-          "name": "erl_link",
+          "name": "ERL_LINK",
           "type": "esriFieldTypeString",
           "nullable": 1
         },
         {
-          "name": "ber_link",
+          "name": "BER_LINK",
           "type": "esriFieldTypeString",
           "nullable": 1
         },
@@ -32056,12 +32056,12 @@
           "nullable": 1
         },
         {
-          "name": "erl_link",
+          "name": "ERL_LINK",
           "type": "esriFieldTypeString",
           "nullable": 1
         },
         {
-          "name": "ber_link",
+          "name": "BER_LINK",
           "type": "esriFieldTypeString",
           "nullable": 1
         }
@@ -33923,6 +33923,6 @@
     "source": "FileGDB",
     "gdb_path": "/home/marco/DATA/Derivations/output/R17/merged_final.gdb",
     "extraction_method": "direct_gdal_parsing",
-    "exported_at": "2026-06-01T14:24:16.931090"
+    "exported_at": "2026-06-12T09:58:21.326148"
   }
 }

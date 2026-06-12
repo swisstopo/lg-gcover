@@ -33,6 +33,7 @@ CLASSIFIED_PATH   := $(OUTPUT_DIR)$(CLASSIFIED_GPKG)
 TRANSLATED_GPKG   := swissgeocover2d.gpkg
 TRANSLATED_PATH   := $(OUTPUT_DIR)$(TRANSLATED_GPKG)
 TRANSLATED_README := $(TRANSLATED_PATH:.gpkg=.README)
+TRANSLATED_SCHEMA := $(TRANSLATED_PATH).schema.json
 FULL_GDB_PATH     := $(SOURCES_DIR)RC1.gdb     # TODO Val Bregaglia missing GMU_ATT in RC2. RC1 OK
 GEOCOVER_AUX_PATH := $(OUTPUT_DIR)geocover_aux.gpkg
 ADMIN_ZONES_GPKG  := administrative_zones.gpkg
@@ -129,7 +130,7 @@ help:
         mapfiles \
         install-dev format lint test smoke doc check \
         clean-denormalize clean-translate clean-classify clean-master clean-all \
-        swissgeocover2d clean-swissgeocover2d
+        swissgeocover2d clean-swissgeocover2d schema-snapshot
 
 ### Geocover data
 
@@ -239,7 +240,7 @@ denormalize: $(DENORMALIZED_PATH)
 classify: $(CLASSIFIED_PATH)
 
 ## translate: Add human-readable values for geolcodes
-translate: $(TRANSLATED_PATH) checksum
+translate: $(TRANSLATED_PATH) checksum schema-snapshot
 
 ## swissgeocover2d: final GPKG for KOGIS
 swissgeocover2d: translate
@@ -250,6 +251,14 @@ checksum:
 	$(call check_file,TRANSLATED_PATH,$(TRANSLATED_PATH))
 	@sha256sum $(TRANSLATED_PATH) | tee $(TRANSLATED_PATH).sha256
 	@echo "Written to $(TRANSLATED_PATH).sha256"
+
+## schema-snapshot: Generate a JSON schema snapshot of swissgeocover2d.gpkg and copy to config/
+.PHONY: schema-snapshot
+schema-snapshot:
+	$(call check_file,TRANSLATED_PATH,$(TRANSLATED_PATH))
+	gcover schema snapshot $(TRANSLATED_PATH) -o $(TRANSLATED_SCHEMA)
+	@cp $(TRANSLATED_SCHEMA) config/swissgeocover2d_schema.json
+	@echo "Written to $(TRANSLATED_SCHEMA) and config/swissgeocover2d_schema.json"
 
 ### Data check
 

@@ -730,29 +730,64 @@ def diagram(json_file, output, title, no_fields, no_relationships, no_domains, m
     help="Only include layers/tables whose name starts with this prefix (default: GC_).",
 )
 def snapshot(gdb_path, output, prefix):
-    """Extract a FileGDB schema snapshot to JSON (no arcpy required).
+    """Extract a schema snapshot to JSON (no arcpy required).
 
-    The snapshot captures layer names (exact case), field names + types +
+    Accepts both FileGDB (.gdb) and GeoPackage (.gpkg) inputs.
+
+    For FileGDB the snapshot captures layer names, field names + types +
     domain bindings, coded/range domain names, and relationship class names.
+    For GPKG the snapshot captures layer names, field names + types, geometry
+    type, and feature count.
+
     Commit the output file as a contract; use 'schema diff' to validate future
     deliveries against it.
 
     Example
     -------
       gcover schema snapshot merged_final.gdb -o config/merged_final_schema.json
-      gcover schema snapshot merged_final.gdb --prefix GC_
+      gcover schema snapshot swissgeocover2d.gpkg -o config/swissgeocover2d_schema.json
     """
+    import json
+    import fiona
+
+    src = Path(gdb_path)
+    out = output or src.parent / f"{src.stem}_schema.json"
+
+    console.print(f"[bold]Snapshot:[/] {src}")
+    console.print(f"[bold]Output  :[/] {out}")
+
+    # ── GPKG branch ──────────────────────────────────────────────────────────
+    if src.suffix.lower() == ".gpkg":
+        try:
+            layers = fiona.listlayers(str(src))
+            schema = {}
+            for lyr in layers:
+                with fiona.open(str(src), layer=lyr) as ds:
+                    schema[lyr] = {
+                        "feature_count": len(ds),
+                        "geometry": ds.schema["geometry"],
+                        "fields": dict(ds.schema["properties"]),
+                    }
+        except Exception as exc:
+            console.print(f"[red]✗ Failed to parse GPKG: {exc}[/red]")
+            raise click.Abort()
+
+        console.print(f"  [green]✓[/] {len(schema)} layer(s)")
+        try:
+            out.write_text(json.dumps(schema, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception as exc:
+            console.print(f"[red]✗ Failed to write {out}: {exc}[/red]")
+            raise click.Abort()
+
+        console.print(f"[bold green]✓ Snapshot written → {out}[/bold green]")
+        return
+
+    # ── FileGDB branch ───────────────────────────────────────────────────────
     from gcover.schema.filegdb_parser import FileGDBParser
     from gcover.schema.serializer import save_esri_schema_to_file
 
-    gdb = Path(gdb_path)
-    out = output or gdb.parent / f"{gdb.stem}_schema.json"
-
-    console.print(f"[bold]Snapshot:[/] {gdb}")
-    console.print(f"[bold]Output  :[/] {out}")
-
     try:
-        parser = FileGDBParser(str(gdb))
+        parser = FileGDBParser(str(src))
         parser.open()
         schema = parser.parse_to_esri_schema(target_prefix=prefix)
         parser.close()
