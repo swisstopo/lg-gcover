@@ -23,7 +23,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from rich.text import Text
 
-from gcover.cli.main import _split_bbox
+from gcover.cli.main import _split_bbox, get_app_config
 from gcover.config import (DEFAULT_EXCLUDED_FIELDS, GEOCOVER_METADATA_FIELDS,
                            SDE_INSTANCES, AppConfig, load_config)
 from gcover.publish.esri_classification_applicator import \
@@ -66,13 +66,11 @@ console = Console()
 def get_publish_config(ctx):
     """Get publish configuration from context."""
     try:
-        app_config: AppConfig = load_config(environment=ctx.obj["environment"])
+        app_config = get_app_config(ctx)
         return app_config.publish, app_config.global_
     except Exception as e:
         console.print(f"[red]Configuration error: {e}[/red]")
-        console.print(
-            "Make sure your configuration includes publish and global settings"
-        )
+        console.print("Make sure your configuration includes publish and global settings")
         raise click.Abort()
 
 
