@@ -449,7 +449,7 @@ layers:
             metadata:
               wms_group_title: Linear Objects
           map_label: False  # Don't use mapfile LABEL, even if defined in .lyrx
-          data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, map_angle, strike_deg, map_symbol FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects) AS subquery  USING UNIQUE gid USING SRID=2056"
+          data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, map_angle, strike_deg, map_symbol, CASE WHEN aexp_status = 10702001 THEN 'Û' WHEN aexp_status = 10702002 THEN 'Ü' ELSE '' END AS label_char FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects) AS subquery  USING UNIQUE gid USING SRID=2056"
 
           lang_fields:
             kind_desc: "kind_%lang%"
