@@ -548,3 +548,12 @@ doc:
 ## check: lint and smoke tests
 check: lint smoke
 	@echo "✅ Basic checks passed!"
+
+## diff-pa: Compare PA_Geocover Excel between current (R17) and previous (R16) release
+PREV_RELEASE     ?= R16
+PREV_PA_EXCEL    := ${HOME}/DATA/Derivations/delivery/$(PREV_RELEASE)/Excels/GC_Sources_PA.xlsx
+.PHONY: diff-pa
+diff-pa:
+	$(call check_file,PA_EXCEL_PATH,$(PA_EXCEL_PATH))
+	$(call check_file,PREV_PA_EXCEL,$(PREV_PA_EXCEL))
+	python scripts/diff_xlsx.py $(PA_EXCEL_PATH) $(PREV_PA_EXCEL) --cols MSH_MAP_TITLE --cols BKP
