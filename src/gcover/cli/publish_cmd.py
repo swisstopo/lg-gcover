@@ -2425,6 +2425,7 @@ def merge(
         raise click.Abort()
 
     # Write by-products alongside the XLSX when --sources was provided
+    zones_out = None
     if sources is not None:
         from gcover.publish.zones import join_mapsheets_sources, write_sources_overview_png, _gdb_date
 
@@ -2477,7 +2478,7 @@ def merge(
                 log=console.print,
                 exclude_fields=GEOCOVER_METADATA_FIELDS if exclude_metadata else None,
                 strati_links_path=strati_links_path,
-                admin_zones_path=admin_zones,
+                admin_zones_path=zones_out if (zones_out is not None and zones_out.exists()) else admin_zones,
             )
             if errors:
                 console.print(f"[yellow]Schema patch completed with {len(errors)} error(s):[/yellow]")
