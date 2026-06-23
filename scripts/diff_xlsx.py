@@ -94,8 +94,8 @@ def main(new_file: Path, old_file: Path, key_col: int, no_unchanged: bool,
     ]
 
     console.print()
-    console.print(f"[bold]NEW :[/bold] {new_file.name}")
-    console.print(f"[bold]OLD :[/bold] {old_file.name}")
+    console.print(f"[bold]~   :[/bold] {old_file.name}  [dim](OLD)[/dim]")
+    console.print(f"[bold]→   :[/bold] {new_file.name}  [dim](NEW)[/dim]")
     if filter_indices is not None:
         console.print(f"[bold]COLS:[/bold] {', '.join(cols)}")
     console.print()
