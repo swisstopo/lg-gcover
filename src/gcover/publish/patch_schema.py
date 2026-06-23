@@ -18,7 +18,9 @@ Tested with GDAL 3.10.3 and GDAL 3.13.0.
 """
 from __future__ import annotations
 
+import gc
 import shutil
+import tempfile
 import time
 from pathlib import Path
 from typing import Callable
@@ -261,111 +263,155 @@ def patch_schema_gdb(
     merged_gdb = str(merged_gdb)
     output_gdb_str = str(output_gdb)
 
-    # Step 1: byte-perfect clone
-    import os
-    if os.path.exists(output_gdb_str):
-        shutil.rmtree(output_gdb_str)
+    # All in-place GDAL work (field edits, data append) is done on a local
+    # temporary copy to avoid GDAL/Windows SMB oplock contention on UNC paths
+    # (random "Permission denied" on a00000004.gdbtable during DeleteField).
+    # The finished GDB is moved to the UNC destination in one shot at the end.
+    tmp_dir = tempfile.mkdtemp(prefix="gcover_patch_")
+    work_gdb    = str(Path(tmp_dir) / Path(output_gdb_str).name)
+    local_merged = str(Path(tmp_dir) / Path(merged_gdb).name)
 
-    log(f"Cloning {schema_gdb} …")
-    t0 = time.time()
-    shutil.copytree(schema_gdb, output_gdb_str)
-    log(f"  done in {time.time()-t0:.1f}s")
+    try:
+        import os
 
-    # Drop topology layers not needed in publication
-    ds = ogr.Open(output_gdb_str, 1)
-    dropped: list[str] = []
-    for i in range(ds.GetLayerCount() - 1, -1, -1):
-        name = ds.GetLayerByIndex(i).GetName()
-        if name in _DROP_LAYERS or any(name.startswith(p) for p in _DROP_PREFIXES):
-            ds.DeleteLayer(i)
-            dropped.append(name)
-    ds = None
-    if dropped:
-        log(f"  dropped: {', '.join(dropped)}")
+        # Step 0: copy merged_gdb to local temp so all GDAL reads are local.
+        # On Windows, GDAL's OpenFileGDB does many small random seeks through
+        # .gdbtable files; over a UNC/SMB share each seek is a network round-trip,
+        # making VectorTranslate ~12× slower than on Linux with NFS.
+        # One sequential copy up-front is far cheaper than millions of random reads.
+        log(f"Copying merged GDB to local temp {tmp_dir}…")
+        t0 = time.time()
+        shutil.copytree(merged_gdb, local_merged)
+        log(f"  done in {time.time()-t0:.1f}s")
 
-    ds = ogr.Open(output_gdb_str, 0)
-    log(f"  layers: {ds.GetLayerCount()},  domains: {len(ds.GetFieldDomainNames() or [])}")
-    ds = None
+        # Step 1: byte-perfect clone → local working copy
+        log(f"Cloning {schema_gdb} …")
+        t0 = time.time()
+        shutil.copytree(schema_gdb, work_gdb)
+        log(f"  done in {time.time()-t0:.1f}s")
 
-    # Step 1b: add extra fields absent from schema GDB / drop excluded fields
-    if strati_links_path is None:
-        log("  WARNING: --strati-links not provided, strati_link field omitted from output")
-
-    ds = ogr.Open(output_gdb_str, 1)
-    for layer_name in SPATIAL_LAYERS:
-        lyr = ds.GetLayerByName(layer_name)
-        if lyr is None:
-            continue
-        defn = lyr.GetLayerDefn()
-        existing = {defn.GetFieldDefn(i).GetName() for i in range(defn.GetFieldCount())}
-
-        for fname, ftype in _EXTRA_FIELDS:
-            if fname not in existing:
-                lyr.CreateField(ogr.FieldDefn(fname, ftype))
-                log(f"  added field '{fname}' to {layer_name}")
-
-        # strati_link only on GC_BEDROCK, and only when Excel path is given
-        if layer_name == "GC_BEDROCK" and strati_links_path is not None:
-            if "strati_link" not in existing:
-                lyr.CreateField(ogr.FieldDefn("strati_link", ogr.OFTString))
-                log(f"  added field 'strati_link' to {layer_name}")
-
-        if exclude_fields:
-            # Delete fields in reverse index order to keep indices stable
-            defn = lyr.GetLayerDefn()
-            to_drop = [
-                i for i in range(defn.GetFieldCount())
-                if defn.GetFieldDefn(i).GetName() in exclude_fields
-            ]
-            for i in reversed(to_drop):
-                lyr.DeleteField(i)
-            if to_drop:
-                log(f"  dropped {len(to_drop)} metadata fields from {layer_name}")
-    ds = None
-
-    # Steps 2 & 3: patch spatial layers and tables
-    errors: list[str] = []
-    errors += _patch(output_gdb_str, merged_gdb, SPATIAL_LAYERS, "Spatial layers (GC_ROCK_BODIES)", log)
-    errors += _patch(output_gdb_str, merged_gdb, TABLE_LAYERS,   "Tables & relationship tables", log)
-
-    # Step 4: inject strati_link from Excel
-    if strati_links_path is not None:
-        log("\n--- strati_link injection ---")
-        ds = ogr.Open(output_gdb_str, 1)
-        _inject_strati_link(ds, strati_links_path, log)
-        ds = None
-
-    # Step 5: replace GC_MAPSHEET with mapsheets_sources_only (uppercased fields, 2D)
-    if admin_zones_path is not None:
-        log("\n--- GC_MAPSHEET ---")
-        ds = ogr.Open(output_gdb_str, 1)
-        for i in range(ds.GetLayerCount()):
-            if ds.GetLayerByIndex(i).GetName() == "GC_MAPSHEET":
+        # Drop topology layers not needed in publication
+        ds = ogr.Open(work_gdb, 1)
+        dropped: list[str] = []
+        for i in range(ds.GetLayerCount() - 1, -1, -1):
+            name = ds.GetLayerByIndex(i).GetName()
+            if name in _DROP_LAYERS or any(name.startswith(p) for p in _DROP_PREFIXES):
                 ds.DeleteLayer(i)
-                break
+                dropped.append(name)
+        ds = None
+        if dropped:
+            log(f"  dropped: {', '.join(dropped)}")
+
+        ds = ogr.Open(work_gdb, 0)
+        log(f"  layers: {ds.GetLayerCount()},  domains: {len(ds.GetFieldDomainNames() or [])}")
         ds = None
 
-        _sql = (
-            "SELECT geom, MSH_MAP_TITLE, MSH_MAP_NBR, MSH_TOPO_NR, MSH_REV, SOURCE_RC, "
-            "Version AS VERSION, BER, ERL, ber_link AS BER_LINK, erl_link AS ERL_LINK "
-            "FROM mapsheets_sources_only"
-        )
-        gdal.VectorTranslate(
-            output_gdb_str,
-            str(admin_zones_path),
-            options=gdal.VectorTranslateOptions(
-                SQLStatement=_sql,
-                SQLDialect="SQLite",
-                layerName="GC_MAPSHEET",
-                accessMode="update",
-                geometryType="POLYGON",
-            ),
-        )
-        ds = ogr.Open(output_gdb_str, 0)
-        lyr = ds.GetLayerByName("GC_MAPSHEET")
-        n = lyr.GetFeatureCount() if lyr else -1
+        # Step 1b-pre: truncate spatial layers BEFORE any field edits.
+        # DeleteField in FileGDB rewrites the entire .gdbtable for every call.
+        # On layers that still hold RC2's ~300k features, that means 19 full
+        # table rewrites per layer — catastrophically slow on Windows where
+        # Defender scans every write.  Empty tables make field ops trivial.
+        log("\nTruncating spatial layers …")
+        ds = ogr.Open(work_gdb, 1)
+        for layer_name in SPATIAL_LAYERS:
+            t0 = time.time()
+            n = _truncate(ds, layer_name)
+            if n >= 0:
+                log(f"  cleared {layer_name} ({n:,} features) in {time.time() - t0:.1f}s")
         ds = None
-        log(f"  GC_MAPSHEET: {n:,} features")
+        gc.collect()
+
+        # Step 1b: drop excluded fields, then add extra fields — now on empty layers.
+        if strati_links_path is None:
+            log("  WARNING: --strati-links not provided, strati_link field omitted from output")
+
+        ds = ogr.Open(work_gdb, 1)
+        for layer_name in SPATIAL_LAYERS:
+            lyr = ds.GetLayerByName(layer_name)
+            if lyr is None:
+                continue
+
+            if exclude_fields:
+                defn = lyr.GetLayerDefn()
+                to_drop = [
+                    i for i in range(defn.GetFieldCount())
+                    if defn.GetFieldDefn(i).GetName() in exclude_fields
+                ]
+                for i in reversed(to_drop):
+                    lyr.DeleteField(i)
+                if to_drop:
+                    log(f"  dropped {len(to_drop)} metadata fields from {layer_name}")
+
+            defn = lyr.GetLayerDefn()
+            existing = {defn.GetFieldDefn(i).GetName() for i in range(defn.GetFieldCount())}
+            for fname, ftype in _EXTRA_FIELDS:
+                if fname not in existing:
+                    lyr.CreateField(ogr.FieldDefn(fname, ftype))
+                    log(f"  added field '{fname}' to {layer_name}")
+
+            if layer_name == "GC_BEDROCK" and strati_links_path is not None:
+                if "strati_link" not in existing:
+                    lyr.CreateField(ogr.FieldDefn("strati_link", ogr.OFTString))
+                    log(f"  added field 'strati_link' to {layer_name}")
+        ds = None
+        gc.collect()
+
+        # Steps 2 & 3: patch spatial layers and tables (both paths now local)
+        errors: list[str] = []
+        errors += _patch(work_gdb, local_merged, SPATIAL_LAYERS, "Spatial layers (GC_ROCK_BODIES)", log)
+        errors += _patch(work_gdb, local_merged, TABLE_LAYERS,   "Tables & relationship tables", log)
+
+        # Step 4: inject strati_link from Excel
+        if strati_links_path is not None:
+            log("\n--- strati_link injection ---")
+            ds = ogr.Open(work_gdb, 1)
+            _inject_strati_link(ds, strati_links_path, log)
+            ds = None
+
+        # Step 5: replace GC_MAPSHEET
+        if admin_zones_path is not None:
+            log("\n--- GC_MAPSHEET ---")
+            ds = ogr.Open(work_gdb, 1)
+            for i in range(ds.GetLayerCount()):
+                if ds.GetLayerByIndex(i).GetName() == "GC_MAPSHEET":
+                    ds.DeleteLayer(i)
+                    break
+            ds = None
+
+            _sql = (
+                "SELECT geom, MSH_MAP_TITLE, MSH_MAP_NBR, MSH_TOPO_NR, MSH_REV, SOURCE_RC, "
+                "Version AS VERSION, BER, ERL, ber_link AS BER_LINK, erl_link AS ERL_LINK "
+                "FROM mapsheets_sources_only"
+            )
+            gdal.VectorTranslate(
+                work_gdb,
+                str(admin_zones_path),
+                options=gdal.VectorTranslateOptions(
+                    SQLStatement=_sql,
+                    SQLDialect="SQLite",
+                    layerName="GC_MAPSHEET",
+                    accessMode="update",
+                    geometryType="POLYGON",
+                ),
+            )
+            ds = ogr.Open(work_gdb, 0)
+            lyr = ds.GetLayerByName("GC_MAPSHEET")
+            n = lyr.GetFeatureCount() if lyr else -1
+            ds = None
+            log(f"  GC_MAPSHEET: {n:,} features")
+
+        gc.collect()
+
+        # Move finished local GDB to UNC destination (single network write)
+        log(f"\nCopying result to {output_gdb_str} …")
+        t0 = time.time()
+        if os.path.exists(output_gdb_str):
+            shutil.rmtree(output_gdb_str)
+        shutil.copytree(work_gdb, output_gdb_str)
+        log(f"  done in {time.time()-t0:.1f}s")
+
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
     ds = ogr.Open(output_gdb_str, 0)
     log(f"\nDone → {output_gdb_str}")

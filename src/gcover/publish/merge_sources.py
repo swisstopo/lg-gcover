@@ -13,6 +13,7 @@ Optimized for performance:
 """
 
 import os
+import re
 import time
 import warnings
 from dataclasses import dataclass, field
@@ -736,16 +737,14 @@ class GDBMerger:
             )
             logger.debug(f"  Registered RC2 source: {self.config.rc2_path}")
             
-        # Custom sources from directory
-        # Note, if FileGDB dir doesn't end with `.gdb` `geopandas` won't be able to open it
+        # Custom sources from directory — use _discover_filegdbs so we also
+        # pick up GDBs whose directory name lacks the ".gdb" extension.
         if self.config.custom_sources_dir and self.config.custom_sources_dir.exists():
-            for gdb_path in self.config.custom_sources_dir.glob("*.gdb"):
-                source_name = gdb_path.name  # e.g., "Saas.gdb"
-                self.sources[source_name] = SourceConfig(
-                    name=source_name,
-                    path=gdb_path,
-                    source_type=SourceType.CUSTOM
-                )
+            for gdb_path, stem, full_name in _discover_filegdbs(self.config.custom_sources_dir):
+                cfg = SourceConfig(name=full_name, path=gdb_path, source_type=SourceType.CUSTOM)
+                # Register under both "Saas.gdb" and "Saas" so either form resolves.
+                for key in {full_name, stem}:
+                    self.sources[key] = cfg
                 logger.debug(f"  Registered custom source: {gdb_path}")
                 
         logger.info(f"Configured {len(self.sources)} source(s)")
@@ -929,22 +928,37 @@ class GDBMerger:
     
     def _resolve_source_path(self, source_name: str) -> Optional[Path]:
         """Resolve source name to actual GDB path."""
-        
+
         # Direct match
         if source_name in self.sources:
             return self.sources[source_name].path
-            
+
         # Try with .gdb extension
         source_with_ext = f"{source_name}.gdb" if not source_name.endswith(".gdb") else source_name
         if source_with_ext in self.sources:
             return self.sources[source_with_ext].path
-            
+
         # Check if it's a path in custom sources directory
         if self.config.custom_sources_dir:
             potential_path = self.config.custom_sources_dir / source_with_ext
             if potential_path.exists():
                 return potential_path
-                
+
+        # Normalized fuzzy match: BCK≡BKP, strip _YYYY suffix and date prefixes, ignore .gdb.
+        # Uses substring so 'Saas' matches '20300501_Saas.gdb', 'BCK' matches 'BKP_2016', etc.
+        def _norm(n: str) -> str:
+            n = re.sub(r'\.gdb$', '', n, flags=re.IGNORECASE)
+            n = re.sub(r'^\d{8}_', '', n)   # strip leading YYYYMMDD_ date prefix
+            n = re.sub(r'_\d{4}$', '', n)   # strip trailing _YYYY suffix
+            n = n.upper().replace('BKP', 'BCK')
+            return n
+
+        needle = _norm(source_name)
+        for registered, cfg in self.sources.items():
+            if needle in _norm(registered):
+                logger.info(f"Fuzzy source match: '{source_name}' → '{registered}'")
+                return cfg.path
+
         return None
     
     def _get_layer_path(self, gdb_path: Path, layer_name: str) -> str:

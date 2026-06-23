@@ -1,5 +1,16 @@
 # src/gcover/publish/merge_sources_arcpy.py
 """
+DISABLED — this file is kept for reference only and is no longer called.
+
+The geopandas-based merger (merge_sources.py / GDBMerger) is the sole
+active implementation.  The arcpy path was removed from publish_cmd.py
+because this file was not kept in sync with the geopandas merger's
+schema and feature set, leading to silent divergence.  If arcpy support
+is ever reinstated, this file will need a full review against the current
+GDBMerger API before being re-enabled.
+
+--- original docstring below ---
+
 ArcPy-based merger for FileGDB sources.
 
 Uses arcpy for optimal FileGDB handling when available, including:

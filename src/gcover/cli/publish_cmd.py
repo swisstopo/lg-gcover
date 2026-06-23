@@ -2395,19 +2395,10 @@ def merge(
         console.print("Merge cancelled.")
         raise SystemExit(130)
 
-    # Execute merge - try arcpy first if available
+    # Execute merge — always use the geopandas-based merger.
+    # The arcpy path (merge_sources_arcpy.py) is unmaintained and disabled.
     try:
-        from gcover.arcpy_compat import HAS_ARCPY
-
-        if HAS_ARCPY and output.suffix.lower() == ".gdb":
-            console.print("[cyan]Using arcpy-based merger (optimal for FileGDB)[/cyan]")
-            from gcover.publish.merge_sources_arcpy import GDBMergerArcPy
-            merger = GDBMergerArcPy(config, verbose=verbose)
-        else:
-            if output.suffix.lower() == ".gdb":
-                console.print("[yellow]arcpy not available, using geopandas-based merger[/yellow]")
-
-            merger = GDBMerger(config, verbose=verbose)
+        merger = GDBMerger(config, verbose=verbose)
 
 
         stats = merger.merge()
@@ -2433,27 +2424,30 @@ def merge(
         png_out = sources.parent / f"{sources.stem}_overview.png"
 
         console.print(f"\n[dim]Writing source-assignment by-products...[/dim]")
+        joined = None
         try:
             joined = join_mapsheets_sources(admin_zones, sources)
             joined.to_file(zones_out, layer="mapsheets_sources_only", driver="GPKG")
             console.print(f"  [green]✓[/green] Zones GPKG: {zones_out}")
         except Exception as exc:
             console.print(f"  [yellow]⚠ Zones GPKG skipped: {exc}[/yellow]")
+            zones_out = None  # don't use a file that wasn't written
 
-        try:
-            source_dates = {k: v for k, v in {
-                "RC1": _gdb_date(config.rc1_path),
-                "RC2": _gdb_date(config.rc2_path),
-            }.items() if v is not None}
-            write_sources_overview_png(
-                joined, png_out,
-                title=f"Source assignments — {sources.stem}",
-                sources_path=sources,
-                source_dates=source_dates or None,
-            )
-            console.print(f"  [green]✓[/green] Overview PNG: {png_out}")
-        except Exception as exc:
-            console.print(f"  [yellow]⚠ Overview PNG skipped: {exc}[/yellow]")
+        if joined is not None:
+            try:
+                source_dates = {k: v for k, v in {
+                    "RC1": _gdb_date(config.rc1_path),
+                    "RC2": _gdb_date(config.rc2_path),
+                }.items() if v is not None}
+                write_sources_overview_png(
+                    joined, png_out,
+                    title=f"Source assignments — {sources.stem}",
+                    sources_path=sources,
+                    source_dates=source_dates or None,
+                )
+                console.print(f"  [green]✓[/green] Overview PNG: {png_out}")
+            except Exception as exc:
+                console.print(f"  [yellow]⚠ Overview PNG skipped: {exc}[/yellow]")
 
     # Optional schema-patch step: clone authoritative GDB schema and inject merged data
     if schema_output is not None:

@@ -117,12 +117,15 @@ jobs:
             --collect-all=gcover \
             --collect-all=fiona \
             --collect-all=pyogrio \
+            --collect-all=dateparser \
+            --collect-all=regex \
             --hidden-import=osgeo.gdal \
             --hidden-import=osgeo.ogr \
             --hidden-import=osgeo.osr \
             --hidden-import=osgeo.gdal_array \
             --hidden-import=duckdb \
             --hidden-import=shapely \
+            --hidden-import=regex._regex \
             --add-data "${{ steps.datadirs.outputs.gdal_data }};gdal-data" \
             --add-data "${{ steps.datadirs.outputs.proj_data }};proj-data" \
             _gcover_main.py

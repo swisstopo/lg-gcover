@@ -1561,7 +1561,7 @@ def latest_by_rc(ctx, asset_type, days_back, show_couple, metadata_s3_key, db_pa
             def _get_couple(atype):
                 return manager.get_latest_release_couple(asset_type=atype)
         else:
-            _log(f"[cyan]Fetching metadata from s3://{s3_config.bucket}/{metadata_s3_key}...[/cyan]")
+            rprint(f"[cyan]Fetching metadata from s3://{s3_config.bucket}/{metadata_s3_key}...[/cyan]")
             parquet_path = fetch_metadata_parquet(s3_config, metadata_s3_key, public_url=global_config.public_url)
             def _get_latest(atype):
                 return query_latest_assets_by_rc(parquet_path, asset_type=atype)
