@@ -82,6 +82,7 @@ import hashlib
 import os
 import sqlite3
 import subprocess
+import ssl
 import urllib.error
 import urllib.request
 import warnings
@@ -108,6 +109,11 @@ BERICHT_LINK =      "https://data.geo.admin.ch/ch.swisstopo.geologie-geocover/be
 console = Console()
 
 
+_UNVERIFIED_CTX = ssl.create_default_context()
+_UNVERIFIED_CTX.check_hostname = False
+_UNVERIFIED_CTX.verify_mode = ssl.CERT_NONE
+
+
 def _check_pdf_urls(df: pd.DataFrame, url_cols: list[str], timeout: int = 5) -> None:
     """Issue a HEAD request for every non-empty URL and warn on HTTP errors."""
     for col in url_cols:
@@ -118,7 +124,7 @@ def _check_pdf_urls(df: pd.DataFrame, url_cols: list[str], timeout: int = 5) -> 
         for url in urls:
             try:
                 req = urllib.request.Request(url, method="HEAD")
-                with urllib.request.urlopen(req, timeout=timeout):
+                with urllib.request.urlopen(req, timeout=timeout, context=_UNVERIFIED_CTX):
                     pass
             except urllib.error.HTTPError as exc:
                 logger.warning(f"PDF not found ({exc.code}): {url}")
