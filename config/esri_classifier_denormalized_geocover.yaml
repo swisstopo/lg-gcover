@@ -30,7 +30,7 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}exploit_geomat_pt
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}exploit_points USING UNIQUE gid USING SRID=2056"
-          include_items: "kind_desc,aexp_status,aexp_targ_mat_desc,aexp_depth_tot"
+          include_items: "kind_desc,aexp_status,aexp_targ_mat_desc,aexp_depth_tot,erl_link,ber_link"
           lang_fields:
             kind_desc: "kind_%lang%"
             aexp_status: "aexp_status_%lang%"
@@ -72,7 +72,7 @@ layers:
           label_formulas:
             label_de: "concat(kind_de, lfos_division_de, lfos_status_de,sep=', ', skip_empty=True) "
             label_fr: "concat(kind_fr, lfos_division_fr, lfos_status_fr,sep=', ', skip_empty=True) "
-          include_items: "kind_desc,lfos_division_desc,lfos_status_desc"
+          include_items: "kind_desc,lfos_division_desc,lfos_status_desc,erl_link,ber_link"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -123,7 +123,7 @@ layers:
           filter: KIND IN (13801001,13801002, 13801004, 13801003, 13801005, 13801006)
           # dip=0 features have NULL map_angle (no strike direction); include them alongside the normal filter
           data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, map_symbol, map_angle FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE (map_angle >=0 AND map_angle <=360) OR dip = 0) AS subquery  USING UNIQUE gid USING SRID=2056"
-          include_items: "kind_desc,dip,map_angle,mpla_polarity_desc,mpla_phase_desc,mpla_ob_dip_slo,mpla_phase_ref"
+          include_items: "kind_desc,dip,map_angle,mpla_polarity_desc,mpla_phase_desc,mpla_ob_dip_slo,mpla_phase_ref,erl_link,ber_link"
           lang_fields:
             kind_desc: "kind_%lang%"
             mpla_polarity_desc: "mpla_polarity_%lang%"
@@ -143,7 +143,7 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}achsenflaeche
           active: True
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
-          include_items: "kind_desc,map_angle,dip"
+          include_items: "kind_desc,map_angle,dip,erl_link,ber_link"
           # Only a few 100s features
           data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, map_symbol, dip, map_angle FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects WHERE azimuth >=0 AND azimuth <=360 AND map_symbol ILIKE '%achsen%') AS subquery  USING UNIQUE gid USING SRID=2056"
           lang_fields:
@@ -183,7 +183,7 @@ layers:
               wms_group_title: Point Objects
           active: True
           data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, ltyp_name, map_symbol, (map_angle::int - 90) as map_angle FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects) AS subquery USING UNIQUE gid USING SRID=2056"
-          include_items: "kind_desc"
+          include_items: "kind_desc,erl_link,ber_link"
           lang_fields:
             kind_desc: "kind_%lang%"
           label_formulas:
@@ -211,7 +211,7 @@ layers:
               wms_group_title: Point Objects
           active: True
           data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, map_symbol, map_angle FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects ) AS subquery  USING UNIQUE gid USING SRID=2056"
-          include_items: "kind_desc"
+          include_items: "kind_desc,erl_link,ber_link"
           lang_fields:
             kind_desc: "kind_%lang%"
           label_formulas:
@@ -228,7 +228,7 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}bohrung_fels_erreicht
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
           maxscaledenom: 52000
-          include_items: "label,kind,abor_depth_bedr,abor_fm_a,abor_fm_b,abor_depth_tot,abor_depth_fm_a,abor_depth_fm_b"
+          include_items: "label,kind,abor_depth_bedr,abor_fm_a,abor_fm_b,abor_depth_tot,abor_depth_fm_a,abor_depth_fm_b,erl_link,ber_link"
           active: True
           map_label: abor_depth_tot
           mapfile_config:
@@ -242,7 +242,7 @@ layers:
               wms_group_title: Point Objects
           # data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
           data: "${GCOVER_POSTGIS_GEOM} FROM  (SELECT ${GCOVER_POSTGIS_GEOM}, gid, label, abor_depth_tot, map_symbol FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects) AS subquery  USING UNIQUE gid USING SRID=2056"
-          include_items: "kind_desc,abor_depth_bedr,abor_fm_a_desc,abor_fm_b_desc,abor_main_tar_desc,abor_targ_mat_desc,abor_depth_bedr,abor_depth_tot"
+          include_items: "kind_desc,abor_depth_bedr,abor_fm_a_desc,abor_fm_b_desc,abor_main_tar_desc,abor_targ_mat_desc,abor_depth_bedr,abor_depth_tot,erl_link,ber_link"
           lang_fields:
             kind_desc: "kind_%lang%"
             abor_fm_a_desc: "abor_fm_a_%lang%"
@@ -268,7 +268,7 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}sondierung
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
           maxscaledenom: 52000
-          include_items: "kind_desc,abor_depth_bedr,abor_fm_a_desc,abor_fm_b_desc,abor_main_tar_desc,abor_targ_mat_desc,abor_depth_bedr,abor_depth_tot"
+          include_items: "kind_desc,abor_depth_bedr,abor_fm_a_desc,abor_fm_b_desc,abor_main_tar_desc,abor_targ_mat_desc,abor_depth_bedr,abor_depth_tot,erl_link,ber_link"
           lang_fields:
             kind_desc: "kind_%lang%"
             abor_fm_a_desc: "abor_fm_a_%lang%"
@@ -285,7 +285,7 @@ layers:
             metadata:
               wms_group_title: Point Objects
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
-          include_items: "kind,label"
+          include_items: "kind,label,erl_link,ber_link"
           filter: KIND IN (1051002,10501003,10501004,10501005)
           symbol_prefix: sondierung
           fields:
@@ -298,7 +298,7 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}bohrung_fels_nicht_erreicht
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
           maxscaledenom: 52000
-          include_items: "kind_desc,abor_depth_bedr,abor_fm_a_desc,abor_fm_b_desc,abor_main_tar_desc,abor_targ_mat_desc,abor_depth_bedr,abor_depth_tot"
+          include_items: "kind_desc,abor_depth_bedr,abor_fm_a_desc,abor_fm_b_desc,abor_main_tar_desc,abor_targ_mat_desc,abor_depth_bedr,abor_depth_tot,erl_link,ber_link"
           active: True
           map_label: False
           mapfile_config:
@@ -334,7 +334,7 @@ layers:
             metadata:
               wms_group_title: Point Objects
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
-          include_items: "kind_desc,hsur_status_desc,hsur_flow_con_desc,hsur_type_desc,hsur_combi_desc,hsur_temp,hsur_chemistry"
+          include_items: "kind_desc,hsur_status_desc,hsur_flow_con_desc,hsur_type_desc,hsur_combi_desc,hsur_temp,hsur_chemistry,erl_link,ber_link"
           lang_fields:
             kind_desc: "kind_%lang%"
             hsur_status_desc: "hsur_status_%lang%"
@@ -377,7 +377,7 @@ layers:
             label_fr: "concat(kind_fr, runc_rock_typ_fr, runc_protected_fr, sep=', ', skip_empty=True)"
 
           # TODO: missing AND (PRINTED = 1 OR PRINTED IS NULL)
-          include_items: "kind_desc,runc_rock_typ_desc,runc_rock_spe_desc,runc_protected_desc,runc_status_desc"
+          include_items: "kind_desc,runc_rock_typ_desc,runc_rock_spe_desc,runc_protected_desc,runc_status_desc,erl_link,ber_link"
           filter: KIND IN (14401001,14401002)
           fields:
             # Map GPKG field to classification field (can be complex paths)
@@ -414,7 +414,7 @@ layers:
           filter: KIND=11301001
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_moraenenwall
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
-          include_items: "kind_desc,ggla_glac_typ_desc,ggla_morai_mo_desc"
+          include_items: "kind_desc,ggla_glac_typ_desc,ggla_morai_mo_desc,erl_link,ber_link"
           mapfile_config:
             classes_mode: frozen
             symbol_scale: 12500
@@ -460,7 +460,7 @@ layers:
           label_formulas:
             label_de: "kind_de"
             label_fr: "kind_fr"
-          include_items: "kind_desc,aexp_status_desc,aarc_epoch_desc,aarc_period_desc,lpro_litho_desc"
+          include_items: "kind_desc,aexp_status_desc,aarc_epoch_desc,aarc_period_desc,lpro_litho_desc,erl_link,ber_link"
           # El cheapo filter
           filter: KIND IN (10201002,10201007,10201006,10201001,10201005,10201004,10201003,10701001,10701002,10901002,10901001,11101001,11101003,11101002,11301007,11301003,11301002,11301006,11301005,11301008,11301009,11301004,11701003,11701002,11701001,11701004,12201001,12201002,12301001,12301004,12301006,12301002,12301007,12301005,12301003,12401001,12601002,12601001,13001001,13301001,13901001,14001001,14701001)
           fields:
@@ -474,7 +474,7 @@ layers:
           classification_name: Linear Objects_GeolKontur
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}geolkontur
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
-          include_items: "kind_spec"
+          include_items: "kind_spec,erl_link,ber_link"
           mapfile_config:
             tolerance: 10
             metadata:
@@ -501,7 +501,7 @@ layers:
               wms_group_title: Linear Objects
           map_label: False
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects  USING UNIQUE gid USING SRID=2056"
-          include_items: "kind_desc,lpro_cong_spe_desc,lpro_litho_desc"
+          include_items: "kind_desc,lpro_cong_spe_desc,lpro_litho_desc,erl_link,ber_link"
           lang_fields:
               kind_desc: "kind_%lang%"
               lpro_cong_spe_desc: "lpro_cong_spe_%lang%"
@@ -537,7 +537,7 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_bruch
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}tecto_lines
-          include_items: "kind_desc,ttec_name,ttec_lim_typ_desc,ttec_status_desc,ttec_lim_tect_b_desc"
+          include_items: "kind_desc,ttec_name,ttec_lim_typ_desc,ttec_status_desc,ttec_lim_tect_b_desc,erl_link,ber_link"
           mapfile_config:
             classes_mode: frozen
             tolerance: 10
@@ -566,7 +566,7 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_ueberschiebung
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}tecto_lines
-          include_items: "kind_desc,ttec_status_desc,ttec_lim_typ_desc,ttec_lim_tect_b_desc"
+          include_items: "kind_desc,ttec_status_desc,ttec_lim_typ_desc,ttec_lim_tect_b_desc,erl_link,ber_link"
           mapfile_config:
             classes_mode: frozen
             symbol_scale: 12500
