@@ -689,6 +689,7 @@ layers:
             runc_litho: "runc_litho_%lang%"
             runc_chrono_b: "runc_chrono_b_%lang%"
             runc_morpholo: "runc_morpholo_%lang%"
+            runc_chrono: "runc_chrono_combined_%lang%"
           label_formulas:
             label_de: "concat(runc_litho_de, runc_morpholo_de, runc_chrono_b_de, sep=', ', skip_empty=True)"
             label_fr: "concat(runc_litho_fr, runc_morpholo_fr, runc_chrono_b_fr, sep=', ', skip_empty=True)"
