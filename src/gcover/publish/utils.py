@@ -202,6 +202,7 @@ def generate_font_image(font_symbol_name, font_name, char_index):
     image = None
 
     font_paths = {
+        "geofonts": "/home/marco/.fonts/g/geofontsregular.ttf",
         "geofonts1": "/home/marco/.fonts/g/GeoFonts1.ttf",
         "geofonts2": "/home/marco/.fonts/g/GeoFonts2.ttf",
         "default": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
