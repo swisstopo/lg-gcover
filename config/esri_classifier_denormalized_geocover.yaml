@@ -851,7 +851,7 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}bedrock
           # mapfile_group: ${GCOVER_LAYERNAME_PREFIX}bedrock
           map_label: False
-          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}bedrock USING UNIQUE gid USING SRID=2056"
+          data: "${GCOVER_POSTGIS_GEOM},hexcolor FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}bedrock USING UNIQUE gid USING SRID=2056"
           # Constant alias names → language-specific columns
           lang_fields:
               gmu_code_desc: "gmu_%lang%"
@@ -862,7 +862,7 @@ layers:
               correlation_desc: "correlation_%lang%"
               litstrat_formation_bank: "litstrat_formation_bank_%lang%"
           # These names stay stable for all clients regardless of LANGUAGE= param
-          include_items: "gmu_desc,gmu_code_desc,tecto_desc,litho_desc,chrono_desc,correlation_desc,strati_link,erl_link,ber_link"
+          include_items: "gmu_desc,gmu_code_desc,tecto_desc,litho_desc,chrono_desc,correlation_desc,strati_link,hexcolor,erl_link,ber_link"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             GMU_CODE: GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT
