@@ -519,6 +519,16 @@ mapfiles:
 		--gml-items label  \
 		$(CONFIG_PATH)
 
+# Usage: make diff-styles OLD=.../Styles/2026-05-26/styles [NEW=.../Styles/2026-07-02/styles] [ARGS="--only symbology_changed"]
+## diff-styles: Compare .lyrx classification/symbology between two style snapshots (NEW defaults to current STYLES_DIR)
+NEW ?= $(STYLES_DIR)styles
+.PHONY: diff-styles
+diff-styles:
+	@test -n "$(OLD)" || { echo "Usage: make diff-styles OLD=<path-to-old-styles-dir> [NEW=<path-to-new-styles-dir>]"; exit 1; }
+	$(call check_file,OLD,$(OLD))
+	$(call check_file,NEW,$(NEW))
+	python scripts/diff_lyrx.py $(OLD) $(NEW) $(ARGS)
+
 
 ### Code
 ## install-dev:  Install development dependencies
