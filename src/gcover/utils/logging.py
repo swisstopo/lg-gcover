@@ -110,27 +110,29 @@ class GCoverLogger:
         log_level = "DEBUG" if verbose else "INFO"
         self._current_level = log_level
 
-        # Check if we can use colors (terminal support)
         supports_color = self.console.is_terminal and not self.console.legacy_windows
 
         if supports_color:
-            # Use Rich for console output (no loguru colors)
-            logger.add(
-                lambda msg: self.console.print(msg, end=""),
-                format=self._get_colored_format("{level}", "{message}"),
-                level=log_level,
-                colorize=False,  # Let Rich handle colors
-            )
-        else:
-            # Simple console logging without colors
-            logger.add(
-                sys.stderr,
-                format="{level}: {message}",
-                level=log_level,
-                colorize=False,
-            )
+            def _fallback_sink(message):
+                record = message.record
+                level = record["level"].name
+                if level == "ERROR":
+                    colored_level = f"[bold red]{level}[/bold red]"
+                elif level == "WARNING":
+                    colored_level = f"[bold orange1]{level}[/bold orange1]"
+                elif level == "SUCCESS":
+                    colored_level = f"[bold green]{level}[/bold green]"
+                else:
+                    colored_level = f"[bold]{level}[/bold]"
+                self.console.print(
+                    f"{colored_level} | {record['message']}",
+                    markup=True, highlight=False, end="\n",
+                )
 
-        # Simple file logging
+            logger.add(_fallback_sink, format="{message}", level=log_level, colorize=False)
+        else:
+            logger.add(sys.stderr, format="{level}: {message}", level=log_level, colorize=False)
+
         fallback_log_file = Path(
             f"logs/gcover_fallback_{datetime.now().strftime('%Y%m%d')}.log"
         )
@@ -145,17 +147,6 @@ class GCoverLogger:
 
         self._log_file = fallback_log_file
         self._is_configured = True
-
-    def _get_colored_format(self, level_part: str, message_part: str) -> str:
-        """Get the colored format string with custom colors for different levels."""
-        return (
-            f"{{{{"
-            f"if level == 'ERROR': '[bold red]{level_part}[/bold red]'"
-            f"elif level == 'WARNING': '[bold orange1]{level_part}[/bold orange1]'"
-            f"elif level == 'SUCCESS': '[bold green]{level_part}[/bold green]'"
-            f"else: '[bold]{level_part}[/bold]'"
-            f"}}}} | {message_part}"
-        )
 
     def _setup_console_logging(
         self, log_level: str, verbose: bool, console_config: Dict

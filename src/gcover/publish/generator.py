@@ -39,6 +39,7 @@ from gcover.publish.symbol_utils import (
     sanitize_font_name,
 )
 from gcover.publish.tooltips_enricher import LayerType
+from PIL import Image
 from gcover.publish.utils import generate_font_image, translate_esri_to_sql
 from gcover.config.models import MapserverConnection
 
@@ -2054,6 +2055,11 @@ class MapServerGenerator:
 
         # Save PDF of all used font symbols
         if images:
+            # Pillow's extension-based lazy plugin loading only imports
+            # PdfImagePlugin here, but saving RGB images to PDF internally
+            # needs the JPEG encoder registered too (Image.SAVE["JPEG"]).
+            # Force full plugin init to avoid a KeyError('JPEG').
+            Image.init()
             images[0].save(
                 "mapserver/font_characters.pdf",
                 save_all=True,
