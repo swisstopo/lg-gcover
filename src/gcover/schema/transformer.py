@@ -412,6 +412,16 @@ def extract_subtypes_from_esri_data(input_data: Dict[str, Any]) -> Dict[str, Sub
                     "name", path.split(".")[-1] if path else "Unknown"
                 )
 
+                # Skip subtypes of _I tables (e.g. GC_LINEAR_OBJECTS_I), same as
+                # should_import_table() does for the tables themselves — otherwise
+                # they leak through as e.g. "GC_LINEAR_OBJECTS_I_Subtypes" since this
+                # walk isn't filtered by should_import_table().
+                if get_base_table_name(parent_name).endswith("_I"):
+                    for key, value in obj.items():
+                        new_path = f"{path}.{key}" if path else key
+                        find_subtypes(value, new_path)
+                    return
+
                 subtype = Subtype(
                     name=f"{parent_name}_Subtypes",
                     subtype_field=obj.get("subtypeField", "SUBTYPE"),
