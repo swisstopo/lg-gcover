@@ -137,7 +137,7 @@ layers:
             MPLA_POLARITY: MPLA_POLARITY
             DIP: DIP
           symbol_prefix: planar_struct
-        - style_file: styles/Point Objects_Achsenfläche.lyrx
+        - style_file: styles/Point_Objects_Achsenfläche.lyrx
           index: 21
           classification_name: Point Objects_Achsenfläche
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}achsenflaeche
@@ -166,7 +166,7 @@ layers:
             KIND: KIND
             TDEF_FOLD_TYP: TDEF_FOLD_TYP
           symbol_prefix: achsenflaeche
-        - style_file: styles/Point Objects_Orient.lyrx
+        - style_file: styles/Point_Objects_Orient.lyrx
           index: 22
           classification_name: Point Objects_Orient
           mapfile_name: pnt_orient
@@ -319,7 +319,7 @@ layers:
             KIND: KIND
             ABOR_DEPTH_BEDR: ABOR_DEPTH_BEDR
           symbol_prefix: bohrung_fels_nicht_erreicht
-        - style_file: styles/Point Objects_Quelle.lyrx
+        - style_file: styles/Point_Objects_Quelle.lyrx
           index: 29
           classification_name: Point Objects_Quelle
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}quelle
@@ -351,7 +351,7 @@ layers:
             HSUR_TYPE: HSUR_TYPE
             HSUR_STATUS: HSUR_STATUS
           symbol_prefix: point_quelle
-        - style_file: styles/Point Objects_Erraticker.lyrx
+        - style_file: styles/Point_Objects_Erraticker.lyrx
           index: 30
           classification_name: Point Objects_Erraticker
           active: True
@@ -407,7 +407,7 @@ layers:
         LGEO_STATUS: Int64
         TTEC_META_STA: Int64
       classifications:
-        - style_file: styles/Linear Objects_Moränenwall.lyrx
+        - style_file: styles/Linear_Objects_Moränenwall.lyrx
           index: 50
           classification_name: Linear Objects_Moränenwall
           active: True
@@ -437,7 +437,7 @@ layers:
           symbol_prefix: moraenenwall
 
 
-        - style_file: styles/Linear Objects.lyrx
+        - style_file: styles/Linear_Objects.lyrx
           index: 51
           classification_name: Linear Objects
           active: True
@@ -468,7 +468,7 @@ layers:
           maxscaledenom: 52000
           symbol_prefix: linear_objects
 
-        - style_file: styles/Linear Objects_GeolKontur.lyrx
+        - style_file: styles/Linear_Objects_GeolKontur.lyrx
           active: False
           index: 52
           classification_name: Linear Objects_GeolKontur
@@ -488,7 +488,7 @@ layers:
           maxscaledenom: 52000
           symbol_prefix: geolkontur
 
-        - style_file: styles/Linear Objects_Gesteinhorizont.lyrx
+        - style_file: styles/Linear_Objects_Gesteinhorizont.lyrx
           classification_name: Linear Objects_Gesteinhorizont
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}gesteinhorizont
@@ -515,7 +515,7 @@ layers:
           maxscaledenom: 52000
           symbol_prefix: gesteinhorizont
           filter: KIND = 13101001
-        - style_file: styles/Linear Objects_Hilfs_Karto.lyrx
+        - style_file: styles/Linear_Objects_Hilfs_Karto.lyrx
           index: 54
           classification_name: Linear Objects_Hilfs_Karto
           active: False
@@ -531,7 +531,7 @@ layers:
           symbol_prefix: hilfs_karto
           filter: KIND IN (15601001, 15601002)
 
-        - style_file: styles/Linear Objects_Bruch.lyrx
+        - style_file: styles/Linear_Objects_Bruch.lyrx
           index: 55
           classification_name: Linear Objects_Bruch
           active: True
@@ -560,9 +560,9 @@ layers:
           maxscaledenom: 310000
           symbol_prefix: linear_bruch
           filter: KIND IN (14901002,14901004,14901005,14901006,14901007,14901008) # definitionExpression
-        - style_file: styles/Linear Objects_Ueberschiebung.lyrx
+        - style_file: styles/Linear_Objects_Ueberschiebung.lyrx
           index: 56
-          classification_name: Linear Objects_Ueberschiebung
+          classification_name: Linear_Objects_Ueberschiebung
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_ueberschiebung
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}tecto_lines
@@ -668,7 +668,7 @@ layers:
         RUNC_MORPHOLO: Int64
         RUNC_GLAC_TYP: Int64
       classifications:
-        - style_file: styles/Unco Deposits_Bachschutt.lyrx
+        - style_file: styles/Unco_Deposits_Bachschutt.lyrx
           index: 90
           classification_name: Unco Deposits_Bachschutt
           active: True
@@ -700,7 +700,7 @@ layers:
             RUNC_LITHO: RUNC_LITHO
             RUNC_MORPHOLO: RUNC_MORPHOLO
             RUNC_CHRONO_B: RUNC_CHRONO_B # missing
-        - style_file: styles/Unco Deposits_Litho__20000.lyrx
+        - style_file: styles/Unco_Deposits_Litho.lyrx
           index: 91
           classification_name: Unco Deposits_Litho_<20000
           maxscaledenom: 210000
@@ -726,7 +726,7 @@ layers:
           fields:
             KIND: KIND
             RUNC_LITHO: RUNC_LITHO
-        - style_file: styles/Unco Deposits_Chrono_Moräne.lyrx
+        - style_file: styles/Unco_Deposits_Chrono_Moräne.lyrx
           index: 92
           classification_name: Unco Deposits_Chrono_Moräne
           active: True
@@ -756,7 +756,7 @@ layers:
             RUNC_LITHO: RUNC_LITHO.
             RUNC_GLAC_TYP: RUNC_GLAC_TYP
             RUNC_CHRONO_T: RUNC_CHRONO_T # missing
-        - style_file: styles/Unco Deposits_Chrono_T.lyrx
+        - style_file: styles/Unco_Deposits_Chrono_T.lyrx
           index: 93
           classification_name: Unco Deposits_Chrono_T
           active: True
@@ -789,7 +789,7 @@ layers:
             RUNC_LITHO: RUNC_LITHO.
             RUNC_GLAC_TYP: RUNC_GLAC_TYP
             RUNC_CHRONO_T: RUNC_CHRONO_T # missing
-        - style_file: styles/Unco Deposits_Chrono_B.lyrx
+        - style_file: styles/Unco_Deposits_Chrono_B.lyrx
           index: 94
           classification_name: Unco Deposits_Chrono_B
           active: True

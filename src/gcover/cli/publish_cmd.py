@@ -1365,6 +1365,22 @@ def mapserver(
         )
         raise click.Abort()
 
+    # Pre-flight: fail fast if any referenced .lyrx is missing, rather than
+    # discovering it mid-loop after some mapfiles have already been generated.
+    missing_style_files = [
+        lyrx_path
+        for style_file, *_ in style_files
+        if not (lyrx_path := styles_dir / style_file.name).exists()
+    ]
+    if missing_style_files:
+        console.print(
+            f"[red]Error: {len(missing_style_files)} style file(s) referenced in config "
+            f"are missing from {styles_dir}:[/red]"
+        )
+        for path in missing_style_files:
+            console.print(f"  [red]✗ {path}[/red]")
+        raise click.Abort()
+
     # Store all classifications for combined symbol file
     all_classifications = []
     generated_files = []

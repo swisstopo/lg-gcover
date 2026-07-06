@@ -176,6 +176,24 @@ class LayerClassificationReport:
                 console.print(f"\n  [dim]... and {len(sorted_patterns) - 15} more patterns ({remaining} features)[/dim]")
 
 
+def _find_qualified_field_index(field_name: Optional[str], field_names: List[str]) -> Optional[int]:
+    """Locate `field_name` in `field_names`, tolerating ESRI's DB-qualifier variants.
+
+    ArcSDE lyrx files qualify fields as `database.owner.table.field`; FileGDB
+    ones drop the leading `database.` component. Match the exact name first,
+    then accept any entry that ends with `.<field_name>`, so a config value
+    like `table.field` matches either connection type.
+    """
+    if not field_name:
+        return None
+    if field_name in field_names:
+        return field_names.index(field_name)
+    for i, candidate in enumerate(field_names):
+        if candidate.endswith('.' + field_name):
+            return i
+    return None
+
+
 def build_lookup_table(
     classification: LayerClassification,
     symbol_prefix: str,
@@ -199,9 +217,8 @@ def build_lookup_table(
     rows = []
     
     # Find identifier field index if specified
-    identifier_field_idx = None
-    if identifier_field and identifier_field in field_names:
-        identifier_field_idx = field_names.index(identifier_field)
+    identifier_field_idx = _find_qualified_field_index(identifier_field, field_names)
+    if identifier_field_idx is not None:
         logger.debug(f"Using identifier_field '{identifier_field}' at index {identifier_field_idx}")
     
     for idx, class_obj in enumerate(classification.classes):
@@ -496,11 +513,32 @@ class VectorizedClassificationApplicator:
             )
             logger.warning(f"  Keeping first match for each key (ESRI behavior)")
     
+    def _resolve_gpkg_field(self, classification_field: str) -> str:
+        """Resolve a classification field name to its GPKG field name.
+
+        ESRI qualifies field names differently depending on the backing
+        connection: ArcSDE lyrx files carry the full
+        `database.owner.table.field` qualifier, FileGDB ones drop the leading
+        `database.` component. Try the name as-is first, then progressively
+        shorter dot-separated suffixes, so one config mapping entry (e.g.
+        `table.field`) matches either connection type.
+        """
+        if classification_field in self.reverse_field_mapping:
+            return self.reverse_field_mapping[classification_field]
+
+        parts = classification_field.split('.')
+        for i in range(1, len(parts)):
+            suffix = '.'.join(parts[i:])
+            if suffix in self.reverse_field_mapping:
+                return self.reverse_field_mapping[suffix]
+
+        return classification_field
+
     @property
     def gpkg_field_names(self) -> List[str]:
         """Get the field names as they appear in the GPKG (after reverse mapping)."""
         return [
-            self.reverse_field_mapping.get(f, f) 
+            self._resolve_gpkg_field(f)
             for f in self.classification_field_names
         ]
     
