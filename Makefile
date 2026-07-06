@@ -7,7 +7,7 @@ BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
 LATEST_TAG := $(shell git describe --tags --match "v*" --abbrev=0)
 
 # --- Variables ---
-RELEASE      := R17
+RELEASE      ?= R17
 DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/
 SOURCES_DIR  := $(DELIVERY_DIR)Sources/
 OUTPUT_DIR   ?= ${HOME}/DATA/Derivations/output/$(RELEASE)/
