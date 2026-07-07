@@ -880,6 +880,17 @@ class MetadataDB:
             ).fetchone()
             return result[0] > 0
 
+    def delete_asset(self, path: Path) -> None:
+        """Remove any existing row(s) for *path*.
+
+        `insert_asset` is a plain INSERT (no uniqueness constraint on `path`),
+        so a force-reprocess must clear the old row first or it ends up as a
+        second, stale-vs-fresh duplicate that downstream "latest" queries can
+        pick between arbitrarily.
+        """
+        with duckdb.connect(str(self.db_path)) as conn:
+            conn.execute("DELETE FROM gdb_assets WHERE path = ?", [str(path)])
+
     def export_to_parquet(self, output_path: Union[str, Path]) -> Path:
         """Export gdb_assets table to a Parquet file."""
         output_path = Path(output_path)

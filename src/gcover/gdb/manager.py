@@ -180,13 +180,23 @@ class GDBAssetManager:
 
         return assets
 
-    def process_asset(self, asset: GDBAsset) -> bool:
-        """Process single asset: zip, hash, upload, update DB"""
+    def process_asset(self, asset: GDBAsset, force: bool = False) -> bool:
+        """Process single asset: zip, hash, upload, update DB
+
+        Args:
+            force: Reprocess and reupload even if the path is already in the
+                DB or the zip already exists in S3. Replaces the existing DB
+                row and overwrites the S3 object, instead of trusting
+                whatever `uploaded` flag is already on record.
+        """
         try:
-            # Skip if already in database
-            if self.metadata_db.asset_exists(asset.path):
+            # Skip if already in database (unless forcing a full reprocess)
+            if not force and self.metadata_db.asset_exists(asset.path):
                 logger.info(f"Asset already processed: {asset.path}")
                 return True
+
+            if force:
+                self.metadata_db.delete_asset(asset.path)
 
             # Generate S3 key early (before zipping)
             zip_filename = f"{asset.path.name}.zip"
@@ -194,7 +204,7 @@ class GDBAssetManager:
             asset.info.s3_key = s3_key
 
             if self.upload_to_s3:
-                if self.s3_uploader.file_exists(s3_key):
+                if not force and self.s3_uploader.file_exists(s3_key):
                     logger.info(
                         f"File {s3_key} already exists in S3: {self.bucket_name}"
                     )
@@ -213,8 +223,9 @@ class GDBAssetManager:
                 hash_md5 = asset.compute_hash()
                 asset.info.s3_key = s3_key
 
-                # Upload to S3
-                uploaded = self.s3_uploader.upload_file(zip_path, s3_key)
+                # Upload to S3 (overwrite only under --force: GDB zips are
+                # otherwise treated as immutable, see S3Uploader.upload_file)
+                uploaded = self.s3_uploader.upload_file(zip_path, s3_key, overwrite=force)
                 asset.info.uploaded = uploaded.success
                 logger.debug(f"Uploaded to s3://{self.bucket_name}/{s3_key}")
 

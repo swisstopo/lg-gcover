@@ -1165,7 +1165,7 @@ def process_all(
                     except Exception as e:
                         rprint(f"  [red]❌ Error calculating size: {e}[/red]")
 
-                    success = manager.process_asset(asset)
+                    success = manager.process_asset(asset, force=force)
 
                     if success:
                         stats["processed"] += 1
