@@ -7,7 +7,7 @@ BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
 LATEST_TAG := $(shell git describe --tags --match "v*" --abbrev=0)
 
 # --- Variables ---
-RELEASE      ?= R17
+RELEASE      ?= R18
 DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/
 SOURCES_DIR  := $(DELIVERY_DIR)Sources/
 OUTPUT_DIR   ?= ${HOME}/DATA/Derivations/output/$(RELEASE)/
@@ -136,7 +136,7 @@ help:
 
 ## download:  Download RC1/RC2  backups
 download:
-	@gcover --env production --verbose  gdb download-couple --type backup --output-dir $(DELIVERY_DIR)  \
+	@gcover --env production --verbose  gdb download-couple --type backup --output-dir $(SOURCES_DIR)  \
 	 --unzip --no-keep-zip
 
 
