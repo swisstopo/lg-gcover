@@ -2480,6 +2480,11 @@ def merge(
             console.print(f"  merged : {output}")
             console.print(f"  output : {schema_output}")
 
+            # zones_out (when written) is always saved with a hardcoded
+            # "mapsheets_sources_only" layer name (see join_mapsheets_sources
+            # by-product write above); the --admin-zones fallback uses
+            # whatever --mapsheets-layer was passed in.
+            _zones_ready = zones_out is not None and zones_out.exists()
             from gcover.publish.patch_schema import patch_schema_gdb
             errors = patch_schema_gdb(
                 schema_gdb=effective_schema,
@@ -2488,7 +2493,8 @@ def merge(
                 log=console.print,
                 exclude_fields=GEOCOVER_METADATA_FIELDS if exclude_metadata else None,
                 strati_links_path=strati_links_path,
-                admin_zones_path=zones_out if (zones_out is not None and zones_out.exists()) else admin_zones,
+                admin_zones_path=zones_out if _zones_ready else admin_zones,
+                mapsheets_layer="mapsheets_sources_only" if _zones_ready else mapsheets_layer,
             )
             if errors:
                 console.print(f"[yellow]Schema patch completed with {len(errors)} error(s):[/yellow]")

@@ -296,12 +296,15 @@ class S3Config(BaseModel):
         None, description="Lambda endpoint URL for presigned URL generation"
     )
 
-    # TOTP authentication (choose one)
+    # TOTP authentication (choose one). repr=False keeps these out of
+    # str()/repr() and Rich's console.log()/print() rendering — both log to
+    # the terminal and to --log-file, and would otherwise leak the secret in
+    # cleartext (see e.g. `console.log(s3_config)` in gdb_cmd.py).
     totp_secret: Optional[str] = Field(
-        None, description="Base32 encoded TOTP secret for generating tokens"
+        None, description="Base32 encoded TOTP secret for generating tokens", repr=False
     )
     totp_token: Optional[str] = Field(
-        None, description="Pre-generated TOTP token (overrides secret)"
+        None, description="Pre-generated TOTP token (overrides secret)", repr=False
     )
 
     # Proxy configuration

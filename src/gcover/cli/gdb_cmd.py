@@ -1165,7 +1165,7 @@ def process_all(
                     except Exception as e:
                         rprint(f"  [red]❌ Error calculating size: {e}[/red]")
 
-                    success = manager.process_asset(asset)
+                    success = manager.process_asset(asset, force=force)
 
                     if success:
                         stats["processed"] += 1
@@ -2060,7 +2060,15 @@ def download(
             rprint(
                 "[red]No downloadable assets found (missing S3 keys or not uploaded)[/red]"
             )
-            return
+            sys.exit(1)
+
+        if rc == "both" and len(downloadable) < 2:
+            missing = "RC2" if "RC1" in downloadable else "RC1"
+            rprint(
+                f"[red]Aborting: {missing} is not downloadable (missing S3 key or not "
+                f"uploaded), so a valid RC1+RC2 couple is not available.[/red]"
+            )
+            sys.exit(1)
 
         # Build asset summary shared between human and JSON output
         total_size = 0

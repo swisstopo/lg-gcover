@@ -225,6 +225,7 @@ def patch_schema_gdb(
     exclude_fields: set[str] | None = None,
     strati_links_path: Path | None = None,
     admin_zones_path: Path | None = None,
+    mapsheets_layer: str = "mapsheets_sources_only",
 ) -> list[str]:
     """Clone schema_gdb, then replace its data with content from merged_gdb.
 
@@ -250,9 +251,12 @@ def patch_schema_gdb(
         and a warning is logged.
     admin_zones_path:
         Path to ``administrative_zones.gpkg``.  When provided, GC_MAPSHEET is
-        replaced with the ``mapsheets_sources_only`` layer (fields uppercased,
+        replaced with the ``mapsheets_layer`` layer (fields uppercased,
         Z dimension dropped).  When None, GC_MAPSHEET is kept from the schema
         clone (RC2 data).
+    mapsheets_layer:
+        Layer name to read from ``admin_zones_path`` (default matches the
+        legacy pre-joined ``mapsheets_sources_only`` byproduct).
 
     Returns
     -------
@@ -379,9 +383,9 @@ def patch_schema_gdb(
             ds = None
 
             _sql = (
-                "SELECT geom, MSH_MAP_TITLE, MSH_MAP_NBR, MSH_TOPO_NR, MSH_REV, SOURCE_RC, "
+                "SELECT geom, MSH_MAP_TITLE, MSH_MAP_NBR, MSH_TOPO_NR, SOURCE_RC, "
                 "Version AS VERSION, BER, ERL, ber_link AS BER_LINK, erl_link AS ERL_LINK "
-                "FROM mapsheets_sources_only"
+                f"FROM {mapsheets_layer}"
             )
             gdal.VectorTranslate(
                 work_gdb,
