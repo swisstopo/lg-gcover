@@ -113,12 +113,29 @@ def _truncate(ds: ogr.DataSource, name: str, log: Callable[[str], None] | None =
     return total
 
 
-def _append(output_gdb: str, merged_gdb: str, name: str) -> int:
+def _append(output_gdb: str, merged_gdb: str, name: str, log: Callable[[str], None] | None = None) -> int:
     """Bulk-append one layer from merged_gdb into output_gdb.
 
     explodeCollections splits MultiPoint back to Point so the geometry
     type matches the schema-clone target (geopandas promotes to multi).
+
+    A single gdal.VectorTranslate() call gives no output until it returns —
+    on GC_ROCK_BODIES layers this is the organizePolygons()/topology step
+    and can run tens of minutes silently, indistinguishable from a hang.
+    Report progress at least every 15s via *log*, mirroring _truncate().
     """
+    t_start = last_report = time.time()
+
+    def _progress(complete: float, message: str, cb_data) -> int:
+        nonlocal last_report
+        now = time.time()
+        if log and (now - last_report >= 15 or complete >= 1.0):
+            elapsed = now - t_start
+            eta = elapsed * (1 - complete) / complete if complete > 0 else float("inf")
+            log(f"    {name}: {complete * 100:.0f}% ({elapsed:.0f}s elapsed, ETA {eta:.0f}s)")
+            last_report = now
+        return 1
+
     gdal.VectorTranslate(
         output_gdb,
         merged_gdb,
@@ -126,6 +143,7 @@ def _append(output_gdb: str, merged_gdb: str, name: str) -> int:
             layers=[name],
             accessMode="append",
             explodeCollections=True,
+            callback=_progress,
         ),
     )
     ds = ogr.Open(output_gdb, 0)
@@ -162,7 +180,7 @@ def _patch(
 
         ds = None
         try:
-            n = _append(output_gdb, merged_gdb, name)
+            n = _append(output_gdb, merged_gdb, name, log=log)
             log(f"  OK    {name}: {n:,}  ({time.time()-t:.1f}s)")
         except Exception as exc:
             msg = f"{name}: {exc}"
