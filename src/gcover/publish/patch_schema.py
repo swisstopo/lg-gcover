@@ -76,19 +76,41 @@ _EXTRA_FIELDS: list[tuple[str, int]] = [
 ]
 
 
-def _truncate(ds: ogr.DataSource, name: str) -> int:
+def _truncate(ds: ogr.DataSource, name: str, log: Callable[[str], None] | None = None) -> int:
+    """Delete every feature in *name*.
+
+    DeleteFeature is called one row at a time — on a large layer (RC2's
+    schema-clone tables can hold ~300k features) this loop can run for a
+    long time with zero other output, which looks hung. If a per-write
+    slowdown is in play (e.g. antivirus real-time scanning on Windows —
+    see module docstring), it's exactly this loop that eats the time.
+    Report progress at least every 15s via *log* so that's visible instead
+    of silent.
+    """
     lyr = ds.GetLayerByName(name)
     if lyr is None:
         return -1
     # Skip geometry parsing — we only need FIDs, and the schema-clone source
     # (RC2.gdb) may contain unclosed rings that OGR raises as RuntimeError.
     lyr.SetIgnoredFields(["OGR_GEOMETRY"])
+    t_scan = time.time()
     fids = [f.GetFID() for f in lyr]
     lyr.SetIgnoredFields([])
     lyr.ResetReading()
-    for fid in fids:
+    total = len(fids)
+    if log and total:
+        log(f"    {name}: {total:,} features to delete (FID scan: {time.time()-t_scan:.1f}s)")
+
+    t_start = last_report = time.time()
+    for i, fid in enumerate(fids, 1):
         lyr.DeleteFeature(fid)
-    return len(fids)
+        if log and (time.time() - last_report >= 15 or i == total):
+            elapsed = time.time() - t_start
+            rate = i / elapsed if elapsed > 0 else 0
+            eta = (total - i) / rate if rate > 0 else float("inf")
+            log(f"    {name}: {i:,}/{total:,} deleted ({rate:.0f} feat/s, ETA {eta:.0f}s)")
+            last_report = time.time()
+    return total
 
 
 def _append(output_gdb: str, merged_gdb: str, name: str) -> int:
@@ -133,7 +155,7 @@ def _patch(
         src_ds = None
 
         t = time.time()
-        deleted = _truncate(ds, name)
+        deleted = _truncate(ds, name, log=log)
         if deleted == -1:
             log(f"  WARN  {name}  (not in clone)")
             continue
@@ -319,7 +341,7 @@ def patch_schema_gdb(
         ds = ogr.Open(work_gdb, 1)
         for layer_name in SPATIAL_LAYERS:
             t0 = time.time()
-            n = _truncate(ds, layer_name)
+            n = _truncate(ds, layer_name, log=log)
             if n >= 0:
                 log(f"  cleared {layer_name} ({n:,} features) in {time.time() - t0:.1f}s")
         ds = None
