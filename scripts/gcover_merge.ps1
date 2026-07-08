@@ -30,5 +30,16 @@ $mergeArgs = @(
     '--strati-links',       ($EXCELS + '\_Update_stratiLINK.xlsx')
 )
 
+$start = Get-Date
+Write-Host ("Starting merge at {0:yyyy-MM-dd HH:mm:ss}" -f $start)
+
 & $gcover @mergeArgs
+$exitCode = $LASTEXITCODE
+
+$end     = Get-Date
+$elapsed = $end - $start
+Write-Host ("Merge finished at {0:yyyy-MM-dd HH:mm:ss} — elapsed {1:hh\:mm\:ss} ({2}s), exit code {3}" -f `
+    $end, $elapsed, [int]$elapsed.TotalSeconds, $exitCode)
+
+exit $exitCode
 
