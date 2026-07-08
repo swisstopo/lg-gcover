@@ -38,7 +38,7 @@ $exitCode = $LASTEXITCODE
 
 $end     = Get-Date
 $elapsed = $end - $start
-Write-Host ("Merge finished at {0:yyyy-MM-dd HH:mm:ss} — elapsed {1:hh\:mm\:ss} ({2}s), exit code {3}" -f `
+Write-Host ("Merge finished at {0:yyyy-MM-dd HH:mm:ss} - elapsed {1:hh\:mm\:ss} ({2}s), exit code {3}" -f `
     $end, $elapsed, [int]$elapsed.TotalSeconds, $exitCode)
 
 exit $exitCode
