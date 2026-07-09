@@ -422,9 +422,41 @@ def patch_schema_gdb(
                     break
             ds = None
 
+            # admin_zones_path may be either the old pre-joined shape (SOURCE_RC,
+            # erl_link, ber_link already baked in) or a raw GC_MAPSHEET.gpkg-derived
+            # file (BKP, no link columns, kept unmangled on purpose) — detect which
+            # and build the SELECT accordingly rather than requiring a fixed shape.
+            az_ds = ogr.Open(str(admin_zones_path), 0)
+            az_lyr = az_ds.GetLayerByName(mapsheets_layer)
+            az_fields = {az_lyr.GetLayerDefn().GetFieldDefn(i).GetName()
+                         for i in range(az_lyr.GetLayerDefn().GetFieldCount())}
+            az_ds = None
+
+            if "SOURCE_RC" in az_fields:
+                source_expr = "SOURCE_RC"
+            elif "BKP" in az_fields:
+                source_expr = "BKP AS SOURCE_RC"
+            else:
+                raise ValueError(
+                    f"{mapsheets_layer}: neither SOURCE_RC nor BKP column found"
+                )
+
+            if {"erl_link", "ber_link"}.issubset(az_fields):
+                link_exprs = "ber_link AS BER_LINK, erl_link AS ERL_LINK"
+            else:
+                from gcover.publish.administrative_zones import (
+                    ERLAUETERUNG_LINK, BERICHT_LINK,
+                )
+                link_exprs = (
+                    f"CASE WHEN BER = 'y' THEN '{BERICHT_LINK}' || MSH_MAP_NBR || '.pdf' "
+                    "ELSE '' END AS BER_LINK, "
+                    f"CASE WHEN ERL = 'y' THEN '{ERLAUETERUNG_LINK}' || MSH_MAP_NBR || '.pdf' "
+                    "ELSE '' END AS ERL_LINK"
+                )
+
             _sql = (
-                "SELECT geom, MSH_MAP_TITLE, MSH_MAP_NBR, MSH_TOPO_NR, SOURCE_RC, "
-                "Version AS VERSION, BER, ERL, ber_link AS BER_LINK, erl_link AS ERL_LINK "
+                "SELECT geom, MSH_MAP_TITLE, MSH_MAP_NBR, MSH_TOPO_NR, "
+                f"{source_expr}, Version AS VERSION, BER, ERL, {link_exprs} "
                 f"FROM {mapsheets_layer}"
             )
             gdal.VectorTranslate(
@@ -436,6 +468,7 @@ def patch_schema_gdb(
                     layerName="GC_MAPSHEET",
                     accessMode="update",
                     geometryType="POLYGON",
+                    layerCreationOptions=["TARGET_ARCGIS_VERSION=ARCGIS_PRO_3_2_OR_LATER"],
                 ),
             )
             ds = ogr.Open(work_gdb, 0)

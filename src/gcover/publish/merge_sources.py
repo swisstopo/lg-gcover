@@ -815,7 +815,32 @@ class GDBMerger:
         missing = [col for col in required_cols if col not in gdf.columns]
         if missing:
             raise ValueError(f"Missing required columns in mapsheets: {missing}")
-        
+
+        # Compute erl_link/ber_link when the source doesn't already provide them
+        # (e.g. a raw GC_MAPSHEET.gpkg-derived file, kept unmangled on purpose) —
+        # mirrors administrative_zones.load_sources() so both paths behave the same.
+        if not {"erl_link", "ber_link"} & set(gdf.columns):
+            required_for_links = {"ERL", "BER", self.config.mapsheet_nbr_column}
+            if required_for_links.issubset(gdf.columns):
+                from gcover.publish.administrative_zones import (
+                    ERLAUETERUNG_LINK, BERICHT_LINK,
+                )
+                nbr_col = self.config.mapsheet_nbr_column
+                gdf["erl_link"] = gdf.apply(
+                    lambda r: f"{ERLAUETERUNG_LINK}{r[nbr_col]}.pdf" if r["ERL"] == "y" else "",
+                    axis=1,
+                )
+                gdf["ber_link"] = gdf.apply(
+                    lambda r: f"{BERICHT_LINK}{r[nbr_col]}.pdf" if r["BER"] == "y" else "",
+                    axis=1,
+                )
+                logger.info("Computed erl_link/ber_link from ERL/BER flags (not present in source)")
+            else:
+                logger.warning(
+                    "erl_link/ber_link missing and ERL/BER/mapsheet-nbr columns not all "
+                    "present — link enrichment will be skipped"
+                )
+
         # Store original mapsheets for Swiss border
         self.swiss_border = unary_union(gdf.geometry.values)
         
