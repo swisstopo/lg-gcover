@@ -18,6 +18,11 @@ STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/Excels/_Update_
 # omitted from the output if absent) — only pass it when the file is
 # actually there, instead of failing the whole merge over a missing extra.
 STRATI_LINK_ARG := $(if $(wildcard $(STRATI_LINK_PATH)),--strati-links $(STRATI_LINK_PATH),)
+# `merge`'s "Proceed with merge?" prompt has no TTY to answer it in cron/CI —
+# NONINTERACTIVE=1 (set explicitly by unattended callers, never by default)
+# passes --yes to skip it. Interactive `make merge` still prompts as normal.
+NONINTERACTIVE ?= 0
+YES_FLAG := $(if $(filter 1,$(NONINTERACTIVE)),--yes,)
 GCOVER_DATA_DIR :=  src/gcover/data/
 
 ASPECT_LAYERS := surfaces_filtered unco_deposits_filtered
@@ -176,7 +181,7 @@ $(MASTER_GDB)/timestamps: $(SOURCES_DIR)RC1.gdb $(SOURCES_DIR)RC2.gdb $(GC_MAPSH
 		--enrich-mapsheet-links \
 		--exclude-metadata \
 		--schema-output $(FINAL_GDB) \
-		$(STRATI_LINK_ARG); \
+		$(STRATI_LINK_ARG) $(YES_FLAG); \
 	rc=$$?; \
 	_T2=$$(date +%s); \
 	echo "  ↳ merge+schema: $$((_T2 - _T1))s"; \

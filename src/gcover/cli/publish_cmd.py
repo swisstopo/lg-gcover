@@ -2228,6 +2228,11 @@ def show_sample_data(layer_name: str, sample_gdf: gpd.GeoDataFrame):
     help="Path for the schema-patched output GDB (preserves ESRI domains & "
          "relationship classes). Requires --output to be a .gdb file.",
 )
+@click.option(
+    "--yes", "-y",
+    is_flag=True,
+    help="Skip the 'Proceed with merge?' confirmation prompt, for unattended/automated runs.",
+)
 def merge(
         ctx,
         rc1: Optional[Path],
@@ -2253,6 +2258,7 @@ def merge(
         schema_gdb: Optional[Path],
         schema_output: Optional[Path],
         strati_links_path: Optional[Path],
+        yes: bool,
 ):
     """
     Merge multiple FileGDB sources into a single publication GDB.
@@ -2409,8 +2415,8 @@ def merge(
         console.print("\n[yellow]Dry run completed. Remove --dry-run to execute merge.[/yellow]")
         return
 
-    # Confirm before processing
-    if not click.confirm("\nProceed with merge?"):
+    # Confirm before processing (skippable with --yes for automated runs)
+    if not yes and not click.confirm("\nProceed with merge?"):
         console.print("Merge cancelled.")
         raise SystemExit(130)
 
