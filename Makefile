@@ -226,6 +226,9 @@ $(DENORMALIZED_PATH): $(MASTER_GDB)/timestamps
 		scripts/denormalize_geocover.py --remove-metadata  -o $(DENORMALIZED_PATH) --cd-gdb-path $(FULL_GDB_PATH)  --tables $$layer $(MASTER_GDB) ; \
 	done
 
+	@echo "--- Copying GC_MAPSHEET as 'mapsheet' (straight passthrough) ---"
+	@ogr2ogr -f GPKG -update -overwrite $(DENORMALIZED_PATH) $(MASTER_GDB) GC_MAPSHEET -nln mapsheet
+
 $(TRANSLATED_PATH): $(CLASSIFIED_PATH)
 	@echo "--- Translating $(CLASSIFIED_PATH) ---"
 	@echo "Saving to $(TRANSLATED_PATH)"
@@ -246,6 +249,9 @@ $(CLASSIFIED_PATH): $(DENORMALIZED_PATH)
 	@echo "--- Applying Style Configuration to $(DENORMALIZED_PATH)---"
 	@gcover --env sandisk publish apply-config --styles-dir $(STYLES_DIR) \
 		$(DENORMALIZED_PATH) $(CONFIG_PATH)
+
+	@echo "--- Copying 'mapsheet' layer (no reclassification) ---"
+	@ogr2ogr -f GPKG -update -overwrite $(CLASSIFIED_PATH) $(DENORMALIZED_PATH) mapsheet -nln mapsheet
 
 ## denormalize: Only run the table import and denormalization (requires master GDB)
 denormalize: $(DENORMALIZED_PATH)
