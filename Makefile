@@ -14,6 +14,10 @@ OUTPUT_DIR   ?= ${HOME}/DATA/Derivations/output/$(RELEASE)/
 STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/Styles/2026-07-02/
 TRANSLATION_CSV := $(DELIVERY_DIR)Excels/_GeolCodeText_Trad.xlsx
 STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/Excels/_Update_stratiLINK.xlsx
+# --strati-links is optional in `gcover publish merge` (strati_link is just
+# omitted from the output if absent) — only pass it when the file is
+# actually there, instead of failing the whole merge over a missing extra.
+STRATI_LINK_ARG := $(if $(wildcard $(STRATI_LINK_PATH)),--strati-links $(STRATI_LINK_PATH),)
 GCOVER_DATA_DIR :=  src/gcover/data/
 
 ASPECT_LAYERS := surfaces_filtered unco_deposits_filtered
@@ -172,7 +176,7 @@ $(MASTER_GDB)/timestamps: $(SOURCES_DIR)RC1.gdb $(SOURCES_DIR)RC2.gdb $(GC_MAPSH
 		--enrich-mapsheet-links \
 		--exclude-metadata \
 		--schema-output $(FINAL_GDB) \
-		--strati-links $(STRATI_LINK_PATH); \
+		$(STRATI_LINK_ARG); \
 	rc=$$?; \
 	_T2=$$(date +%s); \
 	echo "  ↳ merge+schema: $$((_T2 - _T1))s"; \

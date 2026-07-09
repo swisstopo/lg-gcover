@@ -2191,7 +2191,6 @@ def download(
                         actual_gdb.rename(final_gdb_dir)
 
                         # Cleanup temp folder
-                        import shutil
                         shutil.rmtree(temp_extract_dir, ignore_errors=True)
 
                         rprint(f"[green]  ✓ Extracted to: {final_gdb_dir}[/green]")
