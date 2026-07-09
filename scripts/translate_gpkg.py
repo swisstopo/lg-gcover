@@ -766,6 +766,8 @@ def main(
             progress.update(task, description=f"[dim]{lyr}[/]")
             try:
                 gdf = gpd.read_file(str(gpkg), layer=lyr)
+                if lowercase_columns:
+                    gdf = _lowercase_gdf_columns(gdf)
                 gdf = _reorder_columns(gdf, fixed_first=FIXED_FIRST_COLUMNS)
                 mode = "w" if first_write else "a"
                 gdf.to_file(str(tmp_path), layer=lyr, driver="GPKG", mode=mode)
