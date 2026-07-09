@@ -2145,9 +2145,12 @@ def show_sample_data(layer_name: str, sample_gdf: gpd.GeoDataFrame):
 @click.option(
     "--source-column",
     "-s",
-    type=click.Choice(["SOURCE_RC", "SOURCE_QA"]),
+    type=click.Choice(["SOURCE_RC", "SOURCE_QA", "BKP"]),
     default="SOURCE_RC",
-    help="Column indicating source assignment (default: SOURCE_RC for publication)",
+    help=(
+        "Column indicating source assignment (default: SOURCE_RC for publication). "
+        "Use BKP to read directly from a raw GC_MAPSHEET.gpkg-derived file."
+    ),
 )
 @click.option(
     "--mapsheets-layer",

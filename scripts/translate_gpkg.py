@@ -92,6 +92,11 @@ TRANSLATED_SUFFIXES = ("_desc", "_fr", "_de", "_it", "_en")
 
 FIXED_FIRST_COLUMNS = ["gid", "kind", "kind_de", "kind_fr", "kind_it", "kind_en", "spec_de", "spec_fr", "uuid", "label", "map_symbol", "label_de", "label_fr"]
 
+# Layers carried through the pipeline untouched (no translation/classification
+# applies) — excluded from the main per-layer loop so they hit the pass-through
+# branch below instead of getting lowercase-columns/enrich_layer/add_spec_fields.
+PASSTHROUGH_LAYERS = {"mapsheet"}
+
 PIPE_SEP = " | "
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -579,7 +584,9 @@ def main(
         console.print(f"[bold red]✗ Cannot read GPKG:[/] {exc}")
         sys.exit(1)
 
-    layers = [layer_filter] if layer_filter else all_layers
+    layers = [layer_filter] if layer_filter else [
+        l for l in all_layers if l not in PASSTHROUGH_LAYERS
+    ]
     unknown = [l for l in layers if l not in all_layers]
     if unknown:
         console.print(f"[bold red]✗ Unknown layer(s): {unknown}[/]")
@@ -759,6 +766,8 @@ def main(
             progress.update(task, description=f"[dim]{lyr}[/]")
             try:
                 gdf = gpd.read_file(str(gpkg), layer=lyr)
+                if lowercase_columns:
+                    gdf = _lowercase_gdf_columns(gdf)
                 gdf = _reorder_columns(gdf, fixed_first=FIXED_FIRST_COLUMNS)
                 mode = "w" if first_write else "a"
                 gdf.to_file(str(tmp_path), layer=lyr, driver="GPKG", mode=mode)
