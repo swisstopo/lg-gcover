@@ -60,6 +60,8 @@ GC_MAPSHEET_SOURCE    := $(DELIVERY_DIR)GC_MAPSHEET.gpkg
 QA_RAND_PATH          ?= $(DELIVERY_DIR)rand_qa_gc.geojson
 CONFIG_PATH           ?= config/esri_classifier_denormalized_geocover.yaml
 MERGE_LOG             := $(OUTPUT_DIR)merge.log
+MERGE_CONSOLE_LOG     := $(OUTPUT_DIR)merge_console.log
+MERGED_FINAL_README   := $(FINAL_GDB).README
 
 # Pass VERBOSE=1 to keep loguru on the terminal and enable debug output.
 # Default: loguru is written to MERGE_LOG only; Rich output stays in the terminal.
@@ -165,11 +167,12 @@ merge: $(MASTER_GDB)/timestamps
 
 # 1. Merge sources and run diagnosis
 $(MASTER_GDB)/timestamps: $(SOURCES_DIR)RC1.gdb $(SOURCES_DIR)RC2.gdb $(GC_MAPSHEET_SOURCE)
-	@_T_START=$$(date +%s); \
+	@mkdir -p $(OUTPUT_DIR); \
+	_T_START=$$(date +%s); \
 	\
 	echo "--- [1/2] Merging Sources ---"; \
 	_T1=$$(date +%s); \
-	gcover $(_GCOVER_FLAGS) publish merge \
+	{ gcover $(_GCOVER_FLAGS) publish merge \
 		--rc1 $(SOURCES_DIR)RC1.gdb \
 		--rc2 $(SOURCES_DIR)RC2.gdb \
 		--custom-sources-dir $(SOURCES_DIR) \
@@ -182,7 +185,9 @@ $(MASTER_GDB)/timestamps: $(SOURCES_DIR)RC1.gdb $(SOURCES_DIR)RC2.gdb $(GC_MAPSH
 		--exclude-metadata \
 		--schema-output $(FINAL_GDB) \
 		$(STRATI_LINK_ARG) $(YES_FLAG); \
-	rc=$$?; \
+	  echo $$? > $(OUTPUT_DIR).merge_rc; \
+	} 2>&1 | tee $(MERGE_CONSOLE_LOG); \
+	rc=$$(cat $(OUTPUT_DIR).merge_rc); rm -f $(OUTPUT_DIR).merge_rc; \
 	_T2=$$(date +%s); \
 	echo "  ↳ merge+schema: $$((_T2 - _T1))s"; \
 	if [ $$rc -eq 130 ]; then \
@@ -207,7 +212,17 @@ $(MASTER_GDB)/timestamps: $(SOURCES_DIR)RC1.gdb $(SOURCES_DIR)RC2.gdb $(GC_MAPSH
 	echo "  ↳ ogr2ogr GC_MAPSHEET: $$((_T4 - _T3))s"; \
 	\
 	echo ""; \
-	echo "  Total merge: $$((_T4 - _T_START))s"
+	echo "  Total merge: $$((_T4 - _T_START))s"; \
+	\
+	RC1_SRC=$$(basename "$$(readlink -f $(SOURCES_DIR)RC1.gdb 2>/dev/null)" 2>/dev/null || echo "N/A"); \
+	RC2_SRC=$$(basename "$$(readlink -f $(SOURCES_DIR)RC2.gdb 2>/dev/null)" 2>/dev/null || echo "N/A"); \
+	RC1_DATE=$$(echo "$$RC1_SRC" | sed 's/\(.\{4\}\)\(.\{2\}\)\(.\{2\}\).*/\1-\2-\3/'); \
+	RC2_DATE=$$(echo "$$RC2_SRC" | sed 's/\(.\{4\}\)\(.\{2\}\)\(.\{2\}\).*/\1-\2-\3/'); \
+	{ printf "date_operation: %s\nrelease:        %s\nrc1_source:     %s\nrc1_date:       %s\nrc2_source:     %s\nrc2_date:       %s\ngc_mapsheet:    %s\nlg_gcover_tag:  %s\n\n--- Merge configuration (as displayed for confirmation) ---\n\n" \
+		"$$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(RELEASE)" "$$RC1_SRC" "$$RC1_DATE" "$$RC2_SRC" "$$RC2_DATE" "$(GC_MAPSHEET_SOURCE)" "$(LATEST_TAG)"; \
+	  cat $(MERGE_CONSOLE_LOG); \
+	} > $(MERGED_FINAL_README); \
+	echo "Written README to $(MERGED_FINAL_README)"
 
 ## merge-diagnostic: Merge diagnostic
 merge-diagnostic:
