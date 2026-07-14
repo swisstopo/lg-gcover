@@ -29,6 +29,9 @@ gcover publish merge \
   --rc1 <DELIVERY_DIR>/RC1.gdb \
   --rc2 <DELIVERY_DIR>/RC2.gdb \
   --custom-sources-dir <DELIVERY_DIR> \
+  --admin-zones <DELIVERY_DIR>/GC_MAPSHEET.gpkg \
+  --mapsheets-layer mapsheet_gc \
+  --source-column BKP \
   --force-2d \
   --no-clip-to-swiss-border \
   --enrich-mapsheet-links \
@@ -37,7 +40,7 @@ gcover publish merge \
 
 **What it does:**
 
-Reads `administrative_zones.gpkg` (layer `mapsheets_sources_only`) to determine which of the ~221 mapsheets is served by RC1, RC2, or a custom GDB (column `SOURCE_RC`). For each mapsheet, it clips the matching features from the appropriate source and writes them into a single master GDB.
+Reads the delivered `GC_MAPSHEET.gpkg` (layer `mapsheet_gc`) to determine which of the ~221 mapsheets is served by RC1, RC2, or a custom GDB. The source-assignment column in this raw delivery file is named `BKP` rather than `SOURCE_RC`; `--source-column BKP` tells the merge which column to read, and it's renamed to the canonical `SOURCE_RC` internally for the rest of the pipeline. (The older `--sources <xlsx>` / bundled `administrative_zones.gpkg` path still exists and already uses `SOURCE_RC` natively — `--source-column` also accepts `SOURCE_QA` for that path.) For each mapsheet, the merge clips the matching features from the appropriate source and writes them into a single master GDB.
 
 **Split vs. keep whole features:**
 
@@ -157,7 +160,7 @@ This stage also **normalises all column names to lowercase** (`--lowercase-colum
 | File | Stage | Description |
 |---|---|---|
 | `RC1.gdb`, `RC2.gdb` | Input | ESRI FileGDB delivery sources |
-| `administrative_zones.gpkg` | Input | Mapsheet boundaries + RC assignments |
+| `GC_MAPSHEET.gpkg` | Input | Mapsheet boundaries + RC assignments (layer `mapsheet_gc`, column `BKP`) |
 | `config/esri_classifier_denormalized_geocover.yaml` | Input | Classification rules (layers → `.lyrx` mappings) |
 | `styles/*/\*.lyrx` | Input | ESRI CIM symbol definitions |
 | `master_R16.gdb` | Stage 1 | Spatially merged, mapsheet-clipped GDB |
