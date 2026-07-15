@@ -207,6 +207,7 @@ def _inject_strati_link(
     """
     import pandas as pd
 
+    t0 = time.time()
     att_lyr = ds.GetLayerByName("GC_GEOL_MAPPING_UNIT_ATT")
     if att_lyr is None:
         log("  WARNING: GC_GEOL_MAPPING_UNIT_ATT not found — strati_link skipped")
@@ -236,25 +237,53 @@ def _inject_strati_link(
         for uid, gmu in att_uuid_to_gmu.items()
         if gmu in gmu_to_strati
     }
-    log(f"  strati_link lookup: {len(att_uuid_to_strati):,} entries from Excel")
+    log(f"  strati_link lookup: {len(att_uuid_to_strati):,} entries from Excel ({time.time()-t0:.1f}s)")
 
     bedrock_lyr = ds.GetLayerByName("GC_BEDROCK")
     if bedrock_lyr is None:
         log("  WARNING: GC_BEDROCK not found — strati_link skipped")
         return
 
-    updated = skipped = 0
-    for feat in bedrock_lyr:
-        att_uuid = feat.GetField("GEOL_MAPPING_UNIT_ATT_UUID")
-        val = att_uuid_to_strati.get(att_uuid) if att_uuid else None
-        if val:
-            feat.SetField("strati_link", val)
-            bedrock_lyr.SetFeature(feat)
-            updated += 1
-        else:
-            skipped += 1
+    # SetFeature() is a per-row rewrite; without a transaction each call is
+    # its own implicit commit, which is exactly the write pattern _truncate()
+    # above already flags as catastrophically slow on Windows (Defender
+    # scanning every write). Wrap the whole pass in one transaction so it's a
+    # single commit, and report progress every 15s like _truncate/_append do,
+    # since GC_BEDROCK is large enough (~1e5 features) that silence here reads
+    # as a hang.
+    use_txn = ds.TestCapability(ogr.ODsCTransactions)
+    if use_txn:
+        ds.StartTransaction()
 
-    log(f"  strati_link: {updated:,} updated, {skipped:,} without link")
+    total = bedrock_lyr.GetFeatureCount()
+    updated = skipped = 0
+    t_start = last_report = time.time()
+    try:
+        for i, feat in enumerate(bedrock_lyr, 1):
+            att_uuid = feat.GetField("GEOL_MAPPING_UNIT_ATT_UUID")
+            val = att_uuid_to_strati.get(att_uuid) if att_uuid else None
+            if val:
+                feat.SetField("strati_link", val)
+                bedrock_lyr.SetFeature(feat)
+                updated += 1
+            else:
+                skipped += 1
+            now = time.time()
+            if now - last_report >= 15 or i == total:
+                elapsed = now - t_start
+                rate = i / elapsed if elapsed > 0 else 0
+                eta = (total - i) / rate if rate > 0 else float("inf")
+                log(f"    GC_BEDROCK: {i:,}/{total:,} strati_link ({rate:.0f} feat/s, ETA {eta:.0f}s)")
+                last_report = now
+    except Exception:
+        if use_txn:
+            ds.RollbackTransaction()
+        raise
+    else:
+        if use_txn:
+            ds.CommitTransaction()
+
+    log(f"  strati_link: {updated:,} updated, {skipped:,} without link ({time.time()-t_start:.1f}s)")
 
 
 def patch_schema_gdb(
