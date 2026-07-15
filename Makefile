@@ -148,7 +148,7 @@ help:
         geocover-aux aspect aspect-simple aspect-gmm combine-aspect inject-aux-aspect \
         mapfiles \
         install-dev format lint test smoke doc check \
-        clean-denormalize clean-translate clean-classify clean-master clean-all \
+        clean-denormalize clean-translate clean-classify clean-merge clean-master clean-all \
         swissgeocover2d clean-swissgeocover2d schema-snapshot
 
 ### Geocover data
@@ -541,9 +541,13 @@ clean-swissgeocover2d:
 clean-classify: clean-translate
 	rm -rf $(CLASSIFIED_PATH)
 
-## clean-master:  Clean master GDB
-clean-master:  clean-denormalize
+## clean-merge: Clean merge outputs (master + schema-output GDBs)
+clean-merge: clean-denormalize
 	rm -rf $(MASTER_GDB)
+	rm -rf $(FINAL_GDB)
+
+## clean-master: Alias for clean-merge
+clean-master: clean-merge
 
 ## clean-all: Remove generated GDB and GeoPackage files
 clean-all: clean-denormalize
