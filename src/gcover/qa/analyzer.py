@@ -337,7 +337,7 @@ class QAAnalyzer:
             deduplicate_cross_zone: Whether to deduplicate features crossing multiple zones
             rand_buffer_predicate: 'intersects', 'within', or 'none'
             include_source_layers: When True, write the zone layers used
-                (mapsheets_sources_only, and qa_rand_gc_buffer_50m if active)
+                (mapsheet, and qa_rand_gc_buffer_50m if active)
                 into the output file for provenance.
 
         Returns:
@@ -582,7 +582,15 @@ class QAAnalyzer:
 
         # Optionally append the zone layers used so the output is self-documenting
         if include_source_layers:
-            combined_layers["mapsheets_sources_only"] = self.zones_data["mapsheets"]
+            # Copy the actual source mapsheets (as loaded from --zones-file /
+            # --mapsheets-layer) rather than a hardcoded layer name, so this
+            # stays correct for both administrative_zones.gpkg (SOURCE_RC)
+            # and GC_MAPSHEET.gpkg (BKP) inputs. Normalize to SOURCE_RC so
+            # the existing RC1/RC2/(other) style still applies.
+            mapsheet_out = self.zones_data["mapsheets"].copy()
+            if "SOURCE_RC" not in mapsheet_out.columns and "BKP" in mapsheet_out.columns:
+                mapsheet_out = mapsheet_out.rename(columns={"BKP": "SOURCE_RC"})
+            combined_layers["mapsheet"] = mapsheet_out
             if rand_buffer_predicate != "none" and "rand_buffer" in self.zones_data:
                 combined_layers[_RAND_BUFFER_LAYER] = self.zones_data["rand_buffer"]
             logger.info("Including source zone layers in output for provenance")

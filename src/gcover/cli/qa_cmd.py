@@ -1760,7 +1760,7 @@ def _auto_discover_rc_gdbs(base_dir: Path) -> tuple[Optional[Path], Optional[Pat
     "include_source_layers",
     default=True,
     show_default=True,
-    help="Write the zone layers used (mapsheets_sources_only, qa_rand_gc_buffer_50m) into the output file for provenance.",
+    help="Write the zone layers used (mapsheet, qa_rand_gc_buffer_50m) into the output file for provenance.",
 )
 @click.option(
     "--yes", is_flag=True, help="Automatically confirm prompts (for scripting)"
