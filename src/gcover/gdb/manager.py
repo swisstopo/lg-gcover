@@ -180,7 +180,9 @@ class GDBAssetManager:
 
         return assets
 
-    def process_asset(self, asset: GDBAsset, force: bool = False) -> bool:
+    def process_asset(
+        self, asset: GDBAsset, force: bool = False
+    ) -> Tuple[bool, Optional[str]]:
         """Process single asset: zip, hash, upload, update DB
 
         Args:
@@ -188,12 +190,15 @@ class GDBAssetManager:
                 DB or the zip already exists in S3. Replaces the existing DB
                 row and overwrites the S3 object, instead of trusting
                 whatever `uploaded` flag is already on record.
+
+        Returns:
+            (success, error_message) — error_message is None on success.
         """
         try:
             # Skip if already in database (unless forcing a full reprocess)
             if not force and self.metadata_db.asset_exists(asset.path):
                 logger.info(f"Asset already processed: {asset.path}")
-                return True
+                return True, None
 
             if force:
                 self.metadata_db.delete_asset(asset.path)
@@ -216,7 +221,7 @@ class GDBAssetManager:
                     asset.info.uploaded = True
                     asset.info.hash_md5 = None  # We don't have it without zipping
                     self.metadata_db.insert_asset(asset.info)
-                    return True
+                    return True, None
 
                 # Only now: create zip (expensive operation)
                 logger.info(f"Zipping asset: {asset.path}")
@@ -239,7 +244,7 @@ class GDBAssetManager:
                 zip_path.unlink()
 
                 logger.info(f"Successfully processed: {asset.path}")
-                return True
+                return True, None
 
             else:
                 logger.warning("Skipping upload (parameter `--no-upload` set)")
@@ -253,11 +258,11 @@ class GDBAssetManager:
             zip_path.unlink()
 
             logger.info(f"Successfully processed: {asset.path}")
-            return True
+            return True, None
 
         except Exception as e:
             logger.error(f"Failed to process {asset.path}: {e}")
-            return False
+            return False, str(e)
 
     def sync_all(self) -> Dict[str, int]:
         """Scan filesystem and sync all new assets"""
@@ -267,9 +272,11 @@ class GDBAssetManager:
         stats = {"found": len(assets), "processed": 0, "failed": 0, "skipped": 0}
 
         for asset in assets:
-            if self.process_asset(asset):
+            success, error = self.process_asset(asset)
+            if success:
                 stats["processed"] += 1
             else:
+                logger.error(f"Failed to sync {asset.path}: {error}")
                 stats["failed"] += 1
 
         logger.info(f"Sync complete: {stats}")
