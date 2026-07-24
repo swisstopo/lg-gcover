@@ -1436,7 +1436,7 @@ def aggregate_qa_stats(
                 # Aggregate from merged data
                 merged_path = temp_merged.with_suffix(".gpkg")
                 stats_df = analyzer.aggregate_by_zone(
-                    merged_path, zone_type, output_format
+                    merged_path, None, zone_type, output_format
                 )
 
                 # Cleanup temp file
@@ -1700,6 +1700,15 @@ def _auto_discover_rc_gdbs(base_dir: Path) -> tuple[Optional[Path], Optional[Pat
     help="Path to administrative zones GPKG file",
 )
 @click.option(
+    "--mapsheets-layer",
+    default="mapsheets_sources_only",
+    show_default=True,
+    help=(
+        "Layer name in --zones-file containing mapsheet boundaries. "
+        "Use 'mapsheet_gc' to read directly from a GC_MAPSHEET.gpkg-derived file."
+    ),
+)
+@click.option(
     "--type",
     "asset_type",
     default=AssetType.VERIFICATION_TOPOLOGY.value,
@@ -1762,6 +1771,7 @@ def extract(
     rc1_gdb: Optional[Path],
     rc2_gdb: Optional[Path],
     zones_file: Path,
+    mapsheets_layer: str,
     output: Path,
     output_format: str,
     filter_by_source: bool,
@@ -1850,7 +1860,9 @@ def extract(
 
         # Initialize analyzer
         logger.info(f"Initializing QA analyzer with zones from {zones_file}")
-        analyzer = QAAnalyzer(zones_file, use_arcgis_pro=not use_arcmap)
+        analyzer = QAAnalyzer(
+            zones_file, use_arcgis_pro=not use_arcmap, mapsheets_layer=mapsheets_layer
+        )
 
         # Determine output file extension
         issue_output = converted_dir / "RC_combined" / "issue"
