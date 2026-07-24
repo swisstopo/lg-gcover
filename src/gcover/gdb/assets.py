@@ -201,11 +201,21 @@ class GDBAsset:
         """Get the target path/directory to zip"""
         return self.path
 
+    @property
+    def zip_filename(self) -> str:
+        """Filename for the zipped asset, unique per timestamp/RC/type.
+
+        Used both for the local zip file and the S3 key, so it must not rely
+        on `self.path.name` — for verification assets that name is always
+        the constant "issue.gdb" (only the parent timestamp directory
+        differs), which would otherwise collapse every run onto one S3 key.
+        """
+        return f"{self.info.timestamp.strftime('%Y%m%d_%H%M%S')}_{self.info.release_candidate.short_name}_{self.info.asset_type.value}.zip"
+
     def create_zip(self, output_dir: Path) -> Path:
         """Create zip file of the asset"""
         zip_target = self.get_zip_target()
-        zip_name = f"{self.info.timestamp.strftime('%Y%m%d_%H%M%S')}_{self.info.release_candidate.short_name}_{self.info.asset_type.value}.zip"
-        zip_path = output_dir / zip_name
+        zip_path = output_dir / self.zip_filename
 
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
             if zip_target.is_file():

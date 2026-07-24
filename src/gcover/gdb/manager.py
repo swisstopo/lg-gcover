@@ -198,8 +198,11 @@ class GDBAssetManager:
             if force:
                 self.metadata_db.delete_asset(asset.path)
 
-            # Generate S3 key early (before zipping)
-            zip_filename = f"{asset.path.name}.zip"
+            # Generate S3 key early (before zipping). Must reuse the same
+            # naming as create_zip()/zip_filename — for verification assets
+            # `asset.path.name` is always the constant "issue.gdb", which
+            # would otherwise collapse every weekly run onto one S3 key.
+            zip_filename = asset.zip_filename
             s3_key = f"gdb-assets/{asset.info.release_candidate.short_name}/{asset.info.asset_type.value}/{zip_filename}"
             asset.info.s3_key = s3_key
 
