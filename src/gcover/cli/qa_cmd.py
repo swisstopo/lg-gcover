@@ -1202,6 +1202,28 @@ def _auto_detect_qa_couple(
     help="Type of zones to aggregate by (default: mapsheets)",
 )
 @click.option(
+    "--mapsheets-layer",
+    default="mapsheets_sources_only",
+    show_default=True,
+    help=(
+        "Layer name in --zones-file containing mapsheet boundaries. "
+        "Use 'mapsheet_gc' to read directly from a GC_MAPSHEET.gpkg-derived file."
+    ),
+)
+@click.option(
+    "--rand-border-filter",
+    "rand_border_filter",
+    type=click.Choice(["intersects", "within", "none"], case_sensitive=False),
+    default="intersects",
+    show_default=True,
+    help=(
+        "Spatial predicate for rand-border zone filtering against qa_rand_gc_buffer_50m, "
+        "used when extracting issues first (--extract-first or --auto-discover). "
+        "'none' disables the filter — required when --zones-file has no rand-buffer "
+        "layer (e.g. GC_MAPSHEET.gpkg)."
+    ),
+)
+@click.option(
     "--type",
     "asset_type",
     default=AssetType.VERIFICATION_TOPOLOGY.value,
@@ -1254,6 +1276,8 @@ def aggregate_qa_stats(
     input: Optional[Path],
     zones_file: Optional[Path],
     zone_type: str,
+    mapsheets_layer: str,
+    rand_border_filter: str,
     asset_type: str,
     output: Optional[Path],
     base_dir: Optional[Path],
@@ -1286,6 +1310,11 @@ def aggregate_qa_stats(
 
         # Single merged input
         gcover qa aggregate --input merged_issues.gpkg --zone-type mapsheets
+
+        # Mapsheet-only, using GC_MAPSHEET.gpkg directly (no rand-buffer/work_units/lots layers)
+        gcover qa aggregate --rc1-gdb rc1.gdb --rc2-gdb rc2.gdb --extract-first \\
+            --zones-file GC_MAPSHEET.gpkg --zone-type mapsheets \\
+            --mapsheets-layer mapsheet_gc --rand-border-filter none
 
         # Auto-discovery
         gcover qa aggregate --auto-discover --base-dir /path/to/verifications
@@ -1370,7 +1399,9 @@ def aggregate_qa_stats(
         from gcover.qa.analyzer import QAAnalyzer
 
         # Initialize analyzer
-        analyzer = QAAnalyzer(zones_file, use_arcgis_pro=not use_arcmap)
+        analyzer = QAAnalyzer(
+            zones_file, use_arcgis_pro=not use_arcmap, mapsheets_layer=mapsheets_layer
+        )
         console.print(f"[dim]Loaded zones from: {zones_file}[/dim]")
 
         # Handle different input modes
@@ -1390,7 +1421,11 @@ def aggregate_qa_stats(
                 temp_merged = final_path.parent / f"temp_merged_{final_path.stem}"
 
                 extraction_stats = analyzer.extract_relevant_issues(
-                    rc1_gdb, rc2_gdb, temp_merged, output_format="gpkg"
+                    rc1_gdb,
+                    rc2_gdb,
+                    temp_merged,
+                    output_format="gpkg",
+                    rand_buffer_predicate=rand_border_filter,
                 )
 
                 console.print(
@@ -1488,7 +1523,11 @@ def aggregate_qa_stats(
                 temp_merged = final_path.parent / f"temp_merged_{final_path.stem}"
                 console.print(f"[dim]Zone type: {zone_type}[/dim]")  # TODO
                 extraction_stats = analyzer.extract_relevant_issues(
-                    rc1_path, rc2_path, temp_merged, output_format="gpkg"
+                    rc1_path,
+                    rc2_path,
+                    temp_merged,
+                    output_format="gpkg",
+                    rand_buffer_predicate=rand_border_filter,
                 )
 
                 console.print(

@@ -65,15 +65,24 @@ class QAAnalyzer:
         "Code",
     ]
 
-    def __init__(self, zones_file: Union[str, Path], use_arcgis_pro: Optional[bool] = True):
+    def __init__(
+        self,
+        zones_file: Union[str, Path],
+        use_arcgis_pro: Optional[bool] = True,
+        mapsheets_layer: Optional[str] = None,
+    ):
         """
         Initialize QA Analyzer with administrative zones.
 
         Args:
             zones_file: Path to GPKG file containing administrative zones
+            mapsheets_layer: Override for the mapsheets layer name (default:
+                "mapsheets_sources_only"). Pass e.g. "mapsheet_gc" to read
+                directly from a GC_MAPSHEET.gpkg-derived file.
         """
         self.zones_file = Path(zones_file)
         self.zones_data = {}
+        self.mapsheets_layer = mapsheets_layer or "mapsheets_sources_only"
         self._load_administrative_zones()
         self.use_arcgis_pro = use_arcgis_pro
 
@@ -85,7 +94,7 @@ class QAAnalyzer:
         try:
             # Load different zone types based on created GPKG structure
             zone_layers = {
-                "mapsheets": "mapsheets_sources_only",  # Main layer with source mapping (RC1/RC2)    Nota:  mapsheets_with_sources has many dupplicates
+                "mapsheets": self.mapsheets_layer,  # Main layer with source mapping (RC1/RC2)    Nota:  mapsheets_with_sources has many dupplicates
                 "work_units": "work_units",  # Work units layer
                 "lots": "lots",  # Lots layer
             }
