@@ -138,11 +138,49 @@ _MAPSHEET_CATS = [
 ]
 
 
-def _categorized_qml(attr: str, sym_type: str, cats: list) -> str:
+def _label_block(field: str, font_family: str = "Arial", font_size: int = 10) -> str:
+    """Return a QGIS 3.x <labeling> block for simple centroid labels."""
+    return (
+        '  <labeling type="simple">\n'
+        '    <settings calloutType="simple">\n'
+        f'      <fieldName>{field}</fieldName>\n'
+        f'      <text-style fontFamily="{font_family}" fontSize="{font_size}"\n'
+        '        fontSizeUnit="Point" fontWeight="50" fontItalic="0"\n'
+        '        fontUnderline="0" fontStrikeout="0" namedStyle="Regular"\n'
+        '        textColor="50,50,50,255" textOpacity="1"\n'
+        '        isExpression="0" blendMode="0" multilineHeight="1"/>\n'
+        '      <text-format/>\n'
+        '      <placement placement="1" centroidInside="1" fitInPolygonOnly="0"\n'
+        '        dist="0" distUnits="MM" xOffset="0" yOffset="0"\n'
+        '        labelOffsetMapUnitScale="3x:0,0,0,0,0,0" priority="5"\n'
+        '        layerType="PolygonGeometry"/>\n'
+        '      <rendering drawLabels="1" obstacle="1" obstacleFactor="1"\n'
+        '        obstacleType="1" scaleVisibility="0" minFeatureSize="0"\n'
+        '        limitNumLabels="0" maxNumLabels="2000" upsidedownLabels="0"\n'
+        '        zIndex="0" displayAll="0"/>\n'
+        '      <dd_properties>\n'
+        '        <Option type="Map">\n'
+        '          <Option name="name" value="" type="QString"/>\n'
+        '          <Option name="properties"/>\n'
+        '          <Option name="type" value="collection" type="QString"/>\n'
+        '        </Option>\n'
+        '      </dd_properties>\n'
+        '    </settings>\n'
+        '  </labeling>\n'
+    )
+
+
+def _categorized_qml(
+    attr: str,
+    sym_type: str,
+    cats: list,
+    label_field: Optional[str] = None,
+) -> str:
     """Build a complete categorized-renderer QML string.
 
     sym_type: 'fill' | 'line' | 'marker'
     cats: list of (value, label, primary_color, secondary_color)
+    label_field: if set, adds a simple centroid label on this field (Arial 10 pt)
     """
     cat_lines = "\n".join(
         f'      <category symbol="{i}" value="{v}" label="{lbl}" render="true" type="string"/>'
@@ -164,9 +202,12 @@ def _categorized_qml(attr: str, sym_type: str, cats: list) -> str:
             for i, (_, __, color, *___) in enumerate(cats)
         )
 
+    style_cats = "Symbology|Labeling" if label_field else "Symbology"
+    labeling = _label_block(label_field) if label_field else '  <labeling type="no-labels"/>\n'
+
     return (
         "<!DOCTYPE qgis PUBLIC 'http://mrcc.com/qgis.dtd' 'SYSTEM'>\n"
-        '<qgis version="3.0.0" styleCategories="Symbology">\n'
+        f'<qgis version="3.0.0" styleCategories="{style_cats}">\n'
         f'  <renderer-v2 type="categorizedSymbol" attr="{attr}" forceraster="0"'
         ' enableorderby="0" symbollevels="0" referencescale="-1">\n'
         "    <categories>\n"
@@ -181,6 +222,7 @@ def _categorized_qml(attr: str, sym_type: str, cats: list) -> str:
         "  <blendMode>0</blendMode>\n"
         "  <featureBlendMode>0</featureBlendMode>\n"
         "  <layerOpacity>1</layerOpacity>\n"
+        f"{labeling}"
         "</qgis>"
     )
 
@@ -219,7 +261,7 @@ LAYER_STYLES: Dict[str, str] = {
     "IssuePolygons": _categorized_qml("IssueType", "fill",   _ISSUE_CATS),
     "IssueLines":    _categorized_qml("IssueType", "line",   _ISSUE_CATS),
     "IssuePoints":   _categorized_qml("IssueType", "marker", _ISSUE_CATS),
-    "mapsheets_sources_only": _categorized_qml("SOURCE_RC", "fill", _MAPSHEET_CATS),
+    "mapsheets_sources_only": _categorized_qml("SOURCE_RC", "fill", _MAPSHEET_CATS, label_field="MSH_MAP_NAME"),
     "qa_rand_gc_buffer_50m":  _single_symbol_qml("fill", _YELLOW_GHOST, _YELLOW_OUT),
 }
 
