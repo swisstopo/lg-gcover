@@ -134,6 +134,8 @@ class S3Uploader:
         upload_method: str = "auto",
         show_progress: bool = True,
         progress_threshold: int = 10 * 1024 * 1024,  # 10 MB
+        max_upload_retries: int = 3,
+        retry_backoff_seconds: float = 5.0,
     ):
         """
         Initialize S3 Uploader with multiple upload methods
@@ -148,6 +150,10 @@ class S3Uploader:
             upload_method: 'auto', 'direct', or 'presigned'
             show_progress: Whether to show progress bar for uploads
             progress_threshold: Minimum file size in bytes to show progress (default 10MB)
+            max_upload_retries: Attempts for the presigned PUT itself before giving up
+                on a network error (timeout/connection drop). Does not retry on a
+                non-2xx HTTP response, only on transport-level failures.
+            retry_backoff_seconds: Base delay between retries; doubles each attempt.
         """
         self.bucket_name = bucket_name
         self.profile_name = aws_profile
@@ -158,6 +164,8 @@ class S3Uploader:
         self.upload_method = upload_method
         self.show_progress = show_progress
         self.progress_threshold = progress_threshold
+        self.max_upload_retries = max_upload_retries
+        self.retry_backoff_seconds = retry_backoff_seconds
 
         self.proxies = self._init_proxies()
         self.s3_client = None
@@ -368,31 +376,47 @@ class S3Uploader:
             # Determine if we should show progress bar
             show_bar = self.show_progress and file_size >= self.progress_threshold
 
-            if show_bar:
-                # Upload with progress bar
-                response = self._upload_with_progress(
-                    file_path,
-                    presigned_url,
-                    file_size,
-                    presigned_data.get("headers", {}),
-                )
-            else:
-                # Upload without progress bar (small files)
-                with open(file_path, "rb") as file_obj:
-                    request_args = {
-                        "data": file_obj,
-                        "headers": presigned_data.get("headers", {}),
-                        "timeout": 60,
-                        "verify": False,
-                    }
-
-                    if self.proxies:
-                        request_args["proxies"] = self.proxies
-                        logger.debug(
-                            f"Using proxies for presigned upload: {self.proxies}"
+            # The PUT itself (not the presigned-URL request) is what stalls on a
+            # flaky link for large GDB zips — retry that part on a transport-level
+            # failure (timeout/connection drop) before giving up. A non-2xx HTTP
+            # response is not retried here; it's returned as-is below.
+            response = None
+            for attempt in range(1, self.max_upload_retries + 1):
+                try:
+                    if show_bar:
+                        response = self._upload_with_progress(
+                            file_path,
+                            presigned_url,
+                            file_size,
+                            presigned_data.get("headers", {}),
                         )
+                    else:
+                        with open(file_path, "rb") as file_obj:
+                            request_args = {
+                                "data": file_obj,
+                                "headers": presigned_data.get("headers", {}),
+                                "timeout": 60,
+                                "verify": False,
+                            }
 
-                    response = requests.put(presigned_url, **request_args)
+                            if self.proxies:
+                                request_args["proxies"] = self.proxies
+                                logger.debug(
+                                    f"Using proxies for presigned upload: {self.proxies}"
+                                )
+
+                            response = requests.put(presigned_url, **request_args)
+                    break
+                except requests.RequestException as e:
+                    if attempt < self.max_upload_retries:
+                        delay = self.retry_backoff_seconds * (2 ** (attempt - 1))
+                        logger.warning(
+                            f"Upload attempt {attempt}/{self.max_upload_retries} for "
+                            f"{s3_key} failed ({e}); retrying in {delay:.0f}s"
+                        )
+                        time.sleep(delay)
+                    else:
+                        raise
 
             success = response.status_code in [200, 204]
 
