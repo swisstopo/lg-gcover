@@ -910,12 +910,12 @@ def process(ctx, gdb_path, no_upload):
         rprint(f"RC: {asset.info.release_candidate.short_name}")
         rprint(f"Date: {asset.info.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
 
-        success = manager.process_asset(asset)
+        success, error = manager.process_asset(asset)
 
         if success:
             rprint("[green]✅ Successfully processed[/green]")
         else:
-            rprint("[red]❌ Processing failed[/red]")
+            rprint(f"[red]❌ Processing failed: {error}[/red]")
             sys.exit(1)
 
     except Exception as e:
@@ -1165,7 +1165,7 @@ def process_all(
                     except Exception as e:
                         rprint(f"  [red]❌ Error calculating size: {e}[/red]")
 
-                    success = manager.process_asset(asset, force=force)
+                    success, error = manager.process_asset(asset, force=force)
 
                     if success:
                         stats["processed"] += 1
@@ -1173,19 +1173,20 @@ def process_all(
                             rprint("  [green]✅ Success[/green]")
                     else:
                         stats["failed"] += 1
-                        failed_assets.append(asset.path.name)
+                        failed_assets.append((asset.path.name, error))
                         if verbose:
-                            rprint("  [red]❌ Failed[/red]")
+                            rprint(f"  [red]❌ Failed: {error}[/red]")
 
                         if not continue_on_error:
                             rprint(
-                                f"\n[red]Processing failed for {asset.path.name}. Use --continue-on-error to skip failures.[/red]"
+                                f"\n[red]Processing failed for {asset.path.name}: {error}. "
+                                "Use --continue-on-error to skip failures.[/red]"
                             )
                             break
 
                 except Exception as e:
                     stats["failed"] += 1
-                    failed_assets.append(asset.path.name)
+                    failed_assets.append((asset.path.name, str(e)))
 
                     if verbose:
                         rprint(f"  [red]❌ Error: {e}[/red]")
@@ -1221,8 +1222,8 @@ def process_all(
 
         if failed_assets:
             rprint("\n[red]Failed assets:[/red]")
-            for failed in failed_assets[:10]:  # Show first 10 failures
-                rprint(f"  - {failed}")
+            for name, error in failed_assets[:10]:  # Show first 10 failures
+                rprint(f"  - {name}: {error}")
             if len(failed_assets) > 10:
                 rprint(f"  ... and {len(failed_assets) - 10} more")
 

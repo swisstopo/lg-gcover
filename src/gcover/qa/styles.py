@@ -6,7 +6,7 @@ the correct symbology when the file is opened.  ArcGIS ignores this table.
 Supported layers
 ----------------
 IssuePolygons / IssueLines / IssuePoints  — categorised by ``IssueType``
-mapsheets_sources_only                    — categorised by ``SOURCE_RC``
+mapsheet                                  — categorised by ``SOURCE_RC``
 qa_rand_gc_buffer_50m                     — single semi-transparent fill
 """
 
@@ -219,7 +219,7 @@ LAYER_STYLES: Dict[str, str] = {
     "IssuePolygons": _categorized_qml("IssueType", "fill",   _ISSUE_CATS),
     "IssueLines":    _categorized_qml("IssueType", "line",   _ISSUE_CATS),
     "IssuePoints":   _categorized_qml("IssueType", "marker", _ISSUE_CATS),
-    "mapsheets_sources_only": _categorized_qml("SOURCE_RC", "fill", _MAPSHEET_CATS),
+    "mapsheet": _categorized_qml("SOURCE_RC", "fill", _MAPSHEET_CATS),
     "qa_rand_gc_buffer_50m":  _single_symbol_qml("fill", _YELLOW_GHOST, _YELLOW_OUT),
 }
 
