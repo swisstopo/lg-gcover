@@ -32,6 +32,7 @@ class GDBAssetManager:
         db_path: str | Path,
         temp_dir: str | Path = "/tmp/gdb_zips",
         upload_to_s3: Optional[bool] = True,
+        show_progress: bool = True,
     ):
         """
         Initialize GDB Asset Manager with enhanced configuration
@@ -54,6 +55,7 @@ class GDBAssetManager:
         self.temp_dir = Path(temp_dir)
         self.temp_dir.mkdir(parents=True, exist_ok=True)
         self.upload_to_s3 = upload_to_s3
+        self.show_progress = show_progress
 
         # Initialize S3 uploader with enhanced configuration
         logger.debug("GDBAssetMananger: init()")
@@ -93,6 +95,7 @@ class GDBAssetManager:
             totp_token=totp_token,
             proxy_config=proxy_config,
             upload_method=upload_method,
+            show_progress=self.show_progress,
         )
 
     @classmethod
