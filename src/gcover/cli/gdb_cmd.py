@@ -997,6 +997,10 @@ def process_all(
             temp_dir=gdb_config.temp_dir,
             upload_to_s3=not no_upload,
             # aws_profile=s3_profile,
+            # The per-file byte-progress bar and this command's own per-asset
+            # Progress() below both drive a rich Live display; nested Live
+            # displays fight each other and freeze mid-render. Only one wins.
+            show_progress=False,
         )
 
         rprint("[cyan]Scanning filesystem for GDB assets...[/cyan]")

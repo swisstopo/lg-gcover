@@ -32,6 +32,7 @@ class GDBAssetManager:
         db_path: str | Path,
         temp_dir: str | Path = "/tmp/gdb_zips",
         upload_to_s3: Optional[bool] = True,
+        show_progress: bool = True,
     ):
         """
         Initialize GDB Asset Manager with enhanced configuration
@@ -54,6 +55,7 @@ class GDBAssetManager:
         self.temp_dir = Path(temp_dir)
         self.temp_dir.mkdir(parents=True, exist_ok=True)
         self.upload_to_s3 = upload_to_s3
+        self.show_progress = show_progress
 
         # Initialize S3 uploader with enhanced configuration
         logger.debug("GDBAssetMananger: init()")
@@ -93,6 +95,7 @@ class GDBAssetManager:
             totp_token=totp_token,
             proxy_config=proxy_config,
             upload_method=upload_method,
+            show_progress=self.show_progress,
         )
 
     @classmethod
@@ -200,8 +203,14 @@ class GDBAssetManager:
                 logger.info(f"Asset already processed: {asset.path}")
                 return True, None
 
-            if force:
-                self.metadata_db.delete_asset(asset.path)
+            def _replace_row():
+                # Deferred until we're actually about to record an outcome —
+                # deleting upfront (before zip/upload) would, on a failure in
+                # between, leave zero rows instead of the previously-good one
+                # (e.g. a prior uploaded=True) that force was meant to retry.
+                if force:
+                    self.metadata_db.delete_asset(asset.path)
+                self.metadata_db.insert_asset(asset.info)
 
             # Generate S3 key early (before zipping). Must reuse the same
             # naming as create_zip()/zip_filename — for verification assets
@@ -220,7 +229,7 @@ class GDBAssetManager:
                     asset.info.s3_key = s3_key
                     asset.info.uploaded = True
                     asset.info.hash_md5 = None  # We don't have it without zipping
-                    self.metadata_db.insert_asset(asset.info)
+                    _replace_row()
                     return True, None
 
                 # Only now: create zip (expensive operation)
@@ -238,7 +247,7 @@ class GDBAssetManager:
                 logger.debug(f"Uploaded to s3://{self.bucket_name}/{s3_key}")
 
                 # Update database
-                self.metadata_db.insert_asset(asset.info)
+                _replace_row()
 
                 # Cleanup temp file
                 zip_path.unlink()
@@ -251,7 +260,7 @@ class GDBAssetManager:
 
             # Update database
             logger.debug(f"Update database asset...")
-            self.metadata_db.insert_asset(asset.info)
+            _replace_row()
 
             # Cleanup temp file
             logger.debug(f"Cleanup...")

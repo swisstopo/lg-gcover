@@ -811,6 +811,30 @@
           "name": "Chibanien"
         },
         {
+          "code": 15001157,
+          "name": "Spätes Oxfordien"
+        },
+        {
+          "code": 15001158,
+          "name": "Mittleres Oxfordien"
+        },
+        {
+          "code": 15001159,
+          "name": "Frühes Oxfordien"
+        },
+        {
+          "code": 15001160,
+          "name": "Spätes Toarcien"
+        },
+        {
+          "code": 15001161,
+          "name": "Mittleres Toarcien"
+        },
+        {
+          "code": 15001162,
+          "name": "Frühes Toarcien"
+        },
+        {
           "code": 999998,
           "name": "Not applicable"
         },
@@ -3791,6 +3815,26 @@
           "name": "Serpentinit: Chrysotil"
         },
         {
+          "code": 15111677,
+          "name": "Dolomitstein: mergelig"
+        },
+        {
+          "code": 15111678,
+          "name": "Granit: kataklastisch"
+        },
+        {
+          "code": 15111679,
+          "name": "Gneis: kataklastisch"
+        },
+        {
+          "code": 15111680,
+          "name": "Mergelstein: tonig-dolomitisch"
+        },
+        {
+          "code": 15111681,
+          "name": "Kalkstein: dolomitisch: Ooide"
+        },
+        {
           "code": 999998,
           "name": "Not applicable"
         },
@@ -5403,6 +5447,350 @@
           "name": "Ostalpin: Jura"
         },
         {
+          "code": 15202744,
+          "name": "Üblital-Fm.: Basischer Vulkanit"
+        },
+        {
+          "code": 15207036,
+          "name": "Zone Submédiane: Dronnaire-Tonstein"
+        },
+        {
+          "code": 15204173,
+          "name": "Zentralschweizerische Klippen: Hauptdolomit-Gr."
+        },
+        {
+          "code": 15204174,
+          "name": "Zentralschweizerische Klippen: Hauptdolomit-Gr.: Bituminöse Dolomitbrekzie"
+        },
+        {
+          "code": 15204175,
+          "name": "Zentralschweizerische Klippen: Raibl-Gr.: Dolomit"
+        },
+        {
+          "code": 15205193,
+          "name": "Stabbiello-Gneis: Garzirola-Mylonit"
+        },
+        {
+          "code": 15207015,
+          "name": "Verampio-Orthogneiss"
+        },
+        {
+          "code": 15207016,
+          "name": "Baceno-Schiefer"
+        },
+        {
+          "code": 15207017,
+          "name": "Adula-Decke: Trescolmen-Formation: Alp-de-Confin-Eklogit"
+        },
+        {
+          "code": 15207018,
+          "name": "Forclettes- und Rote-Platte-Fm."
+        },
+        {
+          "code": 15207019,
+          "name": "Arvel- und Chauderon-Fm."
+        },
+        {
+          "code": 15207020,
+          "name": "Theodulgletscher-Schuppe: Granat-Glimmerschiefer"
+        },
+        {
+          "code": 15207021,
+          "name": "Stockhorn-Decke: Granat-Gneis"
+        },
+        {
+          "code": 15207022,
+          "name": "Stockhorn-Decke: Metaklastische Gesteine"
+        },
+        {
+          "code": 15207023,
+          "name": "Zentralschweizerische Klippen: Alpbach-Schiefer"
+        },
+        {
+          "code": 15207024,
+          "name": "Zentralschweizerische Klippen: Palombini-Formation"
+        },
+        {
+          "code": 15207025,
+          "name": "Zentralschweizerische Klippen: Aptychenkalk"
+        },
+        {
+          "code": 15207026,
+          "name": "Zentralschweizerische Klippen: Radiolarit"
+        },
+        {
+          "code": 15207027,
+          "name": "Zentralschweizerische Klippen: Ophiolit"
+        },
+        {
+          "code": 15207028,
+          "name": "Zentralschweizerische Klippen: Gabbro"
+        },
+        {
+          "code": 15207029,
+          "name": "Zentralschweizerische Klippen: Sciernes-d'Albeuve- und Intyamon-Fm."
+        },
+        {
+          "code": 15207030,
+          "name": "Zentralschweizerische Klippen: Malm: Massivkalk"
+        },
+        {
+          "code": 15207031,
+          "name": "Zentralschweizerische Klippen: Malm: Knollenkalk"
+        },
+        {
+          "code": 15207032,
+          "name": "Zentralschweizerische Klippen: Sommant-Fm.: Langel-Mb."
+        },
+        {
+          "code": 15207033,
+          "name": "Zentralschweizerische Klippen: Diploporenkalk"
+        },
+        {
+          "code": 15207034,
+          "name": "Zentralschweizerische Klippen: Rauwacke und Quarzsandstein undiff."
+        },
+        {
+          "code": 15207035,
+          "name": "Zentralschweizerische Klippen: Rauwacke"
+        },
+        {
+          "code": 15202698,
+          "name": "Aiguilles-Rouges-Massiv: Ordoviszische Orthogneise"
+        },
+        {
+          "code": 15202700,
+          "name": "Arpille-Gneiskomplex"
+        },
+        {
+          "code": 15202701,
+          "name": "Arpille-Gneiskomplex: Marmor"
+        },
+        {
+          "code": 15202094,
+          "name": "Zementstein-Fm.: Graspass-Mb."
+        },
+        {
+          "code": 15202661,
+          "name": "Fully-Granodiorit: Aplitische Fazies"
+        },
+        {
+          "code": 15203265,
+          "name": "Zone Submédiane: Les-Chapelles-Kalksandstein"
+        },
+        {
+          "code": 15203550,
+          "name": "Leventina-Einheit: Paragneis bis Glimmerschiefer"
+        },
+        {
+          "code": 15203731,
+          "name": "Antrona-Decke: Metagabbro, eklogitisch"
+        },
+        {
+          "code": 15206061,
+          "name": "Undifferenzierte lithologische Einheit: Mikrodiorit"
+        },
+        {
+          "code": 15201622,
+          "name": "Mittelterrasse"
+        },
+        {
+          "code": 15200709,
+          "name": "Massongex-Sandstein"
+        },
+        {
+          "code": 15204171,
+          "name": "Zentralschweizerische Klippen: Allgäu-Fm., Adnet- und Hierlatz-Kalk"
+        },
+        {
+          "code": 15204172,
+          "name": "Zentralschweizerische Klippen: Kössen-Formation"
+        },
+        {
+          "code": 15202720,
+          "name": "Mont-Blanc-Granit: Porphyrische Fazies"
+        },
+        {
+          "code": 15202721,
+          "name": "Mont-Blanc-Granit: Mylonitische Fazies"
+        },
+        {
+          "code": 15202722,
+          "name": "Mont-Blanc-Massiv: Prävariszisches Grundgebirge: Muskovitgneis"
+        },
+        {
+          "code": 15202723,
+          "name": "Mont-Blanc-Massiv: Prävariszisches Grundgebirge: Kataklasit"
+        },
+        {
+          "code": 15202724,
+          "name": "Mont-Blanc-Massiv: Prävariszisches Grundgebirge: Amphibolit"
+        },
+        {
+          "code": 15202725,
+          "name": "Mont-Blanc-Massiv: Prävariszisches Grundgebirge: Marmor"
+        },
+        {
+          "code": 15202726,
+          "name": "Mont-Blanc-Massiv: Prävariszisches Grundgebirge: Quarzit"
+        },
+        {
+          "code": 15202727,
+          "name": "Mont-Blanc-Massiv: Prävariszisches Grundgebirge: Hornfels"
+        },
+        {
+          "code": 15202728,
+          "name": "Mont-Blanc-Massiv: Prävariszische Migmatite: Amphibolit-reiche Fazies"
+        },
+        {
+          "code": 15202729,
+          "name": "Catogne-Gneiskomplex: vom Mont-Blanc-Granit intrudiert"
+        },
+        {
+          "code": 15202730,
+          "name": "Catogne-Gneiskomplex: Amphibolit-reiche Fazies"
+        },
+        {
+          "code": 15202731,
+          "name": "Catogne-Gneiskomplex: Amphibolit"
+        },
+        {
+          "code": 15202732,
+          "name": "Catogne-Gneiskomplex: Marmor"
+        },
+        {
+          "code": 15202699,
+          "name": "Mont-Blanc-Massiv: Ordoviszische Orthogneise"
+        },
+        {
+          "code": 15202695,
+          "name": "Dent-de-Valère-Flysch"
+        },
+        {
+          "code": 15202694,
+          "name": "Calcaires à foraminifères planctoniques"
+        },
+        {
+          "code": 15202696,
+          "name": "Erzegg-Fm.: Chamoson-Eisenoolith"
+        },
+        {
+          "code": 15202697,
+          "name": "Helvetikum: Trias: Equisetum-Schiefer"
+        },
+        {
+          "code": 15202733,
+          "name": "Iberg-Melange: Roggenstock-Flysch"
+        },
+        {
+          "code": 15202734,
+          "name": "Interne Einsiedeln-Schuppen: Flysch"
+        },
+        {
+          "code": 15202735,
+          "name": "Externe Einsiedeln-Schuppen: Flysch"
+        },
+        {
+          "code": 15202736,
+          "name": "Rigi-Rossberg-Schuppe: Molasse Rouge"
+        },
+        {
+          "code": 15202737,
+          "name": "Plattenalp-Brekzie"
+        },
+        {
+          "code": 15202738,
+          "name": "Quarten-Fm.: Quarzsandstein"
+        },
+        {
+          "code": 15202739,
+          "name": "Röti-Fm.: Dolomit"
+        },
+        {
+          "code": 15202740,
+          "name": "Mels-Fm.: Dolomitische Fazies"
+        },
+        {
+          "code": 15202741,
+          "name": "Karrenstock-Fm.: Fuggstock-Mb.: Feindetritische Fazies"
+        },
+        {
+          "code": 15202742,
+          "name": "Karrenstock-Fm.: Basischer Vulkanit"
+        },
+        {
+          "code": 15202743,
+          "name": "Murgtal-Fm.: Feindetritische Fazies"
+        },
+        {
+          "code": 15202702,
+          "name": "Arpille-Gneiskomplex: Amphibolit"
+        },
+        {
+          "code": 15202703,
+          "name": "Arpille-Gneiskomplex: Mikrodiorit"
+        },
+        {
+          "code": 15202704,
+          "name": "Vallorcine-Granit: Kataklastische Fazies"
+        },
+        {
+          "code": 15202705,
+          "name": "Finhaut-Mylonit"
+        },
+        {
+          "code": 15202706,
+          "name": "Tête-des-Ottans-Orthogneis"
+        },
+        {
+          "code": 15202707,
+          "name": "Emosson-Gneiskomplex: Migmatit"
+        },
+        {
+          "code": 15202708,
+          "name": "Emosson-Gneiskomplex: Glimmerschiefer"
+        },
+        {
+          "code": 15202709,
+          "name": "Emosson-Gneiskomplex: Biotitgneis"
+        },
+        {
+          "code": 15202710,
+          "name": "Emosson-Gneiskomplex: Chloritgneis"
+        },
+        {
+          "code": 15202711,
+          "name": "Emosson-Gneiskomplex: Paragneis, Metagrauwacke"
+        },
+        {
+          "code": 15202712,
+          "name": "Emosson-Gneiskomplex: Paragneis: mylonitisch und/oder migmatitisch"
+        },
+        {
+          "code": 15202713,
+          "name": "Emosson-Gneiskomplex: Quarzit"
+        },
+        {
+          "code": 15202714,
+          "name": "Emosson-Gneiskomplex: Bändergneis"
+        },
+        {
+          "code": 15202715,
+          "name": "Emosson-Gneiskomplex: Marmor und Skarn"
+        },
+        {
+          "code": 15202717,
+          "name": "Emosson-Gneiskomplex: Amphibolit"
+        },
+        {
+          "code": 15202718,
+          "name": "Aiguilles-Rouges-Massiv: Mikrogranit"
+        },
+        {
+          "code": 15202719,
+          "name": "Mont-Blanc-Granit: Gleichkörnige Fazies"
+        },
+        {
           "code": 15203329,
           "name": "Rombach-Fm."
         },
@@ -6443,10 +6831,6 @@
           "name": "Zone Submédiane: Pointe-de-l'Au-Brekzie"
         },
         {
-          "code": 15203265,
-          "name": "Zone Submédiane: Bonaveau-Kalk"
-        },
-        {
           "code": 15203266,
           "name": "Zone Submédiane: Sex-du-Tronc-Kalk"
         },
@@ -7381,10 +7765,6 @@
         {
           "code": 15206060,
           "name": "Undifferenzierte lithologische Einheit: Talkschiefer"
-        },
-        {
-          "code": 15206061,
-          "name": "Undifferenzierte lithologische Einheit: Mirkodiorit"
         },
         {
           "code": 15206062,
@@ -11703,10 +12083,6 @@
           "name": "Lac-Cornu-Eklogit"
         },
         {
-          "code": 15202214,
-          "name": "Perrons-Orthogneis"
-        },
-        {
           "code": 15202215,
           "name": "Breya-Rhyolith"
         },
@@ -13183,10 +13559,6 @@
           "name": "Grafschaft-Schotter"
         },
         {
-          "code": 15201622,
-          "name": "\"Mittelterrasse\""
-        },
-        {
           "code": 15201593,
           "name": "Stein-am-Rhein-Stadium"
         },
@@ -14639,10 +15011,6 @@
           "name": "Zementstein-Fm."
         },
         {
-          "code": 15202094,
-          "name": "Zementstein-Fm.: Grasspass-Mb."
-        },
-        {
           "code": 15202095,
           "name": "Zementstein-Fm.: Gassen-Kalk"
         },
@@ -15639,10 +16007,6 @@
           "name": "Fully-Granodiorit: Mikrodioritische Fazies"
         },
         {
-          "code": 15202661,
-          "name": "Fully-Granodiorit: Apltisiche Fazies"
-        },
-        {
           "code": 15203743,
           "name": "Lucomagno-Einheit: Konglomeratgneis"
         },
@@ -16257,10 +16621,6 @@
         {
           "code": 15203257,
           "name": "Zone Submédiane: Melange: Mergel und Sandstein"
-        },
-        {
-          "code": 15203550,
-          "name": "Leventina-Einheit: Paragneis bis Granat-Glimmerschiefer"
         },
         {
           "code": 15203605,
@@ -17169,10 +17529,6 @@
         {
           "code": 15203730,
           "name": "Antrona-Decke: Metasedimente"
-        },
-        {
-          "code": 15203731,
-          "name": "Antrona-Decke: Metagabbro"
         },
         {
           "code": 15203732,
@@ -19671,6 +20027,26 @@
           "name": "Serpentinit: Pyroxen"
         },
         {
+          "code": 15111677,
+          "name": "Dolomitstein: mergelig"
+        },
+        {
+          "code": 15111678,
+          "name": "Granit: kataklastisch"
+        },
+        {
+          "code": 15111679,
+          "name": "Gneis: kataklastisch"
+        },
+        {
+          "code": 15111680,
+          "name": "Mergelstein: tonig-dolomitisch"
+        },
+        {
+          "code": 15111681,
+          "name": "Kalkstein: dolomitisch: Ooide"
+        },
+        {
           "code": 999998,
           "name": "Not applicable"
         },
@@ -21939,10 +22315,6 @@
           "name": "Bremgarten-Stadium"
         },
         {
-          "code": 15201666,
-          "name": "Hundsbel-Schotter"
-        },
-        {
           "code": 15201667,
           "name": "Laufenburg-Schotter"
         },
@@ -22129,6 +22501,1014 @@
         {
           "code": 15201701,
           "name": "Berchenwald-Schotter"
+        },
+        {
+          "code": 15201866,
+          "name": "Littenheid-Schotter"
+        },
+        {
+          "code": 15201867,
+          "name": "Loch-Schotter"
+        },
+        {
+          "code": 15201868,
+          "name": "Lochwis-Schotter"
+        },
+        {
+          "code": 15201869,
+          "name": "Looberg-Schotter"
+        },
+        {
+          "code": 15201870,
+          "name": "Ludetswil-Schotter"
+        },
+        {
+          "code": 15201871,
+          "name": "Lützelweid-Schotter"
+        },
+        {
+          "code": 15201872,
+          "name": "Madetswil-Lehm"
+        },
+        {
+          "code": 15201873,
+          "name": "Mellstorf-Schotter"
+        },
+        {
+          "code": 15201874,
+          "name": "Moosrain-Schotter"
+        },
+        {
+          "code": 15201875,
+          "name": "Mosen-Formation"
+        },
+        {
+          "code": 15201876,
+          "name": "Mösli-Schotter"
+        },
+        {
+          "code": 15201877,
+          "name": "Muhen-Schotter"
+        },
+        {
+          "code": 15201878,
+          "name": "Mutwil-Schotter"
+        },
+        {
+          "code": 15201879,
+          "name": "Neuhausen-Lehm"
+        },
+        {
+          "code": 15201880,
+          "name": "Neuhauserwald-Schotter"
+        },
+        {
+          "code": 15201881,
+          "name": "Niderwis-Schotter"
+        },
+        {
+          "code": 15201882,
+          "name": "Niederbüren-Schotter"
+        },
+        {
+          "code": 15201883,
+          "name": "Oberhasli-Sand"
+        },
+        {
+          "code": 15201884,
+          "name": "Ober-Heid-Schotter"
+        },
+        {
+          "code": 15201885,
+          "name": "Oberuzwil-Schotter"
+        },
+        {
+          "code": 15201886,
+          "name": "Oberwil-Schotter"
+        },
+        {
+          "code": 15201887,
+          "name": "Obfelden-Schotter"
+        },
+        {
+          "code": 15201888,
+          "name": "Ochlenberg-Schotter"
+        },
+        {
+          "code": 15201889,
+          "name": "Oozebückli-Schotter"
+        },
+        {
+          "code": 15201890,
+          "name": "Orbach-Schotter"
+        },
+        {
+          "code": 15201891,
+          "name": "Petershausen-Schotter"
+        },
+        {
+          "code": 15201892,
+          "name": "Pfäffikon-Lehm"
+        },
+        {
+          "code": 15201893,
+          "name": "Pfäffikon-Sand"
+        },
+        {
+          "code": 15201894,
+          "name": "Pfaffnau-Schotter"
+        },
+        {
+          "code": 15201895,
+          "name": "Pfeffnang-Schotter"
+        },
+        {
+          "code": 15201896,
+          "name": "Ramsen-Schotter"
+        },
+        {
+          "code": 15201897,
+          "name": "Rauhenberg-Schotter"
+        },
+        {
+          "code": 15201898,
+          "name": "Reichenau-Schotter"
+        },
+        {
+          "code": 15201899,
+          "name": "Reisiswil-Schotter"
+        },
+        {
+          "code": 15201900,
+          "name": "Rickenhus-Schotter"
+        },
+        {
+          "code": 15201901,
+          "name": "Riken-Schotter"
+        },
+        {
+          "code": 15201846,
+          "name": "Heilsberg-Schotter"
+        },
+        {
+          "code": 15201847,
+          "name": "Herrentisch-Schotter"
+        },
+        {
+          "code": 15201848,
+          "name": "Hochrüti-Schotter"
+        },
+        {
+          "code": 15201849,
+          "name": "Hoelnweg-Schotter"
+        },
+        {
+          "code": 15201850,
+          "name": "Hofstetten-Schotter"
+        },
+        {
+          "code": 15201851,
+          "name": "Hohberg-Schotter"
+        },
+        {
+          "code": 15201852,
+          "name": "Hohentannen-Schotter"
+        },
+        {
+          "code": 15201853,
+          "name": "Hönger-Till"
+        },
+        {
+          "code": 15201854,
+          "name": "Horn-Schotter"
+        },
+        {
+          "code": 15201855,
+          "name": "Iberg-Lehm"
+        },
+        {
+          "code": 15201856,
+          "name": "Iltishusen-Schotter"
+        },
+        {
+          "code": 15201857,
+          "name": "Junkholz-Schotter"
+        },
+        {
+          "code": 15201858,
+          "name": "Kressenberg-Schotter"
+        },
+        {
+          "code": 15201859,
+          "name": "Langenhard-Schotter"
+        },
+        {
+          "code": 15201860,
+          "name": "Langriet-Schotter"
+        },
+        {
+          "code": 15201861,
+          "name": "Längwald-Schotter"
+        },
+        {
+          "code": 15201862,
+          "name": "Lanterswisen-Schotter"
+        },
+        {
+          "code": 15201863,
+          "name": "Leimbach-Schotter"
+        },
+        {
+          "code": 15201864,
+          "name": "Leimiswil-Schotter"
+        },
+        {
+          "code": 15201865,
+          "name": "Lindau-Schotter"
+        },
+        {
+          "code": 15201902,
+          "name": "Ristenbüel-Schotter"
+        },
+        {
+          "code": 15201903,
+          "name": "Rohrbach-Schotter"
+        },
+        {
+          "code": 15201904,
+          "name": "Rossrüti-Schotter"
+        },
+        {
+          "code": 15201923,
+          "name": "Schüpferzelg-Schotter"
+        },
+        {
+          "code": 15201924,
+          "name": "Schützhubel-Schotter"
+        },
+        {
+          "code": 15201925,
+          "name": "Schwangi-Schotter"
+        },
+        {
+          "code": 15201926,
+          "name": "Schweikhof-Formation"
+        },
+        {
+          "code": 15201927,
+          "name": "Schwerzenbach-Lehm"
+        },
+        {
+          "code": 15201928,
+          "name": "Schwerzenbach-Sand"
+        },
+        {
+          "code": 15201929,
+          "name": "Sennhof-Schotter"
+        },
+        {
+          "code": 15201930,
+          "name": "Sonnhalden-Schotter"
+        },
+        {
+          "code": 15201931,
+          "name": "Staatswald-Schotter"
+        },
+        {
+          "code": 15201932,
+          "name": "Staufberg-Schotter"
+        },
+        {
+          "code": 15201933,
+          "name": "Steigen-Lehm"
+        },
+        {
+          "code": 15201934,
+          "name": "Steinacker-Schotter"
+        },
+        {
+          "code": 15201935,
+          "name": "Steinfeld-Schotter"
+        },
+        {
+          "code": 15201936,
+          "name": "Steinpechgraben-Schotter"
+        },
+        {
+          "code": 15201937,
+          "name": "Stierenweid-Schotter"
+        },
+        {
+          "code": 15201938,
+          "name": "Stockacher-Schotter"
+        },
+        {
+          "code": 15201939,
+          "name": "Stoffel-Schotter"
+        },
+        {
+          "code": 15201940,
+          "name": "Stumpenboden-Schotter"
+        },
+        {
+          "code": 15201941,
+          "name": "Tannenberg-Schotter"
+        },
+        {
+          "code": 15201942,
+          "name": "Thayngen-Formation"
+        },
+        {
+          "code": 15201943,
+          "name": "Thörigen-Schotter"
+        },
+        {
+          "code": 15201944,
+          "name": "Thunstetten-Till"
+        },
+        {
+          "code": 15201945,
+          "name": "Thurau-Lehm"
+        },
+        {
+          "code": 15201946,
+          "name": "Tösstal-Schotter"
+        },
+        {
+          "code": 15201947,
+          "name": "Trichtenhausen-Schotter"
+        },
+        {
+          "code": 15201948,
+          "name": "Unterfeld-Schotter"
+        },
+        {
+          "code": 15201949,
+          "name": "Unterholz-Schotter"
+        },
+        {
+          "code": 15201950,
+          "name": "Untermoos-Lehm"
+        },
+        {
+          "code": 15201951,
+          "name": "Untersteckholz-Schotter"
+        },
+        {
+          "code": 15201952,
+          "name": "Uzwil-Schotter"
+        },
+        {
+          "code": 15201953,
+          "name": "Vorstatt-Schotter"
+        },
+        {
+          "code": 15201954,
+          "name": "Waldacker-Schotter"
+        },
+        {
+          "code": 15201955,
+          "name": "Waldegg-Schotter"
+        },
+        {
+          "code": 15201956,
+          "name": "Waldhausen-Schotter"
+        },
+        {
+          "code": 15201957,
+          "name": "Waldhof-Schotter"
+        },
+        {
+          "code": 15201958,
+          "name": "Waldhus-Schotter"
+        },
+        {
+          "code": 15201959,
+          "name": "Wiesholz-Lehm"
+        },
+        {
+          "code": 15201960,
+          "name": "Wila-Formation"
+        },
+        {
+          "code": 15201961,
+          "name": "Winigshus-Schotter"
+        },
+        {
+          "code": 15201962,
+          "name": "Winzbüel-Schotter"
+        },
+        {
+          "code": 15201963,
+          "name": "Wolfsgrueb-Schotter"
+        },
+        {
+          "code": 15201905,
+          "name": "Rotkauben-Schotter"
+        },
+        {
+          "code": 15201906,
+          "name": "Rotrist-Schotter"
+        },
+        {
+          "code": 15201907,
+          "name": "Rottschwil-Formation"
+        },
+        {
+          "code": 15201908,
+          "name": "Rüebisberg-Schotter"
+        },
+        {
+          "code": 15201909,
+          "name": "Rüedisbach-Schotter"
+        },
+        {
+          "code": 15201910,
+          "name": "Rümikon-Schotter"
+        },
+        {
+          "code": 15201911,
+          "name": "Rümlisberg-Schotter"
+        },
+        {
+          "code": 15201912,
+          "name": "Rütihof-Schotter"
+        },
+        {
+          "code": 15201913,
+          "name": "Rüttebüel-Schotter"
+        },
+        {
+          "code": 15201914,
+          "name": "Safenwilerbann-Schotter"
+        },
+        {
+          "code": 15201915,
+          "name": "Sage-Schotter"
+        },
+        {
+          "code": 15201916,
+          "name": "Sagiwald-Schotter"
+        },
+        {
+          "code": 15201917,
+          "name": "Sarmenstorf-Lehm"
+        },
+        {
+          "code": 15201918,
+          "name": "Sarmenstorf-Schotter"
+        },
+        {
+          "code": 15201919,
+          "name": "Schaaren-Schotter"
+        },
+        {
+          "code": 15201920,
+          "name": "Schindbüel-Schotter"
+        },
+        {
+          "code": 15201921,
+          "name": "Schönenberg-Schotter"
+        },
+        {
+          "code": 15201922,
+          "name": "Schönenwerd-Schotter"
+        },
+        {
+          "code": 15201964,
+          "name": "Wolkensteinerberg-Schotter"
+        },
+        {
+          "code": 15201965,
+          "name": "Würenholz-Schotter"
+        },
+        {
+          "code": 15201966,
+          "name": "Zihlschlacht-Schotter"
+        },
+        {
+          "code": 15201967,
+          "name": "Zimikon-Sand"
+        },
+        {
+          "code": 15201968,
+          "name": "Zünikon-Schotter"
+        },
+        {
+          "code": 15201969,
+          "name": "Zürich-Lehm"
+        },
+        {
+          "code": 15201970,
+          "name": "Eschenbach-Schotter"
+        },
+        {
+          "code": 15201971,
+          "name": "Albertschwil-Schotter"
+        },
+        {
+          "code": 15201972,
+          "name": "Rietbuck-Schotter"
+        },
+        {
+          "code": 15201973,
+          "name": "Muggeholz-Schotter"
+        },
+        {
+          "code": 15201974,
+          "name": "Niederhelfenschwil-Schotter"
+        },
+        {
+          "code": 15201975,
+          "name": "Küttigen-Schotter"
+        },
+        {
+          "code": 15201976,
+          "name": "Wysshölzli-Schotter"
+        },
+        {
+          "code": 15201977,
+          "name": "Chänebüel-Formation"
+        },
+        {
+          "code": 15201978,
+          "name": "Bergsturzablagerungen von Mulleren"
+        },
+        {
+          "code": 15201979,
+          "name": "Bergsturzablagerungen von Guppen-Schwanden"
+        },
+        {
+          "code": 15201747,
+          "name": "Bleienbach-Schotter"
+        },
+        {
+          "code": 15201748,
+          "name": "Boswil-Schotter"
+        },
+        {
+          "code": 15201749,
+          "name": "Bowald-Egg-Schotterkomplex"
+        },
+        {
+          "code": 15201750,
+          "name": "Bremgarten-Lehm"
+        },
+        {
+          "code": 15201751,
+          "name": "Bruederhof-Schotter"
+        },
+        {
+          "code": 15201752,
+          "name": "Brüelhalden-Schotter"
+        },
+        {
+          "code": 15201753,
+          "name": "Brüggenwied-Schotter"
+        },
+        {
+          "code": 15201754,
+          "name": "Buch-Lehm"
+        },
+        {
+          "code": 15201755,
+          "name": "Buchsifeld-Schotter"
+        },
+        {
+          "code": 15201756,
+          "name": "Buechberg-Schotter"
+        },
+        {
+          "code": 15201757,
+          "name": "Bülach-Lehm"
+        },
+        {
+          "code": 15201758,
+          "name": "Bünzermoos-Lehm"
+        },
+        {
+          "code": 15201759,
+          "name": "Bürglen-Till"
+        },
+        {
+          "code": 15201760,
+          "name": "Bützberg-Schotter"
+        },
+        {
+          "code": 15201761,
+          "name": "Buhn-Schotter"
+        },
+        {
+          "code": 15201762,
+          "name": "Buhwil-Schotter"
+        },
+        {
+          "code": 15201763,
+          "name": "Busswil-Schotter"
+        },
+        {
+          "code": 15201764,
+          "name": "Chatzensee-Lehm"
+        },
+        {
+          "code": 15201765,
+          "name": "Cholfirst-Schotter"
+        },
+        {
+          "code": 15201766,
+          "name": "Chomberg-Schotter"
+        },
+        {
+          "code": 15201767,
+          "name": "Chranzenberg-Schotter"
+        },
+        {
+          "code": 15201768,
+          "name": "Chrüzhügel-Formation"
+        },
+        {
+          "code": 15201769,
+          "name": "Däniken-Schotter"
+        },
+        {
+          "code": 15201770,
+          "name": "Dänikon-Sand"
+        },
+        {
+          "code": 15201771,
+          "name": "Dettenried-Schotter"
+        },
+        {
+          "code": 15201772,
+          "name": "Dickibuech-Schotter"
+        },
+        {
+          "code": 15201773,
+          "name": "Diessenhofen-Schotter"
+        },
+        {
+          "code": 15201774,
+          "name": "Ebersecken-Schotter"
+        },
+        {
+          "code": 15201775,
+          "name": "Ebnat-Schotter"
+        },
+        {
+          "code": 15201776,
+          "name": "Elenholz-Schotter"
+        },
+        {
+          "code": 15201777,
+          "name": "Elgg-Lehm"
+        },
+        {
+          "code": 15201778,
+          "name": "Engiwald-Formation"
+        },
+        {
+          "code": 15201779,
+          "name": "Eschenberg-Schotter"
+        },
+        {
+          "code": 15201780,
+          "name": "Eschheimertal-Lehm"
+        },
+        {
+          "code": 15201781,
+          "name": "Ewigkeit-Schotter"
+        },
+        {
+          "code": 15201782,
+          "name": "Felsenholz-Schotter"
+        },
+        {
+          "code": 15201783,
+          "name": "Femmoos-Lehm"
+        },
+        {
+          "code": 15201784,
+          "name": "Ferdinandslust-Schotter"
+        },
+        {
+          "code": 15201785,
+          "name": "Fiechtimoss-Schotter"
+        },
+        {
+          "code": 15201666,
+          "name": "Liseloch-Schotter"
+        },
+        {
+          "code": 15201729,
+          "name": "Albisboden-Schotter"
+        },
+        {
+          "code": 15201730,
+          "name": "Albiswald-Schotter"
+        },
+        {
+          "code": 15201731,
+          "name": "Attikon-Schotter"
+        },
+        {
+          "code": 15201732,
+          "name": "Bärgwald-Schotter"
+        },
+        {
+          "code": 15201733,
+          "name": "Balterswil-Schotter"
+        },
+        {
+          "code": 15201734,
+          "name": "Balzenwil-Formation"
+        },
+        {
+          "code": 15201735,
+          "name": "Baregg-Schotterkomplex"
+        },
+        {
+          "code": 15201736,
+          "name": "Bargen-Schotter"
+        },
+        {
+          "code": 15201737,
+          "name": "Beckenmoos-Schotter"
+        },
+        {
+          "code": 15201738,
+          "name": "Belchen-Schotter"
+        },
+        {
+          "code": 15201739,
+          "name": "Benze-Formation"
+        },
+        {
+          "code": 15201740,
+          "name": "Benzenschwil-Schotter"
+        },
+        {
+          "code": 15201741,
+          "name": "Berghüseli-Schotter"
+        },
+        {
+          "code": 15201742,
+          "name": "Biberbach-Lehm"
+        },
+        {
+          "code": 15201743,
+          "name": "Bibern-Schotter"
+        },
+        {
+          "code": 15201744,
+          "name": "Bildstock-Schotter"
+        },
+        {
+          "code": 15201745,
+          "name": "Bischofsberg-Schotter"
+        },
+        {
+          "code": 15201746,
+          "name": "Bisig-Schotter"
+        },
+        {
+          "code": 15201806,
+          "name": "Rothrist-Lehm"
+        },
+        {
+          "code": 15201807,
+          "name": "Seewadel-Schotter"
+        },
+        {
+          "code": 15201808,
+          "name": "Sood-Schotter"
+        },
+        {
+          "code": 15201809,
+          "name": "Stein-Schotter"
+        },
+        {
+          "code": 15201810,
+          "name": "Willisdorf-Till"
+        },
+        {
+          "code": 15201811,
+          "name": "Annaburg-Schotter"
+        },
+        {
+          "code": 15201812,
+          "name": "Hardau-Schotter"
+        },
+        {
+          "code": 15201813,
+          "name": "Hardmorgen-Schotter"
+        },
+        {
+          "code": 15201814,
+          "name": "Heitersberg-Formation"
+        },
+        {
+          "code": 15201815,
+          "name": "Hohenklingen-Schotter"
+        },
+        {
+          "code": 15201816,
+          "name": "Lichtenegg-Till"
+        },
+        {
+          "code": 15201817,
+          "name": "Unterpfauzenwald-Till"
+        },
+        {
+          "code": 15201818,
+          "name": "Sanzenberg-Schotter"
+        },
+        {
+          "code": 15201819,
+          "name": "Langholz-Schotter"
+        },
+        {
+          "code": 15201820,
+          "name": "Homburg-Schotter"
+        },
+        {
+          "code": 15201821,
+          "name": "Grimm-Schotter"
+        },
+        {
+          "code": 15201822,
+          "name": "Tüllinger-Berg-Schotter"
+        },
+        {
+          "code": 15201823,
+          "name": "Lusbüel-Formation"
+        },
+        {
+          "code": 15201824,
+          "name": "Markelfingen-Schotter"
+        },
+        {
+          "code": 15201825,
+          "name": "Mionne-Schotter"
+        },
+        {
+          "code": 15201826,
+          "name": "Montricher-Schotterkomplex"
+        },
+        {
+          "code": 15201827,
+          "name": "Reuenthal-Till"
+        },
+        {
+          "code": 15201828,
+          "name": "Salen-Schotter"
+        },
+        {
+          "code": 15201829,
+          "name": "Solenberg-Schotter"
+        },
+        {
+          "code": 15201830,
+          "name": "Stadlerberg-Schotter"
+        },
+        {
+          "code": 15201831,
+          "name": "Uto-Kulm-Schotter"
+        },
+        {
+          "code": 15201832,
+          "name": "Tannenwald-Schichten"
+        },
+        {
+          "code": 15201833,
+          "name": "Uster-Lehm"
+        },
+        {
+          "code": 15201834,
+          "name": "Wulp-Schotter"
+        },
+        {
+          "code": 15201835,
+          "name": "Uetliberg-Till"
+        },
+        {
+          "code": 15201836,
+          "name": "Äbni-Schotter"
+        },
+        {
+          "code": 15201837,
+          "name": "Ätschberg-Schotter"
+        },
+        {
+          "code": 15201838,
+          "name": "Ättenberg-Schotter"
+        },
+        {
+          "code": 15201839,
+          "name": "Ättenbüel-Schotter"
+        },
+        {
+          "code": 15201840,
+          "name": "Altstetten-Schotter"
+        },
+        {
+          "code": 15201841,
+          "name": "Härdli-Schotter"
+        },
+        {
+          "code": 15201842,
+          "name": "Hasenberg-Schotter"
+        },
+        {
+          "code": 15201843,
+          "name": "Hasleren-Schotter"
+        },
+        {
+          "code": 15201844,
+          "name": "Hasum-Schotter"
+        },
+        {
+          "code": 15201786,
+          "name": "Firsthalde-Schotter"
+        },
+        {
+          "code": 15201787,
+          "name": "Flüeacker-Schotter"
+        },
+        {
+          "code": 15201788,
+          "name": "Flüenen-Schotter"
+        },
+        {
+          "code": 15201789,
+          "name": "Fluewald-Schotter"
+        },
+        {
+          "code": 15201790,
+          "name": "Frick-Schotter"
+        },
+        {
+          "code": 15201791,
+          "name": "Friltschen-Schotter"
+        },
+        {
+          "code": 15201792,
+          "name": "Fuchsbüel-Schotter"
+        },
+        {
+          "code": 15201793,
+          "name": "Geissberg-Schotter"
+        },
+        {
+          "code": 15201794,
+          "name": "Geissbüel-Schotter"
+        },
+        {
+          "code": 15201795,
+          "name": "Geissenloh-Schotter"
+        },
+        {
+          "code": 15201796,
+          "name": "Glashütte-Schotter"
+        },
+        {
+          "code": 15201797,
+          "name": "Kloten-Lehm"
+        },
+        {
+          "code": 15201798,
+          "name": "Niederhasli-Lehm"
+        },
+        {
+          "code": 15201799,
+          "name": "Glatttal-Lehm"
+        },
+        {
+          "code": 15201800,
+          "name": "Gottmadingen-Schotter"
+        },
+        {
+          "code": 15201801,
+          "name": "Gretzenbach-Schotter"
+        },
+        {
+          "code": 15201802,
+          "name": "Gubrist-Schotter"
+        },
+        {
+          "code": 15201803,
+          "name": "Hinteriberg-Schotter"
+        },
+        {
+          "code": 15201804,
+          "name": "Kriesbach-Sand"
+        },
+        {
+          "code": 15201805,
+          "name": "Reuti-Schotter"
+        },
+        {
+          "code": 15201845,
+          "name": "Heidelberg-Formation"
         },
         {
           "code": 999998,
@@ -22415,16 +23795,116 @@
           "name": "Cima-Lunga-Zone"
         },
         {
-          "code": 15309420,
-          "name": "Simano-Deckenkomplex"
-        },
-        {
           "code": 15309422,
           "name": "Vals-Melange"
         },
         {
           "code": 15309421,
           "name": "Andossi-Zone"
+        },
+        {
+          "code": 15309173,
+          "name": "Verampio-Decke"
+        },
+        {
+          "code": 15309174,
+          "name": "Antigorio-Deckenkomplex"
+        },
+        {
+          "code": 15309177,
+          "name": "Lebendun-Decke"
+        },
+        {
+          "code": 15309178,
+          "name": "Monte-Leone-Decke"
+        },
+        {
+          "code": 15309179,
+          "name": "Moncucco-Decke"
+        },
+        {
+          "code": 15309180,
+          "name": "Pizzo-del-Vallone-Decke"
+        },
+        {
+          "code": 15309181,
+          "name": "Isorno-Zone"
+        },
+        {
+          "code": 15309182,
+          "name": "Orselina-Bellinzona-Zone"
+        },
+        {
+          "code": 15309183,
+          "name": "Bosco-Zone"
+        },
+        {
+          "code": 15309184,
+          "name": "Bombogno-Zone"
+        },
+        {
+          "code": 15309187,
+          "name": "San-Giorgio-Schuppe"
+        },
+        {
+          "code": 15309188,
+          "name": "Leventina-Lucomagno-Decke"
+        },
+        {
+          "code": 15309420,
+          "name": "Simano-Deckenkomplex"
+        },
+        {
+          "code": 15309191,
+          "name": "Adula-Decke"
+        },
+        {
+          "code": 15309192,
+          "name": "Gruf-Komplex"
+        },
+        {
+          "code": 15309193,
+          "name": "Soja-Decke"
+        },
+        {
+          "code": 15309195,
+          "name": "Piz-Terri-Lunschania-Decke"
+        },
+        {
+          "code": 15309153,
+          "name": "Habkern-Melange"
+        },
+        {
+          "code": 15309423,
+          "name": "Glarner Decke"
+        },
+        {
+          "code": 15309424,
+          "name": "Obere Silbere-Schuppe"
+        },
+        {
+          "code": 15309425,
+          "name": "Untere Silbere-Schuppe"
+        },
+        {
+          "code": 15309426,
+          "name": "Toce-Dom"
+        },
+        {
+          "code": 15309427,
+          "name": "Ticino-Dom"
+        },
+        {
+          "code": 15309428,
+          "name": "La-Foilleuse-Scholle"
+        },
+        {
+          "code": 15309429,
+          "name": "Pointe-de-l'Au-Scholle"
+        },
+        {
+          "code": 15309430,
+          "name": "Infrabrèche-Melange"
         },
         {
           "code": 15309001,
@@ -22887,10 +24367,6 @@
           "name": "Piora-Peiden-Schuppenkomplex"
         },
         {
-          "code": 15309153,
-          "name": "Habkern-Melangezone"
-        },
-        {
           "code": 15309154,
           "name": "Iberg-Melange"
         },
@@ -22967,52 +24443,12 @@
           "name": "Lepontikum"
         },
         {
-          "code": 15309173,
-          "name": "Verampio-Decke"
-        },
-        {
-          "code": 15309174,
-          "name": "Antigorio-Deckenkomplex"
-        },
-        {
           "code": 15309175,
           "name": "Antigorio-Decke"
         },
         {
           "code": 15309176,
           "name": "Mergoscia-Zone"
-        },
-        {
-          "code": 15309177,
-          "name": "Lebendun-Decke"
-        },
-        {
-          "code": 15309178,
-          "name": "Monte-Leone-Decke"
-        },
-        {
-          "code": 15309179,
-          "name": "Moncucco-Decke"
-        },
-        {
-          "code": 15309180,
-          "name": "Pizzo-del-Vallone-Decke"
-        },
-        {
-          "code": 15309181,
-          "name": "Isorno-Zone"
-        },
-        {
-          "code": 15309182,
-          "name": "Orselina-Bellinzona-Zone"
-        },
-        {
-          "code": 15309183,
-          "name": "Bosco-Zone"
-        },
-        {
-          "code": 15309184,
-          "name": "Bombogno-Zone"
         },
         {
           "code": 15309185,
@@ -23023,32 +24459,8 @@
           "name": "Sambuco-Decke"
         },
         {
-          "code": 15309187,
-          "name": "San-Giorgio-Schuppe"
-        },
-        {
-          "code": 15309188,
-          "name": "Leventina-Lucomagno-Decke"
-        },
-        {
-          "code": 15309191,
-          "name": "Adula-Decke"
-        },
-        {
-          "code": 15309192,
-          "name": "Gruf-Komplex"
-        },
-        {
-          "code": 15309193,
-          "name": "Soja-Decke"
-        },
-        {
           "code": 15309194,
           "name": "Garzott-Schuppen"
-        },
-        {
-          "code": 15309195,
-          "name": "Piz-Terri-Lunschania-Decke"
         },
         {
           "code": 15309196,
@@ -26115,10 +27527,6 @@
           "name": "Luisin-Orthogneis"
         },
         {
-          "code": 15253189,
-          "name": "Perrons-Orthogneis"
-        },
-        {
           "code": 15253190,
           "name": "Emosson-Gneiskomplex"
         },
@@ -28257,10 +29665,6 @@
         {
           "code": 15255095,
           "name": "Pointe-de-l'Au-Brekzie"
-        },
-        {
-          "code": 15255096,
-          "name": "Bonaveau-Kalk"
         },
         {
           "code": 15255097,
@@ -30435,6 +31839,58 @@
           "name": "Ennerberg-Schotter"
         },
         {
+          "code": 15255096,
+          "name": "Les-Chapelles-Kalksandstein"
+        },
+        {
+          "code": 15253403,
+          "name": "Howäldlibach-Flysch"
+        },
+        {
+          "code": 15253406,
+          "name": "Chamoson-Eisenoolith"
+        },
+        {
+          "code": 15253407,
+          "name": "Finhaut-Mylonit"
+        },
+        {
+          "code": 15253404,
+          "name": "Tête-des-Ottans-Orthogneis"
+        },
+        {
+          "code": 15253408,
+          "name": "Arpille-Gneiskomplex"
+        },
+        {
+          "code": 15253405,
+          "name": "Dent-de-Valère-Flysch"
+        },
+        {
+          "code": 15253409,
+          "name": "Plattenalp-Brekzie"
+        },
+        {
+          "code": 15254070,
+          "name": "Verampio-Orthogneis"
+        },
+        {
+          "code": 15254071,
+          "name": "Baceno-Schiefer"
+        },
+        {
+          "code": 15254069,
+          "name": "Alp-de-Confin-Eklogit"
+        },
+        {
+          "code": 15255354,
+          "name": "Dronnaire-Tonstein"
+        },
+        {
+          "code": 15258064,
+          "name": "Garzirola-Mylonit"
+        },
+        {
           "code": 999998,
           "name": "Not applicable"
         },
@@ -30781,6 +32237,10 @@
         {
           "code": 15285022,
           "name": "Post-Messinien Marine Ablagerungen"
+        },
+        {
+          "code": 15287010,
+          "name": "Ordoviszischer Orthogneis"
         },
         {
           "code": 999998,
@@ -31602,6 +33062,18 @@
           "domain": "GC_LITHO_CD"
         },
         {
+          "name": "RUNC_GEOL_MAPPING_UNIT",
+          "type": "esriFieldTypeInteger",
+          "nullable": 1,
+          "domain": "GC_GEOL_MAPPING_UNIT_CD"
+        },
+        {
+          "name": "LTYP_GEOL_MAPPING_UNIT",
+          "type": "esriFieldTypeInteger",
+          "nullable": 1,
+          "domain": "GC_GEOL_MAPPING_UNIT_CD"
+        },
+        {
           "name": "_MERGE_SOURCE",
           "type": "esriFieldTypeString",
           "nullable": 1
@@ -32070,7 +33542,7 @@
     "GC_MAPSHEET": {
       "name": "GC_MAPSHEET",
       "geometry_type": "esriGeometryPolygon",
-      "spatial_reference": "{\n  \"$schema\": \"https://proj.org/schemas/v0.7/projjson.schema.json\",\n  \"type\": \"ProjectedCRS\",\n  \"name\": \"CH1903+ / LV95\",\n  \"base_crs\": {\n    \"type\": \"GeographicCRS\",\n    \"name\": \"CH1903+\",\n    \"datum\": {\n      \"type\": \"GeodeticReferenceFrame\",\n      \"name\": \"CH1903+\",\n      \"ellipsoid\": {\n        \"name\": \"Bessel 1841\",\n        \"semi_major_axis\": 6377397.155,\n        \"inverse_flattening\": 299.1528128\n      }\n    },\n    \"coordinate_system\": {\n      \"subtype\": \"ellipsoidal\",\n      \"axis\": [\n        {\n          \"name\": \"Geodetic latitude\",\n          \"abbreviation\": \"Lat\",\n          \"direction\": \"north\",\n          \"unit\": \"degree\"\n        },\n        {\n          \"name\": \"Geodetic longitude\",\n          \"abbreviation\": \"Lon\",\n          \"direction\": \"east\",\n          \"unit\": \"degree\"\n        }\n      ]\n    },\n    \"id\": {\n      \"authority\": \"EPSG\",\n      \"code\": 4150\n    }\n  },\n  \"conversion\": {\n    \"name\": \"Swiss Oblique Mercator 1995\",\n    \"method\": {\n      \"name\": \"Hotine Oblique Mercator (variant B)\",\n      \"id\": {\n        \"authority\": \"EPSG\",\n        \"code\": 9815\n      }\n    },\n    \"parameters\": [\n      {\n        \"name\": \"Latitude of projection centre\",\n        \"value\": 46.9524055555556,\n        \"unit\": \"degree\",\n        \"id\": {\n          \"authority\": \"EPSG\",\n          \"code\": 8811\n        }\n      },\n      {\n        \"name\": \"Longitude of projection centre\",\n        \"value\": 7.43958333333333,\n        \"unit\": \"degree\",\n        \"id\": {\n          \"authority\": \"EPSG\",\n          \"code\": 8812\n        }\n      },\n      {\n        \"name\": \"Azimuth at projection centre\",\n        \"value\": 90,\n        \"unit\": \"degree\",\n        \"id\": {\n          \"authority\": \"EPSG\",\n          \"code\": 8813\n        }\n      },\n      {\n        \"name\": \"Angle from Rectified to Skew Grid\",\n        \"value\": 90,\n        \"unit\": \"degree\",\n        \"id\": {\n          \"authority\": \"EPSG\",\n          \"code\": 8814\n        }\n      },\n      {\n        \"name\": \"Scale factor at projection centre\",\n        \"value\": 1,\n        \"unit\": \"unity\",\n        \"id\": {\n          \"authority\": \"EPSG\",\n          \"code\": 8815\n        }\n      },\n      {\n        \"name\": \"Easting at projection centre\",\n        \"value\": 2600000,\n        \"unit\": \"metre\",\n        \"id\": {\n          \"authority\": \"EPSG\",\n          \"code\": 8816\n        }\n      },\n      {\n        \"name\": \"Northing at projection centre\",\n        \"value\": 1200000,\n        \"unit\": \"metre\",\n        \"id\": {\n          \"authority\": \"EPSG\",\n          \"code\": 8817\n        }\n      }\n    ]\n  },\n  \"coordinate_system\": {\n    \"subtype\": \"Cartesian\",\n    \"axis\": [\n      {\n        \"name\": \"Easting\",\n        \"abbreviation\": \"E\",\n        \"direction\": \"east\",\n        \"unit\": \"metre\"\n      },\n      {\n        \"name\": \"Northing\",\n        \"abbreviation\": \"N\",\n        \"direction\": \"north\",\n        \"unit\": \"metre\"\n      }\n    ]\n  },\n  \"scope\": \"Cadastre, engineering survey, topographic mapping (large and medium scale).\",\n  \"area\": \"Liechtenstein; Switzerland.\",\n  \"bbox\": {\n    \"south_latitude\": 45.81,\n    \"west_longitude\": 5.95,\n    \"north_latitude\": 47.81,\n    \"east_longitude\": 10.5\n  },\n  \"id\": {\n    \"authority\": \"EPSG\",\n    \"code\": 2056\n  }\n}",
+      "spatial_reference": "{\n  \"$schema\": \"https://proj.org/schemas/v0.7/projjson.schema.json\",\n  \"type\": \"CompoundCRS\",\n  \"name\": \"CH1903+ / LV95 + LHN95 height\",\n  \"components\": [\n    {\n      \"type\": \"ProjectedCRS\",\n      \"name\": \"CH1903+ / LV95\",\n      \"base_crs\": {\n        \"type\": \"GeographicCRS\",\n        \"name\": \"CH1903+\",\n        \"datum\": {\n          \"type\": \"GeodeticReferenceFrame\",\n          \"name\": \"CH1903+\",\n          \"ellipsoid\": {\n            \"name\": \"Bessel 1841\",\n            \"semi_major_axis\": 6377397.155,\n            \"inverse_flattening\": 299.1528128\n          }\n        },\n        \"coordinate_system\": {\n          \"subtype\": \"ellipsoidal\",\n          \"axis\": [\n            {\n              \"name\": \"Geodetic latitude\",\n              \"abbreviation\": \"Lat\",\n              \"direction\": \"north\",\n              \"unit\": \"degree\"\n            },\n            {\n              \"name\": \"Geodetic longitude\",\n              \"abbreviation\": \"Lon\",\n              \"direction\": \"east\",\n              \"unit\": \"degree\"\n            }\n          ]\n        },\n        \"id\": {\n          \"authority\": \"EPSG\",\n          \"code\": 4150\n        }\n      },\n      \"conversion\": {\n        \"name\": \"Swiss Oblique Mercator 1995\",\n        \"method\": {\n          \"name\": \"Hotine Oblique Mercator (variant B)\",\n          \"id\": {\n            \"authority\": \"EPSG\",\n            \"code\": 9815\n          }\n        },\n        \"parameters\": [\n          {\n            \"name\": \"Latitude of projection centre\",\n            \"value\": 46.9524055555556,\n            \"unit\": \"degree\",\n            \"id\": {\n              \"authority\": \"EPSG\",\n              \"code\": 8811\n            }\n          },\n          {\n            \"name\": \"Longitude of projection centre\",\n            \"value\": 7.43958333333333,\n            \"unit\": \"degree\",\n            \"id\": {\n              \"authority\": \"EPSG\",\n              \"code\": 8812\n            }\n          },\n          {\n            \"name\": \"Azimuth at projection centre\",\n            \"value\": 90,\n            \"unit\": \"degree\",\n            \"id\": {\n              \"authority\": \"EPSG\",\n              \"code\": 8813\n            }\n          },\n          {\n            \"name\": \"Angle from Rectified to Skew Grid\",\n            \"value\": 90,\n            \"unit\": \"degree\",\n            \"id\": {\n              \"authority\": \"EPSG\",\n              \"code\": 8814\n            }\n          },\n          {\n            \"name\": \"Scale factor at projection centre\",\n            \"value\": 1,\n            \"unit\": \"unity\",\n            \"id\": {\n              \"authority\": \"EPSG\",\n              \"code\": 8815\n            }\n          },\n          {\n            \"name\": \"Easting at projection centre\",\n            \"value\": 2600000,\n            \"unit\": \"metre\",\n            \"id\": {\n              \"authority\": \"EPSG\",\n              \"code\": 8816\n            }\n          },\n          {\n            \"name\": \"Northing at projection centre\",\n            \"value\": 1200000,\n            \"unit\": \"metre\",\n            \"id\": {\n              \"authority\": \"EPSG\",\n              \"code\": 8817\n            }\n          }\n        ]\n      },\n      \"coordinate_system\": {\n        \"subtype\": \"Cartesian\",\n        \"axis\": [\n          {\n            \"name\": \"Easting\",\n            \"abbreviation\": \"E\",\n            \"direction\": \"east\",\n            \"unit\": \"metre\"\n          },\n          {\n            \"name\": \"Northing\",\n            \"abbreviation\": \"N\",\n            \"direction\": \"north\",\n            \"unit\": \"metre\"\n          }\n        ]\n      },\n      \"id\": {\n        \"authority\": \"EPSG\",\n        \"code\": 2056\n      }\n    },\n    {\n      \"type\": \"VerticalCRS\",\n      \"name\": \"LHN95 height\",\n      \"datum\": {\n        \"type\": \"VerticalReferenceFrame\",\n        \"name\": \"Landeshohennetz 1995\"\n      },\n      \"coordinate_system\": {\n        \"subtype\": \"vertical\",\n        \"axis\": [\n          {\n            \"name\": \"Gravity-related height\",\n            \"abbreviation\": \"H\",\n            \"direction\": \"up\",\n            \"unit\": \"metre\"\n          }\n        ]\n      },\n      \"id\": {\n        \"authority\": \"EPSG\",\n        \"code\": 5729\n      }\n    }\n  ]\n}",
       "has_z": 0,
       "has_m": 0,
       "fields": [
@@ -32087,11 +33559,6 @@
         {
           "name": "MSH_TOPO_NR",
           "type": "esriFieldTypeInteger",
-          "nullable": 1
-        },
-        {
-          "name": "MSH_REV",
-          "type": "esriFieldTypeString",
           "nullable": 1
         },
         {
@@ -33921,8 +35388,8 @@
   },
   "metadata": {
     "source": "FileGDB",
-    "gdb_path": "/home/marco/DATA/Derivations/output/R17/merged_final.gdb",
+    "gdb_path": "/home/marco/DATA/Derivations/output/R18/merged_final.gdb",
     "extraction_method": "direct_gdal_parsing",
-    "exported_at": "2026-06-12T09:58:21.326148"
+    "exported_at": "2026-08-13T15:21:08.091144"
   }
 }
