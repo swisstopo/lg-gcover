@@ -103,8 +103,12 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 DEFAULT_CRS = "EPSG:2056"
 
-ERLAUETERUNG_LINK = "https://data.geo.admin.ch/ch.swisstopo.geologie-geologischer_atlas/erlaeuterungen/GA25-ERL-"
-BERICHT_LINK =      "https://data.geo.admin.ch/ch.swisstopo.geologie-geocover/berichte/BER_"
+# The `data.geo.admin.ch` host is being phased out for feature-attachment
+# PDFs; `api3.geo.admin.ch/featureattachments` is the stable replacement
+# (same path below the layer id, works already, unlike the old host which
+# "wird irgendwann nicht mehr funktionieren").
+ERLAUETERUNG_LINK = "https://api3.geo.admin.ch/featureattachments/ch.swisstopo.geologie-geologischer_atlas/erlaeuterungen/GA25-ERL-"
+BERICHT_LINK =      "https://api3.geo.admin.ch/featureattachments/ch.swisstopo.geologie-geocover/berichte/BER_"
 
 console = Console()
 
