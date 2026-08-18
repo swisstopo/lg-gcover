@@ -56,7 +56,7 @@ PA_ZONES_PATH         := $(patsubst %.xlsx,%_zones.gpkg,$(PA_EXCEL_PATH))
 # in this file) are computed on the fly by the merge and by the GC_MAPSHEET
 # embed step below. GC_MAPSHEET itself is slated for removal, so this is a
 # deliberately short-lived arrangement, not built via any pre-processing script.
-GC_MAPSHEET_SOURCE    := $(DELIVERY_DIR)GC_MAPSHEET.gpkg
+GC_MAPSHEET_SOURCE    := $(DELIVERY_DIR)Mapsheet/GC_MAPSHEET.gpkg
 QA_RAND_PATH          ?= $(DELIVERY_DIR)rand_qa_gc.geojson
 CONFIG_PATH           ?= config/esri_classifier_denormalized_geocover.yaml
 MERGE_LOG             := $(OUTPUT_DIR)merge.log
