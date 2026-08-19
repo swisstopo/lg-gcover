@@ -35390,6 +35390,6 @@
     "source": "FileGDB",
     "gdb_path": "/home/marco/DATA/Derivations/output/R18/merged_final.gdb",
     "extraction_method": "direct_gdal_parsing",
-    "exported_at": "2026-08-13T15:21:08.091144"
+    "exported_at": "2026-08-19T10:32:21.890580"
   }
 }
