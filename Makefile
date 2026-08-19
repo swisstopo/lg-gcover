@@ -535,7 +535,7 @@ clean-translate:
 
 ## clean-swissgeocover2d: Remove swissgeocover2d.gpkg and all sidecar files (.README, .sha256, …)
 clean-swissgeocover2d:
-	rm -f $(TRANSLATED_PATH) $(TRANSLATED_PATH).*
+	rm -f $(TRANSLATED_PATH) $(TRANSLATED_PATH).* $(TRANSLATED_README)
 
 ## clean-classify: Clean classified artefacts
 clean-classify: clean-translate
@@ -550,7 +550,7 @@ clean-merge: clean-denormalize
 clean-master: clean-merge
 
 ## clean-all: Remove generated GDB and GeoPackage files
-clean-all: clean-denormalize
+clean-all: clean-merge clean-denormalize clean-swissgeocover2d
 	rm -rf $(MASTER_GDB)
 	rm -rf $(OUTPUT_DIR)surfaces_aux.gpkg
 
