@@ -32,8 +32,8 @@ from rich.console import Console
 from rich.progress import (BarColumn, Progress, SpinnerColumn,
                            TaskProgressColumn, TextColumn)
 from rich.table import Table
-from shapely import (difference, get_coordinates, intersection, intersects,
-                     make_valid, set_coordinates, simplify, within)
+from shapely import (area, difference, get_coordinates, intersection,
+                     intersects, make_valid, set_coordinates, simplify, within)
 from shapely.geometry import (GeometryCollection, LineString, MultiLineString,
                               MultiPoint, MultiPolygon, Point, Polygon)
 from shapely.geometry.base import BaseGeometry
@@ -1393,6 +1393,19 @@ class GDBMerger:
             feat_idx, mapsheet_idx = self._enrichment_tree.query(
                 gdf.geometry.values, predicate="intersects"
             )
+            # `intersects` also matches a pure boundary touch (DE-9IM
+            # `touches` — e.g. a feature edge that runs exactly along a
+            # straight mapsheet border) which has zero shared area. Without
+            # this filter, features fully `within` one mapsheet but merely
+            # touching a neighbour's border pick up that neighbour's link
+            # too — sampled at ~87% of all multi-link features on R18.
+            overlap_area = area(intersection(
+                gdf.geometry.values[feat_idx],
+                self.mapsheets_gdf.geometry.values[mapsheet_idx],
+            ))
+            has_area = overlap_area > 0
+            feat_idx, mapsheet_idx = feat_idx[has_area], mapsheet_idx[has_area]
+
             for col in link_cols:
                 link_arr = self._enrichment_links[col]
                 bucket: dict[int, list] = defaultdict(list)
