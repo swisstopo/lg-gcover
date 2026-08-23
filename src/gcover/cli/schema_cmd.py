@@ -132,7 +132,6 @@ def export_tables(
     # Define table configurations
     TREE_TABLES = [
         "GC_LITHO",
-        "GC_LITSTRAT",
         "GC_CHRONO",
         "GC_TECTO",
         "GC_LITSTRAT_FORMATION_BANK",
@@ -146,6 +145,7 @@ def export_tables(
         "GC_GEOL_MAPPING_UNIT_ATT",
         "GC_LITSTRAT_UNCO",
         "GC_CORRELATION",
+        "GC_SYSTEM",
     ]
 
     ALL_GC_TABLES = TREE_TABLES + STANDARD_TABLES
