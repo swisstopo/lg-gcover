@@ -11,7 +11,8 @@ RELEASE      ?= R18
 DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/
 SOURCES_DIR  := $(DELIVERY_DIR)Sources/
 OUTPUT_DIR   ?= ${HOME}/DATA/Derivations/output/$(RELEASE)/
-STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/Styles/2026-07-02/
+STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/Styles/2026-08-25/
+PREVIOUS_STYLES_DIR := ${HOME}/DATA/Derivations/delivery/R17/Styles/2026-07-02/styles/
 TRANSLATION_CSV := $(DELIVERY_DIR)Excels/_GeolCodeText_Trad.xlsx
 STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/Excels/_Update_stratiLINK.xlsx
 # --strati-links is optional in `gcover publish merge` (strati_link is just
@@ -144,12 +145,12 @@ help:
         denormalize classify translate pipeline-check checksum \
         geometry-check line-topology-check polygon-topology-check coverage-check \
         domain-check domain-check-rc domain-check-final domain-check-custom \
-        schema-snapshot \
+        schema-snapshot-translated schema-snapshot-final \
         geocover-aux aspect aspect-simple aspect-gmm combine-aspect inject-aux-aspect \
         mapfiles \
         install-dev format lint test smoke doc check \
         clean-denormalize clean-translate clean-classify clean-merge clean-master clean-all \
-        swissgeocover2d clean-swissgeocover2d schema-snapshot
+        swissgeocover2d clean-swissgeocover2d
 
 ### Geocover data
 
@@ -284,7 +285,7 @@ denormalize: $(DENORMALIZED_PATH)
 classify: $(CLASSIFIED_PATH)
 
 ## translate: Add human-readable values for geolcodes
-translate: $(TRANSLATED_PATH) checksum schema-snapshot
+translate: $(TRANSLATED_PATH) checksum schema-snapshot-translated
 
 ## swissgeocover2d: final GPKG for KOGIS
 swissgeocover2d: translate
@@ -296,9 +297,9 @@ checksum:
 	@sha256sum $(TRANSLATED_PATH) | tee $(TRANSLATED_PATH).sha256
 	@echo "Written to $(TRANSLATED_PATH).sha256"
 
-## schema-snapshot: Generate a JSON schema snapshot of swissgeocover2d.gpkg and copy to config/
-.PHONY: schema-snapshot
-schema-snapshot:
+## schema-snapshot-translated: Generate a JSON schema snapshot of swissgeocover2d.gpkg and copy to config/
+.PHONY: schema-snapshot-translated
+schema-snapshot-translated:
 	$(call check_file,TRANSLATED_PATH,$(TRANSLATED_PATH))
 	gcover schema snapshot $(TRANSLATED_PATH) -o $(TRANSLATED_SCHEMA)
 	@cp $(TRANSLATED_SCHEMA) config/swissgeocover2d_schema.json
@@ -388,11 +389,9 @@ srcs = sorted(set(gdf['SOURCE_RC'].dropna()) - {'RC1', 'RC2'}); \
 ## domain-check: Run all domain compliance checks (RC1, RC2, merged_final, custom sources)
 domain-check: domain-check-rc domain-check-final domain-check-custom
 
-## domain-check: Run all domain compliance checks (RC1, RC2, merged_final, custom sources)
-domain-check: domain-check-rc domain-check-final domain-check-custom
-
-## schema-snapshot: Extract merged_final.gdb schema to a JSON contract file
-schema-snapshot:
+## schema-snapshot-final: Extract merged_final.gdb schema to a JSON contract file
+.PHONY: schema-snapshot-final
+schema-snapshot-final:
 	$(call check_file,FINAL_GDB,$(FINAL_GDB))
 	@gcover schema snapshot $(FINAL_GDB) \
 		--output config/merged_final_schema.json
@@ -567,15 +566,14 @@ mapfiles:
 		--gml-items label  \
 		$(CONFIG_PATH)
 
-# Usage: make diff-styles OLD=.../Styles/2026-05-26/styles [NEW=.../Styles/2026-07-02/styles] [ARGS="--only symbology_changed"]
-## diff-styles: Compare .lyrx classification/symbology between two style snapshots (NEW defaults to current STYLES_DIR)
-NEW ?= $(STYLES_DIR)styles
+# Usage: make diff-styles [PREVIOUS_STYLES_DIR=.../Styles/2026-05-26/styles] [CURRENT_STYLES_DIR=.../Styles/2026-07-02/styles] [ARGS="--only symbology_changed"]
+## diff-styles: Compare .lyrx classification/symbology between two style snapshots (defaults: PREVIOUS_STYLES_DIR tracked above, CURRENT_STYLES_DIR = current STYLES_DIR)
+CURRENT_STYLES_DIR ?= $(STYLES_DIR)styles
 .PHONY: diff-styles
 diff-styles:
-	@test -n "$(OLD)" || { echo "Usage: make diff-styles OLD=<path-to-old-styles-dir> [NEW=<path-to-new-styles-dir>]"; exit 1; }
-	$(call check_file,OLD,$(OLD))
-	$(call check_file,NEW,$(NEW))
-	python scripts/diff_lyrx.py $(OLD) $(NEW) $(ARGS)
+	$(call check_file,PREVIOUS_STYLES_DIR,$(PREVIOUS_STYLES_DIR))
+	$(call check_file,CURRENT_STYLES_DIR,$(CURRENT_STYLES_DIR))
+	python scripts/diff_lyrx.py $(PREVIOUS_STYLES_DIR) $(CURRENT_STYLES_DIR) $(ARGS)
 
 
 ### Code
