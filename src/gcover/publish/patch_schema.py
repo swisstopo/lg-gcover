@@ -152,6 +152,25 @@ def _append(output_gdb: str, merged_gdb: str, name: str, log: Callable[[str], No
     return n
 
 
+def _refresh_index(ds: ogr.DataSource, name: str, log: Callable[[str], None] | None = None) -> None:
+    """Recompute stored extent and repack after a truncate+append cycle.
+
+    DeleteFeature (truncate) followed by VectorTranslate append never
+    updates the layer's stored extent — OGR leaves it as the stale union
+    of the deleted and newly-inserted features' bounds, which is what
+    makes the FileGDB's spatial index look out of sync after a refill.
+    RECOMPUTE EXTENT ON fixes the stored extent; REPACK reclaims the
+    deleted rows' space and compacts the index. Both are OpenFileGDB-driver
+    special SQL statements (not standard SQL), run via ExecuteSQL.
+    """
+    for stmt in (f"RECOMPUTE EXTENT ON {name}", f"REPACK {name}"):
+        try:
+            ds.ExecuteSQL(stmt)
+        except Exception as exc:
+            if log:
+                log(f"  WARN  {name}: {stmt!r} failed: {exc}")
+
+
 def _patch(
     output_gdb: str,
     merged_gdb: str,
@@ -179,15 +198,19 @@ def _patch(
             continue
 
         ds = None
+        appended_ok = False
         try:
             n = _append(output_gdb, merged_gdb, name, log=log)
             log(f"  OK    {name}: {n:,}  ({time.time()-t:.1f}s)")
+            appended_ok = True
         except Exception as exc:
             msg = f"{name}: {exc}"
             log(f"  ERR   {msg}")
             errors.append(msg)
 
         ds = ogr.Open(output_gdb, 1)
+        if appended_ok:
+            _refresh_index(ds, name, log=log)
 
     ds = None
     return errors
