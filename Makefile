@@ -13,7 +13,7 @@ SOURCES_DIR  := $(DELIVERY_DIR)Sources/
 OUTPUT_DIR   ?= ${HOME}/DATA/Derivations/output/$(RELEASE)/
 STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/Styles/2026-08-25/
 PREVIOUS_STYLES_DIR := ${HOME}/DATA/Derivations/delivery/R17/Styles/2026-07-02/styles/
-TRANSLATION_CSV := $(DELIVERY_DIR)Excels/_GeolCodeText_Trad.xlsx
+TRANSLATION_CSV := $(DELIVERY_DIR)Excels/2026c_GeolCodeText_Trad.xlsx
 STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/Excels/_Update_stratiLINK.xlsx
 # --strati-links is optional in `gcover publish merge` (strati_link is just
 # omitted from the output if absent) — only pass it when the file is
