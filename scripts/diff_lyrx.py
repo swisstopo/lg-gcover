@@ -99,13 +99,12 @@ def symbol_signature(class_obj: ClassificationClass) -> tuple:
 
 
 def describe_symbol_diff(old_c: ClassificationClass, new_c: ClassificationClass) -> str:
-    parts = []
-    for f in SYMBOL_FIELDS:
-        ov = _symbol_field(old_c.symbol_info, f)
-        nv = _symbol_field(new_c.symbol_info, f)
-        if ov != nv:
-            parts.append(f"{f}: {ov!r} -> {nv!r}")
-    return ", ".join(parts) if parts else "symbol changed"
+    """Terse summary — which symbol fields changed, not their old/new values."""
+    changed = [
+        f for f in SYMBOL_FIELDS
+        if _symbol_field(old_c.symbol_info, f) != _symbol_field(new_c.symbol_info, f)
+    ]
+    return f"symbol changed: {', '.join(changed)}" if changed else "symbol changed"
 
 
 # =============================================================================
