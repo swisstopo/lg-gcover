@@ -1,6 +1,6 @@
 {
   "exploit_points": {
-    "feature_count": 1811,
+    "feature_count": 1812,
     "geometry": "3D MultiPoint",
     "fields": {
       "kind": "int",
@@ -32,7 +32,7 @@
     }
   },
   "fossils": {
-    "feature_count": 2755,
+    "feature_count": 2745,
     "geometry": "3D MultiPoint",
     "fields": {
       "kind": "int",
@@ -74,7 +74,7 @@
     }
   },
   "point_objects": {
-    "feature_count": 256348,
+    "feature_count": 258834,
     "geometry": "3D MultiPoint",
     "fields": {
       "kind": "int",
@@ -187,6 +187,9 @@
       "ltyp_accessibil": "float",
       "ltyp_accessibil_de": "str",
       "ltyp_accessibil_fr": "str",
+      "ltyp_geol_mapping_unit": "float",
+      "ltyp_geol_mapping_unit_de": "str",
+      "ltyp_geol_mapping_unit_fr": "str",
       "ltyp_name": "str",
       "ltyp_protected": "float",
       "ltyp_protected_de": "str",
@@ -230,6 +233,9 @@
       "pslo_type": "float",
       "pslo_type_de": "str",
       "pslo_type_fr": "str",
+      "runc_geol_mapping_unit": "float",
+      "runc_geol_mapping_unit_de": "str",
+      "runc_geol_mapping_unit_fr": "str",
       "runc_mat_type": "float",
       "runc_mat_type_de": "str",
       "runc_mat_type_fr": "str",
@@ -256,7 +262,7 @@
     }
   },
   "linear_objects": {
-    "feature_count": 353001,
+    "feature_count": 360575,
     "geometry": "3D MultiLineString",
     "fields": {
       "kind": "int",
@@ -388,7 +394,7 @@
     }
   },
   "surfaces": {
-    "feature_count": 66510,
+    "feature_count": 66833,
     "geometry": "3D MultiPolygon",
     "fields": {
       "kind": "int",
@@ -432,10 +438,10 @@
     }
   },
   "unco_deposits": {
-    "feature_count": 232876,
+    "feature_count": 234949,
     "geometry": "3D MultiPolygon",
     "fields": {
-      "kind": "float",
+      "kind": "int",
       "kind_de": "str",
       "kind_fr": "str",
       "uuid": "str",
@@ -506,7 +512,7 @@
     }
   },
   "bedrock": {
-    "feature_count": 298407,
+    "feature_count": 291128,
     "geometry": "3D MultiPolygon",
     "fields": {
       "kind": "int",
@@ -563,15 +569,30 @@
       "litstrat_formation_bank_fr": "str",
       "mapping_unit_desc": "str",
       "more_info": "str",
-      "objectorigin": "int32",
+      "objectorigin": "float",
       "rbed_exotic_ele": "float",
       "rbed_litstrat_link": "str",
       "strati_link": "str",
       "symbol": "str",
-      "tecto_code": "int",
+      "tecto_code": "float",
       "tecto_de": "str",
       "tecto_desc": "str",
       "tecto_fr": "str"
+    }
+  },
+  "mapsheet": {
+    "feature_count": 220,
+    "geometry": "MultiPolygon",
+    "fields": {
+      "ber": "str",
+      "ber_link": "str",
+      "erl": "str",
+      "erl_link": "str",
+      "msh_map_nbr": "int",
+      "msh_map_title": "str",
+      "msh_topo_nr": "int32",
+      "source_rc": "str",
+      "version": "str"
     }
   }
 }
