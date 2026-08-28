@@ -9,7 +9,6 @@ For each of the 220 mapsheets, reports:
     or approach 2 (contiguous tiling)
 """
 
-import importlib.resources as ir
 import sys
 import warnings
 from pathlib import Path
@@ -38,9 +37,15 @@ APPROACH1_OVERLAP_MIN = 0.30  # ≥30% of unco sits on top of bedrock
 APPROACH2_OVERLAP_MAX = 0.05  # <5% overlap → contiguous
 
 
-def _load_mapsheets() -> gpd.GeoDataFrame:
-    with ir.path("gcover.data", "administrative_zones.gpkg") as p:
-        return gpd.read_file(str(p), layer="mapsheets_sources_only")
+def _load_mapsheets(master_gdb: str) -> gpd.GeoDataFrame:
+    """Read GC_MAPSHEET straight from the GDB under test.
+
+    Not the bundled gcover.data/administrative_zones.gpkg — that layer
+    predates the R18 switch to sourcing mapsheets directly from the
+    delivered GC_MAPSHEET.gpkg during merge, and can disagree with the
+    current merge's SOURCE_RC assignment.
+    """
+    return gpd.read_file(master_gdb, layer="GC_MAPSHEET")
 
 
 def _build_index(gdf: gpd.GeoDataFrame) -> tuple[STRtree, gpd.GeoDataFrame]:
@@ -125,7 +130,7 @@ def main(master_gdb, output_gpkg, min_gap_area, report):
     console.print(f"  {BEDROCK_LAYER}: {len(bedrock):,} features")
     unco = safe_read_filegdb(gdb, UNCO_LAYER)
     console.print(f"  {UNCO_LAYER}: {len(unco):,} features")
-    mapsheets = _load_mapsheets()
+    mapsheets = _load_mapsheets(str(gdb))
     console.print(f"  Mapsheets: {len(mapsheets)}")
 
     # Align CRS
