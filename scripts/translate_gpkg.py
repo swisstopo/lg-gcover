@@ -227,10 +227,14 @@ def is_geolcode_column(series: pd.Series, min_coverage: float) -> bool:
 
     # ── Normal path: scalar integer codes ────────────────────────────────────
     # Step 1: convert to numeric (float), coercing errors to NaN
-    if series.dtype == object:
-        converted = pd.to_numeric(series, errors="coerce")
-    elif pd.api.types.is_numeric_dtype(series):
+    if pd.api.types.is_numeric_dtype(series):
         converted = series.astype("float64")
+    elif pd.api.types.is_object_dtype(series) or pd.api.types.is_string_dtype(series):
+        # is_object_dtype: legacy object-of-str columns.
+        # is_string_dtype: pandas' dedicated string dtype — the pandas 3.0
+        # default for text columns (Arrow-backed "str"), which fails a plain
+        # `== object` check even though it holds the same string data.
+        converted = pd.to_numeric(series, errors="coerce")
     else:
         return (False, "Cannot convert to numeric")
 
@@ -414,6 +418,10 @@ def _strati_links(bedrock: gpd.GeoDataFrame,xlsx_path
     )
     strati_df = strati_df.rename(columns={strati_link_col: "strati_link"})
     strati_df = strati_df.dropna(subset=["GeolCode_GMU"])
+    # A duplicated GeolCode_GMU (copy-paste error in the source Excel) fans
+    # out the left join below, silently duplicating the matching bedrock
+    # feature(s) in the output — keep only one row per key.
+    strati_df = strati_df.drop_duplicates(subset="GeolCode_GMU", keep="first")
 
 
     # --- Merge (left join pour garder toutes les features) ---
