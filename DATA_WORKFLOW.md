@@ -6,45 +6,68 @@ a classified, translated GeoPackage ready for loading into the PostGIS publicati
 ## Overview
 
 ```
-RC1.gdb ──┐
-RC2.gdb ──┼──► merge ──► denormalize ──► classify ──► translate ──► PostGIS
-custom/ ──┘
+                                   ┌─► merged_master.gdb ─► denormalize ─► classify ─► translate ─► PostGIS
+RC1.gdb ──┐                       │      (flat, OGR)
+RC2.gdb ──┼──► make merge ────────┤
+custom/ ──┘                       └─► merged_final.gdb
+                                        (ESRI-schema clone, ArcGIS Pro operators)
 ```
 
-The four stages are driven by Make targets and the `gcover publish` CLI:
+`make merge` produces **two** GDBs from the same source data in one invocation — they diverge immediately after and are
+consumed by two different audiences. Everything from Stage 2 onward in this document operates on `merged_master.gdb` only;
+`merged_final.gdb` is documented separately below.
+
+The stages are driven by Make targets and the `gcover publish` CLI:
 
 ```bash
 make merge denormalize classify translate
 ```
 
-All intermediate and final outputs land in `OUTPUT_DIR` (default: `~/DATA/Derivations/output/R16/`).
+All intermediate and final outputs land in `OUTPUT_DIR` (default: `~/DATA/Derivations/output/<RELEASE>/`).
 
 ---
 
 ## Stage 1 — Merge (`make merge`)
 
-**Command:**
+**Command (as run by Make):**
 ```bash
 gcover publish merge \
-  --rc1 <DELIVERY_DIR>/RC1.gdb \
-  --rc2 <DELIVERY_DIR>/RC2.gdb \
-  --custom-sources-dir <DELIVERY_DIR> \
-  --admin-zones <DELIVERY_DIR>/GC_MAPSHEET.gpkg \
+  --rc1 <SOURCES_DIR>/RC1.gdb \
+  --rc2 <SOURCES_DIR>/RC2.gdb \
+  --custom-sources-dir <SOURCES_DIR> \
+  --admin-zones <GC_MAPSHEET_SOURCE> \
   --mapsheets-layer mapsheet_gc \
   --source-column BKP \
   --force-2d \
   --no-clip-to-swiss-border \
   --enrich-mapsheet-links \
-  --output <OUTPUT_DIR>/master_R16.gdb
+  --exclude-metadata \
+  --output <OUTPUT_DIR>/merged_master.gdb \
+  --schema-output <OUTPUT_DIR>/merged_final.gdb \
+  [--strati-links <STRATI_LINK_XLSX>]
 ```
 
 **What it does:**
 
-Reads the delivered `GC_MAPSHEET.gpkg` (layer `mapsheet_gc`) to determine which of the ~221 mapsheets is served by RC1, RC2, or a custom GDB. The source-assignment column in this raw delivery file is named `BKP` rather than `SOURCE_RC`; `--source-column BKP` tells the merge which column to read, and it's renamed to the canonical `SOURCE_RC` internally for the rest of the pipeline. (The older `--sources <xlsx>` / bundled `administrative_zones.gpkg` path still exists and already uses `SOURCE_RC` natively — `--source-column` also accepts `SOURCE_QA` for that path.) For each mapsheet, the merge clips the matching features from the appropriate source and writes them into a single master GDB.
+Reads the delivered `GC_MAPSHEET.gpkg` (layer `mapsheet_gc`) to determine which of the ~220 mapsheets is served by RC1, RC2,
+or a custom GDB. The source-assignment column in this raw delivery file is named `BKP` rather than `SOURCE_RC`; 
+`--source-column BKP` tells the merge which column to read, and it's renamed to the canonical `SOURCE_RC` internally for 
+the rest of the pipeline. (The older `--sources <xlsx>` / bundled `administrative_zones.gpkg` path still exists and already
+uses `SOURCE_RC` natively — `--source-column` also accepts `SOURCE_QA` for that path.) For each mapsheet, the merge 
+clips the matching features from the appropriate source and writes them into `merged_master.gdb` — then, in the same run,
+clones an authoritative ESRI-schema GDB and re-injects the same merged data into it to produce `merged_final.gdb` (see below).
+
+Make's `[2/2]` step additionally re-imports `GC_MAPSHEET` itself straight from `<GC_MAPSHEET_SOURCE>` via `ogr2ogr` 
+(with `BER_LINK`/`ERL_LINK` computed from the `BER`/`ERL` flags), since the merge step only clips *spatial* feature classes,
+not this administrative layer.
 
 **Split vs. keep whole features:**
 
-The merger intentionally does **not** split features along mapsheet boundaries (`--split-by-mapsheet` is off by default). The primary goal of GeoCover is a harmonised, seamless dataset — splitting polygon and line features at administrative boundaries fragments geometries, can introduce topology errors, and would require re-checking topology that was already validated in the RC1/RC2 FileGDBs. Mapsheet-level delivery is handled downstream (subsetting by `MSH_MAP_NBR`), not by cutting features at export time.
+The merger intentionally does **not** split features along mapsheet boundaries (`--split-by-mapsheet` is off by default).
+The primary goal of GeoCover is a harmonised, seamless dataset — splitting polygon and line features at administrative
+boundaries fragments geometries, can introduce topology errors, and would require re-checking topology that was already
+validated in the RC1/RC2 FileGDBs. Mapsheet-level delivery is handled downstream (subsetting by `MSH_MAP_NBR`), not by
+cutting features at export time.
 
 Key options used in production:
 
@@ -54,11 +77,33 @@ Key options used in production:
 | `--no-clip-to-swiss-border` | Skips the outer Swiss border clip (mapsheet boundaries are sufficient) |
 | `--enrich-mapsheet-links` | Adds `erl_link` / `ber_link` PDF notice links to every feature |
 | `--custom-sources-dir` | Picks up any `*.gdb` overrides present alongside RC1/RC2 |
+| `--schema-output` | Also produce the ESRI-schema-preserving `merged_final.gdb` (see below) |
+| `--strati-links` | Optional; injects `strati_link` on `GC_BEDROCK` via an Excel GMU-code lookup |
 
-**Output:** `master_R16.gdb`
+**Output:** `merged_master.gdb`, `merged_final.gdb`
 
 > Tip: `gcover publish list-sources` shows the RC1/RC2 assignment for every mapsheet.  
 > `gcover publish merge --dry-run ...` previews the source assignment table without touching any data.
+
+### Why two GDBs — preserving the ESRI schema
+
+`merged_master.gdb` is built with GDAL/geopandas, which is what lets `gcover publish merge` clip and recombine RC1/RC2/custom
+sources at all — but GDAL cannot *create* three ESRI-specific schema elements: coded value domains, relationship classes
+(junction tables linking spatial layers to attribute tables), and the `GC_ROCK_BODIES` feature dataset grouping. Anything
+downstream that only needs a flat, open-source-readable GPKG (Stages 2–4 below) is fine without them. ArcGIS Pro operators
+are not — they need a GDB that still looks and behaves like a genuine ESRI delivery.
+
+`merged_final.gdb` solves this via `patch_schema_gdb()` (`src/gcover/publish/patch_schema.py`), invoked automatically when `--schema-output` is passed:
+
+1. **Clone** — `shutil.copytree` of the authoritative schema GDB (RC2.gdb by default, `--schema-gdb` to override) — a byte-perfect copy, so domains/relationships/feature dataset all survive untouched.
+2. **Truncate** — every spatial layer and reference table in the clone is emptied via OGR `DeleteFeature` (SQL `DELETE` isn't supported by the OpenFileGDB write driver).
+3. **Append** — `gdal.VectorTranslate(accessMode="append", explodeCollections=True)` bulk-inserts the corresponding layer from `merged_master.gdb`. `explodeCollections` undoes geopandas' MultiPoint promotion so geometry types match the ESRI-authored schema.
+4. **Recompute spatial index** — a truncate+append cycle leaves each layer's stored extent as a stale union of the deleted and newly-inserted features' bounds (OGR never recomputes it automatically), which is what makes the FileGDB's spatial index look out of sync afterward. `_refresh_index()` runs the OpenFileGDB driver's `RECOMPUTE EXTENT ON <layer>` and `REPACK <layer>` special SQL statements on every patched layer to fix this.
+5. **Extra fields / strati_link / GC_MAPSHEET** — `_MERGE_SOURCE`, `ERL_LINK`, `BER_LINK` are added via `CreateField()` (absent from the ESRI schema clone); `strati_link` is optionally injected on `GC_BEDROCK`; `GC_MAPSHEET` is optionally replaced from the admin-zones source instead of kept from the RC2 clone.
+
+**Known manual step:** at least one ArcGIS-internal topology system table (working name recalled as something like *LINES_TOP* — needs re-confirming, not yet re-identified precisely) is **not enumerable via OGR/GDAL at all**, so `patch_schema_gdb()` cannot drop it programmatically the way it drops `BEDROCK_TOPOLOGY` / `GC_ROCK_BODIES_TOPO` / `T_1_*` (which *are* OGR-visible feature classes, dropped automatically). This table must still be located and deleted manually in ArcGIS Pro / ArcCatalog after `merged_final.gdb` is produced, before handing it to ArcGIS Pro operators.
+
+**Validation:** `make domain-check-final` checks `merged_final.gdb`'s data against RC2's coded domains; `make schema-snapshot-final` + `git diff config/merged_final_schema.json` catches unexpected schema drift (see [Data Checks](#data-checks) below).
 
 ---
 
@@ -67,7 +112,7 @@ Key options used in production:
 **Commands (run automatically by Make):**
 ```bash
 # 1. Import lookup / relation tables from the full RC2 delivery GDB
-ogr2ogr -f "OpenFileGDB" -update -overwrite master_R16.gdb RC2.gdb <TABLE>
+ogr2ogr -f "OpenFileGDB" -update -overwrite merged_master.gdb RC2.gdb <TABLE>
 # repeated for: GC_GEOL_MAPPING_UNIT, GC_LITSTRAT_FORMATION_BANK, GC_CHRONO,
 #               GC_EX_GEO_PLG/PNT_EXP_UNIT_GC_GMU, GC_FOSS_SYSTEM_GC_SYSTEM,
 #               GC_UN_DEP_CHARACT/COMPOSIT/MAT_TYPE_GC_LITHO
@@ -77,14 +122,27 @@ scripts/denormalize_geocover.py --remove-metadata \
   -o denormalized.gpkg \
   --cd-gdb-path RC2.gdb \
   --tables <layer> \
-  master_R16.gdb
+  merged_master.gdb
 # repeated for: fossils, exploit_polygons, exploit_points, linear_objects,
 #               point_objects, bedrock, surfaces, unco_deposits
+
+# 3. Copy GC_MAPSHEET straight through (no denormalization)
+ogr2ogr -f GPKG -update -overwrite denormalized.gpkg merged_master.gdb GC_MAPSHEET -nln mapsheet
 ```
 
 **What it does:**
 
-The merge GDB lacks the coded-domain lookup tables (only present in the original ESRI-created GDB). `ogr2ogr` re-imports them from the full RC2 delivery. The denormalization script then joins each spatial layer to its related tables, expanding foreign-key codes into human-readable attributes and flattening the relational model into a self-contained flat layer.
+`merged_master.gdb` (the *flat* output — deliberately, this stage never touches `merged_final.gdb`) lacks the coded-domain
+lookup tables, since those only exist in the original ESRI-created GDB. `ogr2ogr` re-imports them from the full RC2 delivery.
+The denormalization script then joins each spatial layer to its related tables via `denormalize_simple_relationship()`
+(junction-table joins, e.g. `fossils` ↔ `GC_SYSTEM` via `GC_FOSS_SYSTEM_GC_SYSTEM`) or the `"special"`/`"copy"` methods 
+for layers with more complex or no relational structure, expanding foreign-key codes into human-readable attributes and
+flattening the relational model into a self-contained flat layer.
+
+A relationship-table row should resolve each source feature to **exactly one** lookup entry — a duplicated foreign key in
+the relationship table (bad source data) would otherwise fan a single feature out into multiple output rows. `denormalize_simple_relationship()`
+dedupes on the source feature's key before joining and logs a warning naming the affected relationship table when this
+happens, so a `pipeline-check` count mismatch here (see below) is traceable back to a specific junction table.
 
 **Output:** `denormalized.gpkg` — one layer per geological feature class, no external dependencies.
 
@@ -102,7 +160,8 @@ gcover --env sandisk publish apply-config \
 
 **What it does:**
 
-Reads the YAML classification config, which maps each GPKG layer to one or more ESRI `.lyrx` style files. For every feature, it evaluates the classification rules extracted from the `.lyrx` (field values, filter expressions) and writes two new columns:
+Reads the YAML classification config, which maps each GPKG layer to one or more ESRI `.lyrx` style files. For every feature,
+it evaluates the classification rules extracted from the `.lyrx` (field values, filter expressions) and writes two new columns:
 
 - `SYMBOL` — stable identifier linking the feature to a MapServer `CLASS` or QGIS rule (e.g. `bedrock_15202001`)
 - `LABEL` — human-readable display label derived from the ESRI class label
@@ -163,7 +222,8 @@ This stage also **normalises all column names to lowercase** (`--lowercase-colum
 | `GC_MAPSHEET.gpkg` | Input | Mapsheet boundaries + RC assignments (layer `mapsheet_gc`, column `BKP`) |
 | `config/esri_classifier_denormalized_geocover.yaml` | Input | Classification rules (layers → `.lyrx` mappings) |
 | `styles/*/\*.lyrx` | Input | ESRI CIM symbol definitions |
-| `master_R16.gdb` | Stage 1 | Spatially merged, mapsheet-clipped GDB |
+| `merged_master.gdb` | Stage 1 | Spatially merged, mapsheet-clipped GDB — flat, feeds Stages 2–4 |
+| `merged_final.gdb` | Stage 1 | Same data, re-injected into an ESRI-schema clone — domains/relationships/feature dataset preserved, handed to ArcGIS Pro operators (not used downstream in this doc) |
 | `denormalized.gpkg` | Stage 2 | Flat layers with coded domains resolved |
 | `denormalized_classified.gpkg` | Stage 3 | + `SYMBOL` / `LABEL` classification columns |
 | `swissgeocover2d.gpkg` | Stage 4 | + DE/FR labels, strati links → **PostGIS input** |
@@ -178,10 +238,78 @@ This stage also **normalises all column names to lowercase** (`--lowercase-colum
 | `make mapfiles` | Generate MapServer `.map` files and combined `symbols.sym` from the classified GPKG |
 | `make clean-classify` | Remove the classified GPKG (re-triggers from denormalized) |
 | `make clean-denormalize` | Remove denormalized + classified GPKGs |
+| `make clean-merge` | Remove `merged_master.gdb` + `merged_final.gdb` |
 | `make clean-all` | Remove all generated GDB and GPKG artefacts |
 | `make merge-diagnostic` | Run the merge diagnostic script without regenerating the master GDB |
-| `make geometry-check`   | Check invalid geometries and bedrock/unco coverage |
+| `make pipeline-check` | Feature-count consistency across merge → denormalize → classify → translate (see [Data Checks](#data-checks)) |
+| `make geometry-check` | Check invalid geometries and bedrock/unco coverage |
+| `make line-topology-check` | Check tectonic line topology against `GC_BEDROCK` boundaries per mapsheet (`MAPSHEET=<nbr>` to restrict) |
+| `make polygon-topology-check` | Check polygon micro-gaps and overlaps within/across layers per mapsheet (`MAPSHEET=<nbr>` to restrict) |
+| `make coverage-check` | Classification coverage — extracts unclassified features |
+| `make domain-check` | Coded-domain compliance: RC1/RC2 self-check, `merged_final.gdb` vs RC2, each custom source vs RC2 |
+| `make schema-snapshot-translated` / `make schema-snapshot-final` | Snapshot `swissgeocover2d.gpkg` / `merged_final.gdb` schema to `config/*.json` — diff against the git-committed contract to catch schema drift |
+| `make filter-check` | Check each config `filter:` covers every value used by its layer's active `.lyrx` classes (see [Data Checks](#data-checks)) |
 
+
+## Data Checks
+
+A handful of `make` targets validate the pipeline output at different points. They're independent of each other — run whichever is relevant to what you just regenerated.
+
+### Pipeline feature-count check (`make pipeline-check`)
+
+Runs `scripts/check_pipeline_counts.py`, which counts features per layer at each stage — `merged_master.gdb` → `denormalized.gpkg` → `denormalized_classified.gpkg` → `swissgeocover2d.gpkg` — and flags any layer whose count changes somewhere it shouldn't.
+
+```bash
+make pipeline-check
+```
+
+```
+                                          Pipeline feature counts
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━┓
+┃ Layer                        ┃   merged (GDB) ┃   denormalized ┃     classified ┃     translated ┃ OK?   ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━┩
+│ bedrock                      │        291,274 │        291,128 │        291,128 │        291,129 │ ✗     │
+│ exploit_points               │          1,812 │          1,812 │          1,812 │          1,812 │ ✓     │
+│ exploit_polygons             │         13,586 │         13,585 │              — │              — │ ✗     │
+│ fossils                      │          2,745 │          2,759 │          2,759 │          2,759 │ ✗     │
+│ ...                          │                │                │                │                │       │
+└──────────────────────────────┴────────────────┴────────────────┴────────────────┴────────────────┴───────┘
+✗ Feature count mismatches detected!
+```
+
+**How to read a mismatch, by which stage it appears at:**
+
+- **merged → denormalized**, layer count *increases*: a duplicated foreign key in a relationship table (e.g. `GC_FOSS_SYSTEM_GC_SYSTEM`) is fanning one source feature out into several output rows in `denormalize_simple_relationship()`. Fixed automatically since the dedup was added (`scripts/denormalize_geocover.py`) — check the console/log for a `duplicate ... relationship(s) — keeping first` warning naming the offending junction table.
+- **merged → denormalized**, layer count *decreases* (most layers, most runs): expected — denormalize drops rows that fail the relational join or geometry cleanup. This is the "is the merged DB complete" question and is tracked separately from this check; `pipeline-check` only tells you *that* it changed, not whether the drop is legitimate.
+- **denormalized → classified**, layer *disappears entirely* (shown as `—`): check whether every classification for that layer is `active: False` in `config/esri_classifier_denormalized_geocover.yaml` — `apply-config` drops a layer outright when it has zero active classifications, rather than passing it through unclassified (`GC_MAPSHEET` gets an explicit passthrough copy in the Makefile instead; nothing else does). This can be an intentional, documented pause on a layer (e.g. `exploit_polygons`, not published because rock-mining-area data isn't updated fast enough to be accurate) — check the `# comment` next to `active: False` before assuming it's a bug.
+- **classified → translated**, count changes at all: translate should be a pure enrichment step (adds `_de`/`_fr`/etc. columns, never touches feature count). Any change here points at a duplicate key in one of the join sources — e.g. a duplicated `GeolCode_GMU` in `_Update_stratiLINK.xlsx` fanning out `_strati_links()`'s left join on `GC_BEDROCK` (also fixed with a dedup, in `scripts/translate_gpkg.py`).
+
+### Filter coverage check (`make filter-check`)
+
+Several layers in `config/esri_classifier_denormalized_geocover.yaml` carry a hand-typed `filter:` — a single-field pre-filter (e.g. `filter: RUNC_LITHO IN (15101009, 15101015)`) that becomes the mapfile layer's SQL `WHERE` clause, restricting which rows are even considered before `CLASS` matching happens. It's meant to mirror the set of values that field actually takes across the layer's own `.lyrx` classification — but since it's maintained by hand, separately from the `.lyrx`, it silently drifts: add a new class to the `.lyrx` with a value the filter doesn't list, and every feature matching that new class vanishes from the map with no error, anywhere downstream — the `WHERE` clause drops it before `CLASSITEM`/`EXPRESSION` matching is ever reached.
+
+`scripts/check_filter_coverage.py` catches this: for every `filter:` that's a simple single-field `IN (...)` / `NOT IN (...)` / `=` expression on a field the layer also classifies on, it extracts the actual values used by that layer's *active* `.lyrx` classes and checks the filter covers all of them. Compound/multi-field filters (e.g. `KIND=10501001 AND ABOR_DEPTH_BEDR<>999`, used to deliberately split one `KIND` across two layers) encode business logic beyond pure classification coverage and are skipped rather than guessed at.
+
+```bash
+make filter-check
+```
+
+```
+Checked 22 filter(s) with a simple single-field expression.
+
+                              Filter coverage gaps
+┏━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━┳━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
+┃ Layer          ┃ Style file     ┃ Field ┃ Op ┃ Missing value ┃ Used by       ┃
+┃                ┃                ┃       ┃    ┃               ┃ class(es)     ┃
+┡━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━╇━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
+│ point_objects  │ styles/Point_… │ KIND  │ IN │      10501002 │ Abor          │
+│                │                │       │    │               │ Sondierschli… │
+└────────────────┴────────────────┴───────┴────┴───────────────┴───────────────┘
+
+✗ 3 filter coverage gap(s) detected!
+```
+
+A gap here means real features are being silently dropped from the WMS/mapfile output right now — unlike most `pipeline-check` merged→denormalized drops, this isn't a "separate story," it's an active bug to fix immediately: add the missing value to `filter:` in the config (the fix propagates to `mapserver_develop/*.map` on the next `make mapfiles`), and mirror the same fix into the hand-maintained `mapserver-geocover/mapserver/layers/*.map` copy, since that repo isn't regenerated automatically.
 
 ### Geometries check and coverage
 

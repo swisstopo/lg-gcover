@@ -189,7 +189,7 @@ layers:
           label_formulas:
             label_de: "kind_de"
             label_fr: "kind_fr"
-          filter: KIND IN (11901001,12501002,12501003,12501004,12501006,12101006,13601001,13601002 ,13601003,13701001,13701002,13701004,14601004)
+          filter: KIND IN (11901001,12501002,12501003,12501004,12501006,12101006,13601001,13601002 ,13601003,13701001,13701002,13701003,13701004,14601004)
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -286,7 +286,7 @@ layers:
               wms_group_title: Point Objects
           data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}point_objects  USING UNIQUE gid USING SRID=2056"
           include_items: "kind,label,erl_link,ber_link"
-          filter: KIND IN (1051002,10501003,10501004,10501005)
+          filter: KIND IN (10501002,10501003,10501004,10501005)
           symbol_prefix: sondierung
           fields:
             KIND: KIND
@@ -462,7 +462,7 @@ layers:
             label_fr: "kind_fr"
           include_items: "kind_desc,aexp_status_desc,aarc_epoch_desc,aarc_period_desc,lpro_litho_desc,erl_link,ber_link"
           # El cheapo filter
-          filter: KIND IN (10201002,10201007,10201006,10201001,10201005,10201004,10201003,10701001,10701002,10901002,10901001,11101001,11101003,11101002,11301007,11301003,11301002,11301006,11301005,11301008,11301009,11301004,11701003,11701002,11701001,11701004,12201001,12201002,12301001,12301004,12301006,12301002,12301007,12301005,12301003,12401001,12601002,12601001,13001001,13301001,13901001,14001001,14701001)
+          filter: KIND IN (10201002,10201007,10201006,10201001,10201005,10201004,10201003,10701001,10701002,10901002,10901001,11101001,11101003,11101002,11301007,11301003,11301002,11301006,11301005,11301008,11301009,11301004,11301010,11701003,11701002,11701001,11701004,12201001,12201002,12301001,12301004,12301006,12301002,12301007,12301005,12301003,12401001,12601002,12601001,13001001,13301001,13901001,14001001,14701001)
           fields:
               KIND: KIND
           maxscaledenom: 52000
@@ -816,7 +816,7 @@ layers:
             label_de: "concat(runc_litho_de,runc_chrono_b_de, sep=', ', skip_empty=True)"
             label_fr: "concat(runc_litho_fr,runc_chrono_b_fr, sep=', ', skip_empty=True)"
           symbol_prefix: unco_chrono_b
-          filter: RUNC_LITHO IN (15101009, 15101015)
+          filter: RUNC_LITHO IN (15101009, 15101015, 15101084)
           fields:
             KIND: KIND
             RUNC_LITHO: RUNC_LITHO.

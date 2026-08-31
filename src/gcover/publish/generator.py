@@ -1272,7 +1272,19 @@ class MapServerGenerator:
 
         has_fill = False
 
-        # Add character marker pattern fills first
+        # Solid fills before pattern fills — see the matching comment in
+        # _add_polygon_styles_from_full_layers for why: MapServer paints
+        # each STYLE on top of the previous one, so the solid background
+        # must come first or it hides the pattern drawn "underneath" it.
+        for fill_info in layers_info.fills:
+            if fill_info["type"] == "solid":
+                self._add_solid_fill_style(
+                    lines,
+                    fill_info["color"],
+                    symbol_adjustments=symbol_adjustments  # NEW
+                )
+                has_fill = True
+
         for i, marker_info in enumerate(layers_info.character_markers):
             self._add_pattern_fill_style(
                 lines,
@@ -1283,16 +1295,6 @@ class MapServerGenerator:
                 symbol_adjustments=symbol_adjustments  # NEW
             )
             has_fill = True
-
-        # Add solid fills (with transparency adjustment)
-        for fill_info in layers_info.fills:
-            if fill_info["type"] == "solid":
-                self._add_solid_fill_style(
-                    lines,
-                    fill_info["color"],
-                    symbol_adjustments=symbol_adjustments  # NEW
-                )
-                has_fill = True
 
         # Add outline
         if layers_info.outline:
@@ -1330,11 +1332,16 @@ class MapServerGenerator:
         """
         has_fill = False
 
-        # Process fills in order
-        for i, fill_info in enumerate(full_layers.fills):
-            fill_type = fill_info.get("type", "solid")
+        # MapServer draws each STYLE on top of the previous one, but CIM
+        # symbolLayers order lists the visually topmost layer first — the
+        # reverse of what MapServer expects. Render solid fills first
+        # (regardless of their position in the CIM layer list) so a solid
+        # background never gets painted over a hatch/character pattern
+        # listed after it in the source data.
+        indexed_fills = list(enumerate(full_layers.fills))
 
-            if fill_type == "solid":
+        for i, fill_info in indexed_fills:
+            if fill_info.get("type", "solid") == "solid":
                 self._add_solid_fill_style(
                     lines,
                     fill_info["color"],
@@ -1342,7 +1349,10 @@ class MapServerGenerator:
                 )
                 has_fill = True
 
-            elif fill_type == "hatch":
+        for i, fill_info in indexed_fills:
+            fill_type = fill_info.get("type", "solid")
+
+            if fill_type == "hatch":
                 logger.debug("Found hatch")
                 self._add_hatch_fill_style(
                     lines,

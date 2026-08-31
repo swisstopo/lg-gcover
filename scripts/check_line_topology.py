@@ -32,7 +32,6 @@ KIND codes (edit THRUST_KINDS / FAULT_KINDS to reclassify):
   14901009  neotektonischer Bruch → fault check
 """
 
-import importlib.resources as ir
 import sys
 import warnings
 from pathlib import Path
@@ -81,9 +80,15 @@ BEDROCK_ONLY_THRESHOLD = 0.99   # bedrock_area / mapsheet_area ≥ this → bedr
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _load_mapsheets() -> gpd.GeoDataFrame:
-    with ir.path("gcover.data", "administrative_zones.gpkg") as p:
-        return gpd.read_file(str(p), layer="mapsheets_sources_only")
+def _load_mapsheets(master_gdb: str) -> gpd.GeoDataFrame:
+    """Read GC_MAPSHEET straight from the GDB under test.
+
+    Not the bundled gcover.data/administrative_zones.gpkg — that layer
+    predates the R18 switch to sourcing mapsheets directly from the
+    delivered GC_MAPSHEET.gpkg during merge, and can disagree with the
+    current merge's SOURCE_RC assignment.
+    """
+    return gpd.read_file(master_gdb, layer="GC_MAPSHEET")
 
 
 def _build_index(gdf: gpd.GeoDataFrame) -> tuple[STRtree, gpd.GeoDataFrame]:
@@ -304,7 +309,7 @@ def main(
         console.print("[yellow]No tectonic linear features found — nothing to check.[/]")
         sys.exit(0)
 
-    mapsheets = _load_mapsheets()
+    mapsheets = _load_mapsheets(str(gdb))
     if mapsheet:
         mapsheets = mapsheets[mapsheets["MSH_MAP_NBR"].astype(str) == str(mapsheet)]
         if mapsheets.empty:

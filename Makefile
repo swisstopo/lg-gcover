@@ -11,9 +11,9 @@ RELEASE      ?= R18
 DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/
 SOURCES_DIR  := $(DELIVERY_DIR)Sources/
 OUTPUT_DIR   ?= ${HOME}/DATA/Derivations/output/$(RELEASE)/
-STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/Styles/2026-08-25/
+STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/Styles/2026-08-31/
 PREVIOUS_STYLES_DIR := ${HOME}/DATA/Derivations/delivery/R17/Styles/2026-07-02/styles/
-TRANSLATION_CSV := $(DELIVERY_DIR)Excels/_GeolCodeText_Trad.xlsx
+TRANSLATION_CSV := $(DELIVERY_DIR)Excels/2026c_GeolCodeText_Trad.xlsx
 STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/Excels/_Update_stratiLINK.xlsx
 # --strati-links is optional in `gcover publish merge` (strati_link is just
 # omitted from the output if absent) — only pass it when the file is
@@ -144,7 +144,7 @@ help:
 .PHONY: help download administrative-zones all merge merge-diagnostic \
         denormalize classify translate pipeline-check checksum \
         geometry-check line-topology-check polygon-topology-check coverage-check \
-        domain-check domain-check-rc domain-check-final domain-check-custom \
+        domain-check domain-check-rc domain-check-final domain-check-custom filter-check \
         schema-snapshot-translated schema-snapshot-final \
         geocover-aux aspect aspect-simple aspect-gmm combine-aspect inject-aux-aspect \
         mapfiles \
@@ -395,6 +395,11 @@ schema-snapshot-final:
 	$(call check_file,FINAL_GDB,$(FINAL_GDB))
 	@gcover schema snapshot $(FINAL_GDB) \
 		--output config/merged_final_schema.json
+
+## filter-check: Check config filter: coverage against each layer's active .lyrx classification
+.PHONY: filter-check
+filter-check:
+	@python scripts/check_filter_coverage.py $(CONFIG_PATH) --styles-dir $(STYLES_DIR)/styles
 
 
 ### Administratives zones

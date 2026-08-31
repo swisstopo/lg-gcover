@@ -702,6 +702,20 @@ class GeoCoverDenormalizer:
             f"Using foreign keys: {main_fk_col} -> {main_table}, {lookup_fk_col} -> {lookup_table}"
         )
 
+        # A main-table feature should resolve to exactly one lookup entry —
+        # a duplicated main_fk_col row in the relationship table (bad source
+        # data) would otherwise fan a single feature out into multiple output
+        # rows. Keep only the first relationship per feature.
+        dupe_count = relationship_df.duplicated(subset=main_fk_col).sum()
+        if dupe_count:
+            logger.warning(
+                f"{relationship_table}: {dupe_count} duplicate {main_fk_col} "
+                f"relationship(s) — keeping first, dropping the rest"
+            )
+            relationship_df = relationship_df.drop_duplicates(
+                subset=main_fk_col, keep="first"
+            )
+
         # Perform joins
         main_with_relation = main_gdf.merge(
             relationship_df[[main_fk_col, lookup_fk_col]],
