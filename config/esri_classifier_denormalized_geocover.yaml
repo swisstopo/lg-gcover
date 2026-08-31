@@ -816,7 +816,7 @@ layers:
             label_de: "concat(runc_litho_de,runc_chrono_b_de, sep=', ', skip_empty=True)"
             label_fr: "concat(runc_litho_fr,runc_chrono_b_fr, sep=', ', skip_empty=True)"
           symbol_prefix: unco_chrono_b
-          filter: RUNC_LITHO IN (15101009, 15101015)
+          filter: RUNC_LITHO IN (15101009, 15101015, 15101084)
           fields:
             KIND: KIND
             RUNC_LITHO: RUNC_LITHO.
