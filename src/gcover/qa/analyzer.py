@@ -175,6 +175,28 @@ class QAAnalyzer:
 
         return qa_data
 
+    def _read_issue_rows(self, gdb_path: Path) -> pd.DataFrame:
+        """Read the non-spatial IssueRows table (issues without geometry).
+
+        OBJECTID is the layer's FID, not a regular attribute field, so OGR
+        excludes it from the normal column set — read with fid_as_index and
+        promote it to an explicit OBJECTID column so downstream dedup can
+        use it.
+
+        Returns an empty DataFrame if the layer is absent or empty rather
+        than raising — IssueRows isn't present in every QA FileGDB.
+        """
+        try:
+            df = gpd.read_file(
+                gdb_path, layer="IssueRows", ignore_geometry=True, fid_as_index=True
+            )
+            df = df.rename_axis("OBJECTID").reset_index()
+            logger.debug(f"Read {len(df)} IssueRows row(s) from {gdb_path}")
+            return df
+        except Exception as e:
+            logger.warning(f"Could not read IssueRows from {gdb_path}: {e}")
+            return pd.DataFrame()
+
     def _spatial_join_with_zones(
         self,
         qa_gdf: gpd.GeoDataFrame,
@@ -584,6 +606,26 @@ class QAAnalyzer:
 
             if layer_gdfs:
                 combined_layers[layer_type] = pd.concat(layer_gdfs, ignore_index=True)
+
+        # Merge the non-spatial IssueRows table (issues without geometry).
+        # These aren't tied to a mapsheet, so the RC1/RC2 zone-based filtering
+        # above doesn't apply to them — read directly from both source GDBs
+        # and dedupe on OBJECTID instead.
+        rc1_rows = self._read_issue_rows(rc1_gdb)
+        rc2_rows = self._read_issue_rows(rc2_gdb)
+        issue_rows = pd.concat([rc1_rows, rc2_rows], ignore_index=True)
+        if not issue_rows.empty:
+            if "OBJECTID" in issue_rows.columns:
+                before = len(issue_rows)
+                issue_rows = issue_rows.drop_duplicates(subset="OBJECTID", keep="first")
+                dropped = before - len(issue_rows)
+                if dropped:
+                    logger.info(f"IssueRows: dropped {dropped} duplicate OBJECTID row(s)")
+            else:
+                logger.warning("IssueRows: no OBJECTID column found — skipping dedup")
+            combined_layers["IssueRows"] = issue_rows
+            stats["issue_rows"] = len(issue_rows)
+            logger.info(f"IssueRows: {len(issue_rows)} row(s) merged from RC1+RC2")
 
         # Optionally append the zone layers used so the output is self-documenting
         if include_source_layers:
@@ -1318,18 +1360,31 @@ class QAAnalyzer:
                         except:
                             pass
 
-                # Write to file
-                gdf_clean.to_file(
-                    output_file,
-                    layer=layer_name,
-                    driver=driver,
-                    mode="a" if output_file.exists() else "w",
-                    layer_options=(
-                        {"TARGET_ARCGIS_VERSION": "ARCGIS_PRO_3_2_OR_LATER"}
-                        if self.use_arcgis_pro
-                        else None
-                    ),
-                )
+                # Write to file — non-spatial tables (e.g. IssueRows, a plain
+                # DataFrame with no geometry column) don't have .to_file(),
+                # so write those via pyogrio instead.
+                if isinstance(gdf_clean, gpd.GeoDataFrame):
+                    gdf_clean.to_file(
+                        output_file,
+                        layer=layer_name,
+                        driver=driver,
+                        mode="a" if output_file.exists() else "w",
+                        layer_options=(
+                            {"TARGET_ARCGIS_VERSION": "ARCGIS_PRO_3_2_OR_LATER"}
+                            if self.use_arcgis_pro
+                            else None
+                        ),
+                    )
+                else:
+                    import pyogrio
+
+                    pyogrio.write_dataframe(
+                        gdf_clean,
+                        output_file,
+                        layer=layer_name,
+                        driver=driver,
+                        append=output_file.exists(),
+                    )
 
                 logger.info(f"Wrote {len(gdf)} features to layer '{layer_name}'")
 
