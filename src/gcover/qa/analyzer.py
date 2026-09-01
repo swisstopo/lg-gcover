@@ -315,6 +315,7 @@ class QAAnalyzer:
         deduplicate_cross_zone: bool = True,
         rand_buffer_predicate: str = "intersects",
         include_source_layers: bool = True,
+        write_rc_breakdown: bool = True,
     ) -> Dict[str, int]:
         """
         Extract only relevant QA issues based on mapsheet source mapping.
@@ -327,7 +328,7 @@ class QAAnalyzer:
         rand_buffer_predicate is not 'none', a second spatial filter is applied:
         only issues that intersect (or lie within, depending on the predicate) the
         rand-buffer zone are kept.  Rejected issues are written to a sibling
-        `rejected/` directory for inspection.
+        `rejected.gdb`/`rejected.gpkg` for inspection.
 
         Args:
             rc1_gdb: Path to RC1 QA FileGDB
@@ -339,6 +340,12 @@ class QAAnalyzer:
             include_source_layers: When True, write the zone layers used
                 (mapsheet, and qa_rand_gc_buffer_50m if active)
                 into the output file for provenance.
+            write_rc_breakdown: When True (default), also write the RC1-only
+                and RC2-only filtered issues to sibling `RC1/`/`RC2/` output
+                files, alongside the combined `RC_combined` output. Set to
+                False to skip this — the RC1/RC2 error counts are still
+                computed and reported either way, only the extra output
+                files are skipped.
 
         Returns:
             Dictionary with extraction statistics
@@ -520,7 +527,7 @@ class QAAnalyzer:
             }
             # Write rejected issues for inspection
             if rejected_data:
-                rejected_path = output_path.parent / "rejected" / output_path.name
+                rejected_path = output_path.with_name("rejected")
                 rejected_path.parent.mkdir(parents=True, exist_ok=True)
                 self._write_spatial_output(rejected_data, rejected_path, output_format)
                 logger.info(
@@ -548,26 +555,24 @@ class QAAnalyzer:
         stats["rc2_issues"] = sum(stats["rc2_issue_type_counts"].values())
 
         # ========================================================================
-        # Save RC1 issues separately
+        # Save RC1 / RC2 issues separately (optional — see write_rc_breakdown)
         # ========================================================================
-        if rc1_filtered_data:
-            rc1_output_path = output_path.parent.parent / "RC1" / output_path.name
-            rc1_output_path.parent.mkdir(parents=True, exist_ok=True)
-            self._write_spatial_output(
-                rc1_filtered_data, rc1_output_path, output_format
-            )
-            logger.info(f"Saved {stats['rc1_issues']} RC1 issues to {rc1_output_path}")
+        if write_rc_breakdown:
+            if rc1_filtered_data:
+                rc1_output_path = output_path.parent.parent / "RC1" / output_path.name
+                rc1_output_path.parent.mkdir(parents=True, exist_ok=True)
+                self._write_spatial_output(
+                    rc1_filtered_data, rc1_output_path, output_format
+                )
+                logger.info(f"Saved {stats['rc1_issues']} RC1 issues to {rc1_output_path}")
 
-        # ========================================================================
-        # NEW: Save RC2 issues separately
-        # ========================================================================
-        if rc2_filtered_data:
-            rc2_output_path = output_path.parent.parent / "RC2" / output_path.name
-            rc2_output_path.parent.mkdir(parents=True, exist_ok=True)
-            self._write_spatial_output(
-                rc2_filtered_data, rc2_output_path, output_format
-            )
-            logger.info(f"Saved {stats['rc2_issues']} RC2 issues to {rc2_output_path}")
+            if rc2_filtered_data:
+                rc2_output_path = output_path.parent.parent / "RC2" / output_path.name
+                rc2_output_path.parent.mkdir(parents=True, exist_ok=True)
+                self._write_spatial_output(
+                    rc2_filtered_data, rc2_output_path, output_format
+                )
+                logger.info(f"Saved {stats['rc2_issues']} RC2 issues to {rc2_output_path}")
 
         # Combine layers by type (merge RC1 and RC2 data for each layer type)
         combined_layers = {}

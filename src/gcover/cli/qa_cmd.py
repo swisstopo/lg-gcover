@@ -1763,6 +1763,17 @@ def _auto_discover_rc_gdbs(base_dir: Path) -> tuple[Optional[Path], Optional[Pat
     help="Write the zone layers used (mapsheet, qa_rand_gc_buffer_50m) into the output file for provenance.",
 )
 @click.option(
+    "--rc-breakdown/--no-rc-breakdown",
+    "rc_breakdown",
+    default=True,
+    show_default=True,
+    help=(
+        "Also write RC1-only and RC2-only filtered issues to sibling RC1/RC2 output "
+        "files. The RC1/RC2 error counts are still computed and reported either way; "
+        "--no-rc-breakdown just skips these extra per-RC files."
+    ),
+)
+@click.option(
     "--yes", is_flag=True, help="Automatically confirm prompts (for scripting)"
 )
 @click.pass_context
@@ -1777,6 +1788,7 @@ def extract(
     filter_by_source: bool,
     rand_border_filter: str,
     include_source_layers: bool,
+    rc_breakdown: bool,
     yes: bool,
     asset_type: str,
     use_arcmap: bool,
@@ -1879,6 +1891,7 @@ def extract(
                 output_format=output_format.lower(),
                 rand_buffer_predicate=rand_border_filter,
                 include_source_layers=include_source_layers,
+                write_rc_breakdown=rc_breakdown,
             )
         else:
             logger.warning("Extracting all issues (no source filtering)")
