@@ -33,7 +33,7 @@ from rich.progress import (BarColumn, Progress, SpinnerColumn,
                            TaskProgressColumn, TextColumn)
 from rich.table import Table
 from shapely import (area, difference, get_coordinates, intersection,
-                     intersects, make_valid, set_coordinates, simplify, within)
+                     intersects, length, make_valid, set_coordinates, simplify, within)
 from shapely.geometry import (GeometryCollection, LineString, MultiLineString,
                               MultiPoint, MultiPolygon, Point, Polygon)
 from shapely.geometry.base import BaseGeometry
@@ -1399,11 +1399,26 @@ class GDBMerger:
             # this filter, features fully `within` one mapsheet but merely
             # touching a neighbour's border pick up that neighbour's link
             # too — sampled at ~87% of all multi-link features on R18.
-            overlap_area = area(intersection(
+            #
+            # `area()` only distinguishes this for polygons — a point or a
+            # line intersected with a polygon is dimensionless/1-D and its
+            # area is *always* 0, which silently dropped every match for
+            # point/line layers (GC_LINEAR_OBJECTS, GC_POINT_OBJECTS,
+            # GC_FOSSILS, GC_EXPLOIT_GEOMAT_PT — zero links regardless of
+            # true containment). Use the dimension-appropriate measure.
+            overlap = intersection(
                 gdf.geometry.values[feat_idx],
                 self.mapsheets_gdf.geometry.values[mapsheet_idx],
-            ))
-            has_area = overlap_area > 0
+            )
+            if is_point:
+                # A point can't "touch a corner" the way a polygon/line can
+                # — intersects already means inside (or exactly on the
+                # boundary), so no extra filter is needed or meaningful.
+                has_area = np.ones(len(overlap), dtype=bool)
+            elif expected_type == "MultiLineString":
+                has_area = length(overlap) > 0
+            else:
+                has_area = area(overlap) > 0
             feat_idx, mapsheet_idx = feat_idx[has_area], mapsheet_idx[has_area]
 
             for col in link_cols:
