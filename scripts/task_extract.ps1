@@ -30,8 +30,9 @@ Write-Host "Last week's date: $LAST_WEEK"
 
 
 
-# python -m gcover.cli.main qa extract      --rc1-gdb "/home/marco/DATA/QA/Verifications/Topology/RC_2016-12-31/20260718_03-00-11/issue.gdb"      --rc2-gdb "/home/marco/DATA/QA/Verifications/Topology/RC_2030-12-31/20260717_07-00-12/issue.gdb"      --zones-file /home/marco/DATA/Derivations/delivery/R18/GC_MAPSHEET.gpkg
-# --mapsheets-layer mapsheet_gc      --rand-border-filter none      --output /home/marco/DATA/Derivations/output/R18/qa_topology      --format gpkg      --yes
+# python -m gcover.cli.main qa extract      --rc1-gdb "/home/marco/DATA/QA/Verifications/Topology/RC_2016-12-31/20260718_03-00-11/issue.gdb"      \
+--rc2-gdb "/home/marco/DATA/QA/Verifications/Topology/RC_2030-12-31/20260717_07-00-12/issue.gdb"      --zones-file /home/marco/DATA/Derivations/delivery/R18/Mapsheet/GC_MAPSHEET.gpkg \
+ --mapsheets-layer mapsheet_gc      --rand-border-filter none     --no-rc-breakdown   --output /home/marco/DATA/Derivations/output/R18/qa_topology      --format gpkg      --yes
 
 Write-Host "--- Processing QA extract ---" -ForegroundColor Green
 & gcover    --env production --verbose  qa extract  --yes --type verification_topology --zones-file $ZonesFile  --mapsheets-layer mapsheet_gc      --rand-border-filter none --no-rc-breakdown --output $OutputDir
@@ -84,8 +85,8 @@ Write-Host "Last run copied to: $LastLink" -ForegroundColor Green
 
 
 
-Write-Host "--- Processing QA aggregate ---" -ForegroundColor Green
-& gcover  --env production --verbose  qa aggregate --auto-discover --yes --zone-type mapsheets  --zones-file $ZonesFile  --mapsheets-layer mapsheet_gc  --rand-border-filter none   --output-format xlsx   --type  verification_topology   --base-dir $OutputDir
+# Write-Host "--- Processing QA aggregate ---" -ForegroundColor Green
+# & gcover  --env production --verbose  qa aggregate --auto-discover --yes --zone-type mapsheets  --zones-file $ZonesFile  --mapsheets-layer mapsheet_gc  --rand-border-filter none   --output-format xlsx   --type  verification_topology   --base-dir $OutputDir
 
 
 
