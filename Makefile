@@ -205,8 +205,8 @@ $(MASTER_GDB)/timestamps: $(SOURCES_DIR)RC1.gdb $(SOURCES_DIR)RC2.gdb $(GC_MAPSH
 		-lco TARGET_ARCGIS_VERSION=ARCGIS_PRO_3_2_OR_LATER \
 		-dialect SQLite \
 		-sql "SELECT geom, MSH_MAP_TITLE, MSH_MAP_NBR, MSH_TOPO_NR, BKP AS SOURCE_RC, Version AS VERSION, BER, ERL, \
-			CASE WHEN BER = 'y' THEN 'https://data.geo.admin.ch/ch.swisstopo.geologie-geocover/berichte/BER_' || MSH_MAP_NBR || '.pdf' ELSE '' END AS BER_LINK, \
-			CASE WHEN ERL = 'y' THEN 'https://data.geo.admin.ch/ch.swisstopo.geologie-geologischer_atlas/erlaeuterungen/GA25-ERL-' || MSH_MAP_NBR || '.pdf' ELSE '' END AS ERL_LINK \
+			CASE WHEN BER = 'y' THEN 'https://api3.geo.admin.ch/featureattachments/ch.swisstopo.geologie-geocover/berichte/BER_' || MSH_MAP_NBR || '.pdf' ELSE '' END AS BER_LINK, \
+			CASE WHEN ERL = 'y' THEN 'https://api3.geo.admin.ch/featureattachments/ch.swisstopo.geologie-geologischer_atlas/erlaeuterungen/GA25-ERL-' || MSH_MAP_NBR || '.pdf' ELSE '' END AS ERL_LINK \
 			FROM mapsheet_gc" \
 		-nln GC_MAPSHEET; \
 	_T4=$$(date +%s); \
