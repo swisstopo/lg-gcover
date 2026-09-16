@@ -394,7 +394,7 @@
     }
   },
   "surfaces": {
-    "feature_count": 66833,
+    "feature_count": 66840,
     "geometry": "3D MultiPolygon",
     "fields": {
       "kind": "int",
@@ -438,7 +438,7 @@
     }
   },
   "unco_deposits": {
-    "feature_count": 234949,
+    "feature_count": 235047,
     "geometry": "3D MultiPolygon",
     "fields": {
       "kind": "int",
@@ -512,7 +512,7 @@
     }
   },
   "bedrock": {
-    "feature_count": 291128,
+    "feature_count": 291137,
     "geometry": "3D MultiPolygon",
     "fields": {
       "kind": "int",

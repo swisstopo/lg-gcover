@@ -160,19 +160,34 @@ def _create_source_masks(self) -> Dict[str, BaseGeometry]:
     return masks
 
 
-def fast_clip(gdf: gpd.GeoDataFrame, mask: BaseGeometry) -> gpd.GeoDataFrame:
+def fast_clip(
+    gdf: gpd.GeoDataFrame,
+    mask: BaseGeometry,
+    grid_size: Optional[float] = None,
+) -> gpd.GeoDataFrame:
     """
     Optimized clip: only compute intersection for features crossing the boundary.
-    
+
     For typical geological data, 99%+ of features are fully inside the mask,
     so we can skip the expensive intersection computation for them.
-    
+
     Performance: ~50x faster than gpd.clip() for large datasets with simple masks.
-    
+
     Args:
         gdf: Input GeoDataFrame
         mask: Clip mask geometry
-        
+        grid_size: coordinate-precision grid size (in the layer's CRS units,
+            e.g. 0.001 for RC2's 1mm domain resolution) passed straight to
+            shapely's ``intersection``. Without it, a clip can leave two
+            polygon lobes touching at a single point — technically OGC-valid
+            (so downstream ``is_valid`` checks and even ``make_valid`` treat
+            it as a no-op), but fragile: any later hairline coordinate
+            perturbation can tip it into a genuine self-intersection. GEOS's
+            fixed-precision (snap-rounding) overlay, enabled by grid_size,
+            avoids producing that fragile state in the first place instead of
+            trying to repair it afterwards. See memory:
+            project_filegdb_xy_domain_mismatch.
+
     Returns:
         Clipped GeoDataFrame
     """
@@ -205,11 +220,18 @@ def fast_clip(gdf: gpd.GeoDataFrame, mask: BaseGeometry) -> gpd.GeoDataFrame:
     if needs_clip.any():
         # Reindex mask to result DataFrame
         clip_idx = needs_clip[does_intersect]
-        result.loc[clip_idx, 'geometry'] = intersection(
+        clip_kwargs = {"grid_size": grid_size} if grid_size else {}
+        clipped_geoms = intersection(
             result.loc[clip_idx, 'geometry'].values,
-            mask
+            mask,
+            **clip_kwargs,
         )
-    
+        # Belt-and-braces: grid_size (above) is what actually prevents the
+        # touching-lobes artifact from forming; make_valid is a cheap no-op
+        # safety net for any genuinely invalid result that still slips
+        # through (e.g. when grid_size wasn't available).
+        result.loc[clip_idx, 'geometry'] = make_valid(clipped_geoms, method="structure")
+
     return result
 
 
@@ -500,6 +522,58 @@ def normalize_geodataframe_geometries(
     return result
 
 
+def get_filegdb_xy_domain(gdb_path: Optional[Path]) -> Optional[Dict[str, str]]:
+    """
+    Read a FileGDB's exact coordinate-precision domain (grid origin, scale,
+    tolerance) for its projected CRS from the internal GDB_SpatialRefs system
+    table, as OGR OpenFileGDB layer creation options.
+
+    ArcGIS FileGDBs quantize every vertex onto this domain grid on write. If an
+    output GDB is created without it, GDAL mints a generic default domain
+    instead (different origin, different resolution) — re-quantizing coordinates
+    onto that differently-anchored grid can turn a hairline "touching at one
+    point" polygon pair into a genuine self-intersection. Reusing the source's
+    exact domain when writing derived GDBs avoids introducing that class of
+    invalid geometry. See memory: project_filegdb_xy_domain_mismatch.
+
+    Returns None if the domain can't be read (e.g. gdb_path is None, missing,
+    or not a FileGDB) — callers should treat that as "let GDAL use its default".
+    """
+    if gdb_path is None or not Path(gdb_path).exists():
+        return None
+    try:
+        import pyogrio
+
+        prev = os.environ.get("OPENFILEGDB_OPEN_SYSTEM_TABLES")
+        os.environ["OPENFILEGDB_OPEN_SYSTEM_TABLES"] = "YES"
+        try:
+            df = pyogrio.read_dataframe(
+                str(gdb_path), layer="GDB_SpatialRefs", read_geometry=False
+            )
+        finally:
+            if prev is None:
+                os.environ.pop("OPENFILEGDB_OPEN_SYSTEM_TABLES", None)
+            else:
+                os.environ["OPENFILEGDB_OPEN_SYSTEM_TABLES"] = prev
+
+        projected = df[df["SRTEXT"].str.startswith("PROJCS")]
+        if projected.empty:
+            return None
+        row = projected.iloc[0]
+        return {
+            "XYTOLERANCE": str(row["XYTolerance"]),
+            "XORIGIN": str(row["FalseX"]),
+            "YORIGIN": str(row["FalseY"]),
+            "XYSCALE": str(row["XYUnits"]),
+            "ZTOLERANCE": str(row["ZTolerance"]),
+            "ZORIGIN": str(row["FalseZ"]),
+            "ZSCALE": str(row["ZUnits"]),
+        }
+    except Exception as e:
+        logger.warning(f"Could not read XY domain from {gdb_path}: {e}")
+        return None
+
+
 def force_2d(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """
     Force geometries to 2D by removing Z coordinates.
@@ -711,9 +785,30 @@ class GDBMerger:
         self.source_masks: Dict[str, BaseGeometry] = {}  # Dissolved masks per source
         self.swiss_border: Optional[BaseGeometry] = None
         self.stats = MergeStats()
-        
+
         logger.debug("Initializing GDBMerger (geopandas, optimized)")
         self._setup_sources()
+
+        # Coordinate-precision grid size for clip overlays (shapely
+        # intersection(..., grid_size=...)), derived from the source GDB's own
+        # FileGDB domain resolution (1/XYUnits). Enables GEOS's fixed-precision
+        # overlay so a clip can't leave two polygon lobes touching at a single
+        # point — a state that's technically OGC-valid (so make_valid treats it
+        # as a no-op) but fragile to any later hairline coordinate
+        # perturbation. See memory: project_filegdb_xy_domain_mismatch.
+        xy_domain = get_filegdb_xy_domain(self.config.rc2_path) \
+            or get_filegdb_xy_domain(self.config.rc1_path)
+        self.clip_grid_size: Optional[float] = (
+            1.0 / float(xy_domain["XYSCALE"]) if xy_domain else None
+        )
+        if self.clip_grid_size:
+            logger.debug(f"Clip overlay grid_size: {self.clip_grid_size}")
+        else:
+            logger.warning(
+                "Could not determine clip overlay grid_size from source GDB "
+                "domain — clip overlays will use full-precision (default) "
+                "arithmetic, which can leave fragile touching-point geometry"
+            )
     
     def _setup_sources(self) -> None:
         """Configure available source databases."""
@@ -1096,7 +1191,7 @@ class GDBMerger:
             if expected_type in ["MultiPoint", "Point"]:
                 clipped = gdf[intersects(gdf.geometry.values, clip_mask)].copy()
             else:
-                clipped = fast_clip(gdf, clip_mask)
+                clipped = fast_clip(gdf, clip_mask, grid_size=self.clip_grid_size)
 
             clip_time = time.time() - clip_start
 
@@ -1156,7 +1251,7 @@ class GDBMerger:
             if expected_type in ["MultiPoint", "Point"]:
                 result = result[intersects(result.geometry.values, self.swiss_border)].copy()
             else:
-                result = fast_clip(result, self.swiss_border)
+                result = fast_clip(result, self.swiss_border, grid_size=self.clip_grid_size)
             logger.debug(f"  Swiss border clip: {len(result)} features ({time.time() - border_start:.1f}s)")
 
         # Normalize geometries
@@ -1633,11 +1728,33 @@ class GDBMerger:
             driver = "OpenFileGDB"
         
         logger.info(f"Output format: {driver}")
-        
+
         exclude_fields = self.config.exclude_fields or []
         if exclude_fields:
             logger.info(f"Excluding {len(exclude_fields)} metadata fields")
-        
+
+        # Reuse the source GDB's exact coordinate-precision domain (grid origin,
+        # scale, tolerance) instead of letting GDAL mint a generic default one.
+        # Without this, re-quantizing coordinates onto a differently-anchored
+        # grid can flip a hairline "touching at one point" polygon pair into a
+        # genuine self-intersection. See memory: project_filegdb_xy_domain_mismatch.
+        xy_domain: Optional[Dict[str, str]] = None
+        if driver == "OpenFileGDB":
+            xy_domain = get_filegdb_xy_domain(self.config.rc2_path) \
+                or get_filegdb_xy_domain(self.config.rc1_path)
+            if xy_domain:
+                logger.info(
+                    f"Reusing source XY domain for {output_path.name}: "
+                    f"origin=({xy_domain['XORIGIN']}, {xy_domain['YORIGIN']}), "
+                    f"tolerance={xy_domain['XYTOLERANCE']}"
+                )
+            else:
+                logger.warning(
+                    "Could not read source XY domain — GDAL will use a generic "
+                    "default, which can introduce hairline self-intersections "
+                    "on write (see memory: project_filegdb_xy_domain_mismatch)"
+                )
+
         first_layer = True
         
         for layer_name, gdf in merged_layers.items():
@@ -1679,6 +1796,7 @@ class GDBMerger:
                         layer=actual_layer,
                         driver=driver,
                         promote_to_multi=True,
+                        layer_options=xy_domain,
                     )
                     
                     first_layer = False
