@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.table import Table
 
 # TODO
+from gcover.cli.main import get_app_config
 from gcover.config import AppConfig, GlobalConfig, SchemaConfig, load_config
 from gcover.schema import SchemaDiff, transform_esri_json
 from gcover.schema.exporters.plantuml import generate_plantuml_from_schema
@@ -24,12 +25,12 @@ console = Console()
 
 def get_schema_configs(ctx) -> tuple[SchemaConfig, GlobalConfig]:
     """Get schema and global configs from context"""
-    app_config: AppConfig = ctx.obj["app_config"]
+    app_config: AppConfig = get_app_config(ctx)
 
     if app_config.schema_config:  # 🔧 Updated field name
         schema_config = app_config.schema_config
     else:
-        rprint("[yellow]No schema config found[/yellow]")
+        console.print("[yellow]No schema config found[/yellow]")
         # You could create a default or raise an error
         from ..config.models import SchemaConfig
 
@@ -615,7 +616,12 @@ def transform(
 
 @schema.command()
 @click.argument("source", type=click.Path(exists=True))
-@click.option("--output", "-o", type=click.Path(), help="Output directory")
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(file_okay=False, dir_okay=True),
+    help="Output directory (created if it doesn't exist)",
+)
 @click.option("--name", "-n", help="Report name")
 @click.option(
     "--format",
@@ -626,7 +632,8 @@ def transform(
 )
 @click.option("--filter-prefix", help="Filter tables by prefix")
 @click.option("--remove-prefix/--keep-prefix", default=False)
-def extract(source, output, name, format, filter_prefix, remove_prefix):
+@click.pass_context
+def extract(ctx, source, output, name, format, filter_prefix, remove_prefix):
     """Extract schema from GDB or SDE connection."""
 
     # ✅ Vérifier AVANT d'importer
@@ -650,7 +657,9 @@ def extract(source, output, name, format, filter_prefix, remove_prefix):
         output_dir = Path(output) if output else schema_config.output_dir
         formats = list(format) if format else schema_config.default_formats
 
-        rprint(f"Extracting schema from {source}...")
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        console.print(f"Extracting schema from {source}...")
 
         schema = extract_schema(
             source=source,
@@ -667,11 +676,11 @@ def extract(source, output, name, format, filter_prefix, remove_prefix):
         click.secho("✅ Schema extracted successfully", fg="green")
 
         # Your extraction logic here
-        rprint("✅ Schema extracted successfully")
-        rprint(f"Output directory: {output_dir}")
+        console.print("✅ Schema extracted successfully")
+        console.print(f"Output directory: {output_dir}")
 
     except Exception as e:
-        rprint(f"❌ Error: {e}")
+        console.print(f"❌ Error: {e}")
         raise click.Abort()
 
 
