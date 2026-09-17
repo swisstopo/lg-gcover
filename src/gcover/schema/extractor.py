@@ -2,9 +2,9 @@ import json
 from pathlib import Path
 from typing import Optional, Union
 
-from ..utils.imports import require_arcpy
-from gcover.models import ESRISchema
-from gcover.transformer import transform_esri_json
+from gcover.arcpy_compat import require_arcpy
+from gcover.schema.models import ESRISchema
+from gcover.schema.transformer import transform_esri_json
 
 
 @require_arcpy
@@ -52,6 +52,6 @@ def extract_schema(
 
 def can_extract_schema() -> bool:
     """Vérifie si l'extraction de schéma est disponible."""
-    from ..utils.imports import HAS_ARCPY
+    from gcover.arcpy_compat import HAS_ARCPY
 
     return HAS_ARCPY
