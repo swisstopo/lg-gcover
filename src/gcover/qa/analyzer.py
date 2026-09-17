@@ -1406,6 +1406,9 @@ class QAAnalyzer:
         """
         Write aggregated statistics to file.
 
+        Also always writes a companion RC / test-type breakdown as xlsx
+        (see `aggregate_by_rc`), independent of `zone_type`/`output_format`.
+
         Args:
             stats_df: Aggregated statistics DataFrame
             output_path: Output file path
@@ -1434,3 +1437,62 @@ class QAAnalyzer:
 
         except Exception as e:
             logger.error(f"Failed to write statistics: {e}")
+
+        self._write_rc_test_type_breakdown(stats_df, output_path.parent, zone_type)
+
+    def aggregate_by_rc(self, stats_df: pd.DataFrame, zone_type: str) -> pd.DataFrame:
+        """
+        Aggregate already zone-aggregated QA stats by RC source and test type.
+
+        Mirrors the zone aggregation (grouping by zone + TestType + TestName),
+        but groups by `source_rc` + TestType + TestName instead, summing
+        `issue_count` across all zones.
+
+        Args:
+            stats_df: Output of `aggregate_by_zone` (per-zone stats)
+            zone_type: Zone type used to produce `stats_df` (to locate the
+                zone id column, counted as "zones_affected")
+
+        Returns:
+            DataFrame with one row per (source_rc, TestType, TestName)
+        """
+        if stats_df.empty or "source_rc" not in stats_df.columns:
+            logger.warning(
+                "Cannot aggregate by RC: no 'source_rc' column in statistics"
+            )
+            return pd.DataFrame()
+
+        group_cols = [
+            col for col in ["source_rc", "TestType", "TestName"] if col in stats_df.columns
+        ]
+
+        zone_id_col = self._get_zone_id_column(zone_type)
+        agg_dict: Dict[str, Any] = {"issue_count": "sum"}
+        if zone_id_col in stats_df.columns:
+            agg_dict[zone_id_col] = "nunique"
+        for col in ["IssueType", "StopCondition", "LayerName", "layer_type"]:
+            if col in stats_df.columns:
+                agg_dict[col] = lambda x: ", ".join(sorted(set(map(str, x))))
+
+        rc_stats = stats_df.groupby(group_cols).agg(agg_dict).reset_index()
+
+        if zone_id_col in rc_stats.columns:
+            rc_stats.rename(columns={zone_id_col: "zones_affected"}, inplace=True)
+
+        return rc_stats.sort_values("issue_count", ascending=False)
+
+    def _write_rc_test_type_breakdown(
+        self, stats_df: pd.DataFrame, output_dir: Path, zone_type: str
+    ) -> None:
+        """Always write the RC / test-type breakdown as xlsx, regardless of
+        the zone type or output format used for the main aggregation."""
+        rc_stats = self.aggregate_by_rc(stats_df, zone_type)
+        if rc_stats.empty:
+            return
+
+        output_file = Path(output_dir) / "aggregated_by_rc.xlsx"
+        try:
+            rc_stats.to_excel(output_file, index=False, engine="openpyxl")
+            logger.success(f"RC / test-type statistics written to {output_file}")
+        except Exception as e:
+            logger.error(f"Failed to write RC / test-type statistics: {e}")
