@@ -581,7 +581,7 @@ class QAAnalyzer:
         # ========================================================================
         if write_rc_breakdown:
             if rc1_filtered_data:
-                rc1_output_path = output_path.parent.parent / "RC1" / output_path.name
+                rc1_output_path = output_path.parent / "RC1" / output_path.name
                 rc1_output_path.parent.mkdir(parents=True, exist_ok=True)
                 self._write_spatial_output(
                     rc1_filtered_data, rc1_output_path, output_format
@@ -589,7 +589,7 @@ class QAAnalyzer:
                 logger.info(f"Saved {stats['rc1_issues']} RC1 issues to {rc1_output_path}")
 
             if rc2_filtered_data:
-                rc2_output_path = output_path.parent.parent / "RC2" / output_path.name
+                rc2_output_path = output_path.parent / "RC2" / output_path.name
                 rc2_output_path.parent.mkdir(parents=True, exist_ok=True)
                 self._write_spatial_output(
                     rc2_filtered_data, rc2_output_path, output_format
