@@ -868,9 +868,9 @@ class QAAnalyzer:
             zone_name_col = self._get_zone_name_column(zone_type)
 
             # Check if required columns exist
-            required_cols = [zone_id_col, "TestName"]
+            required_cols = [zone_id_col, "QualityCondition"]
             if all(col in joined_gdf.columns for col in required_cols):
-                logger.info(f"Creating TestName count summary by {zone_id_col}")
+                logger.info(f"Creating QualityCondition count summary by {zone_id_col}")
 
                 # Apply deduplication if requested for aggregation
                 if deduplicate_for_aggregation:
@@ -885,14 +885,15 @@ class QAAnalyzer:
                         f"Keeping cross-zone duplicates for zone-centric analysis in {layer_name}"
                     )
 
-                # Group by zone and TestName, count occurrences and preserve other fields
+                # Group by zone and QualityCondition, count occurrences and preserve other fields
                 agg_stats = (
-                    joined_gdf.groupby([zone_id_col, "TestName"])
+                    joined_gdf.groupby([zone_id_col, "QualityCondition"])
                     .agg(
                         {
                             zone_name_col: "first",  # Take first occurrence (concatenated if deduplicated)
                             "source_rc": "first",  # Take first occurrence (concatenated if deduplicated)
                             "TestType": "first",  # Take first occurrence
+                            "TestName": "first",  # Take first occurrence
                             "IssueType": "first",  # Take first occurrence
                             "StopCondition": "first",  # Take first occurrence
                         }
@@ -902,23 +903,24 @@ class QAAnalyzer:
 
                 # Add issue count using size() which counts the group size
                 issue_counts = (
-                    joined_gdf.groupby([zone_id_col, "TestName"])
+                    joined_gdf.groupby([zone_id_col, "QualityCondition"])
                     .size()
                     .reset_index(name="issue_count")
                 )
 
                 # Merge the counts with the aggregated data
                 agg_stats = agg_stats.merge(
-                    issue_counts, on=[zone_id_col, "TestName"], how="left"
+                    issue_counts, on=[zone_id_col, "QualityCondition"], how="left"
                 )
 
                 # Reorder columns to match desired format
                 column_order = [
                     zone_id_col,
-                    "TestName",
+                    "QualityCondition",
                     zone_name_col,
                     "source_rc",
                     "TestType",
+                    "TestName",
                     "issue_count",
                     "IssueType",
                     "StopCondition",
@@ -933,36 +935,38 @@ class QAAnalyzer:
                 # Add LayerName column
                 agg_stats["LayerName"] = layer_name
 
-                logger.info(f"TestName summary completed. Shape: {agg_stats.shape}")
+                logger.info(
+                    f"QualityCondition summary completed. Shape: {agg_stats.shape}"
+                )
                 logger.debug(f"Sample results:\n{agg_stats.head()}")
 
                 # Display appropriate statistics based on deduplication mode
                 if deduplicate_for_aggregation:
                     logger.info(
-                        "TestName Count Statistics (Feature-centric - deduplicated):"
+                        "QualityCondition Count Statistics (Feature-centric - deduplicated):"
                     )
                 else:
                     logger.info(
-                        "TestName Count Statistics (Zone-centric - includes cross-zone duplicates):"
+                        "QualityCondition Count Statistics (Zone-centric - includes cross-zone duplicates):"
                     )
 
                 logger.info(
-                    f"- Total {zone_id_col}/TestName combinations: {len(agg_stats)}"
+                    f"- Total {zone_id_col}/QualityCondition combinations: {len(agg_stats)}"
                 )
                 logger.info(
                     f"- Issue count range: {agg_stats['issue_count'].min()} - {agg_stats['issue_count'].max()}"
                 )
                 logger.info(
-                    f"- Average issues per TestName/Zone combination: {agg_stats['issue_count'].mean():.2f}"
+                    f"- Average issues per QualityCondition/Zone combination: {agg_stats['issue_count'].mean():.2f}"
                 )
 
                 # Show top combinations by issue count
                 if len(agg_stats) > 0:
                     top_combinations = agg_stats.nlargest(5, "issue_count")[
-                        [zone_id_col, zone_name_col, "TestName", "issue_count"]
+                        [zone_id_col, zone_name_col, "QualityCondition", "issue_count"]
                     ]
                     logger.info(
-                        f"Top 5 TestName combinations by issue count:\n{top_combinations.to_string(index=False)}"
+                        f"Top 5 QualityCondition combinations by issue count:\n{top_combinations.to_string(index=False)}"
                     )
 
             else:
@@ -1048,8 +1052,8 @@ class QAAnalyzer:
                 zone_id_col = self._get_zone_id_column(zone_type)
                 zone_name_col = self._get_zone_name_column(zone_type)
 
-                # Group by zone and test characteristics
-                group_cols = [zone_id_col, "TestType", "TestName"]
+                # Group by zone and QualityCondition (finer-grained than TestType/TestName)
+                group_cols = [zone_id_col, "TestType", "QualityCondition"]
                 if zone_name_col and zone_name_col in joined_gdf.columns:
                     group_cols.insert(1, zone_name_col)
 
@@ -1061,16 +1065,14 @@ class QAAnalyzer:
                 group_cols = [col for col in group_cols if col in joined_gdf.columns]
 
                 # Aggregation
-                agg_stats = (
-                    joined_gdf.groupby(group_cols)
-                    .agg(
-                        {
-                            "IssueType": ["count", lambda x: (x == "Error").sum()],
-                            "StopCondition": lambda x: (x == "Yes").sum(),
-                        }
-                    )
-                    .reset_index()
-                )
+                agg_dict = {
+                    "IssueType": ["count", lambda x: (x == "Error").sum()],
+                    "StopCondition": lambda x: (x == "Yes").sum(),
+                }
+                if "TestName" in joined_gdf.columns and "TestName" not in group_cols:
+                    agg_dict["TestName"] = "first"
+
+                agg_stats = joined_gdf.groupby(group_cols).agg(agg_dict).reset_index()
 
                 # Flatten column names
                 agg_stats.columns = [
@@ -1082,6 +1084,7 @@ class QAAnalyzer:
                         "IssueType_count": "total_issues",
                         "IssueType_<lambda>": "error_issues",
                         "StopCondition_<lambda>": "stop_condition_issues",
+                        "TestName_first": "TestName",
                     }
                 )
 
@@ -1444,9 +1447,9 @@ class QAAnalyzer:
         """
         Aggregate already zone-aggregated QA stats by RC source and test type.
 
-        Mirrors the zone aggregation (grouping by zone + TestType + TestName),
-        but groups by `source_rc` + TestType + TestName instead, summing
-        `issue_count` across all zones.
+        Mirrors the zone aggregation (grouping by zone + TestType +
+        QualityCondition), but groups by `source_rc` + TestType +
+        QualityCondition instead, summing `issue_count` across all zones.
 
         Args:
             stats_df: Output of `aggregate_by_zone` (per-zone stats)
@@ -1454,7 +1457,7 @@ class QAAnalyzer:
                 zone id column, counted as "zones_affected")
 
         Returns:
-            DataFrame with one row per (source_rc, TestType, TestName)
+            DataFrame with one row per (source_rc, TestType, QualityCondition)
         """
         if stats_df.empty or "source_rc" not in stats_df.columns:
             logger.warning(
@@ -1463,15 +1466,17 @@ class QAAnalyzer:
             return pd.DataFrame()
 
         group_cols = [
-            col for col in ["source_rc", "TestType", "TestName"] if col in stats_df.columns
+            col
+            for col in ["source_rc", "TestType", "QualityCondition"]
+            if col in stats_df.columns
         ]
 
         zone_id_col = self._get_zone_id_column(zone_type)
         agg_dict: Dict[str, Any] = {"issue_count": "sum"}
         if zone_id_col in stats_df.columns:
             agg_dict[zone_id_col] = "nunique"
-        for col in ["IssueType", "StopCondition", "LayerName", "layer_type"]:
-            if col in stats_df.columns:
+        for col in ["TestName", "IssueType", "StopCondition", "LayerName", "layer_type"]:
+            if col in stats_df.columns and col not in group_cols:
                 agg_dict[col] = lambda x: ", ".join(sorted(set(map(str, x))))
 
         rc_stats = stats_df.groupby(group_cols).agg(agg_dict).reset_index()
