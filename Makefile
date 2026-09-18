@@ -8,13 +8,18 @@ LATEST_TAG := $(shell git describe --tags --match "v*" --abbrev=0)
 
 # --- Variables ---
 RELEASE      ?= R18
-DELIVERY_DIR := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/
+# R18 onward uses a single merged tree per release (mirrors the Produktableitung
+# share layout: Sources/, Excels/, Mapsheet/, Outputs/, ... all siblings under
+# DATA/Produktableitung/<RELEASE>/). Older releases (R16, R17, ...) keep the
+# legacy delivery/<release> + output/<release> split — see PREVIOUS_STYLES_DIR
+# and PREV_PA_EXCEL below, which intentionally still point at that old layout.
+DELIVERY_DIR := ${HOME}/DATA/Produktableitung/$(RELEASE)/
 SOURCES_DIR  := $(DELIVERY_DIR)Sources/
-OUTPUT_DIR   ?= ${HOME}/DATA/Derivations/output/$(RELEASE)/
-STYLES_DIR   := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/Styles/2026-08-31/
-PREVIOUS_STYLES_DIR := ${HOME}/DATA/Derivations/delivery/R17/Styles/2026-07-02/styles/
+OUTPUT_DIR   ?= ${HOME}/DATA/Produktableitung/$(RELEASE)/Outputs/
+STYLES_DIR   := ${HOME}/DATA/Produktableitung/$(RELEASE)/Styles/2026-08-31/
+PREVIOUS_STYLES_DIR := ${HOME}/DATA/Produktableitung/delivery/R17/Styles/2026-07-02/styles/
 TRANSLATION_CSV := $(DELIVERY_DIR)Excels/2026c_GeolCodeText_Trad.xlsx
-STRATI_LINK_PATH := ${HOME}/DATA/Derivations/delivery/$(RELEASE)/Excels/_Update_stratiLINK.xlsx
+STRATI_LINK_PATH := ${HOME}/DATA/Produktableitung/$(RELEASE)/Excels/_Update_stratiLINK.xlsx
 # --strati-links is optional in `gcover publish merge` (strati_link is just
 # omitted from the output if absent) — only pass it when the file is
 # actually there, instead of failing the whole merge over a missing extra.
@@ -612,7 +617,7 @@ check: lint smoke
 
 ## diff-pa: Compare PA_Geocover Excel between current (R17) and previous (R16) release
 PREV_RELEASE     ?= R16
-PREV_PA_EXCEL    := ${HOME}/DATA/Derivations/delivery/$(PREV_RELEASE)/Excels/GC_Sources_PA.xlsx
+PREV_PA_EXCEL    := ${HOME}/DATA/Produktableitung/delivery/$(PREV_RELEASE)/Excels/GC_Sources_PA.xlsx
 .PHONY: diff-pa
 diff-pa:
 	$(call check_file,PA_EXCEL_PATH,$(PA_EXCEL_PATH))

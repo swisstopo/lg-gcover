@@ -18,9 +18,9 @@ from osgeo import gdal, ogr
 
 gdal.UseExceptions()
 
-BKP_GDB    = Path("/home/marco/DATA/Derivations/delivery/R17/BKP_2016.gdb")
-MASTER_GDB = Path("/home/marco/DATA/Derivations/delivery/R17/gcover_master_de.gdb")
-OUT_GDB    = Path("/home/marco/DATA/Derivations/delivery/R17/Zweisimmen.gdb")
+BKP_GDB    = Path("/home/marco/DATA/Produktableitung/delivery/R17/BKP_2016.gdb")
+MASTER_GDB = Path("/home/marco/DATA/Produktableitung/delivery/R17/gcover_master_de.gdb")
+OUT_GDB    = Path("/home/marco/DATA/Produktableitung/delivery/R17/Zweisimmen.gdb")
 
 # ── Step 1: Clone ─────────────────────────────────────────────────────────────
 if OUT_GDB.exists():

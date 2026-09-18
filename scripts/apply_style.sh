@@ -2,7 +2,7 @@
 
 # Path to your GPKG file
 DENORMALIZED_SOURCE="/home/marco/DATA/mapfiles/sources/RC1_20250922_denormalized.gpkg"
-STYLES_DIR="/home/marco/DATA/Derivations/output/R14/"
+STYLES_DIR="/home/marco/DATA/Produktableitung/output/R14/"
 CONFIG_FILE="config/esri_classifier_denormalized_geocover.yaml"
 BBOX="0,0,2590000,1270000"
 
