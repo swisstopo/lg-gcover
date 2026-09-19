@@ -32,6 +32,8 @@ from gcover.publish.esri_classification_extractor import (
     ClassificationJSONEncoder, explore_layer_structure,
     export_classifications_to_csv, extract_lyrx_complete, to_serializable_dict)
 from gcover.publish.generator import MapServerGenerator
+from gcover.publish.maplibre_style_resolver import (LAYER_REGISTRY,
+                                                    resolve_all_groups)
 from gcover.publish.merge_sources import (GDBMerger, GDBTransformer,
                                           MergeConfig, TransformConfig,
                                           create_merge_config)
@@ -1853,6 +1855,109 @@ def list_layers(ctx, tooltip_db: Path):
     except Exception as e:
         console.print(f"[red]Error reading layers: {e}[/red]")
         raise click.Abort()
+
+
+@publish_commands.command(name="maplibre-attrs")
+@click.pass_context
+@click.option(
+    "--layers-dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    required=True,
+    help='Path to the LIVE-SERVING mapserver-geocover/mapserver/layers/ directory '
+         '(never kogis_deliverables/ - see docs/maplibre-style-export.md).',
+)
+@click.option(
+    "--output-dir", "-o",
+    type=click.Path(path_type=Path),
+    required=True,
+    help="Directory to write one table per layer group, plus the issues report.",
+)
+@click.option(
+    "--group", "groups",
+    multiple=True,
+    type=click.Choice(sorted(LAYER_REGISTRY)),
+    help="Restrict to specific layer group(s). Default: all of them.",
+)
+@click.option(
+    "--format", "output_format",
+    type=click.Choice(["parquet", "csv"]),
+    default="parquet",
+    show_default=True,
+    help="Output table format.",
+)
+def maplibre_attrs(
+    ctx,
+    layers_dir: Path,
+    output_dir: Path,
+    groups: tuple,
+    output_format: str,
+):
+    """Resolve MapServer CLASS/STYLE definitions into per-map_symbol MapLibre attrs.
+
+    Parses the live-serving mapfiles (CLASS/STYLE blocks, resolving INCLUDEs) for
+    the 5 layer groups migrating to MapLibre vector tiles, and emits one flat
+    table per group keyed on `map_symbol` - `tecto_lines`, `lines`, `points`,
+    `surfaces`, `unconsolidated` - for geolover-app's ogr2ogr/tippecanoe pipeline
+    to join onto `geol.geocover_*` before tiling. See
+    docs/maplibre-style-export.md for the full spec.
+
+    Loading the result into Postgres for the Martin preview loop is a separate,
+    downstream step that lives in mapserver-geocover (it owns the DB credentials,
+    schema, and Martin config) - see scripts/load_maplibre_attrs.py there.
+
+    \b
+    Examples:
+      # Resolve all 5 layer groups
+      gcover publish maplibre-attrs \\
+          --layers-dir ../mapserver-geocover/mapserver/layers \\
+          -o output/maplibre-attrs
+
+      # Just lines
+      gcover publish maplibre-attrs --layers-dir ../mapserver-geocover/mapserver/layers \\
+          -o output/maplibre-attrs --group lines
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    results, issues = resolve_all_groups(layers_dir, list(groups) or None)
+
+    summary = Table(title="MapLibre attribute resolution")
+    summary.add_column("Layer group", style="cyan")
+    summary.add_column("Classes", justify="right")
+    summary.add_column("Auto", justify="right", style="yellow")
+    summary.add_column("Hand-merged", justify="right", style="green")
+    summary.add_column("Issues", justify="right", style="red")
+
+    issues_by_group: Dict[str, int] = {}
+    for issue in issues:
+        issues_by_group[issue.group] = issues_by_group.get(issue.group, 0) + 1
+
+    for group, df in results.items():
+        counts = df["_source_confidence"].value_counts()
+        out_path = output_dir / f"{group}.{output_format}"
+        if output_format == "csv":
+            df.to_csv(out_path, index=False)
+        else:
+            df.to_parquet(out_path, index=False)
+        summary.add_row(
+            group,
+            str(len(df)),
+            str(counts.get("auto", 0)),
+            str(counts.get("hand_merged", 0)),
+            str(issues_by_group.get(group, 0)),
+        )
+
+    console.print(summary)
+
+    if issues:
+        issues_path = output_dir / "issues.csv"
+        pd.DataFrame(
+            [{"group": i.group, "sublayer": i.sublayer, "map_symbol": i.map_symbol, "reason": i.reason}
+             for i in issues],
+            columns=["group", "sublayer", "map_symbol", "reason"],
+        ).to_csv(issues_path, index=False)
+        console.print(f"[yellow]⚠ {len(issues)} issue(s) written to {issues_path}[/yellow]")
+    else:
+        console.print("[green]No parsing issues.[/green]")
 
 
 def load_enrichment_config_from_file(config_path: Path) -> EnrichmentConfig:
