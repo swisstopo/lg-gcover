@@ -698,7 +698,7 @@ class MapServerGenerator:
                 [
                     "",
                     "  METADATA",
-                    f'    "wms_title"    "{layer_name.capitalize()}"']
+                    f'    "ows_title"    "{layer_name.capitalize()}"']
             )
             if layer_group:
                 lines.append(f'    "wms_enable_request" "*"')
@@ -718,12 +718,14 @@ class MapServerGenerator:
 
             lines.extend(
                     [
-                    f'    "wms_abstract" "{layer_name.capitalize()}"',
+                    f'    "ows_abstract" "{layer_name.capitalize()}"',
                     '    "ows_srs"      "EPSG:2056 EPSG:21781 EPSG:4326 EPSG:3857 EPSG:3034 EPSG:3035 EPSG:4258 EPSG:25832 EPSG:25833 EPSG:31467 EPSG:32632 EPSG:32633 EPSG:900913"',
-                    '    "wms_extent" "2300000 900000 3100000 1450000"',
+                    '    "ows_extent" "2300000 900000 3100000 1450000"',
                     f'    "wms_include_items" "{include_items}"',
                     f'    "gml_include_items" "{include_items}"',
                     '    "gml_types" "auto"',
+                    '    "oga_enable_request" "OGCAPI"',
+                    '    "gml_featureid" "gid"',
                     "  END",
                 ]
             )
