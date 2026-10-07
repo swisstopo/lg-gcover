@@ -13,6 +13,7 @@ import yaml
 from rich.console import Console
 
 from gcover.config.models import AppConfig
+from gcover.config.paths import user_config_dir
 
 console = Console(stderr=True)
 
@@ -434,6 +435,9 @@ class ConfigManager:
             # config/env/development.yaml
             base_dir / "env" / f"{environment}.yaml",
             base_dir / "env" / f"{environment}.yml",
+            # ~/.config/gcover/environments/development.yaml (user-level, fallback)
+            user_config_dir() / "environments" / f"{environment}.yaml",
+            user_config_dir() / "environments" / f"{environment}.yml",
         ]
 
         return env_paths
