@@ -62,3 +62,13 @@ def setup_test_env():
     """Setup test environment variables."""
     # Prevent arcpy from trying to create licensing popups in CI
     os.environ["ESRI_CONCURRENT_LICENSE_TIMEOUT"] = "0"
+
+
+@pytest.fixture(autouse=True)
+def _isolate_user_dirs(monkeypatch, tmp_path_factory):
+    """Keep tests away from ~/.config/gcover.
+
+    DuckDB files go to ./data relative to the (often isolated) CWD; the cache to a tmp dir.
+    """
+    monkeypatch.setenv("GCOVER_DB_DIR", "data")
+    monkeypatch.setenv("GCOVER_CACHE_DIR", str(tmp_path_factory.mktemp("gcover_cache")))
