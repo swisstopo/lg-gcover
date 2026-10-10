@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from gcover.config.paths import resolve_db_path
+
 
 class MapserverConnectionType(Enum):
     """Enforces the two required MapServer connection types."""
@@ -516,8 +518,13 @@ class GDBConfig(BaseModel):
     # database: DatabaseConfig
     temp_dir: Path = Path("/tmp/gcover/gdb")
     processing: ProcessingConfig = ProcessingConfig()
-    db_path: Path = Path("data/dev_gdb_metadata.duckdb")
+    db_path: Path = Field(Path("dev_gdb_metadata.duckdb"), validate_default=True)
     proxy: Optional[str] = None
+
+    @field_validator("db_path", mode="after")
+    @classmethod
+    def resolve_db(cls, v: Path) -> Path:
+        return resolve_db_path(v)
 
     @field_validator("base_paths", mode="before")
     @classmethod
@@ -614,7 +621,7 @@ class QAConfig(BaseModel):
 
     output_dir: Path = Path("./qa_output")
     # database: DatabaseConfig
-    db_path: Path = Path("data/prod_verification_stats.duckdb")
+    db_path: Path = Field(Path("prod_verification_stats.duckdb"), validate_default=True)
     temp_dir: Path = Path("/tmp/gcover/qa")
     processing: ProcessingConfig = ProcessingConfig()
     default_simplify_tolerance: Optional[float] = None
@@ -623,6 +630,11 @@ class QAConfig(BaseModel):
     @classmethod
     def parse_paths(cls, v):
         return Path(v) if not isinstance(v, Path) else v
+
+    @field_validator("db_path", mode="after")
+    @classmethod
+    def resolve_db(cls, v: Path) -> Path:
+        return resolve_db_path(v)
 
     @field_validator("default_simplify_tolerance")
     @classmethod

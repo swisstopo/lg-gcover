@@ -730,20 +730,47 @@ def _download_url(url: str, dest: Path) -> None:
         raise RuntimeError(f"Failed to download from {url}: {exc}") from exc
 
 
+METADATA_CACHE_MAX_AGE = 600  # seconds
+
+
 def fetch_metadata_parquet(
     s3_config,
     s3_key: str = DEFAULT_METADATA_S3_KEY,
     public_url: Optional[str] = None,
+    max_age: float = METADATA_CACHE_MAX_AGE,
 ) -> Path:
-    """Download the metadata Parquet and return its local path.
+    """Download the metadata Parquet (cached) and return its local path.
+
+    The file is cached in ``cache_dir()`` and reused while younger than
+    *max_age* seconds (0 disables the cache).
 
     When *public_url* is set and *s3_config.public_prefix* is configured:
     - upload_method == "presigned": skip boto3, download directly from CF.
     - otherwise: try S3 first; on failure warn and fall back to CF.
     """
-    import tempfile
+    import time
 
-    dest = Path(tempfile.mktemp(suffix=".parquet", prefix="gcover_meta_"))
+    from gcover.config.paths import cache_dir
+
+    cached = cache_dir() / s3_key.replace("/", "_")
+    if max_age > 0 and cached.exists() and time.time() - cached.stat().st_mtime < max_age:
+        logger.info(f"Using cached metadata parquet {cached}")
+        return cached
+
+    cached.parent.mkdir(parents=True, exist_ok=True)
+    # Download next to the cache file, then rename: a failed download never clobbers it
+    dest = cached.with_suffix(".parquet.part")
+    try:
+        _fetch_metadata_to(dest, s3_config, s3_key, public_url)
+        dest.replace(cached)
+    finally:
+        dest.unlink(missing_ok=True)
+    return cached
+
+
+def _fetch_metadata_to(
+    dest: Path, s3_config, s3_key: str, public_url: Optional[str]
+) -> None:
 
     use_url = public_url and s3_config.public_prefix
     cf_url = _public_metadata_url(public_url, s3_config, s3_key) if use_url else None
@@ -751,7 +778,7 @@ def fetch_metadata_parquet(
     if use_url and s3_config.upload_method == "presigned":
         logger.info(f"upload_method=presigned — downloading metadata directly from {cf_url}")
         _download_url(cf_url, dest)
-        return dest
+        return
 
     uploader = S3Uploader(
         bucket_name=s3_config.bucket,
@@ -765,7 +792,7 @@ def fetch_metadata_parquet(
     ok = uploader.download_file(s3_key, dest)
     if ok:
         logger.info(f"Fetched metadata parquet from S3 to {dest}")
-        return dest
+        return
 
     if not cf_url:
         raise RuntimeError(
@@ -779,7 +806,7 @@ def fetch_metadata_parquet(
     )
     _download_url(cf_url, dest)
     logger.info(f"Fetched metadata parquet via CF fallback to {dest}")
-    return dest
+    return
 
 
 def query_latest_assets_by_rc(
