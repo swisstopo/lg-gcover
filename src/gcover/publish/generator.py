@@ -38,7 +38,7 @@ from gcover.publish.symbol_utils import (
     extract_polygon_symbol_layers,
     sanitize_font_name,
 )
-from gcover.publish.tooltips_enricher import LayerType
+from gcover.publish.layer_types import LayerType
 from PIL import Image
 from gcover.publish.utils import generate_font_image, translate_esri_to_sql
 from gcover.config.models import MapserverConnection

@@ -87,12 +87,6 @@ from gcover.publish.merge_sources import (
     normalize_geometry,
 )
 
-from gcover.publish.tooltips_enricher import (
-    EnhancedTooltipsEnricher,
-    EnrichmentConfig,
-    LayerMapping,
-    create_enrichment_config,
-)
 from gcover.publish.vectorized_classification import (
     ClassificationStats,
     LayerClassificationReport,
@@ -107,9 +101,6 @@ from gcover.publish.vectorized_classification import (
 )
 
 __all__ = [
-    "EnhancedTooltipsEnricher",
-    "EnrichmentConfig",
-    "create_enrichment_config",
     "MapServerGenerator",
     "QGISGenerator",
     # Extractor
@@ -143,7 +134,6 @@ __all__ = [
     "cast_geodataframe_fields",
     "validate_field_types",
     "apply_robust_filter",
-    "LayerMapping",
     "ClassificationMatcher",
     "ClassificationApplicator",
     "apply_classification_to_gdf",
