@@ -63,7 +63,7 @@ except ImportError:
     console.print("[red]PyArrow not installed[/red]")
 # Suppress pandas fragmentation warnings
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
-os.environ['OGR_GEOMETRY_ACCEPT_UNCLOSED_RING'] = 'NO'
+os.environ.setdefault('OGR_GEOMETRY_ACCEPT_UNCLOSED_RING', 'NO')
 os.environ['METHOD'] = 'ONLY_CCW'
 
 
@@ -1129,8 +1129,11 @@ class GDBMerger:
             return gdf
 
         except Exception as e:
-            logger.warning(f"Could not read {actual_layer} from {gdb_path}: {e}")
-            return None
+            # Halt: returning None would silently drop this source's whole share of the layer.
+            msg = f"Could not read {actual_layer} from {gdb_path}: {e}"
+            logger.error(msg)
+            self.stats.errors.append(msg)
+            raise RuntimeError(msg) from e
     # Fixed
     def _merge_spatial_layer(
             self,
