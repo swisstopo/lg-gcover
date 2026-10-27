@@ -148,7 +148,7 @@ help:
 
 .PHONY: help download administrative-zones all merge merge-diagnostic \
         denormalize classify translate pipeline-check checksum \
-        geometry-check line-topology-check polygon-topology-check coverage-check \
+        geometry-check line-topology-check polygon-topology-check coverage-check overlap-check \
         domain-check domain-check-rc domain-check-final domain-check-custom filter-check \
         schema-snapshot-translated schema-snapshot-final \
         geocover-aux aspect aspect-simple aspect-gmm combine-aspect inject-aux-aspect \
@@ -357,6 +357,17 @@ coverage-check:
 		--top-n 500 \
 		--counts $(OUTPUT_DIR)feature_counts.xlsx  \
 		--output-gpkg $(OUTPUT_DIR)unclassified.gpkg
+
+## overlap-check: Find competing classifications (conflicting rules inside a .lyrx, features labelled by 2+ classifications)
+.PHONY: overlap-check
+overlap-check:
+	@echo "Checking on $(CLASSIFIED_PATH) with $(CONFIG_PATH)"
+	PYTHONPATH=scripts python scripts/check_classification_overlap.py \
+		$(CLASSIFIED_PATH) \
+		$(CONFIG_PATH) \
+		--styles-dir $(STYLES_DIR) \
+		--report $(OUTPUT_DIR)classification_overlap.txt \
+		--output-gpkg $(OUTPUT_DIR)classification_overlap.gpkg
 
 ## domain-check-rc: Check RC1 and RC2 against their own coded domains
 domain-check-rc:
