@@ -7,6 +7,12 @@ This package provides tools for enriching lightweight GeoCover datasets
 through intelligent spatial matching.
 """
 
+from gcover.publish.maplibre_style_resolver import (
+    LAYER_REGISTRY,
+    ClassIssue,
+    resolve_all_groups,
+    resolve_layer_group,
+)
 from gcover.publish.style_config import (
     BatchClassificationConfig,
     ClassificationApplicationConfig,

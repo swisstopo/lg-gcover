@@ -42,6 +42,7 @@ requirements:
     - openpyxl
     - jinja2 >=3.0.0
     - pillow >=9.0.0
+    - mappyfile >=1.1.0
 
 test:
   imports:
