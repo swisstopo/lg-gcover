@@ -66,7 +66,7 @@ gdb:
     backup: "/media/marco/SANDISK/GCOVER"
     verification: "/media/marco/SANDISK/Verifications"
     increment: "/media/marco/SANDISK/Increment"
-  db_path: "data/dev_gdb_metadata.duckdb"
+  db_path: "dev_gdb_metadata.duckdb"
   temp_dir: "/tmp/gcover/gdb"
   processing:
     compression_level: 6
@@ -82,7 +82,7 @@ publish:
 
 # QA quality test management
 qa:
-  db_path: "data/prod_verification_stats.duckdb"
+  db_path: "prod_verification_stats.duckdb"
   output_dir: "qa_output"
 # SDE Connection configuration
 sde:
