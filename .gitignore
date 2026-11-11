@@ -243,3 +243,6 @@ config/environments/production.yaml
 config/environments/development.yaml
 
 src/gcover/_version.py
+
+logs
+output

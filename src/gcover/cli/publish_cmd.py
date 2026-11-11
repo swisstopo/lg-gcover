@@ -32,6 +32,8 @@ from gcover.publish.esri_classification_extractor import (
     ClassificationJSONEncoder, explore_layer_structure,
     export_classifications_to_csv, extract_lyrx_complete, to_serializable_dict)
 from gcover.publish.generator import MapServerGenerator
+from gcover.publish.maplibre_style_resolver import (LAYER_REGISTRY,
+                                                    resolve_all_groups)
 from gcover.publish.merge_sources import (GDBMerger, GDBTransformer,
                                           MergeConfig, TransformConfig,
                                           create_merge_config)
@@ -1519,6 +1521,344 @@ def list_layers(ctx, tooltip_db: Path):
     except Exception as e:
         console.print(f"[red]Error reading layers: {e}[/red]")
         raise click.Abort()
+
+
+@publish_commands.command(name="maplibre-attrs")
+@click.pass_context
+@click.option(
+    "--layers-dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    required=True,
+    help='Path to the LIVE-SERVING mapserver-geocover/mapserver/layers/ directory '
+         '(never kogis_deliverables/ - see docs/maplibre-style-export.md).',
+)
+@click.option(
+    "--output-dir", "-o",
+    type=click.Path(path_type=Path),
+    required=True,
+    help="Directory to write one table per layer group, plus the issues report.",
+)
+@click.option(
+    "--group", "groups",
+    multiple=True,
+    type=click.Choice(sorted(LAYER_REGISTRY)),
+    help="Restrict to specific layer group(s). Default: all of them.",
+)
+@click.option(
+    "--format", "output_format",
+    type=click.Choice(["parquet", "csv"]),
+    default="parquet",
+    show_default=True,
+    help="Output table format.",
+)
+def maplibre_attrs(
+    ctx,
+    layers_dir: Path,
+    output_dir: Path,
+    groups: tuple,
+    output_format: str,
+):
+    """Resolve MapServer CLASS/STYLE definitions into per-map_symbol MapLibre attrs.
+
+    Parses the live-serving mapfiles (CLASS/STYLE blocks, resolving INCLUDEs) for
+    the 5 layer groups migrating to MapLibre vector tiles, and emits one flat
+    table per group keyed on `map_symbol` - `tecto_lines`, `lines`, `points`,
+    `surfaces`, `unconsolidated` - for geolover-app's ogr2ogr/tippecanoe pipeline
+    to join onto `geol.geocover_*` before tiling. See
+    docs/maplibre-style-export.md for the full spec.
+
+    Loading the result into Postgres for the Martin preview loop is a separate,
+    downstream step that lives in mapserver-geocover (it owns the DB credentials,
+    schema, and Martin config) - see scripts/load_maplibre_attrs.py there.
+
+    \b
+    Examples:
+      # Resolve all 5 layer groups
+      gcover publish maplibre-attrs \\
+          --layers-dir ../mapserver-geocover/mapserver/layers \\
+          -o output/maplibre-attrs
+
+      # Just lines
+      gcover publish maplibre-attrs --layers-dir ../mapserver-geocover/mapserver/layers \\
+          -o output/maplibre-attrs --group lines
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    results, issues = resolve_all_groups(layers_dir, list(groups) or None)
+
+    summary = Table(title="MapLibre attribute resolution")
+    summary.add_column("Layer group", style="cyan")
+    summary.add_column("Classes", justify="right")
+    summary.add_column("Auto", justify="right", style="yellow")
+    summary.add_column("Hand-merged", justify="right", style="green")
+    summary.add_column("Issues", justify="right", style="red")
+
+    issues_by_group: Dict[str, int] = {}
+    for issue in issues:
+        issues_by_group[issue.group] = issues_by_group.get(issue.group, 0) + 1
+
+    for group, df in results.items():
+        counts = df["_source_confidence"].value_counts()
+        out_path = output_dir / f"{group}.{output_format}"
+        if output_format == "csv":
+            df.to_csv(out_path, index=False)
+        else:
+            df.to_parquet(out_path, index=False)
+        summary.add_row(
+            group,
+            str(len(df)),
+            str(counts.get("auto", 0)),
+            str(counts.get("hand_merged", 0)),
+            str(issues_by_group.get(group, 0)),
+        )
+
+    console.print(summary)
+
+    if issues:
+        issues_path = output_dir / "issues.csv"
+        pd.DataFrame(
+            [{"group": i.group, "sublayer": i.sublayer, "map_symbol": i.map_symbol, "reason": i.reason}
+             for i in issues],
+            columns=["group", "sublayer", "map_symbol", "reason"],
+        ).to_csv(issues_path, index=False)
+        console.print(f"[yellow]⚠ {len(issues)} issue(s) written to {issues_path}[/yellow]")
+    else:
+        console.print("[green]No parsing issues.[/green]")
+
+
+def load_enrichment_config_from_file(config_path: Path) -> EnrichmentConfig:
+    """Load enrichment configuration from YAML file."""
+
+    with open(config_path, "r") as f:
+        config_data = yaml.safe_load(f)
+
+    # Convert paths
+    source_paths = {k: Path(v) for k, v in config_data["source_paths"].items()}
+
+    # Load layer mappings if specified
+    layer_mappings = None
+    if "layer_mappings" in config_data:
+        layer_mappings = {}
+        for layer_name, layer_config in config_data["layer_mappings"].items():
+            # Determine layer type from geometry
+            if "POLYGON" in layer_name.upper():
+                layer_type = LayerType.POLYGON
+            elif "LINE" in layer_name.upper():
+                layer_type = LayerType.LINE
+            elif "POINT" in layer_name.upper():
+                layer_type = LayerType.POINT
+            else:
+                layer_type = LayerType.POLYGON  # Default
+
+            layer_mappings[layer_name] = LayerMapping(
+                tooltip_layer=layer_name,
+                source_layers=layer_config["source_layers"],
+                layer_type=layer_type,
+                transfer_fields=layer_config["transfer_fields"],
+                area_threshold=layer_config.get("area_threshold", 0.7),
+                buffer_distance=layer_config.get("buffer_distance", 0.5),
+                point_tolerance=layer_config.get("point_tolerance", 5.0),
+            )
+
+    return EnrichmentConfig(
+        tooltip_db_path=Path(config_data["tooltip_db_path"]),
+        admin_zones_path=Path(config_data["admin_zones_path"]),
+        source_paths=source_paths,
+        output_path=Path(config_data["output_path"])
+        if config_data.get("output_path")
+        else None,
+        debug_output_dir=Path(config_data["debug_output_dir"])
+        if config_data.get("debug_output_dir")
+        else None,
+        save_intermediate=config_data.get("save_intermediate", False),
+        mapsheet_numbers=config_data.get("mapsheet_numbers"),
+        clip_tolerance=config_data.get("clip_tolerance", 0.0),
+        layer_mappings=layer_mappings,
+    )
+
+
+def validate_enrichment_config(config: EnrichmentConfig) -> None:
+    """Validate enrichment configuration."""
+
+    # Check required paths exist
+    if not config.tooltip_db_path.exists():
+        raise ValueError(f"Tooltip database not found: {config.tooltip_db_path}")
+
+    if not config.admin_zones_path.exists():
+        raise ValueError(f"Admin zones file not found: {config.admin_zones_path}")
+
+    # Check at least one source exists
+    existing_sources = [
+        name for name, path in config.source_paths.items() if path.exists()
+    ]
+    if not existing_sources:
+        raise ValueError("No valid source paths found")
+
+    # Warn about missing sources
+    missing_sources = [
+        name for name, path in config.source_paths.items() if not path.exists()
+    ]
+    if missing_sources:
+        logger.warning(f"Missing source paths: {missing_sources}")
+
+
+def show_config_summary(
+    config: EnrichmentConfig, layers_to_process: Optional[List[str]], dry_run: bool
+):
+    """Display configuration summary."""
+
+    title = (
+        "🔍 Enrichment Configuration (Dry Run)"
+        if dry_run
+        else "⚙️  Enrichment Configuration"
+    )
+
+    # Create summary table
+    table = Table(title=title, show_header=True, header_style="bold magenta")
+    table.add_column("Setting", style="cyan")
+    table.add_column("Value", style="green")
+
+    table.add_row("Tooltip Database", str(config.tooltip_db_path))
+    table.add_row("Admin Zones", str(config.admin_zones_path))
+
+    # Source paths
+    for source_name, source_path in config.source_paths.items():
+        status = "✓" if source_path.exists() else "✗"
+        table.add_row(f"Source: {source_name}", f"{status} {source_path}")
+
+    # Processing parameters
+    if config.mapsheet_numbers:
+        table.add_row(
+            "Mapsheets",
+            f"{len(config.mapsheet_numbers)} specified: {config.mapsheet_numbers[:5]}{'...' if len(config.mapsheet_numbers) > 5 else ''}",
+        )
+    else:
+        table.add_row("Mapsheets", "All available")
+
+    if layers_to_process:
+        table.add_row(
+            "Layers", f"{len(layers_to_process)} specified: {layers_to_process}"
+        )
+    else:
+        table.add_row("Layers", "All configured layers")
+
+    # Output settings
+    if config.output_path:
+        table.add_row("Output Path", str(config.output_path))
+
+    if config.debug_output_dir:
+        table.add_row("Debug Output", str(config.debug_output_dir))
+        table.add_row("Save Intermediate", "Yes" if config.save_intermediate else "No")
+
+    console.print(table)
+
+
+def show_enrichment_summary(results: Dict[str, gpd.GeoDataFrame]):
+    """Display enrichment results summary."""
+
+    console.print("\n📊 Enrichment Results Summary")
+
+    # Results table
+    table = Table()
+    table.add_column("Layer", style="cyan")
+    table.add_column("Total Features", justify="right", style="green")
+    table.add_column("Enriched", justify="right", style="yellow")
+    table.add_column("Success Rate", justify="right", style="magenta")
+    table.add_column("Mapsheets", justify="right", style="blue")
+
+    total_features = 0
+    total_enriched = 0
+
+    for layer_name, gdf in results.items():
+        if gdf.empty:
+            table.add_row(layer_name, "0", "0", "0%", "0")
+            continue
+
+        feature_count = len(gdf)
+        enriched_count = (
+            len(gdf[gdf["SOURCE_UUID"].notna()]) if "SOURCE_UUID" in gdf.columns else 0
+        )
+        success_rate = (
+            (enriched_count / feature_count * 100) if feature_count > 0 else 0
+        )
+        mapsheet_count = (
+            gdf["MAPSHEET_NBR"].nunique() if "MAPSHEET_NBR" in gdf.columns else 0
+        )
+
+        table.add_row(
+            layer_name,
+            str(feature_count),
+            str(enriched_count),
+            f"{success_rate:.1f}%",
+            str(mapsheet_count),
+        )
+
+        total_features += feature_count
+        total_enriched += enriched_count
+
+    # Add total row
+    if len(results) > 1:
+        overall_success_rate = (
+            (total_enriched / total_features * 100) if total_features > 0 else 0
+        )
+        table.add_row(
+            "[bold]TOTAL[/bold]",
+            f"[bold]{total_features}[/bold]",
+            f"[bold]{total_enriched}[/bold]",
+            f"[bold]{overall_success_rate:.1f}%[/bold]",
+            "-",
+        )
+
+    console.print(table)
+
+    # Show sample of enriched data for first non-empty result
+    for layer_name, gdf in results.items():
+        if not gdf.empty and "SOURCE_UUID" in gdf.columns:
+            enriched_sample = gdf[gdf["SOURCE_UUID"].notna()]
+            if not enriched_sample.empty:
+                show_sample_data(layer_name, enriched_sample.head(10))
+                break
+
+
+def show_sample_data(layer_name: str, sample_gdf: gpd.GeoDataFrame):
+    """Show sample of enriched data."""
+
+    console.print(f"\n🔍 Sample Enriched Data ({layer_name})")
+
+    # Select interesting columns to display
+    display_columns = []
+    for col in [
+        "OBJECTID",
+        "DESCRIPT_DE",
+        "gmu_code",
+        "tecto",
+        "SOURCE_UUID",
+        "MATCH_METHOD",
+        "MATCH_LAYER",
+        "MATCH_CONFIDENCE",
+        "MAPSHEET_NBR",
+    ]:
+        if col in sample_gdf.columns:
+            display_columns.append(col)
+
+    if not display_columns:
+        console.print("No relevant columns to display")
+        return
+
+    table = Table()
+    for col in display_columns:
+        table.add_column(col, style="dim", max_width=20, overflow="fold")
+
+    for _, row in sample_gdf.iterrows():
+        values = []
+        for col in display_columns:
+            val = row.get(col, "")
+            if pd.isna(val):
+                val = "NULL"
+            values.append(str(val)[:18])  # Truncate long values
+        table.add_row(*values)
+
+    console.print(table)
 
 
 @publish_commands.command()
