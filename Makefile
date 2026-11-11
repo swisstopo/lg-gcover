@@ -20,13 +20,15 @@ STYLES_DIR   := ${HOME}/DATA/Produktableitung/$(RELEASE)/Styles/2026-08-31/
 PREVIOUS_STYLES_DIR := ${HOME}/DATA/Produktableitung/delivery/R17/Styles/2026-07-02/styles/
 TRANSLATION_CSV := $(DELIVERY_DIR)Excels/2026c_GeolCodeText_Trad.xlsx
 STRATI_LINK_PATH := ${HOME}/DATA/Produktableitung/$(RELEASE)/Excels/_Update_stratiLINK.xlsx
+# Rust merge tool used by `make merge` (the Python one is `make python-merge`)
+GDB_MERGE        ?= ${HOME}/.local/bin/gdb-merge
 # --strati-links is optional in `gcover publish merge` (strati_link is just
 # omitted from the output if absent) — only pass it when the file is
 # actually there, instead of failing the whole merge over a missing extra.
 STRATI_LINK_ARG := $(if $(wildcard $(STRATI_LINK_PATH)),--strati-links $(STRATI_LINK_PATH),)
-# `merge`'s "Proceed with merge?" prompt has no TTY to answer it in cron/CI —
+# `python-merge`'s "Proceed with merge?" prompt has no TTY to answer it in cron/CI —
 # NONINTERACTIVE=1 (set explicitly by unattended callers, never by default)
-# passes --yes to skip it. Interactive `make merge` still prompts as normal.
+# passes --yes to skip it. Interactive `make python-merge` still prompts as normal.
 NONINTERACTIVE ?= 0
 YES_FLAG := $(if $(filter 1,$(NONINTERACTIVE)),--yes,)
 GCOVER_DATA_DIR :=  src/gcover/data/
@@ -146,7 +148,7 @@ help:
 
 
 
-.PHONY: help download administrative-zones all merge merge-diagnostic \
+.PHONY: help download administrative-zones all merge python-merge merge-diagnostic \
         denormalize classify translate pipeline-check checksum \
         geometry-check line-topology-check polygon-topology-check coverage-check \
         domain-check domain-check-rc domain-check-final domain-check-custom filter-check \
@@ -168,10 +170,37 @@ download:
 ## all: Run the entire workflow (Merge -> Import -> Denormalize -> Symbolize)
 all: merge $(CLASSIFIED_PATH) $(TRANSLATED_PATH)
 
-## merge: Only perform the gcover merge and diagnosis
-merge: $(MASTER_GDB)/timestamps
+## merge: Merge RC1/RC2 with the Rust gdb-merge tool (writes merged_master.gdb and merged_final.gdb + README)
+merge: $(FINAL_GDB)/timestamps
 
-# 1. Merge sources and run diagnosis
+# 1a. Merge sources with gdb-merge (Rust). Writes its own <final>.gdb.README; console output goes to MERGE_CONSOLE_LOG.
+$(FINAL_GDB)/timestamps: $(SOURCES_DIR)RC1.gdb $(SOURCES_DIR)RC2.gdb $(GC_MAPSHEET_SOURCE)
+	@mkdir -p $(OUTPUT_DIR); \
+	{ $(GDB_MERGE) \
+		--rc1 $(SOURCES_DIR)RC1.gdb \
+		--rc2 $(SOURCES_DIR)RC2.gdb \
+		--custom-sources-dir $(SOURCES_DIR) \
+		--admin-zones $(GC_MAPSHEET_SOURCE) \
+		--mapsheets-layer mapsheet_gc \
+		--source-column BKP \
+		--output $(MASTER_GDB) \
+		--force-2d \
+		--no-clip-to-swiss-border \
+		--enrich-mapsheet-links \
+		--exclude-metadata \
+		--add-mapsheet-layer \
+		--schema-output $(FINAL_GDB) \
+		$(STRATI_LINK_ARG) \
+		--release $(RELEASE); \
+	  echo $$? > $(OUTPUT_DIR).merge_rc; \
+	} 2>&1 | tee $(MERGE_CONSOLE_LOG); \
+	rc=$$(cat $(OUTPUT_DIR).merge_rc); rm -f $(OUTPUT_DIR).merge_rc; \
+	[ $$rc -eq 0 ] || { echo "gdb-merge failed (exit $$rc), see $(MERGE_CONSOLE_LOG)"; exit $$rc; }
+
+## python-merge: Legacy Python merge (gcover publish merge), kept for comparison
+python-merge: $(MASTER_GDB)/timestamps
+
+# 1b. Merge sources and run diagnosis (Python)
 $(MASTER_GDB)/timestamps: $(SOURCES_DIR)RC1.gdb $(SOURCES_DIR)RC2.gdb $(GC_MAPSHEET_SOURCE)
 	@mkdir -p $(OUTPUT_DIR); \
 	_T_START=$$(date +%s); \
@@ -237,27 +266,15 @@ merge-diagnostic:
 
 
 
-# 2. Add missing tables and Denormalize
-.PHONY: add-tables
-add-tables: $(MASTER_GDB)/timestamps
-		@echo "--- Importing missing tables via ogr2ogr ---"
-		@for table in $(TABLES_TO_IMPORT); do \
-			ogr2ogr -f "OpenFileGDB" -update -overwrite $(MASTER_GDB) $(FULL_GDB_PATH) $$table; \
-		done
-
-$(DENORMALIZED_PATH): $(MASTER_GDB)/timestamps
-		@echo "--- Importing missing tables via ogr2ogr ---"
-		@for table in $(TABLES_TO_IMPORT); do \
-			ogr2ogr -f "OpenFileGDB" -update -overwrite $(MASTER_GDB) $(FULL_GDB_PATH) $$table; \
-		done
-
+# 2. Denormalize (reads merged_final.gdb: lookup tables and coded domains are in it)
+$(DENORMALIZED_PATH): $(FINAL_GDB)/timestamps
 	@echo "--- Running Denormalization loop ---"
 	@for layer in $(LAYERS); do \
-		scripts/denormalize_geocover.py --remove-metadata  -o $(DENORMALIZED_PATH) --cd-gdb-path $(FULL_GDB_PATH)  --tables $$layer $(MASTER_GDB) ; \
+		scripts/denormalize_geocover.py --remove-metadata  -o $(DENORMALIZED_PATH) --cd-gdb-path $(FINAL_GDB)  --tables $$layer $(FINAL_GDB) ; \
 	done
 
 	@echo "--- Copying GC_MAPSHEET as 'mapsheet' (straight passthrough) ---"
-	@ogr2ogr -f GPKG -update -overwrite $(DENORMALIZED_PATH) $(MASTER_GDB) GC_MAPSHEET -nln mapsheet
+	@ogr2ogr -f GPKG -update -overwrite $(DENORMALIZED_PATH) $(FINAL_GDB) GC_MAPSHEET -nln mapsheet
 
 $(TRANSLATED_PATH): $(CLASSIFIED_PATH)
 	@echo "--- Translating $(CLASSIFIED_PATH) ---"
@@ -318,7 +335,7 @@ pipeline-check:
 		$(DENORMALIZED_PATH) \
 		$(CLASSIFIED_PATH) \
 		$(TRANSLATED_PATH) \
-		--gdb $(MASTER_GDB) \
+		--gdb $(FINAL_GDB) \
 		--config $(CONFIG_PATH)
 
 
