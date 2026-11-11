@@ -110,6 +110,14 @@ def _truncate(ds: ogr.DataSource, name: str, log: Callable[[str], None] | None =
             eta = (total - i) / rate if rate > 0 else float("inf")
             log(f"    {name}: {i:,}/{total:,} deleted ({rate:.0f} feat/s, ETA {eta:.0f}s)")
             last_report = time.time()
+    # Repack now, while the table is empty (cheap, reclaims the deleted rows' space). REPACK *after* the append would
+    # delete the layer's .spx and nothing rebuilds it: no spatial index, so GIS software shows no/partial data.
+    if total:
+        try:
+            ds.ExecuteSQL(f"REPACK {name}")
+        except Exception as exc:
+            if log:
+                log(f"  WARN  {name}: 'REPACK' failed: {exc}")
     return total
 
 
@@ -153,22 +161,22 @@ def _append(output_gdb: str, merged_gdb: str, name: str, log: Callable[[str], No
 
 
 def _refresh_index(ds: ogr.DataSource, name: str, log: Callable[[str], None] | None = None) -> None:
-    """Recompute stored extent and repack after a truncate+append cycle.
+    """Recompute the stored extent after a truncate+append cycle.
 
     DeleteFeature (truncate) followed by VectorTranslate append never
     updates the layer's stored extent — OGR leaves it as the stale union
-    of the deleted and newly-inserted features' bounds, which is what
-    makes the FileGDB's spatial index look out of sync after a refill.
-    RECOMPUTE EXTENT ON fixes the stored extent; REPACK reclaims the
-    deleted rows' space and compacts the index. Both are OpenFileGDB-driver
-    special SQL statements (not standard SQL), run via ExecuteSQL.
+    of the deleted and newly-inserted features' bounds. RECOMPUTE EXTENT ON
+    (OpenFileGDB-driver special SQL, run via ExecuteSQL) fixes it.
+
+    No REPACK here: in OpenFileGDB it deletes the layer's .spx and nothing
+    rebuilds it. The repack is done in _truncate(), on the empty table.
     """
-    for stmt in (f"RECOMPUTE EXTENT ON {name}", f"REPACK {name}"):
-        try:
-            ds.ExecuteSQL(stmt)
-        except Exception as exc:
-            if log:
-                log(f"  WARN  {name}: {stmt!r} failed: {exc}")
+    stmt = f"RECOMPUTE EXTENT ON {name}"
+    try:
+        ds.ExecuteSQL(stmt)
+    except Exception as exc:
+        if log:
+            log(f"  WARN  {name}: {stmt!r} failed: {exc}")
 
 
 def _patch(
