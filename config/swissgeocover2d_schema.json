@@ -1,7 +1,7 @@
 {
   "exploit_points": {
-    "feature_count": 1812,
-    "geometry": "3D MultiPoint",
+    "feature_count": 1809,
+    "geometry": "Point",
     "fields": {
       "kind": "int",
       "kind_de": "str",
@@ -32,8 +32,8 @@
     }
   },
   "fossils": {
-    "feature_count": 2745,
-    "geometry": "3D MultiPoint",
+    "feature_count": 2752,
+    "geometry": "Point",
     "fields": {
       "kind": "int",
       "kind_de": "str",
@@ -57,9 +57,6 @@
       "lfos_division": "float",
       "lfos_division_de": "str",
       "lfos_division_fr": "str",
-      "lfos_found_in": "float",
-      "lfos_found_in_de": "str",
-      "lfos_found_in_fr": "str",
       "lfos_protected": "float",
       "lfos_protected_de": "str",
       "lfos_protected_fr": "str",
@@ -74,8 +71,8 @@
     }
   },
   "point_objects": {
-    "feature_count": 258834,
-    "geometry": "3D MultiPoint",
+    "feature_count": 260699,
+    "geometry": "Point",
     "fields": {
       "kind": "int",
       "kind_de": "str",
@@ -112,18 +109,12 @@
       "abor_depth_wt": "float",
       "abor_depth_wt_de": "str",
       "abor_depth_wt_fr": "str",
-      "abor_drill_mo": "float",
-      "abor_drill_mo_de": "str",
-      "abor_drill_mo_fr": "str",
       "abor_fm_a": "float",
       "abor_fm_a_de": "str",
       "abor_fm_a_fr": "str",
       "abor_fm_b": "float",
       "abor_fm_b_de": "str",
       "abor_fm_b_fr": "str",
-      "abor_link": "float",
-      "abor_link_de": "str",
-      "abor_link_fr": "str",
       "abor_litho": "float",
       "abor_litho_de": "str",
       "abor_litho_fr": "str",
@@ -198,9 +189,6 @@
       "ltyp_strati_de": "str",
       "ltyp_strati_fr": "str",
       "map_angle": "float",
-      "mfol_fold_for": "float",
-      "mfol_fold_for_de": "str",
-      "mfol_fold_for_fr": "str",
       "mfol_fold_typ": "float",
       "mfol_fold_typ_de": "str",
       "mfol_fold_typ_fr": "str",
@@ -262,8 +250,8 @@
     }
   },
   "linear_objects": {
-    "feature_count": 360575,
-    "geometry": "3D MultiLineString",
+    "feature_count": 365652,
+    "geometry": "MultiLineString",
     "fields": {
       "kind": "int",
       "kind_de": "str",
@@ -363,9 +351,6 @@
       "printed": "float",
       "strike_deg": "int",
       "symbol": "str",
-      "ttec_activity": "float",
-      "ttec_activity_de": "str",
-      "ttec_activity_fr": "str",
       "ttec_fault_mo": "float",
       "ttec_fault_mo_de": "str",
       "ttec_fault_mo_fr": "str",
@@ -375,9 +360,6 @@
       "ttec_horiz_mo": "float",
       "ttec_horiz_mo_de": "str",
       "ttec_horiz_mo_fr": "str",
-      "ttec_lim_tect_b": "float",
-      "ttec_lim_tect_b_de": "str",
-      "ttec_lim_tect_b_fr": "str",
       "ttec_lim_typ": "float",
       "ttec_lim_typ_de": "str",
       "ttec_lim_typ_fr": "str",
@@ -394,8 +376,8 @@
     }
   },
   "surfaces": {
-    "feature_count": 66840,
-    "geometry": "3D MultiPolygon",
+    "feature_count": 67478,
+    "geometry": "MultiPolygon",
     "fields": {
       "kind": "int",
       "kind_de": "str",
@@ -420,26 +402,20 @@
       "area_m2": "float",
       "ber_link": "str",
       "erl_link": "str",
-      "ginb_main_mov": "float",
-      "ginb_main_mov_de": "str",
-      "ginb_main_mov_fr": "str",
       "gins_main_mov": "float",
       "gins_main_mov_de": "str",
       "gins_main_mov_fr": "str",
       "more_info": "str",
       "objectorigin": "int32",
       "symbol": "str",
-      "tdef_gen_rela": "float",
-      "tdef_gen_rela_de": "str",
-      "tdef_gen_rela_fr": "str",
       "tdef_type": "float",
       "tdef_type_de": "str",
       "tdef_type_fr": "str"
     }
   },
   "unco_deposits": {
-    "feature_count": 235047,
-    "geometry": "3D MultiPolygon",
+    "feature_count": 236743,
+    "geometry": "MultiPolygon",
     "fields": {
       "kind": "int",
       "kind_de": "str",
@@ -492,7 +468,6 @@
       "runc_litho": "float",
       "runc_litho_de": "str",
       "runc_litho_fr": "str",
-      "runc_litsrat_link": "str",
       "runc_litstrat": "float",
       "runc_litstrat_de": "str",
       "runc_litstrat_fr": "str",
@@ -512,8 +487,8 @@
     }
   },
   "bedrock": {
-    "feature_count": 291137,
-    "geometry": "3D MultiPolygon",
+    "feature_count": 291141,
+    "geometry": "MultiPolygon",
     "fields": {
       "kind": "int",
       "kind_de": "str",
@@ -571,8 +546,8 @@
       "more_info": "str",
       "objectorigin": "float",
       "rbed_exotic_ele": "float",
-      "rbed_litstrat_link": "str",
-      "strati_link": "str",
+      "strati_link_x": "str",
+      "strati_link_y": "str",
       "symbol": "str",
       "tecto_code": "float",
       "tecto_de": "str",
