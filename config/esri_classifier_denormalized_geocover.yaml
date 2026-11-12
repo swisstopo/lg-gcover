@@ -594,28 +594,28 @@ layers:
           maxscaledenom: 310000
           symbol_prefix: linear_ueberschiebung
 
-    - gpkg_layer: exploit_polygons
-      gcover_layer: GC_ROCK_BODIES/GC_EXPLOIT_GEOMAT_PLG
-      connection_ref: postgis_wms
-      layer_type: polygon
-      computed_fields:
-        area_m2: "geometry.area"
-      field_types:
-        KIND: Int64 # `Int64` with capital `I` is a nullable integer...
-      classifications:
-        - style_file: styles/Exploit_Geomat_Plg.lyrx
-          index: 89
-          classification_name: Exploit_Geomat_Plg
-          active: False # Not published
-          mapfile_name: ${GCOVER_LAYERNAME_PREFIX}exploit_geomat_plg
-          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}exploit_geomat
-          include_items: "label,kind,aexp_status,aexp_targ_mat"
-          map_label: False
-          data: "geom FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}exploit_polygons  USING UNIQUE gid USING SRID=2056"
-          symbol_prefix: geomat_plg
-          fields:
-            KIND: KIND
-            AEXP_STATUS: AEXP_STATUS
+#    - gpkg_layer: exploit_polygons
+#      gcover_layer: GC_ROCK_BODIES/GC_EXPLOIT_GEOMAT_PLG
+#      connection_ref: postgis_wms
+#      layer_type: polygon
+#      computed_fields:
+#        area_m2: "geometry.area"
+#      field_types:
+#        KIND: Int64 # `Int64` with capital `I` is a nullable integer...
+#      classifications:
+#        - style_file: styles/Exploit_Geomat_Plg.lyrx
+#          index: 89
+#          classification_name: Exploit_Geomat_Plg
+#          active: False # Not published
+#          mapfile_name: ${GCOVER_LAYERNAME_PREFIX}exploit_geomat_plg
+#          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}exploit_geomat
+#          include_items: "label,kind,aexp_status,aexp_targ_mat"
+#          map_label: False
+#          data: "geom FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}exploit_polygons  USING UNIQUE gid USING SRID=2056"
+#          symbol_prefix: geomat_plg
+#          fields:
+#            KIND: KIND
+#            AEXP_STATUS: AEXP_STATUS
 
     - gpkg_layer: surfaces
       gcover_layer: GC_ROCK_BODIES/GC_SURFACES

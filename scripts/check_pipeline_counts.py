@@ -29,7 +29,8 @@ def gdb_layer_map(config_path: Path) -> dict[str, str]:
     """Return {gpkg_layer: gdb_layer_name} from the config YAML, stripping the group prefix."""
     with config_path.open() as f:
         cfg = yaml.safe_load(f)
-    mapping = {}
+    # Not in the config; added to merged_final.gdb by gdb-merge --add-mapsheet-layer
+    mapping = {"mapsheet": "GC_MAPSHEET"}
     for layer in cfg.get("layers", []):
         gpkg = layer.get("gpkg_layer")
         gcover = layer.get("gcover_layer", "")
@@ -50,7 +51,8 @@ def count_gdb_layers(gdb_path: Path, layer_map: dict[str, str]) -> dict[str, int
         if gdb_layer in available:
             counts[gpkg_layer] = len(fiona.open(str(gdb_path), layer=gdb_layer))
         else:
-            console.print(f"  [yellow]⚠[/]  GDB layer [bold]{gdb_layer}[/] not found (for {gpkg_layer})")
+            if gpkg_layer != "mapsheet":  # optional layer, silently omitted if absent
+                console.print(f"  [yellow]⚠[/]  GDB layer [bold]{gdb_layer}[/] not found (for {gpkg_layer})")
     return counts
 
 
@@ -82,6 +84,12 @@ def main(denormalized, classified, translated, gdb, config_path):
         stages = [("merged (GDB)", Path(gdb))] + stages
 
     all_layers = sorted({layer for c in counts.values() for layer in c})
+    if gdb:
+        # Source of truth is the merged GDB: skip layers it doesn't contain (e.g. mapsheet)
+        skipped = [layer for layer in all_layers if layer not in gdb_counts]
+        all_layers = [layer for layer in all_layers if layer in gdb_counts]
+        if skipped:
+            console.print(f"[dim]Not in merged GDB, omitted: {', '.join(skipped)}[/]")
 
     table = Table(title="Pipeline feature counts", show_lines=False, header_style="bold cyan")
     table.add_column("Layer", style="dim", width=28)
