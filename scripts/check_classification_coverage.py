@@ -111,6 +111,7 @@ def main(classified_gpkg, config, output_gpkg, report, top_n, counts_file):
         console.print(f"  Total: {total:,} | Classified: {n_classified:,} | Coverage: {coverage:.1f}%")
 
         breakdown_rows = []
+        sum_filtered = None  # stays None when the layer has no config
         if layer_cfg:
             field_types = layer_cfg.field_types or {}
             active = [c for c in layer_cfg.classifications if c.active]
@@ -122,8 +123,10 @@ def main(classified_gpkg, config, output_gpkg, report, top_n, counts_file):
             table.add_column("Matched", justify="right", width=9)
             table.add_column("Coverage", justify="right", width=10)
 
+            filter_hits = pd.Series(0, index=gdf.index)  # number of filters claiming each feature
             for cls_cfg in active:
                 filtered = _apply_filter(gdf, cls_cfg.filter, field_types)
+                filter_hits[filtered.index] += 1
                 n_filtered = len(filtered)
                 n_matched = int(filtered[symbol_field].notna().sum())
                 cls_cov = n_matched / n_filtered * 100 if n_filtered else 0.0
@@ -138,6 +141,19 @@ def main(classified_gpkg, config, output_gpkg, report, top_n, counts_file):
                 breakdown_rows.append((name, n_filtered, n_matched, cls_cov))
 
             console.print(table)
+
+            n_overlap = int((filter_hits > 1).sum())
+            n_gap = int((filter_hits == 0).sum())
+            sum_filtered = sum(r[1] for r in breakdown_rows)
+            ok = n_overlap == 0 and n_gap == 0
+            verdict = (
+                "[green]✓ no overlaps, no gaps[/]" if ok
+                else f"[bold red]✗ {n_overlap:,} in several filters, {n_gap:,} in no filter[/]"
+            )
+            console.print(
+                f"  Filters: Σ filtered {sum_filtered:,} vs total {total:,} | "
+                f"overlaps {n_overlap:,} | in no filter {n_gap:,} — {verdict}"
+            )
 
         # Top unclassified patterns
         if n_unclassified > 0 and layer_cfg:
@@ -176,7 +192,7 @@ def main(classified_gpkg, config, output_gpkg, report, top_n, counts_file):
                 if rest > 0:
                     console.print(f"\n  ... and {rest} more patterns ({rest_count:,} features)")
 
-        layer_summaries.append((layer_name, total, n_classified, n_unclassified, coverage))
+        layer_summaries.append((layer_name, total, sum_filtered, n_classified, n_unclassified, coverage))
 
         # Per-class feature counts (report + structured output)
         classified = gdf[gdf[symbol_field].notna()]
@@ -212,20 +228,27 @@ def main(classified_gpkg, config, output_gpkg, report, top_n, counts_file):
     summary_table = Table(title="Overall Summary", header_style="bold cyan", show_lines=False)
     summary_table.add_column("Layer", style="dim", width=28)
     summary_table.add_column("Total", justify="right", width=10)
+    summary_table.add_column("Filtered", justify="right", width=10)
     summary_table.add_column("Classified", justify="right", width=12)
     summary_table.add_column("Missing", justify="right", width=9)
     summary_table.add_column("Coverage", justify="right", width=10)
 
-    for layer_name, total, n_classified, n_unclassified, coverage in layer_summaries:
+    for layer_name, total, n_filtered, n_classified, n_unclassified, coverage in layer_summaries:
         cov_str = f"{coverage:.1f}%"
+        if n_filtered is None:
+            filt_str = "—"
+        else:  # Σ filtered != total means overlaps or gaps between the filters
+            filt_str = f"{n_filtered:,}" if n_filtered == total else f"[bold red]{n_filtered:,}[/]"
         style = None if n_unclassified == 0 else "yellow" if coverage >= 95 else "red"
-        summary_table.add_row(layer_name, f"{total:,}", f"{n_classified:,}",
+        summary_table.add_row(layer_name, f"{total:,}", filt_str, f"{n_classified:,}",
                               f"{n_unclassified:,}" if n_unclassified else "—",
                               cov_str, style=style)
 
+    overall_filtered = sum(r[2] for r in layer_summaries if r[2] is not None)
     summary_table.add_row(
         "[bold]TOTAL[/]",
         f"[bold]{overall_total:,}[/]",
+        f"[bold]{overall_filtered:,}[/]",
         f"[bold]{overall_total - overall_unclassified:,}[/]",
         f"[bold red]{overall_unclassified:,}[/]" if overall_unclassified else "[bold]—[/]",
         f"[bold]{overall_coverage:.1f}%[/]",
