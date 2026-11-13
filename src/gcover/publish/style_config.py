@@ -38,7 +38,7 @@ from gcover.publish.esri_classification_extractor import (
     extract_lyrx_complete,
     IdentifierMode,
 )
-from gcover.publish.tooltips_enricher import LayerType
+from gcover.publish.layer_types import LayerType
 from gcover.publish.utils import save_layer_preserving_types
 from gcover.publish.vectorized_classification import \
     apply_batch_from_config_vectorized
