@@ -250,7 +250,7 @@
     }
   },
   "linear_objects": {
-    "feature_count": 365652,
+    "feature_count": 362478,
     "geometry": "MultiLineString",
     "fields": {
       "kind": "int",
@@ -546,8 +546,7 @@
       "more_info": "str",
       "objectorigin": "float",
       "rbed_exotic_ele": "float",
-      "strati_link_x": "str",
-      "strati_link_y": "str",
+      "strati_link": "str",
       "symbol": "str",
       "tecto_code": "float",
       "tecto_de": "str",
