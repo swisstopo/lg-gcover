@@ -260,6 +260,10 @@ layers:
           symbol_prefix: bohrung_fels_erreicht
           # Use GMU_CODE as class ID
           identifier_field: ABOR_FM_A
+          # Fill colour for the data-driven mapfile: the borehole formation (ABOR_FM_A) is a GMU code,
+          # so take the bedrock colour of that GMU; codes absent from bedrock keep the .lyrx colour.
+          hexcolor_field: _FILLCOLOR
+          hexcolor_lookup: {layer: bedrock, key: GMU_CODE, field: ABOR_FM_A}
           identifier_mode: field
 
         - style_file: styles/Point_Objects_Sondierung.lyrx

@@ -907,6 +907,70 @@ def apply_batch_classifications_vectorized(
 # INTEGRATION WITH EXISTING BATCH SYSTEM
 # =============================================================================
 
+def _apply_hexcolor_lookups(output_path: Path, lookups: list) -> None:
+    """Overwrite a layer's colour field with the colour of the same code in another layer.
+
+    Only rows that already carry a colour (i.e. those matched by the classification that
+    declares the lookup) are touched, and only when the other layer has a feature with
+    the code; every other row keeps the colour from its own .lyrx symbol.
+
+    The SQL goes through GDAL, not sqlite3: the GeoPackage spatial-index triggers need
+    GIS functions (ST_IsEmpty, ...) that plain sqlite3 does not have.
+    """
+    from osgeo import ogr
+
+    if not lookups:
+        return
+
+    ogr.UseExceptions()  # without it a failed ExecuteSQL returns None silently
+    ds = ogr.Open(str(output_path), 1)
+    if ds is None:
+        raise RuntimeError(f"Cannot open {output_path} for the colour lookup")
+
+    def scalar(sql: str) -> int:
+        res = ds.ExecuteSQL(sql)
+        try:
+            return res.GetNextFeature().GetField(0)
+        finally:
+            ds.ReleaseResultSet(res)
+
+    try:
+        existing = {ds.GetLayerByIndex(i).GetName() for i in range(ds.GetLayerCount())}
+        for layer, color_field, spec in lookups:
+            src, key, field = spec["layer"], spec["key"], spec["field"]
+            if layer not in existing or src not in existing:
+                console.print(
+                    f"[yellow]⚠ hexcolor_lookup for {layer}.{color_field}: layer '{src}' "
+                    f"not in the output (processed in the same run?), skipped[/yellow]"
+                )
+                continue
+            # One colour per code (a code has a single colour in the source layer), indexed
+            ds.ExecuteSQL("DROP TABLE IF EXISTS temp._hexlookup")
+            ds.ExecuteSQL(
+                f'CREATE TEMP TABLE _hexlookup AS SELECT "{key}" AS k, MIN("{color_field}") AS c '
+                f'FROM "{src}" WHERE "{key}" IS NOT NULL AND "{color_field}" IS NOT NULL '
+                f'GROUP BY "{key}"'
+            )
+            ds.ExecuteSQL("CREATE INDEX temp._hexlookup_k ON _hexlookup(k)")
+            n_coloured = scalar(f'SELECT COUNT(*) FROM "{layer}" WHERE "{color_field}" IS NOT NULL')
+            n_taken = scalar(
+                f'SELECT COUNT(*) FROM "{layer}" WHERE "{color_field}" IS NOT NULL '
+                f'AND "{field}" IN (SELECT k FROM _hexlookup)'
+            )
+            ds.ExecuteSQL(
+                f'UPDATE "{layer}" SET "{color_field}" = '
+                f'(SELECT c FROM _hexlookup WHERE k = "{layer}"."{field}") '
+                f'WHERE "{color_field}" IS NOT NULL AND "{field}" IN (SELECT k FROM _hexlookup)'
+            )
+            console.print(
+                f"\n[cyan]Colour lookup {layer}.{color_field} ← {src}.{key}: "
+                f"{n_taken:,} of {n_coloured:,} coloured rows taken from {src}, "
+                f"{n_coloured - n_taken:,} keep their own style colour[/cyan]"
+            )
+    finally:
+        ds = None  # flush and close
+
+
 def apply_batch_from_config_vectorized(
     gpkg_path: Path,
     config,  # BatchClassificationConfig
@@ -959,7 +1023,8 @@ def apply_batch_from_config_vectorized(
         "layer_reports": {},
     }
     
-    # Process each layer
+    color_lookups = []  # (layer, hexcolor_field, hexcolor_lookup), applied after all layers are saved
+
     # Process each layer
     for layer in layers_to_process:
         layer_config = config.get_layer_config(layer)
@@ -1068,6 +1133,10 @@ def apply_batch_from_config_vectorized(
                     getattr(class_config, 'hexcolor_field', None),
                     getattr(class_config, 'treat_zero_as_null', None),  # None = use global
                 ))
+                if getattr(class_config, 'hexcolor_lookup', None) and class_config.hexcolor_field:
+                    color_lookups.append(
+                        (layer, class_config.hexcolor_field, class_config.hexcolor_lookup)
+                    )
                 
             except FileNotFoundError:
                 logger.error(f"Style file not found: {class_config.style_file}")
@@ -1127,6 +1196,8 @@ def apply_batch_from_config_vectorized(
         else:
             gdf.to_file(output_path, layer=layer, driver="GPKG")
     
+    _apply_hexcolor_lookups(output_path, color_lookups)
+
     # Final summary
     console.print(f"\n[bold green]{'='*60}[/bold green]")
     console.print(f"[bold green]BATCH CLASSIFICATION COMPLETE[/bold green]")
