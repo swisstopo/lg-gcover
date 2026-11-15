@@ -538,7 +538,7 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_bruch
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}tecto_lines
-          include_items: "kind_desc,ttec_name,ttec_lim_typ_desc,ttec_status_desc,ttec_lim_tect_b_desc,erl_link,ber_link"
+          include_items: "kind_desc,ttec_name,ttec_lim_typ_desc,ttec_status_desc,erl_link,ber_link"
           mapfile_config:
             classes_mode: frozen
             tolerance: 10
@@ -550,7 +550,6 @@ layers:
               kind_desc: "kind_%lang%"
               ttec_status_desc: "ttec_status_%lang%"
               ttec_lim_typ_desc: "ttec_lim_typ_%lang%"
-              ttec_lim_tect_b_desc: "ttec_lim_tect_b_%lang%"
           label_formulas:
             label_de: "concat(kind_de, ttec_status_de, sep=', ', skip_empty=True)"
             label_fr: "concat(kind_fr, ttec_status_fr, sep=', ', skip_empty=True)"
@@ -567,7 +566,7 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_ueberschiebung
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}tecto_lines
-          include_items: "kind_desc,ttec_status_desc,ttec_lim_typ_desc,ttec_lim_tect_b_desc,erl_link,ber_link"
+          include_items: "kind_desc,ttec_status_desc,ttec_lim_typ_desc,erl_link,ber_link"
           mapfile_config:
             classes_mode: frozen
             symbol_scale: 12500
@@ -581,7 +580,6 @@ layers:
               ttec_status_desc: "ttec_status_%lang%"
               ttec_status_desc: "ttec_status_%lang%"
               ttec_lim_typ_desc: "ttec_lim_typ_%lang%"
-              ttec_lim_tect_b_desc: "ttec_lim_tect_b_%lang%"
               ttec_meta_sta: "ttec_meta_sta_%lang%"
           label_formulas:
             label_de: "concat(ttec_status_de, ttec_meta_sta_de, ttec_lim_typ_de, sep=', ', skip_empty=True)"
