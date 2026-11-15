@@ -522,7 +522,7 @@
       "gmu_code": "float",
       "gmu_de": "str",
       "gmu_fr": "str",
-      "hexcolor": "str",
+      "_fillcolor": "str",
       "litho_combined_code": "str",
       "litho_combined_de": "str",
       "litho_combined_fr": "str",
