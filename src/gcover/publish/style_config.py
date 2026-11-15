@@ -182,6 +182,12 @@ class ClassificationApplicationConfig:
     # Output field for the fill color extracted from the .lyrx symbol (#rrggbbaa).
     # Only meaningful for layers with uniform solid-fill classes (e.g. bedrock).
     hexcolor_field: Optional[str] = None
+    # Optional: overwrite hexcolor_field with the colour of the feature that has the
+    # same code in another (already classified) layer; where no feature matches, the
+    # colour from this classification's own .lyrx stays. Applied once all layers are
+    # written, e.g. {"layer": "bedrock", "key": "GMU_CODE", "field": "ABOR_FM_A"}:
+    # point_objects.ABOR_FM_A is looked up in bedrock.GMU_CODE.
+    hexcolor_lookup: Optional[Dict[str, str]] = None
     treat_zero_as_null: Optional[bool] = None  # None = inherit global setting
 
     def __post_init__(self):
@@ -537,6 +543,7 @@ class BatchClassificationConfig:
                     translations=class_dict.get("translations"),
                     label_formulas=class_dict.get("label_formulas"),
                     hexcolor_field=class_dict.get("hexcolor_field"),
+                    hexcolor_lookup=class_dict.get("hexcolor_lookup"),
                     treat_zero_as_null=class_dict.get("treat_zero_as_null"),
                 )
             )
