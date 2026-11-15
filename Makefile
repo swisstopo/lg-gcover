@@ -262,7 +262,7 @@ $(MASTER_GDB)/timestamps: $(SOURCES_DIR)RC1.gdb $(SOURCES_DIR)RC2.gdb $(GC_MAPSH
 ## merge-diagnostic: Merge diagnostic
 merge-diagnostic:
 	@echo "--- Running Diagnosis ---"
-	python scripts/diagnose_merge.py $(SOURCES_DIR)RC1.gdb $(SOURCES_DIR)RC2.gdb $(GCOVER_DATA_DIR)$(ADMIN_ZONES_GPKG)
+	python scripts/diagnose_merge.py $(SOURCES_DIR)RC1.gdb $(SOURCES_DIR)RC2.gdb $(GC_MAPSHEET_SOURCE)
 
 
 
@@ -418,10 +418,13 @@ schema-snapshot-final:
 	@gcover schema snapshot $(FINAL_GDB) \
 		--output config/merged_final_schema.json
 
-## filter-check: Check config filter: coverage against each layer's active .lyrx classification
+## filter-check: Check config filter: coverage against .lyrx classes, and equality with .lyrx definition query
 .PHONY: filter-check
 filter-check:
-	@python scripts/check_filter_coverage.py $(CONFIG_PATH) --styles-dir $(STYLES_DIR)/styles
+	@rc=0; \
+	python scripts/check_filter_coverage.py $(CONFIG_PATH) --styles-dir $(STYLES_DIR)/styles || rc=1; \
+	python scripts/check_filter_vs_lyrx.py $(CONFIG_PATH) --styles-dir $(STYLES_DIR)/styles || rc=1; \
+	exit $$rc
 
 
 ### Administratives zones
