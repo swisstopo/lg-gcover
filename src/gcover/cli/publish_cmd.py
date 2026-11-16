@@ -1134,7 +1134,15 @@ def mapserver(
 
         for layer_classification in layer_classifications:
             layer_name = (layer_classification.layer_name or style_file.stem).replace(' ', '_')
-            is_active = active_classes.get(layer_name, False)
+            if layer_name not in active_classes:
+                # Config key is classification_name (spaces -> '_'); it must equal the
+                # layer name inside the .lyrx. A mismatch used to be a silent "inactive".
+                raise click.ClickException(
+                    f"Layer '{layer_name}' in {style_file.name} matches no "
+                    f"classification_name in the config (known: "
+                    f"{sorted(active_classes)}). Fix classification_name in the YAML."
+                )
+            is_active = active_classes[layer_name]
 
             # 1. Get prefix and mapfile name from config if available
             symbol_prefix = prefix_map.get(layer_name, layer_name.lower())
