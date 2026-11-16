@@ -103,6 +103,8 @@ def main(config_path: Path, styles_dir: Path):
             style_file = cls_cfg.get("style_file")
             if not filter_expr or not style_file:
                 continue
+            if cls_cfg.get("active") is False:
+                continue  # inactive block: not published, nothing to check
             where = f"{gpkg_layer} / {Path(style_file).name}"
 
             cfg_f = parse_simple_filter(str(filter_expr))
