@@ -47,7 +47,6 @@ LAYER_REGISTRY: dict[str, list[SubLayer]] = {
                  "classes/linear_ueberschiebung_classes.inc"),
     ],
     "lines": [
-        SubLayer("geolkontur", "geolkontur.map", None),
         SubLayer("gesteinhorizont", "gesteinhorizont.map", "classes/gesteinhorizont_classes.inc"),
         SubLayer("linear_moraenenwall", "linear_moraenenwall.map", "classes/moraenenwall_classes.inc"),
         SubLayer("linear_objects", "linear_objects.map", "classes/linear_objects_classes.inc"),

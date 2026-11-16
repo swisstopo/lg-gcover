@@ -1297,6 +1297,8 @@ class MapServerGenerator:
             has_fill = True
 
         # Add outline
+        for extra in layers_info.extra_outlines:
+            self._add_outline_style(lines, extra, symbol_adjustments=symbol_adjustments)
         if layers_info.outline:
             self._add_outline_style(
                 lines,
@@ -1384,6 +1386,8 @@ class MapServerGenerator:
                 logger.warning(f"Gradient fill not yet supported in MapServer")
 
         # Add outline (top layer)
+        for extra in full_layers.extra_outlines:
+            self._add_outline_style(lines, extra, symbol_adjustments=symbol_adjustments)
         if full_layers.outline:
             self._add_outline_style(
                 lines,

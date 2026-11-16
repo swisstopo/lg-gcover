@@ -156,6 +156,8 @@ class SymbolLayersInfo:
     """
 
     outline: Optional[Dict[str, Any]] = None
+    # Strokes preceding `outline` when a symbol has several (e.g. dashed + solid)
+    extra_outlines: List[Dict[str, Any]] = field(default_factory=list)
     fills: List[Dict[str, Any]] = field(default_factory=list)
     character_markers: List[CharacterMarkerInfo] = field(default_factory=list)  # Legacy
     layer_order: List[str] = field(default_factory=list)  # NEW: render order
@@ -188,7 +190,9 @@ class SymbolLayersInfo:
         self.layer_order.append(f"fill_{len(self.fills) - 1}")
 
     def set_outline(self, outline_dict: Dict[str, Any]):
-        """Set the outline stroke."""
+        """Set the outline stroke; a previously set one is kept in extra_outlines."""
+        if self.outline is not None:
+            self.extra_outlines.append(self.outline)
         self.outline = outline_dict
         if "outline" not in self.layer_order:
             self.layer_order.append("outline")

@@ -216,6 +216,8 @@ class QGISGenerator:
                 has_fill = True
 
         # Add outline (top layer)
+        for extra in layers_info.extra_outlines:
+            symbol_layers.append(self._generate_qgis_outline(extra))
         if layers_info.outline:
             symbol_layers.append(self._generate_qgis_outline(layers_info.outline))
 
