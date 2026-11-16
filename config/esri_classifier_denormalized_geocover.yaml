@@ -473,25 +473,7 @@ layers:
           maxscaledenom: 52000
           symbol_prefix: linear_objects
 
-        - style_file: styles/Linear_Objects_GeolKontur.lyrx
-          active: False
-          index: 52
-          classification_name: Linear Objects_GeolKontur
-          mapfile_name: ${GCOVER_LAYERNAME_PREFIX}geolkontur
-          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
-          include_items: "kind_spec,erl_link,ber_link"
-          mapfile_config:
-            tolerance: 10
-            metadata:
-              wms_group_title: Linear Objects
-          map_label: False
-          data: "${GCOVER_POSTGIS_GEOM} FROM  (select * from geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects where map_symbol in ('geolkontur_1' , 'geolkontur_0')) as a  USING UNIQUE gid USING SRID=2056"
-          filter: KIND = 13001001
-          fields:
-              KIND: KIND
-              LGEO_STATUS: LGEO_STATUS
-          maxscaledenom: 52000
-          symbol_prefix: geolkontur
+
 
         - style_file: styles/Linear_Objects_Gesteinhorizont.lyrx
           classification_name: Linear Objects_Gesteinhorizont
@@ -520,21 +502,7 @@ layers:
           maxscaledenom: 52000
           symbol_prefix: gesteinhorizont
           filter: KIND = 13101001
-        - style_file: styles/Linear_Objects_Hilfs_Karto.lyrx
-          index: 54
-          classification_name: Linear Objects_Hilfs_Karto
-          active: False
-          mapfile_name: ${GCOVER_LAYERNAME_PREFIX}hilfs_karto
-          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
-          mapfile_config:
-            tolerance: 10
-          map_label: False
-          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects  USING UNIQUE gid USING SRID=2056"
-          fields:
-              KIND: KIND
-          maxscaledenom: 52000
-          symbol_prefix: hilfs_karto
-          filter: KIND IN (15601001, 15601002)
+
 
         - style_file: styles/Linear_Objects_Bruch.lyrx
           index: 55
