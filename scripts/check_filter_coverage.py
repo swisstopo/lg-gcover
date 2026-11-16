@@ -153,6 +153,8 @@ def main(config_path: Path, styles_dir: Path):
     for layer in cfg.get("layers", []):
         gpkg_layer = layer.get("gpkg_layer", "?")
         for cls_cfg in layer.get("classifications", []):
+            if cls_cfg.get("active") is False:
+                continue  # inactive block: not published, nothing to check
             if cls_cfg.get("filter"):
                 checked += 1
             all_gaps.extend(check_classification(gpkg_layer, cls_cfg, styles_dir))
