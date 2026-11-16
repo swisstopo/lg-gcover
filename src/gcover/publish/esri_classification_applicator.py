@@ -2033,9 +2033,6 @@ def cli(verbose: bool, quiet: bool):
     "--overwrite", is_flag=True, help="⚠️  Overwrite existing symbol field if present"
 )
 @click.option(
-    "--no-arcpy", is_flag=True, help="Force JSON parsing for style file (disable arcpy)"
-)
-@click.option(
     "--dry-run",
     is_flag=True,
     help="Check compatibility without applying classification",
@@ -2053,7 +2050,6 @@ def apply(
     treat_zero_as_null: bool,
     debug_matching: bool,
     overwrite: bool,
-    no_arcpy: bool,
     dry_run: bool,
     use_style_name: bool,
 ):
@@ -2116,7 +2112,7 @@ def apply(
         # Extract classifications from style file
         with console.status("[cyan]Loading classification rules...", spinner="dots"):
             all_classifications = extract_lyrx_complete(
-                style_file, use_arcpy=not no_arcpy, display=False
+                style_file, display=False
             )
 
         if not all_classifications:
@@ -2482,14 +2478,12 @@ def create_mapping(output_path: Path):
     type=click.Path(exists=True, path_type=Path),
     help="YAML configuration file for field mappings",
 )
-@click.option("--no-arcpy", is_flag=True, help="Force JSON parsing for style file")
 def check(
     gpkg_file: Path,
     style_file: Path,
     layer: Optional[str],
     classification_name: Optional[str],
     mapping_config: Optional[Path],
-    no_arcpy: bool,
 ):
     """Check field compatibility between GPKG and style file.
 
@@ -2526,7 +2520,7 @@ def check(
         # Load classification
         with console.status("[cyan]Loading classification rules...", spinner="dots"):
             all_classifications = extract_lyrx_complete(
-                style_file, use_arcpy=not no_arcpy, display=False
+                style_file, display=False
             )
 
         if not all_classifications:
