@@ -3,18 +3,20 @@
 Compare each config `filter:` with the definition query stored in the block's
 own .lyrx (`featureTable.definitionExpression`).
 
-For every classification block that has a simple single-field `filter:`
-(`FIELD IN (...)`, `FIELD NOT IN (...)`, `FIELD=value`), the leading simple
-clause of the .lyrx definition query is parsed the same way and the two value
-sets are compared. Reported:
+For every classification block that has a `filter:` made of simple clauses
+joined by AND (`FIELD IN (...)`, `FIELD NOT IN (...)`, `FIELD=value`,
+`FIELD<>value`), the .lyrx definition query is split and parsed the same way and
+each config clause is compared with the .lyrx clause on the same field. Reported:
 
   * operator mismatch (IN vs NOT IN)
   * values only in the config filter
   * values only in the .lyrx definition query
-  * extra clauses in the .lyrx query not representable in the config filter
+  * config clause with no counterpart in the .lyrx query
+  * extra clauses in the .lyrx query not present in the config filter
     (e.g. `AND (PRINTED = 1 OR PRINTED IS NULL)`), as informational notes
 
-Blocks without a config filter, with a compound config filter, or whose .lyrx
+Blocks without a config filter, with a config filter using OR or other
+non-simple clauses, or whose .lyrx
 has no usable definition query are skipped.
 
 Usage:
@@ -32,30 +34,79 @@ import yaml
 from rich.console import Console
 from rich.table import Table
 
-sys.path.insert(0, str(Path(__file__).parent))
-from check_filter_coverage import parse_simple_filter  # noqa: E402
 
 console = Console()
 
-# Leading simple clause of a definition query; anything after it is "rest".
-LEAD_RE = re.compile(
-    r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(NOT\s+IN|IN|==|=)\s*"
-    r"(\([^()]*\)|-?\d+)\s*(.*)$",
-    re.IGNORECASE | re.DOTALL,
+# One simple clause: FIELD (=|==|<>|!=|IN|NOT IN) value(s)
+CLAUSE_RE = re.compile(
+    r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(NOT\s+IN|IN|==|=|<>|!=)\s*"
+    r"\(?\s*(-?\d+(?:\s*,\s*-?\d+)*)\s*\)?\s*$",
+    re.IGNORECASE,
 )
 
 
-def parse_definition_query(expr: str):
-    """Return (field, op, {values}, rest) for the leading simple clause, or None."""
-    m = LEAD_RE.match(expr)
+def split_and(expr: str) -> list:
+    """Split on top-level AND (not inside parentheses)."""
+    parts, depth, start = [], 0, 0
+    for m in re.finditer(r"[()]|\bAND\b", expr, re.IGNORECASE):
+        tok = m.group(0)
+        if tok == "(":
+            depth += 1
+        elif tok == ")":
+            depth -= 1
+        elif depth == 0:
+            parts.append(expr[start:m.start()])
+            start = m.end()
+    parts.append(expr[start:])
+    return [p.strip() for p in parts if p.strip()]
+
+
+def parse_clause(clause: str):
+    """(FIELD, 'IN'|'NOT IN', {ints}) for a simple clause, else None."""
+    m = CLAUSE_RE.match(clause)
     if not m:
         return None
-    field, op, vals, rest = m.groups()
-    parsed = parse_simple_filter(f"{field} {op} {vals}")
-    if parsed is None:
-        return None
-    f, o, v = parsed
-    return f, o, v, rest.strip()
+    field, op, raw = m.groups()
+    op = re.sub(r"\s+", " ", op.upper())
+    op = "NOT IN" if op in ("NOT IN", "<>", "!=") else "IN"
+    return field.upper(), op, {int(v) for v in raw.split(",")}
+
+
+def parse_and_filter(expr: str):
+    """Split an AND-joined filter into (simple clauses, other raw clauses)."""
+    clauses, other = [], []
+    for part in split_and(expr):
+        parsed = parse_clause(part)
+        if parsed:
+            clauses.append(parsed)
+        else:
+            other.append(part)
+    return clauses, other
+
+
+def fmt_clause(c) -> str:
+    return f"{c[0]} {c[1]} {', '.join(map(str, sorted(c[2])))}"
+
+
+def compare_filters(cfg_clauses, lyrx_clauses, lyrx_other):
+    """Return ([(kind, detail)] differences, [str] informational notes)."""
+    diffs, notes = [], []
+    lyrx_by_field = {c[0]: c for c in lyrx_clauses}
+    for field, op, vals in cfg_clauses:
+        match = lyrx_by_field.pop(field, None)
+        if match is None:
+            diffs.append(("clause only in config", fmt_clause((field, op, vals))))
+            continue
+        _, l_op, l_vals = match
+        if op != l_op:
+            diffs.append(("operator", f"{field}: config {op} vs lyrx {l_op}"))
+            continue
+        for label, extra in (("only in config", vals - l_vals), ("only in lyrx", l_vals - vals)):
+            if extra:
+                diffs.append((label, f"{field}: {', '.join(map(str, sorted(extra)))}"))
+    notes.extend(fmt_clause(c) for c in lyrx_by_field.values())
+    notes.extend(lyrx_other)
+    return diffs, notes
 
 
 def lyrx_definition_queries(lyrx_path: Path):
@@ -105,8 +156,8 @@ def main(config_path: Path, styles_dir: Path):
                 continue
             where = f"{gpkg_layer} / {Path(style_file).name}"
 
-            cfg_f = parse_simple_filter(str(filter_expr))
-            if cfg_f is None:
+            cfg_clauses, cfg_other = parse_and_filter(str(filter_expr))
+            if cfg_other or not cfg_clauses:
                 skipped.append((where, "compound config filter"))
                 continue
 
@@ -121,29 +172,16 @@ def main(config_path: Path, styles_dir: Path):
                 skipped.append((where, "no / ambiguous .lyrx definition query"))
                 continue
 
-            lyrx_f = parse_definition_query(expr)
-            if lyrx_f is None:
+            lyrx_clauses, lyrx_other = parse_and_filter(expr)
+            if not lyrx_clauses:
                 skipped.append((where, f"unparseable .lyrx query: {expr[:60]}"))
                 continue
 
             checked += 1
-            c_field, c_op, c_vals = cfg_f
-            l_field, l_op, l_vals, rest = lyrx_f
-
-            if c_field.upper() != l_field.upper():
-                diffs.append((where, "field", f"config {c_field} vs lyrx {l_field}"))
-                continue
-            if c_op != l_op and not ({c_op, l_op} <= {"=", "=="}):
-                diffs.append((where, "operator", f"config {c_op} vs lyrx {l_op}"))
-                continue
-            only_cfg = sorted(c_vals - l_vals)
-            only_lyrx = sorted(l_vals - c_vals)
-            if only_cfg:
-                diffs.append((where, "only in config", ", ".join(map(str, only_cfg))))
-            if only_lyrx:
-                diffs.append((where, "only in lyrx", ", ".join(map(str, only_lyrx))))
-            if rest:
-                notes.append((where, rest))
+            block_diffs, block_notes = compare_filters(cfg_clauses, lyrx_clauses, lyrx_other)
+            diffs.extend((where, kind, detail) for kind, detail in block_diffs)
+            if block_notes:
+                notes.append((where, " AND ".join(block_notes)))
 
     console.print(f"\nCompared {checked} filter(s) with their .lyrx definition query.\n")
 
