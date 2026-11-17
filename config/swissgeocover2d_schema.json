@@ -1,7 +1,7 @@
 {
   "exploit_points": {
     "feature_count": 1809,
-    "geometry": "3D Point",
+    "geometry": "Point",
     "fields": {
       "kind": "int",
       "kind_de": "str",
@@ -33,7 +33,7 @@
   },
   "fossils": {
     "feature_count": 2752,
-    "geometry": "3D Point",
+    "geometry": "Point",
     "fields": {
       "kind": "int",
       "kind_de": "str",
@@ -72,7 +72,7 @@
   },
   "point_objects": {
     "feature_count": 258380,
-    "geometry": "3D Point",
+    "geometry": "Point",
     "fields": {
       "kind": "int",
       "kind_de": "str",
@@ -252,7 +252,7 @@
   },
   "linear_objects": {
     "feature_count": 362478,
-    "geometry": "3D MultiLineString",
+    "geometry": "MultiLineString",
     "fields": {
       "kind": "int",
       "kind_de": "str",
@@ -377,8 +377,8 @@
     }
   },
   "surfaces": {
-    "feature_count": 67477,
-    "geometry": "3D MultiPolygon",
+    "feature_count": 67478,
+    "geometry": "MultiPolygon",
     "fields": {
       "kind": "int",
       "kind_de": "str",
@@ -415,8 +415,8 @@
     }
   },
   "unco_deposits": {
-    "feature_count": 236737,
-    "geometry": "3D MultiPolygon",
+    "feature_count": 236743,
+    "geometry": "MultiPolygon",
     "fields": {
       "kind": "int",
       "kind_de": "str",
@@ -488,8 +488,8 @@
     }
   },
   "bedrock": {
-    "feature_count": 291140,
-    "geometry": "3D MultiPolygon",
+    "feature_count": 291141,
+    "geometry": "MultiPolygon",
     "fields": {
       "kind": "int",
       "kind_de": "str",
