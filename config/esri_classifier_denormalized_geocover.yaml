@@ -217,7 +217,7 @@ layers:
           label_formulas:
             label_de: "kind_de"
             label_fr: "kind_fr"
-          filter: KIND NOT IN (10501001,10501002,10501003,10501004,10501005,11901001,12501001,12101006,12501002,12501003,12501004,12501006,13601001,13601002,13601003,13701001,13701002,13701004,13801001,13801002,13801003,13801004,13801005,13801006,14401001,14401002,14601004,14601006)
+          filter: KIND NOT IN   (10501001,10501002,10501003,10501004,10501005,11901001,12501001,12101006,12501002,12501003,12501004,12501006,13601001,13601002,13601003,13701001,13701002,13701004,13801001,13801002,13801003,13801004,13801005,13801006,14401001,14401002,14601004,14601006)
           fields:
             # Map GPKG field to classification field (can be complex paths)
             KIND: KIND
@@ -260,6 +260,10 @@ layers:
           symbol_prefix: bohrung_fels_erreicht
           # Use GMU_CODE as class ID
           identifier_field: ABOR_FM_A
+          # Fill colour for the data-driven mapfile: the borehole formation (ABOR_FM_A) is a GMU code,
+          # so take the bedrock colour of that GMU; codes absent from bedrock keep the .lyrx colour.
+          hexcolor_field: _FILLCOLOR
+          hexcolor_lookup: {layer: bedrock, key: GMU_CODE, field: ABOR_FM_A}
           identifier_mode: field
 
         - style_file: styles/Point_Objects_Sondierung.lyrx
@@ -268,6 +272,7 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}sondierung
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}point_features
           maxscaledenom: 52000
+          treat_zero_as_null: false
           include_items: "kind_desc,abor_depth_bedr,abor_fm_a_desc,abor_fm_b_desc,abor_main_tar_desc,abor_targ_mat_desc,abor_depth_bedr,abor_depth_tot,erl_link,ber_link"
           lang_fields:
             kind_desc: "kind_%lang%"
@@ -461,32 +466,14 @@ layers:
             label_de: "kind_de"
             label_fr: "kind_fr"
           include_items: "kind_desc,aexp_status_desc,aarc_epoch_desc,aarc_period_desc,lpro_litho_desc,erl_link,ber_link"
-          # El cheapo filter
-          filter: KIND IN (10201002,10201007,10201006,10201001,10201005,10201004,10201003,10701001,10701002,10901002,10901001,11101001,11101003,11101002,11301007,11301003,11301002,11301006,11301005,11301008,11301009,11301004,11301010,11701003,11701002,11701001,11701004,12201001,12201002,12301001,12301004,12301006,12301002,12301007,12301005,12301003,12401001,12601002,12601001,13001001,13301001,13901001,14001001,14701001)
+          # Same as the .lyrx definition query
+          filter: KIND NOT IN (14901001,14901002,14901004,14901005,14901006,14901007,14901008,11301001,15601001,15601002,13001001,13101001)
           fields:
               KIND: KIND
           maxscaledenom: 52000
           symbol_prefix: linear_objects
 
-        - style_file: styles/Linear_Objects_GeolKontur.lyrx
-          active: False
-          index: 52
-          classification_name: Linear Objects_GeolKontur
-          mapfile_name: ${GCOVER_LAYERNAME_PREFIX}geolkontur
-          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
-          include_items: "kind_spec,erl_link,ber_link"
-          mapfile_config:
-            tolerance: 10
-            metadata:
-              wms_group_title: Linear Objects
-          map_label: False
-          data: "${GCOVER_POSTGIS_GEOM} FROM  (select * from geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects where map_symbol in ('geolkontur_1' , 'geolkontur_0')) as a  USING UNIQUE gid USING SRID=2056"
-          filter: KIND = 13001001
-          fields:
-              KIND: KIND
-              LGEO_STATUS: LGEO_STATUS
-          maxscaledenom: 52000
-          symbol_prefix: geolkontur
+
 
         - style_file: styles/Linear_Objects_Gesteinhorizont.lyrx
           classification_name: Linear Objects_Gesteinhorizont
@@ -515,21 +502,7 @@ layers:
           maxscaledenom: 52000
           symbol_prefix: gesteinhorizont
           filter: KIND = 13101001
-        - style_file: styles/Linear_Objects_Hilfs_Karto.lyrx
-          index: 54
-          classification_name: Linear Objects_Hilfs_Karto
-          active: False
-          mapfile_name: ${GCOVER_LAYERNAME_PREFIX}hilfs_karto
-          mapfile_group: ${GCOVER_LAYERNAME_PREFIX}linear_features
-          mapfile_config:
-            tolerance: 10
-          map_label: False
-          data: "${GCOVER_POSTGIS_GEOM} FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}linear_objects  USING UNIQUE gid USING SRID=2056"
-          fields:
-              KIND: KIND
-          maxscaledenom: 52000
-          symbol_prefix: hilfs_karto
-          filter: KIND IN (15601001, 15601002)
+
 
         - style_file: styles/Linear_Objects_Bruch.lyrx
           index: 55
@@ -537,7 +510,7 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_bruch
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}tecto_lines
-          include_items: "kind_desc,ttec_name,ttec_lim_typ_desc,ttec_status_desc,ttec_lim_tect_b_desc,erl_link,ber_link"
+          include_items: "kind_desc,ttec_name,ttec_lim_typ_desc,ttec_status_desc,erl_link,ber_link"
           mapfile_config:
             classes_mode: frozen
             tolerance: 10
@@ -549,7 +522,6 @@ layers:
               kind_desc: "kind_%lang%"
               ttec_status_desc: "ttec_status_%lang%"
               ttec_lim_typ_desc: "ttec_lim_typ_%lang%"
-              ttec_lim_tect_b_desc: "ttec_lim_tect_b_%lang%"
           label_formulas:
             label_de: "concat(kind_de, ttec_status_de, sep=', ', skip_empty=True)"
             label_fr: "concat(kind_fr, ttec_status_fr, sep=', ', skip_empty=True)"
@@ -566,7 +538,7 @@ layers:
           active: True
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}linear_ueberschiebung
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}tecto_lines
-          include_items: "kind_desc,ttec_status_desc,ttec_lim_typ_desc,ttec_lim_tect_b_desc,erl_link,ber_link"
+          include_items: "kind_desc,ttec_status_desc,ttec_lim_typ_desc,erl_link,ber_link"
           mapfile_config:
             classes_mode: frozen
             symbol_scale: 12500
@@ -580,7 +552,6 @@ layers:
               ttec_status_desc: "ttec_status_%lang%"
               ttec_status_desc: "ttec_status_%lang%"
               ttec_lim_typ_desc: "ttec_lim_typ_%lang%"
-              ttec_lim_tect_b_desc: "ttec_lim_tect_b_%lang%"
               ttec_meta_sta: "ttec_meta_sta_%lang%"
           label_formulas:
             label_de: "concat(ttec_status_de, ttec_meta_sta_de, ttec_lim_typ_de, sep=', ', skip_empty=True)"
@@ -607,6 +578,7 @@ layers:
           index: 89
           classification_name: Exploit_Geomat_Plg
           active: False # Not published
+          filter: KIND IN (10801001, 10801002)
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}exploit_geomat_plg
           mapfile_group: ${GCOVER_LAYERNAME_PREFIX}exploit_geomat
           include_items: "label,kind,aexp_status,aexp_targ_mat"
@@ -683,7 +655,7 @@ layers:
             metadata:
               wms_group_title: Unconsolidated
           data: "${GCOVER_POSTGIS_GEOM} FROM  geol.${GCOVER_POSTGIS_TABLE_PREFIX}unco_deposits  USING UNIQUE gid USING SRID=2056"
-          filter: RUNC_LITHO NOT IN (15101009, 15101015,15101019, 15101021, 15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101041,15101046, 15101047, 15101048, 15101049, 15101055, 15101058, 15101040)
+          filter: RUNC_LITHO=15101041
           lang_fields:
             runc_litstrat: "runc_litstrat_%lang%"
             runc_litho: "runc_litho_%lang%"
@@ -694,7 +666,6 @@ layers:
             label_de: "concat(runc_litho_de, runc_morpholo_de, runc_chrono_b_de, sep=', ', skip_empty=True)"
             label_fr: "concat(runc_litho_fr, runc_morpholo_fr, runc_chrono_b_fr, sep=', ', skip_empty=True)"
           symbol_prefix: unco_bachschutt
-          filter: RUNC_LITHO=15101041
           fields:
             KIND: KIND
             RUNC_LITHO: RUNC_LITHO
@@ -702,7 +673,7 @@ layers:
             RUNC_CHRONO_B: RUNC_CHRONO_B # missing
         - style_file: styles/Unco_Deposits_Litho.lyrx
           index: 91
-          classification_name: Unco Deposits_Litho_<20000
+          classification_name: Unco Deposits_Litho
           maxscaledenom: 210000
           active: True
           mapfile_name:  ${GCOVER_LAYERNAME_PREFIX}unco_litho
@@ -722,7 +693,7 @@ layers:
             classes_mode: frozen
             metadata:
               wms_group_title: Unconsolidated
-          filter: RUNC_LITHO NOT IN (15101009, 15101015, 15101019, 15101021, 15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101041, 15101046, 15101047, 15101048, 15101049, 15101055, 15101058, 15101040)
+          filter: RUNC_LITHO NOT IN (15101009, 15101015, 15101019, 15101021, 15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101041, 15101046, 15101047, 15101048, 15101049, 15101055, 15101058, 15101040, 15101073)
           fields:
             KIND: KIND
             RUNC_LITHO: RUNC_LITHO
@@ -816,7 +787,7 @@ layers:
             label_de: "concat(runc_litho_de,runc_chrono_b_de, sep=', ', skip_empty=True)"
             label_fr: "concat(runc_litho_fr,runc_chrono_b_fr, sep=', ', skip_empty=True)"
           symbol_prefix: unco_chrono_b
-          filter: RUNC_LITHO IN (15101009, 15101015, 15101084)
+          filter: RUNC_LITHO IN (15101009, 15101015)
           fields:
             KIND: KIND
             RUNC_LITHO: RUNC_LITHO.
@@ -852,7 +823,7 @@ layers:
           mapfile_name: ${GCOVER_LAYERNAME_PREFIX}bedrock
           # mapfile_group: ${GCOVER_LAYERNAME_PREFIX}bedrock
           map_label: False
-          data: "${GCOVER_POSTGIS_GEOM},hexcolor FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}bedrock USING UNIQUE gid USING SRID=2056"
+          data: "${GCOVER_POSTGIS_GEOM},_fillcolor FROM geol.${GCOVER_POSTGIS_TABLE_PREFIX}bedrock USING UNIQUE gid USING SRID=2056"
           # Constant alias names → language-specific columns
           lang_fields:
               gmu_code_desc: "gmu_%lang%"
@@ -863,7 +834,7 @@ layers:
               correlation_desc: "correlation_%lang%"
               litstrat_formation_bank: "litstrat_formation_bank_%lang%"
           # These names stay stable for all clients regardless of LANGUAGE= param
-          include_items: "gmu_desc,gmu_code_desc,tecto_desc,litho_desc,chrono_desc,correlation_desc,strati_link,hexcolor,erl_link,ber_link"
+          include_items: "gmu_desc,gmu_code_desc,tecto_desc,litho_desc,chrono_desc,correlation_desc,strati_link,_fillcolor,erl_link,ber_link"
           fields:
             # Map GPKG field to classification field (can be complex paths)
             GMU_CODE: GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT
@@ -875,6 +846,6 @@ layers:
           filter: KIND == 14334001
           identifier_field: GC_GEOL_MAPPING_UNIT_ATT.GEOL_MAPPING_UNIT
           identifier_mode: field
-          hexcolor_field: HEXCOLOR
+          hexcolor_field: _FILLCOLOR
 
 

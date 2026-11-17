@@ -408,6 +408,12 @@ def _strati_links(bedrock: gpd.GeoDataFrame,xlsx_path
     """Add translated columns to GDF; return (enriched_gdf, stats_list)."""
     stats = []
 
+    # gdb-merge already writes strati_link into the merged GDB when given the
+    # same Excel; merging again would suffix both copies (strati_link_x/_y) and
+    # the mapfiles, which select "strati_link", would fail.
+    if "strati_link" in bedrock.columns:
+        return bedrock
+
     strati_link_col = "stratiLINK"
 
     # --- Lire la table de correspondance depuis le xlsx ---

@@ -736,7 +736,9 @@ def analyze_symbol_complexity(symbol_layers: SymbolLayersInfo) -> Dict[str, Any]
         }
 
     metrics = {
-        "layer_count": len(symbol_layers.fills) + (1 if symbol_layers.outline else 0),
+        "layer_count": len(symbol_layers.fills)
+        + len(symbol_layers.extra_outlines)
+        + (1 if symbol_layers.outline else 0),
         "has_hatch": False,
         "has_multiple_fills": len(symbol_layers.fills) > 1,
         "has_character_markers": len(symbol_layers.character_markers) > 0,
@@ -836,6 +838,8 @@ def compare_symbols(
     elif old_symbol.outline and new_symbol.outline:
         if old_symbol.outline != new_symbol.outline:
             changes.append("Outline properties changed")
+    if old_symbol.extra_outlines != new_symbol.extra_outlines:
+        changes.append("Additional outline strokes changed")
 
     # Compare fill count
     if len(old_symbol.fills) != len(new_symbol.fills):
@@ -870,8 +874,14 @@ def export_symbol_to_dict(symbol_layers: SymbolLayersInfo) -> Dict[str, Any]:
     if symbol_layers is None:
         return {"outline": None, "fills": [], "layer_order": [], "complexity": {}}
 
+    # Line and point symbols are extracted as plain dicts (stroke/markers), not
+    # SymbolLayersInfo; they are already serializable.
+    if isinstance(symbol_layers, dict):
+        return symbol_layers
+
     result = {
         "outline": symbol_layers.outline,
+        "extra_outlines": symbol_layers.extra_outlines,
         "fills": [],
         "layer_order": symbol_layers.layer_order,
         "complexity": analyze_symbol_complexity(symbol_layers),
